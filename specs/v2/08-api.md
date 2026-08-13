@@ -93,6 +93,20 @@ practitioner) — never from a request parameter.
 Pro practitioner's own vault audit trail to either the practitioner or the
 admin.
 
+## Superadmin
+
+Added after initial deploy — see
+[04 · Admin portal §0](04-admin-portal.md#0-superadmin-vs-admin) and
+[10 · Security](10-security.md) for why. Every route here 403s for a
+regular `admin` session.
+
+| Route | Purpose |
+|---|---|
+| `GET /api/superadmin/admins` | List all admin accounts, both tiers |
+| `POST /api/superadmin/admins` | Create an admin or superadmin account |
+| `PUT /api/superadmin/admins/{id}/role` | Promote/demote — 400 if it would leave zero active superadmins |
+| `POST /api/superadmin/admins/{id}/suspend` `/reactivate` | Blocks/restores login and, for an already-active session, every `require_admin` route on the next request — 400 on `/suspend` if it would leave zero active superadmins |
+
 ## Failure modes
 
 Same shape as v1: structured JSON error body, 401 for missing/invalid auth,

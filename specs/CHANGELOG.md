@@ -1,5 +1,27 @@
 # Specs changelog
 
+## v2.2 — 2026-08-13 (superadmin hierarchy + a real production leak)
+
+Also same version, more post-deploy corrections.
+
+- **Superadmin/admin split** ([04](v2/04-admin-portal.md#0-superadmin-vs-admin),
+  [10](v2/10-security.md)). v2 originally shipped with one undifferentiated
+  admin role and no way to create a second admin account — a real gap once
+  live, not a hypothetical one. `superadmin` adds exactly one capability
+  over `admin`: creating/promoting/demoting/suspending other admin
+  accounts. Guarded so the last active superadmin can never be
+  demoted/suspended.
+- **Fixed a live password-hash leak** ([10](v2/10-security.md#the-leak-that-was-found)).
+  `GET /api/practitioners/{id}` — public, unauthenticated — was returning
+  every practitioner's bcrypt `password_hash`; eight other routes leaked it
+  or `anthropic_api_key_encrypted` to authenticated callers. Found while
+  testing the superadmin routes (which had the same bug), fixed the same
+  day across all nine routes. Recorded in full per the same "write down the
+  leak" precedent v1 set.
+- Admin dashboard (`/admin`) got a logout button it never had, and an
+  already-logged-in visitor to `/login` now redirects straight to their
+  dashboard instead of re-prompting for credentials.
+
 ## v2.1 — 2026-08-13 (post-deploy fixes)
 
 Same version, no new scope — corrections made after v2 went live at

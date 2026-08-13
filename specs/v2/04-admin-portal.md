@@ -1,7 +1,30 @@
 # 04 · Admin portal
 
-The operator's tool. One admin role for this version — no admin sub-roles,
-no permission tiers within admin.
+The operator's tool. **Revised 2026-08-13:** this originally shipped as one
+admin role with no sub-roles or permission tiers. A two-tier hierarchy
+replaced that after deploy — see [§0](#0-superadmin-vs-admin) — because
+there was no way to create a second admin account otherwise.
+
+## 0. Superadmin vs. admin
+
+| | admin | superadmin |
+|---|---|---|
+| Practitioner management (§1) | ✓ | ✓ |
+| Library / RAG management (§2) | ✓ | ✓ |
+| Questionnaire admin (§3) | ✓ | ✓ |
+| Website statistics (§4) | ✓ | ✓ |
+| Create / promote / demote / suspend other admin accounts | ✗ | ✓ |
+
+Every admin account carries a `role` of `admin` or `superadmin`
+([02](02-data-model.md), [10](10-security.md)). The distinction is narrow on
+purpose: a superadmin isn't a generally more privileged operator, it's
+specifically the one who can grow or shrink the set of admin accounts. At
+least one active superadmin always exists — `set_admin_role` and
+`set_admin_active` both refuse to demote or suspend the last one, so the
+system can never lock itself out of having someone who can create more
+admins. The very first admin account (via `ADMIN_BOOTSTRAP_EMAIL`/
+`ADMIN_BOOTSTRAP_PASSWORD`, [11](11-operations.md)) is always created as
+superadmin, for the same reason.
 
 ## 1. Practitioner management
 

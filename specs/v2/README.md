@@ -32,13 +32,16 @@ used for the library/patient split.
 |---|---|
 | Live at | https://telehealth.devshorepartners.id |
 | Stack | FastAPI · Neo4j · SQLite (core store + one vault per Pro practitioner) · Anthropic · Stripe · vanilla JS |
-| Auth | Real per-role accounts (admin/practitioner/client) — see [10](10-security.md) |
+| Auth | Real per-role accounts — admin (admin/superadmin tiers), practitioner, client — see [10](10-security.md) |
 | Verified by | `verify.py` (v1's library guarantees, replayed through `/api/me/consult`) + `verify_v2.py` (12 v2-specific checks) |
 
 Deployed and built against the decisions in [01](01-overview.md#decisions).
 All open items are resolved — see
 [04](04-admin-portal.md#2-library--rag-management) and
 [07](07-ai-team.md#resolved). [08](08-api.md) reflects the routes as they
-actually shipped, including the clean-URL page routes added after initial
-deploy and the account/password-change route that wasn't in the original
-spec.
+actually shipped, including the clean-URL page routes, the
+account/password-change route, and the superadmin routes — none of which
+were in the original spec, all added after initial deploy. See
+[`../CHANGELOG.md`](../CHANGELOG.md)'s v2.1/v2.2 entries for the full list
+of post-deploy corrections, including a password-hash leak found and fixed
+the same day it shipped ([10](10-security.md#the-leak-that-was-found)).

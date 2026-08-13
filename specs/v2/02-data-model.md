@@ -19,6 +19,14 @@ no clients.
 ## Core store — `data/core.db`
 
 ```sql
+admins (
+  id TEXT PRIMARY KEY, email UNIQUE, password_hash, name,
+  role TEXT,             -- admin | superadmin — added 2026-08-13, see
+                          -- 04-admin-portal.md §0
+  is_active INTEGER,      -- suspended admins keep their row, login blocked
+  created_at
+)
+
 practitioners (
   id TEXT PRIMARY KEY, email UNIQUE, password_hash, name,
   status TEXT,          -- pending | approved | rejected | suspended
@@ -28,6 +36,14 @@ practitioners (
   anthropic_api_key_encrypted,   -- Pro only; NULL on Basic
   stripe_customer_id, stripe_subscription_id, stripe_status,
   created_at, approved_at
+)
+
+-- Routing only: which vault a client's login belongs to, since clients
+-- live entirely inside their practitioner's vault. Holds no clinical
+-- content — just enough to resolve email -> (practitioner_id, client_id)
+-- before any vault file is opened.
+client_directory (
+  email TEXT PRIMARY KEY, practitioner_id, client_id
 )
 
 contact_form_submissions (
@@ -69,6 +85,13 @@ their RAG calls at consultation time. Encrypted at rest with a
 platform-held key (see [10 · Security](10-security.md)); never logged, never
 returned by any read endpoint once set (write-only from the client's
 perspective).
+
+**`password_hash`** (on `admins`, `practitioners`, and vault `clients`) —
+never returned by any read endpoint either, on any of the three tables. This
+was violated by nine routes in practice, including one public and
+unauthenticated, before being found and fixed the same day it was
+introduced — see [10 · Security §the leak that was
+found](10-security.md#the-leak-that-was-found).
 
 ## Neo4j — the knowledge library
 
