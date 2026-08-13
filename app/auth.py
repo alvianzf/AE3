@@ -133,6 +133,41 @@ def register(app: FastAPI) -> None:
 
         raise HTTPException(status_code=401, detail="Incorrect email or password.")
 
+    @app.post("/api/auth/change-password")
+    async def change_password(request: Request):
+        session = current_session(request)
+        if session is None:
+            raise HTTPException(status_code=401, detail="Not logged in.")
+        body = await request.json()
+        current_password = str(body.get("current_password", ""))
+        new_password = str(body.get("new_password", ""))
+        if len(new_password) < 8:
+            raise HTTPException(
+                status_code=400,
+                detail="New password must be at least 8 characters.")
+
+        role = session["role"]
+        if role == "admin":
+            account = core_store.get_admin(session["id"])
+            verify_and_set = lambda h: core_store.set_admin_password(session["id"], h)
+        elif role == "practitioner":
+            account = core_store.get_practitioner(session["id"])
+            verify_and_set = lambda h: core_store.set_practitioner_password(session["id"], h)
+        elif role == "client":
+            # Deferred import — same reasoning as the login handler's client
+            # branch: app/vault.py may not exist at module load time.
+            from . import vault
+            account = vault.get_client(session["practitioner_id"], session["id"])
+            verify_and_set = lambda h: vault.set_client_password(
+                session["practitioner_id"], session["id"], h)
+        else:
+            raise HTTPException(status_code=400, detail="Unknown role.")
+
+        if account is None or not verify_password(current_password, account["password_hash"]):
+            raise HTTPException(status_code=401, detail="Current password is incorrect.")
+        verify_and_set(hash_password(new_password))
+        return {"ok": True}
+
     @app.post("/api/auth/logout")
     async def logout():
         response = JSONResponse({"ok": True})

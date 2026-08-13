@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Account · Clinic</title>
+  <link rel="stylesheet" href="../style.css?v=11">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <span class="sprig" aria-hidden="true">
+      <svg viewBox="0 0 20 24" fill="none" stroke="currentColor" stroke-width="1.3"
+           stroke-linecap="round">
+        <path d="M10 23V7"/>
+        <path d="M10 13c0-3.6 2.4-6.4 6-7-.3 3.8-2.6 6.4-6 7z" fill="currentColor"
+              fill-opacity=".16"/>
+        <path d="M10 9.5C10 6 7.8 3.3 4.3 2.5 4.6 6.2 6.7 8.8 10 9.5z"
+              fill="currentColor" fill-opacity=".1"/>
+      </svg>
+    </span>
+    <span class="brand"><b>Clinic</b><span class="sub">account settings</span></span>
+    <nav style="margin-left:auto;display:flex;gap:.4rem;flex-wrap:wrap">
+      <button id="logout-btn" class="btn ghost sm">Log out</button>
+    </nav>
+  </div>
+</header>
+
+<main class="pane on" style="max-width:26rem;margin:0 auto">
+  <section class="card-panel">
+    <div class="ph botanic"><h2 style="flex:1">Change password</h2></div>
+    <div class="pb">
+      <p class="hint" id="acc-role"></p>
+
+      <label class="lbl" for="a-current">Current password</label>
+      <input id="a-current" type="password" autocomplete="current-password" aria-label="Current password">
+
+      <label class="lbl" for="a-new">New password</label>
+      <input id="a-new" type="password" autocomplete="new-password" aria-label="New password">
+      <p class="hint xs">At least 8 characters.</p>
+
+      <label class="lbl" for="a-new2">Confirm new password</label>
+      <input id="a-new2" type="password" autocomplete="new-password" aria-label="Confirm new password">
+
+      <button id="a-submit" class="btn block" style="margin-top:.9rem">Update password</button>
+      <div id="a-status" class="muted xs" style="margin-top:.5rem"></div>
+    </div>
+  </section>
+</main>
+
+<div id="toasts" class="toasts" aria-live="polite"></div>
+<script src="../shared.js"></script>
+<script>
+async function load() {
+  const session = await currentSession();
+  if (!session) { location.href = 'login.html'; return; }
+  $('acc-role').textContent = `Signed in as ${session.role}.`;
+}
+load();
+
+$('logout-btn').onclick = logout;
+
+$('a-submit').onclick = async () => {
+  const current_password = $('a-current').value;
+  const new_password = $('a-new').value;
+  const confirm = $('a-new2').value;
+  if (!current_password || !new_password) {
+    toast('Fill in both password fields', 'bad'); return;
+  }
+  if (new_password.length < 8) {
+    toast('New password must be at least 8 characters', 'bad'); return;
+  }
+  if (new_password !== confirm) {
+    toast('New passwords do not match', 'bad'); return;
+  }
+  $('a-submit').disabled = true;
+  $('a-status').textContent = 'Updating…';
+  try {
+    await api('/auth/change-password', json('POST', { current_password, new_password }));
+    $('a-status').textContent = '';
+    $('a-current').value = ''; $('a-new').value = ''; $('a-new2').value = '';
+    toast('Password updated');
+  } catch (e) {
+    $('a-status').textContent = '';
+    toast(e.status === 401 ? 'Current password is incorrect' : e.message, 'bad');
+  }
+  $('a-submit').disabled = false;
+};
+</script>
+</body>
+</html>

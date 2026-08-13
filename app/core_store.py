@@ -179,6 +179,22 @@ def get_admin_by_email(email: str) -> dict | None:
     return dict(row) if row else None
 
 
+def get_admin(admin_id: str) -> dict | None:
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM admins WHERE id = ?", (admin_id,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def set_admin_password(admin_id: str, password_hash: str) -> None:
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE admins SET password_hash = ? WHERE id = ?",
+            (password_hash, admin_id),
+        )
+
+
 # --- Practitioners ---------------------------------------------------------
 
 def _decode_practitioner(row: sqlite3.Row) -> dict:
@@ -323,6 +339,14 @@ def update_practitioner_profile(practitioner_id: str, **fields) -> dict | None:
             (*columns.values(), practitioner_id),
         )
     return get_practitioner(practitioner_id)
+
+
+def set_practitioner_password(practitioner_id: str, password_hash: str) -> None:
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE practitioners SET password_hash = ? WHERE id = ?",
+            (password_hash, practitioner_id),
+        )
 
 
 def set_practitioner_api_key(practitioner_id: str, encrypted_key: str | None) -> None:
