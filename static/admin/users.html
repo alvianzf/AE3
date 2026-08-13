@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Users · Clinic</title>
+  <link rel="stylesheet" href="/static/style.css?v=11">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a href="/" class="brand-link">
+      <span class="sprig" aria-hidden="true">
+        <svg viewBox="0 0 20 24" fill="none" stroke="currentColor" stroke-width="1.3"
+             stroke-linecap="round">
+          <path d="M10 23V7"/>
+          <path d="M10 13c0-3.6 2.4-6.4 6-7-.3 3.8-2.6 6.4-6 7z" fill="currentColor"
+                fill-opacity=".16"/>
+          <path d="M10 9.5C10 6 7.8 3.3 4.3 2.5 4.6 6.2 6.7 8.8 10 9.5z"
+                fill="currentColor" fill-opacity=".1"/>
+        </svg>
+      </span>
+      <span class="brand">
+        <b>Clinic</b>
+        <span class="sub">users</span>
+        <span class="tag">Phase 2 POC</span>
+      </span>
+    </a>
+    <nav style="margin-left:auto;display:flex;gap:.4rem;flex-wrap:wrap">
+      <a class="btn ghost sm" href="/admin">Knowledge admin</a>
+      <a class="btn ghost sm" href="/account">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-7 8-7s8 3 8 7"/></svg>
+        Account</a>
+      <button class="btn ghost sm" id="logout-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+          <path d="M10 17l5-5-5-5"/><path d="M15 12H3"/></svg>
+        Log out</button>
+    </nav>
+  </div>
+</header>
+
+<main class="pane on" style="max-width:60rem;margin:0 auto">
+  <section class="card-panel" id="practitioners-panel">
+    <div class="ph botanic">
+      <h2 style="flex:1">Practitioners</h2>
+      <span class="count" id="p-count"></span>
+    </div>
+    <div class="pb tight">
+      <div style="padding:.6rem">
+        <select id="p-filter" aria-label="Filter by status">
+          <option value="">All statuses</option>
+          <option value="pending">Pending</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+          <option value="suspended">Suspended</option>
+        </select>
+      </div>
+      <div id="practitioners-list" class="scrollbox"></div>
+
+      <form id="practitioner-create-form" style="padding:.6rem;display:grid;gap:.4rem;margin-top:.4rem;border-top:1px solid var(--line)">
+        <p class="hint" style="margin:.4rem 0 0">Add a practitioner directly — they're
+          approved immediately, no review queue.</p>
+        <input id="np-name" placeholder="Name" aria-label="Name">
+        <input id="np-email" type="email" placeholder="Email" aria-label="Email">
+        <input id="np-password" type="password" placeholder="Password" aria-label="Password">
+        <textarea id="np-bio" rows="2" placeholder="Bio (optional)" aria-label="Bio"></textarea>
+        <div class="filter-row" style="grid-template-columns:1fr 1fr">
+          <input id="np-specialties" placeholder="Specialties, comma separated" aria-label="Specialties">
+          <input id="np-languages" placeholder="Languages, comma separated" aria-label="Languages">
+        </div>
+        <div class="filter-row" style="grid-template-columns:1fr 1fr">
+          <input id="np-years" type="number" min="0" placeholder="Years of experience" aria-label="Years of experience">
+          <input id="np-price" type="number" min="0" step="0.01" placeholder="Consultation price (USD)" aria-label="Consultation price">
+        </div>
+        <button id="np-create" class="btn sm" type="button">Add practitioner</button>
+      </form>
+    </div>
+  </section>
+
+  <section class="card-panel" id="admins-panel" hidden style="margin-top:1rem">
+    <div class="ph botanic">
+      <h2 style="flex:1">Admins</h2>
+    </div>
+    <div class="pb tight">
+      <p class="hint" style="padding:.6rem 0 0 .6rem">Superadmin only. At least one
+        active superadmin always exists — the last one can't be demoted or suspended.</p>
+      <div id="admins-list" class="scrollbox"></div>
+      <form id="admin-create-form" style="padding:.6rem;display:grid;gap:.4rem;margin-top:.4rem;border-top:1px solid var(--line)">
+        <input id="na-name" placeholder="Name" aria-label="Name">
+        <input id="na-email" type="email" placeholder="Email" aria-label="Email">
+        <input id="na-password" type="password" placeholder="Password" aria-label="Password">
+        <select id="na-role" aria-label="Role">
+          <option value="admin">admin</option>
+          <option value="superadmin">superadmin</option>
+        </select>
+        <button id="na-create" class="btn sm" type="button">Add admin</button>
+      </form>
+    </div>
+  </section>
+</main>
+
+<div id="toasts" class="toasts" aria-live="polite"></div>
+<script src="/static/shared.js"></script>
+<script>
+const STATUS_ACTIONS = {
+  pending: [['approve', 'Approve'], ['reject', 'Reject']],
+  approved: [['suspend', 'Suspend']],
+  rejected: [['approve', 'Approve']],
+  suspended: [['approve', 'Reactivate']],
+};
+
+function practitionerRow(p) {
+  const actions = (STATUS_ACTIONS[p.status] || [])
+    .map(([action, label]) => `<button class="btn ghost sm" data-action="${action}">${label}</button>`)
+    .join('');
+  const planToggle = p.status === 'approved'
+    ? `<button class="btn ghost sm" data-plan="${p.plan === 'pro' ? 'basic' : 'pro'}">
+         ${p.plan === 'pro' ? 'Set Basic' : 'Set Pro'}</button>`
+    : '';
+  return `<li data-id="${p.id}" class="plain" style="display:block">
+    <div style="display:flex;justify-content:space-between;gap:.5rem;align-items:baseline;flex-wrap:wrap">
+      <span class="nm">${esc(p.name)} <span class="muted xs">${esc(p.email)}</span></span>
+      <span class="chip">${esc(p.status)}</span> <span class="chip">${esc(p.plan)}</span>
+    </div>
+    <div style="display:flex;gap:.4rem;margin-top:.3rem;flex-wrap:wrap">${actions}${planToggle}</div>
+  </li>`;
+}
+
+async function loadPractitioners() {
+  const status = $('p-filter').value;
+  const list = await api('/admin/practitioners' + (status ? '?status=' + status : ''));
+  $('p-count').textContent = list.length || '';
+  $('practitioners-list').innerHTML = `<ul class="rows">${list.map(practitionerRow).join('')}</ul>`
+    || empty('No practitioners', 'None match this filter.');
+  $('practitioners-list').querySelectorAll('[data-action]').forEach((btn) => {
+    btn.onclick = async () => {
+      const id = btn.closest('li').dataset.id;
+      try {
+        await api(`/admin/practitioners/${id}/${btn.dataset.action}`, { method: 'POST' });
+        toast('Updated'); loadPractitioners();
+      } catch (e) { toast(e.message, 'bad'); }
+    };
+  });
+  $('practitioners-list').querySelectorAll('[data-plan]').forEach((btn) => {
+    btn.onclick = async () => {
+      const id = btn.closest('li').dataset.id;
+      try {
+        await api(`/admin/practitioners/${id}/plan`, json('PUT', { plan: btn.dataset.plan }));
+        toast('Plan updated'); loadPractitioners();
+      } catch (e) { toast(e.message, 'bad'); }
+    };
+  });
+}
+$('p-filter').onchange = loadPractitioners;
+
+$('np-create').onclick = async () => {
+  const name = $('np-name').value.trim();
+  const email = $('np-email').value.trim();
+  const password = $('np-password').value;
+  if (!name || !email || !password) { toast('Name, email and password are required', 'bad'); return; }
+  const splitList = (v) => v.split(',').map((s) => s.trim()).filter(Boolean);
+  const priceUsd = parseFloat($('np-price').value || '0');
+  try {
+    await api('/admin/practitioners', json('POST', {
+      name, email, password, bio: $('np-bio').value.trim(),
+      specialties: splitList($('np-specialties').value),
+      languages: splitList($('np-languages').value),
+      years_experience: parseInt($('np-years').value || '0', 10),
+      consultation_price_cents: Math.round(priceUsd * 100),
+    }));
+    ['np-name','np-email','np-password','np-bio','np-specialties','np-languages','np-years','np-price']
+      .forEach((id) => { $(id).value = ''; });
+    toast('Practitioner added');
+    loadPractitioners();
+  } catch (e) { toast(e.message, 'bad'); }
+};
+
+/* ── Admins (superadmin only) ───────────────────────────────────────────── */
+function adminRow(a) {
+  const you = a.you ? ' <span class="muted xs">(you)</span>' : '';
+  const chip = `<span class="chip">${esc(a.role)}</span>`
+    + (a.is_active ? '' : ' <span class="chip">suspended</span>');
+  return `<li data-id="${a.id}" class="plain" style="display:block">
+    <div style="display:flex;justify-content:space-between;gap:.5rem;align-items:baseline;flex-wrap:wrap">
+      <span class="nm">${esc(a.name)}${you} <span class="muted xs">${esc(a.email)}</span></span>
+      ${chip}
+    </div>
+    <div style="display:flex;gap:.4rem;margin-top:.3rem">
+      <button class="btn ghost sm" data-role="${a.role === 'superadmin' ? 'admin' : 'superadmin'}">
+        ${a.role === 'superadmin' ? 'Demote to admin' : 'Promote to superadmin'}</button>
+      <button class="btn ghost sm" data-toggle="${a.is_active ? '0' : '1'}">
+        ${a.is_active ? 'Suspend' : 'Reactivate'}</button>
+    </div>
+  </li>`;
+}
+
+async function loadAdmins(currentId) {
+  const list = await api('/superadmin/admins');
+  list.forEach((a) => { a.you = a.id === currentId; });
+  $('admins-list').innerHTML = `<ul class="rows">${list.map(adminRow).join('')}</ul>`;
+  $('admins-list').querySelectorAll('[data-role]').forEach((btn) => {
+    btn.onclick = async () => {
+      const id = btn.closest('li').dataset.id;
+      try {
+        await api(`/superadmin/admins/${id}/role`, json('PUT', { role: btn.dataset.role }));
+        toast('Role updated'); loadAdmins(currentId);
+      } catch (e) { toast(e.message, 'bad'); }
+    };
+  });
+  $('admins-list').querySelectorAll('[data-toggle]').forEach((btn) => {
+    btn.onclick = async () => {
+      const id = btn.closest('li').dataset.id;
+      const action = btn.dataset.toggle === '1' ? 'reactivate' : 'suspend';
+      try {
+        await api(`/superadmin/admins/${id}/${action}`, { method: 'POST' });
+        toast(action === 'suspend' ? 'Admin suspended' : 'Admin reactivated');
+        loadAdmins(currentId);
+      } catch (e) { toast(e.message, 'bad'); }
+    };
+  });
+}
+
+$('na-create').onclick = async () => {
+  const name = $('na-name').value.trim();
+  const email = $('na-email').value.trim();
+  const password = $('na-password').value;
+  const role = $('na-role').value;
+  if (!name || !email || !password) { toast('Name, email and password are required', 'bad'); return; }
+  try {
+    await api('/superadmin/admins', json('POST', { name, email, password, role }));
+    $('na-name').value = ''; $('na-email').value = ''; $('na-password').value = '';
+    toast('Admin created');
+    const session = await api('/auth/me');
+    loadAdmins(session.id);
+  } catch (e) { toast(e.message, 'bad'); }
+};
+
+$('logout-btn').onclick = logout;
+
+async function load() {
+  const session = await requireRole('admin');
+  if (!session) return;
+  loadPractitioners();
+  if (session.admin_role === 'superadmin') {
+    $('admins-panel').hidden = false;
+    loadAdmins(session.id);
+  }
+}
+load().catch((e) => toast(e.message, 'bad'));
+</script>
+</body>
+</html>

@@ -565,6 +565,35 @@ def admin_list_practitioners(
     return _public_list(core_store.list_practitioners(status=status or None))
 
 
+class AdminPractitionerCreate(BaseModel):
+    email: str
+    password: str
+    name: str
+    bio: str = ""
+    specialties: list[str] = []
+    languages: list[str] = []
+    years_experience: int = 0
+    consultation_price_cents: int = 0
+
+
+@app.post("/api/admin/practitioners")
+def admin_create_practitioner(body: AdminPractitionerCreate,
+                              _admin: dict = Depends(auth.require_admin)) -> dict:
+    # Unlike public signup (POST /api/practitioners), an admin creating a
+    # practitioner directly is already vouching for them — approved
+    # immediately rather than landing in the pending review queue.
+    if core_store.get_practitioner_by_email(body.email) is not None:
+        raise HTTPException(409, "A practitioner with that email already exists.")
+    practitioner = core_store.create_practitioner_pending(
+        email=body.email, password_hash=auth.hash_password(body.password),
+        name=body.name, bio=body.bio, specialties=body.specialties,
+        languages=body.languages, years_experience=body.years_experience,
+        consultation_price_cents=body.consultation_price_cents,
+    )
+    practitioner = core_store.approve_practitioner(practitioner["id"])
+    return _public(practitioner)
+
+
 @app.post("/api/admin/practitioners/{practitioner_id}/approve")
 def admin_approve(practitioner_id: str, _admin: dict = Depends(auth.require_admin)) -> dict:
     practitioner = core_store.approve_practitioner(practitioner_id)
@@ -941,6 +970,14 @@ def admin_page() -> FileResponse:
     # specs/v2/04-admin-portal.md) — its own routes are gated by
     # auth.require_admin, this just serves the shell.
     return _page("index.html")
+
+
+@app.get("/admin/users")
+def admin_users_page() -> FileResponse:
+    # Practitioner + admin account management, split out of /admin's
+    # knowledge-library dashboard into its own page — see
+    # specs/v2/04-admin-portal.md §0.
+    return _page("admin", "users.html")
 
 
 @app.get("/about")
