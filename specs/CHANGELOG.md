@@ -1,5 +1,18 @@
 # Specs changelog
 
+## v2.4 — 2026-08-13 (navigation polish)
+
+- **Breadcrumbs** on every page with real hierarchy — `/admin/users`, the
+  five `/practitioner/*` pages, the three `/client/*` pages. Skipped on
+  single-level pages (about, login, directory, …) where a one-item trail
+  is noise, not navigation.
+- **User menu.** The separate "Account" link and "Log out" button in every
+  topbar are now one icon+chevron button that opens a small dropdown
+  containing both, rather than two adjacent buttons — see
+  [03](v2/03-website.md#shared-navigation-conventions).
+
+No API changes — both are presentation-layer only.
+
 ## v2.3 — 2026-08-13 (dedicated user-management page)
 
 - **`POST /api/admin/practitioners`** — admin or superadmin creates a

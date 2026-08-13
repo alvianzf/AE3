@@ -20,6 +20,24 @@ Clean top-level routes, not the `static/public/...` directory layout —
 `/static/` is mounted only for the pages' own assets. `GET /` redirects to
 `/login`.
 
+## Shared navigation conventions
+
+Apply across every app (public, [practitioner](05-practitioner-portal.md),
+[client](06-client-portal.md), [admin](04-admin-portal.md)), not just this
+one — documented here since this is the doc that already describes page
+structure.
+
+- **Breadcrumbs** on any page one level or deeper into a section —
+  `/admin/users` ("Admin / Users"), every `/practitioner/*` and
+  `/client/*` page. Not shown on single-level pages (`/about`, `/login`,
+  `/directory`, …), where a one-item trail would be noise rather than a
+  navigation aid.
+- **User menu.** Every topbar that has an authenticated session shows one
+  icon+chevron button on the right, not separate "Account" and "Log out"
+  controls — clicking it opens a small dropdown with both. `/account`
+  itself is the one exception (a plain Log out button; an "Account" link
+  on the account page would point at itself).
+
 ## Practitioner directory
 
 Modeled partly on vibly.io's directory
