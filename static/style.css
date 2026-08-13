@@ -101,15 +101,34 @@ svg { flex: 0 0 auto; }
 .seg button.on { background: var(--panel); color: var(--ink); font-weight: 600;
                  box-shadow: 0 1px 3px rgba(34,31,27,.08); }
 
+.site-footer {
+  border-top: 1px solid var(--line); padding: .8rem 1.25rem 1.4rem;
+  display: flex; justify-content: center;
+}
 .status { display: flex; align-items: center; gap: .8rem; font-size: .78rem;
-          color: var(--muted); }
+          color: var(--muted); flex-wrap: wrap; justify-content: center; }
 .dot { display: inline-flex; align-items: center; gap: .3rem; }
 .dot i { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
 .dot.down i { background: var(--accent); }
 .dot.down { color: var(--accent); font-weight: 600; }
 
 .user-menu-wrap { position: relative; }
-.user-menu-btn svg:last-child { width: 11px; height: 11px; margin-left: -.15rem; }
+.user-menu-btn {
+  display: inline-flex; align-items: center; gap: .3rem; border: none;
+  background: none; padding: 0; margin: 0; cursor: pointer; color: var(--ink);
+}
+.user-icon-circle {
+  width: 2.1rem; height: 2.1rem; border-radius: 50%; flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--panel-2); border: 1px solid var(--line); color: var(--ink-2);
+  transition: background .15s var(--ease), border-color .15s var(--ease), color .15s var(--ease);
+}
+.user-icon-circle svg { width: 16px; height: 16px; }
+.user-menu-btn:hover .user-icon-circle,
+.user-menu-btn[aria-expanded="true"] .user-icon-circle {
+  background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink);
+}
+.user-menu-btn .chevron { width: 11px; height: 11px; color: var(--muted); flex: 0 0 auto; }
 .user-menu {
   position: absolute; right: 0; top: calc(100% + .4rem); min-width: 9.5rem;
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--r);
