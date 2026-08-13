@@ -840,16 +840,106 @@ async def me_upload_file(
 
 
 # --- Frontend -----------------------------------------------------------------
+#
+# Clean top-level routes rather than exposing the static/public|practitioner|
+# client directory layout in the URL — /static/ is left mounted only for the
+# actual assets (css/js) these pages load, not as a way to reach the pages
+# themselves.
 
 app.mount("/photos", StaticFiles(directory=cfg.photos_path), name="photos")
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 
+def _page(*parts: str) -> FileResponse:
+    return FileResponse(STATIC.joinpath(*parts))
+
+
 @app.get("/")
 def index() -> RedirectResponse:
-    # v1 served the combined admin/practitioner SPA here, unauthenticated —
-    # v2 has real accounts, so the entry point is the login page. Admins
-    # still land on static/index.html's knowledge-library tab afterward
-    # (see static/public/login.html's LANDING map); the old "Practitioner"
-    # tab there called retired routes and has been removed.
-    return RedirectResponse("/static/public/login.html")
+    return RedirectResponse("/login")
+
+
+@app.get("/admin")
+def admin_page() -> FileResponse:
+    # The knowledge-library SPA carried over from v1 (unchanged, per
+    # specs/v2/04-admin-portal.md) — its own routes are gated by
+    # auth.require_admin, this just serves the shell.
+    return _page("index.html")
+
+
+@app.get("/about")
+def about_page() -> FileResponse:
+    return _page("public", "about.html")
+
+
+@app.get("/directory")
+def directory_page() -> FileResponse:
+    return _page("public", "directory.html")
+
+
+@app.get("/coach/{practitioner_id}")
+def coach_page(practitioner_id: str) -> FileResponse:
+    # practitioner_id isn't used server-side — the page reads it from
+    # location.pathname and calls the API itself. The path param exists so
+    # this route matches /coach/<anything> rather than only /coach.
+    return _page("public", "coach.html")
+
+
+@app.get("/login")
+def login_page() -> FileResponse:
+    return _page("public", "login.html")
+
+
+@app.get("/account")
+def account_page() -> FileResponse:
+    return _page("public", "account.html")
+
+
+@app.get("/signup")
+def client_signup_page() -> FileResponse:
+    return _page("public", "client-signup.html")
+
+
+@app.get("/join")
+def practitioner_signup_page() -> FileResponse:
+    return _page("public", "practitioner-signup.html")
+
+
+@app.get("/practitioner/profile")
+def practitioner_profile_page() -> FileResponse:
+    return _page("practitioner", "profile.html")
+
+
+@app.get("/practitioner/contacts")
+def practitioner_contacts_page() -> FileResponse:
+    return _page("practitioner", "contacts.html")
+
+
+@app.get("/practitioner/clients")
+def practitioner_clients_page() -> FileResponse:
+    return _page("practitioner", "clients.html")
+
+
+@app.get("/practitioner/consult")
+def practitioner_consult_page() -> FileResponse:
+    return _page("practitioner", "consult.html")
+
+
+@app.get("/practitioner/upgrade")
+def practitioner_upgrade_page() -> FileResponse:
+    return _page("practitioner", "upgrade.html")
+
+
+@app.get("/client/questionnaire")
+def client_questionnaire_page() -> FileResponse:
+    return _page("client", "questionnaire.html")
+
+
+@app.get("/client/files")
+def client_files_page() -> FileResponse:
+    return _page("client", "files.html")
+
+
+@app.get("/client/wearables")
+def client_wearables_page() -> FileResponse:
+    return _page("client", "wearables.html")

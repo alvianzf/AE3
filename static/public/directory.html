@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Find a practitioner · Clinic</title>
-  <link rel="stylesheet" href="../style.css?v=11">
+  <link rel="stylesheet" href="/static/style.css?v=11">
   <style>
     /* Card grid — the only layout this directory needs beyond what
        style.css already defines for .src/.card-panel. */
@@ -34,11 +34,11 @@
     </span>
     <span class="brand"><b>Clinic</b><span class="sub">clinical knowledge assistant</span></span>
     <nav style="margin-left:auto;display:flex;gap:.4rem;flex-wrap:wrap">
-      <a class="btn ghost sm" href="about.html">About</a>
-      <a class="btn ghost sm" href="directory.html">Find a practitioner</a>
-      <a class="btn ghost sm" href="practitioner-signup.html">Join as a practitioner</a>
-      <a class="btn ghost sm" href="client-signup.html">Sign up</a>
-      <a class="btn sm" href="login.html">Log in</a>
+      <a class="btn ghost sm" href="/about">About</a>
+      <a class="btn ghost sm" href="/directory">Find a practitioner</a>
+      <a class="btn ghost sm" href="/join">Join as a practitioner</a>
+      <a class="btn ghost sm" href="/signup">Sign up</a>
+      <a class="btn sm" href="/login">Log in</a>
     </nav>
   </div>
 </header>
@@ -72,7 +72,7 @@
 </main>
 
 <div id="toasts" class="toasts" aria-live="polite"></div>
-<script src="../shared.js"></script>
+<script src="/static/shared.js"></script>
 <script>
 /* Server-side filters carry the query; the dropdown option lists themselves
    are derived client-side from an unfiltered fetch since there's no facets
@@ -112,7 +112,7 @@ function card(p) {
   const langs = (p.languages || []).length
     ? `<span class="muted xs">${esc(p.languages.join(', '))}</span>` : '';
   const price = centsToPrice(p.consultation_price_cents);
-  return `<a class="coach-card" href="coach.html?id=${encodeURIComponent(p.id)}">`
+  return `<a class="coach-card" href="/coach/${encodeURIComponent(p.id)}">`
     + `<div class="src">${photo}<h3 style="font-size:.95rem">${esc(p.name)}</h3>`
     + `<div class="sum" style="margin:.3rem 0">${esc(oneLine(p.bio))}</div>`
     + `<div class="topics" style="margin-bottom:.4rem">${tags}</div>`

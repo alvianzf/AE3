@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>My clients · Clinic</title>
-  <link rel="stylesheet" href="../style.css?v=11">
+  <link rel="stylesheet" href="/static/style.css?v=11">
 </head>
 <body>
 
@@ -22,11 +22,11 @@
     </span>
     <span class="brand"><b>Clinic</b><span class="sub">practitioner portal</span></span>
     <nav style="margin-left:auto;display:flex;gap:.4rem;flex-wrap:wrap">
-      <a class="btn ghost sm" href="profile.html">Profile</a>
-      <a class="btn ghost sm" href="contacts.html">Contacts</a>
-      <a class="btn ghost sm" href="clients.html">Clients</a>
-      <a class="btn ghost sm" href="consult.html">Consult</a>
-      <a class="btn ghost sm" href="upgrade.html">Upgrade</a>
+      <a class="btn ghost sm" href="/practitioner/profile">Profile</a>
+      <a class="btn ghost sm" href="/practitioner/contacts">Contacts</a>
+      <a class="btn ghost sm" href="/practitioner/clients">Clients</a>
+      <a class="btn ghost sm" href="/practitioner/consult">Consult</a>
+      <a class="btn ghost sm" href="/practitioner/upgrade">Upgrade</a>
       <button class="btn ghost sm" id="logout-btn">Log out</button>
     </nav>
   </div>
@@ -37,7 +37,7 @@
     <div class="pb"><div class="empty">
       <b>Clients are a Pro feature</b>
       <p>Adding and managing clients needs the Pro plan.</p>
-      <a class="btn" href="upgrade.html">Upgrade to Pro</a>
+      <a class="btn" href="/practitioner/upgrade">Upgrade to Pro</a>
     </div></div>
   </section>
 
@@ -62,7 +62,7 @@
 </main>
 
 <div id="toasts" class="toasts" aria-live="polite"></div>
-<script src="../shared.js"></script>
+<script src="/static/shared.js"></script>
 <script>
 $('logout-btn').onclick = logout;
 

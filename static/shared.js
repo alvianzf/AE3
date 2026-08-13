@@ -58,10 +58,10 @@ async function currentSession() {
 }
 async function requireRole(role) {
   const s = await currentSession();
-  if (!s || s.role !== role) { location.href = '/static/public/login.html'; return null; }
+  if (!s || s.role !== role) { location.href = '/login'; return null; }
   return s;
 }
 async function logout() {
   await api('/auth/logout', { method: 'POST' }).catch(() => {});
-  location.href = '/static/public/login.html';
+  location.href = '/login';
 }

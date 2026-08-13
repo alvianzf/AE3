@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sign up · Clinic</title>
-  <link rel="stylesheet" href="../style.css?v=11">
+  <link rel="stylesheet" href="/static/style.css?v=11">
 </head>
 <body>
 
@@ -22,11 +22,11 @@
     </span>
     <span class="brand"><b>Clinic</b><span class="sub">clinical knowledge assistant</span></span>
     <nav style="margin-left:auto;display:flex;gap:.4rem;flex-wrap:wrap">
-      <a class="btn ghost sm" href="about.html">About</a>
-      <a class="btn ghost sm" href="directory.html">Find a practitioner</a>
-      <a class="btn ghost sm" href="practitioner-signup.html">Join as a practitioner</a>
-      <a class="btn ghost sm" href="client-signup.html">Sign up</a>
-      <a class="btn sm" href="login.html">Log in</a>
+      <a class="btn ghost sm" href="/about">About</a>
+      <a class="btn ghost sm" href="/directory">Find a practitioner</a>
+      <a class="btn ghost sm" href="/join">Join as a practitioner</a>
+      <a class="btn ghost sm" href="/signup">Sign up</a>
+      <a class="btn sm" href="/login">Log in</a>
     </nav>
   </div>
 </header>
@@ -51,13 +51,13 @@
       <button id="s-submit" class="btn block" style="margin-top:.9rem">Sign up</button>
       <div id="s-status" class="muted xs" style="margin-top:.5rem"></div>
       <p class="hint" style="margin-top:.8rem">Already have an account?
-        <a href="login.html">Log in</a>.</p>
+        <a href="/login">Log in</a>.</p>
     </div>
   </section>
 </main>
 
 <div id="toasts" class="toasts" aria-live="polite"></div>
-<script src="../shared.js"></script>
+<script src="/static/shared.js"></script>
 <script>
 // A "become a client" link from coach.html can carry ?practitioner_id=... so
 // signup attaches straight to that practitioner instead of the client
@@ -84,7 +84,7 @@ $('s-submit').onclick = async () => {
     await api('/clients', json('POST', body));
     $('s-status').textContent = '';
     toast('Account created — log in to continue');
-    setTimeout(() => { location.href = 'login.html'; }, 900);
+    setTimeout(() => { location.href = '/login'; }, 900);
   } catch (e) {
     $('s-status').textContent = '';
     toast(e.message, 'bad');

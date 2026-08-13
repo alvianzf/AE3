@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Log in · Clinic</title>
-  <link rel="stylesheet" href="../style.css?v=11">
+  <link rel="stylesheet" href="/static/style.css?v=11">
 </head>
 <body>
 
@@ -22,9 +22,9 @@
     </span>
     <span class="brand"><b>Clinic</b><span class="sub">clinical knowledge assistant</span></span>
     <nav style="margin-left:auto;display:flex;gap:.4rem;flex-wrap:wrap">
-      <a class="btn ghost sm" href="about.html">About</a>
-      <a class="btn ghost sm" href="directory.html">Find a practitioner</a>
-      <a class="btn ghost sm" href="client-signup.html">Sign up</a>
+      <a class="btn ghost sm" href="/about">About</a>
+      <a class="btn ghost sm" href="/directory">Find a practitioner</a>
+      <a class="btn ghost sm" href="/signup">Sign up</a>
     </nav>
   </div>
 </header>
@@ -45,23 +45,23 @@
       <button id="l-submit" class="btn block" style="margin-top:.9rem">Log in</button>
       <div id="l-status" class="muted xs" style="margin-top:.5rem"></div>
       <p class="hint" style="margin-top:.8rem">New here?
-        <a href="client-signup.html">Sign up as a client</a> or
-        <a href="practitioner-signup.html">join as a practitioner</a>.</p>
+        <a href="/signup">Sign up as a client</a> or
+        <a href="/join">join as a practitioner</a>.</p>
     </div>
   </section>
 </main>
 
 <div id="toasts" class="toasts" aria-live="polite"></div>
-<script src="../shared.js"></script>
+<script src="/static/shared.js"></script>
 <script>
 // Role is inferred server-side (auth.py tries admin, then practitioner, then
 // client by email) — the form never asks which one. Where each role lands
 // once logged in isn't specified in the contract, so this is a best-effort
 // landing page per role; worth the integrator confirming against auth.py's
 // actual session shape once it's built.
-const LANDING = { admin: '/static/index.html',
-                   practitioner: '/static/practitioner/profile.html',
-                   client: '/static/client/questionnaire.html' };
+const LANDING = { admin: '/admin',
+                   practitioner: '/practitioner/profile',
+                   client: '/client/questionnaire' };
 
 $('l-submit').onclick = async () => {
   const email = $('l-email').value.trim();
@@ -73,7 +73,7 @@ $('l-submit').onclick = async () => {
     const session = await api('/auth/login', json('POST', { email, password }));
     $('l-status').textContent = '';
     const role = session?.role;
-    location.href = LANDING[role] || '/static/index.html';
+    location.href = LANDING[role] || '/admin';
   } catch (e) {
     $('l-status').textContent = '';
     toast(e.status === 401 ? 'Incorrect email or password' : e.message, 'bad');

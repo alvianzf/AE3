@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Account · Clinic</title>
-  <link rel="stylesheet" href="../style.css?v=11">
+  <link rel="stylesheet" href="/static/style.css?v=11">
 </head>
 <body>
 
@@ -50,11 +50,11 @@
 </main>
 
 <div id="toasts" class="toasts" aria-live="polite"></div>
-<script src="../shared.js"></script>
+<script src="/static/shared.js"></script>
 <script>
 async function load() {
   const session = await currentSession();
-  if (!session) { location.href = 'login.html'; return; }
+  if (!session) { location.href = '/login'; return; }
   $('acc-role').textContent = `Signed in as ${session.role}.`;
 }
 load();
