@@ -19,7 +19,7 @@ from pathlib import Path
 import neo4j.exceptions
 from cryptography.fernet import Fernet
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -846,5 +846,10 @@ app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 
 @app.get("/")
-def index() -> FileResponse:
-    return FileResponse(STATIC / "index.html")
+def index() -> RedirectResponse:
+    # v1 served the combined admin/practitioner SPA here, unauthenticated —
+    # v2 has real accounts, so the entry point is the login page. Admins
+    # still land on static/index.html's knowledge-library tab afterward
+    # (see static/public/login.html's LANDING map); the old "Practitioner"
+    # tab there called retired routes and has been removed.
+    return RedirectResponse("/static/public/login.html")

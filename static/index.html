@@ -25,167 +25,19 @@
     </span>
     <span class="brand">
       <b>Clinic</b>
-      <span class="sub">clinical knowledge assistant</span>
-      <span class="tag">Phase 1 PoC</span>
+      <span class="sub">knowledge admin</span>
     </span>
 
-    <nav class="seg" role="tablist" aria-label="Portal">
-      <button class="on" data-tab="practitioner" role="tab" aria-selected="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
-             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M6 4v5a4 4 0 0 0 8 0V4"/>
-          <path d="M10 13v2a5 5 0 0 0 5 5 4 4 0 0 0 4-4v-2"/>
-          <circle cx="19" cy="12" r="1.6"/></svg>
-        <span>Practitioner</span>
-      </button>
-      <button data-tab="admin" role="tab" aria-selected="false">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
-             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M4 5a2 2 0 0 1 2-2h13v18H6a2 2 0 0 1-2-2zM8 3v18"/>
-          <path d="M12 8h4M12 12h4"/></svg>
-        <span>Knowledge admin</span>
-      </button>
+    <nav style="margin-left:auto;display:flex;gap:.4rem;flex-wrap:wrap">
+      <a class="btn ghost sm" href="/static/public/account.html">Account</a>
     </nav>
 
     <div id="status" class="status"><span class="muted xs">checking…</span></div>
   </div>
 </header>
 
-<!-- ══ Practitioner ═══════════════════════════════════════════════════════ -->
-<main id="tab-practitioner" class="pane on" role="tabpanel">
-  <div class="layout practitioner">
-
-    <!-- 1 · choose a patient -->
-    <aside class="card-panel">
-      <div class="ph botanic">
-        <span class="step">1</span>
-        <h2>Patients</h2>
-        <span class="count" id="p-count"></span>
-      </div>
-      <div class="pb tight">
-        <input id="p-search" class="search" placeholder="Search by name…"
-               aria-label="Search patients by name">
-        <select id="p-country" aria-label="Filter by country" style="margin-top:.4rem">
-          <option value="">All countries</option>
-          <option value="SK">Slovakia</option>
-          <option value="PL">Poland</option>
-        </select>
-        <div class="vine" aria-hidden="true"><span class="leaf soft"></span></div>
-        <ul id="patient-list" class="rows"></ul>
-        <details class="disc" style="margin-top:.6rem">
-          <summary>Add a patient</summary>
-          <div>
-            <input id="p-name" placeholder="Full name" aria-label="Patient name">
-            <select id="p-newcountry" aria-label="Country" style="margin-top:.4rem">
-              <option value="SK">Slovakia</option><option value="PL">Poland</option>
-            </select>
-            <input id="p-dob" placeholder="Date of birth (YYYY-MM-DD)"
-                   aria-label="Date of birth" style="margin-top:.4rem">
-            <button id="p-create" class="btn block" style="margin-top:.5rem">
-              Create patient</button>
-          </div>
-        </details>
-      </div>
-    </aside>
-
-    <div class="workspace">
-      <!-- 2 · read the file -->
-      <div>
-        <section class="card-panel leafmark" id="file-panel">
-          <svg class="wm" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-               stroke-width="1" aria-hidden="true">
-            <path d="M12 22V8"/><path d="M12 15c0-4 3-7 8-8-.4 4.4-3.2 7.4-8 8z"/>
-            <path d="M12 11c0-4-3-7-8-8 .4 4.4 3.2 7.4 8 8z"/></svg>
-          <div class="ph botanic">
-            <span class="step">2</span>
-            <h2>Patient file</h2>
-          </div>
-          <div id="patient-file" class="pb"></div>
-        </section>
-
-        <section class="card-panel" id="sessions-panel" hidden>
-          <div class="ph">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
-                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l.9-5.4A8 8 0 1 1 21 12z"/>
-              <path d="M9 11h6M9 14h4"/></svg>
-            <h2>Past consultations</h2>
-            <span class="count" id="s-count"></span>
-          </div>
-          <div class="pb tight"><ul id="session-list" class="rows"></ul></div>
-        </section>
-      </div>
-
-      <!-- 3 · ask -->
-      <section class="card-panel leafmark" id="ask-panel">
-        <svg class="wm" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-             stroke-width="1" aria-hidden="true">
-          <path d="M12 22V8"/><path d="M12 15c0-4 3-7 8-8-.4 4.4-3.2 7.4-8 8z"/>
-          <path d="M12 11c0-4-3-7-8-8 .4 4.4 3.2 7.4 8 8z"/></svg>
-
-        <div class="toolbar">
-          <span class="step">3</span>
-          <span class="field" style="font-weight:600">Ask Clinic</span>
-          <span class="field">
-            grade ≥ <span class="gradepill" id="grade-val">7</span>
-            <input type="range" id="min-grade" min="1" max="10" value="7"
-                   aria-label="Minimum source grade">
-            <button class="help" type="button" data-tip="The reliability grade the
-              clinic gave each source, 1–10. At 7 Clinic may only use protocols and
-              peer-reviewed material; drop it to 1 to let weaker sources such as
-              podcasts in. Anything below the line is never offered to it.">?</button>
-          </span>
-          <label class="switch field">
-            <input type="checkbox" id="run-check" checked>
-            verify answer
-            <button class="help" type="button" data-tip="A second, independent model
-              re-reads the draft against the passages it cites and flags any claim
-              they do not support — before you see it.">?</button>
-          </label>
-          <span style="margin-left:auto;display:flex;gap:.4rem;align-items:center">
-            <span id="session-tag" class="chip" hidden></span>
-            <button id="new-session" class="iconbtn" hidden
-                    data-tip="Start a new consultation — the current thread stays saved"
-                    aria-label="Start a new consultation">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                   stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
-                <path d="M12 5v14M5 12h14"/></svg>
-            </button>
-          </span>
-        </div>
-
-        <div id="thread" class="thread"></div>
-
-        <div class="composer" id="composer" hidden>
-          <div class="row">
-            <textarea id="question" rows="2"
-              placeholder="Her vitamin D is low — what could it be tied to?"
-              aria-label="Question for Clinic"></textarea>
-            <button id="ask" class="btn" disabled>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                   stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
-                   aria-hidden="true"><path d="M4 12l16-8-6 8 6 8z"/></svg>
-              <span id="ask-label">Ask</span>
-            </button>
-          </div>
-          <div class="cmeta">
-            <span class="muted xs">Enter to send · Shift + Enter for a new line</span>
-            <button id="save-summary" class="btn ghost sm" hidden
-                    data-tip="Summarise this consultation into the patient's record">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                   stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"
-                   aria-hidden="true"><path d="M5 4h11l3 3v13H5zM8 4v5h7M8 14h8"/></svg>
-              <span>Save to record</span>
-            </button>
-          </div>
-        </div>
-      </section>
-    </div>
-  </div>
-</main>
-
 <!-- ══ Knowledge admin ════════════════════════════════════════════════════ -->
-<main id="tab-admin" class="pane" role="tabpanel">
+<main id="tab-admin" class="pane on" role="tabpanel">
   <div class="layout admin">
 
     <!-- 1 · teach -->
@@ -332,8 +184,8 @@
         </div>
         <div class="pb tight">
           <p class="hint" style="padding:0 .4rem">Every source taught, regraded or
-            removed, and every question asked. Each row shows which store it lives
-            in.</p>
+            removed. Library events only — a Pro practitioner's own consultations
+            are logged in their vault, not here.</p>
           <div class="scrollbox"><ul id="audit" class="log"></ul></div>
         </div>
       </section>
@@ -341,7 +193,7 @@
   </div>
 </main>
 
-<!-- Shared source reader, outside both panes so citations and cards can open it. -->
+<!-- Source reader, opened from a library card's citation or "View" control. -->
 <div id="reader-wrap" class="reader-wrap" hidden><div id="reader" class="reader"></div></div>
 <div id="toasts" class="toasts" aria-live="polite"></div>
 

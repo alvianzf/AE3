@@ -14,9 +14,6 @@ class Config:
     neo4j_password = os.getenv("NEO4J_PASSWORD", "graphrag-poc")
     neo4j_database = os.getenv("NEO4J_DATABASE", "neo4j")
 
-    # SQLite — the patient vault (v1) / a single practitioner's vault (v2)
-    sqlite_path = os.getenv("SQLITE_PATH", "data/patients.db")
-
     # Filesystem — uploaded files, kept byte-for-byte alongside the chunks
     originals_path = os.getenv("ORIGINALS_PATH", "data/originals")
 
@@ -48,11 +45,7 @@ class Config:
     chunk_size = int(os.getenv("CHUNK_SIZE", "1200"))
     chunk_overlap = int(os.getenv("CHUNK_OVERLAP", "150"))
 
-    # Access gate — v1's shared door code. Retained only for reference while
-    # app/gate.py is being phased out; app/auth.py's real accounts replace it.
-    access_passphrase = os.getenv("ACCESS_PASSPHRASE", "DevshorePartners2026")
-    # Signs the session cookie (v1's gate cookie, and v2's signed session
-    # claim). Set a random value per deployment.
+    # Signs the session cookie (app/auth.py). Set a random value per deployment.
     session_secret = os.getenv("SESSION_SECRET", "dev-only-not-secret")
     # Off for local http development, on behind TLS.
     cookie_secure = os.getenv("COOKIE_SECURE", "false").lower() == "true"
