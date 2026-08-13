@@ -1,0 +1,22 @@
+# Web
+fastapi==0.139.2
+uvicorn==0.51.0
+python-multipart==0.0.32
+python-dotenv==1.2.2
+
+# The AI team — Anthropic only
+anthropic==0.120.0
+
+# Knowledge library
+neo4j==6.2.0
+
+# Source ingestion
+pypdf==6.14.2
+
+# v2 — accounts, sessions, and per-practitioner secrets
+bcrypt==5.0.0
+itsdangerous==2.2.0
+cryptography==50.0.0
+
+# v2 — Pro plan billing
+stripe==15.5.0
