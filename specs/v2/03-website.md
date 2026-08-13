@@ -33,10 +33,23 @@ structure.
   `/directory`, …), where a one-item trail would be noise rather than a
   navigation aid.
 - **User menu.** Every topbar that has an authenticated session shows one
-  icon+chevron button on the right, not separate "Account" and "Log out"
-  controls — clicking it opens a small dropdown with both. `/account`
-  itself is the one exception (a plain Log out button; an "Account" link
-  on the account page would point at itself).
+  trigger on the right, not separate "Account" and "Log out" controls —
+  clicking it opens a small dropdown with both. The trigger is a circular
+  avatar-style icon (a person glyph in a bordered circle) plus a small
+  separate chevron, not styled as a rectangular button — it's meant to
+  read as "your account," not as one more action among the nav's other
+  buttons. `/account` itself is the one exception (a plain Log out
+  button; an "Account" link on the account page would point at itself).
+- **Logo → your own section**, not a generic home. Clicking the brand
+  logo goes to `/admin` from any admin page, `/practitioner/profile` from
+  any practitioner page, `/client/questionnaire` from any client page, and
+  `/directory` from any public page — never `/`, which only redirects to
+  `/login` and would otherwise bounce a signed-in user through an
+  unnecessary hop.
+- **Health/status readout** (admin's "Knowledge library / Clinic
+  reachable, N sources · M passages") lives in a footer at the bottom of
+  the page, not the topbar — it's ambient system status, not something
+  that needs to compete with navigation for space at the top.
 
 ## Practitioner directory
 

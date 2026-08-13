@@ -1,5 +1,21 @@
 # Specs changelog
 
+## v2.5 — 2026-08-13 (navigation polish, round two)
+
+- **User menu trigger redesigned**: a circular avatar-style icon + separate
+  chevron, not a rectangular button — v2.4 shipped it styled as one more
+  `.btn` alongside the nav's other buttons, which read as just another
+  action rather than "this is your account."
+- **Logo links to your own section**, not `/` — `/admin`, `/practitioner/profile`,
+  `/client/questionnaire`, or `/directory` depending which app you're in.
+  `/` still exists and still redirects to `/login`, but nothing links to
+  it anymore except direct navigation.
+- **Status readout moved to a footer** on the admin dashboard, out of the
+  topbar.
+
+See [03](v2/03-website.md#shared-navigation-conventions) for the updated
+conventions. No API changes — presentation-layer only, same as v2.4.
+
 ## v2.4 — 2026-08-13 (navigation polish)
 
 - **Breadcrumbs** on every page with real hierarchy — `/admin/users`, the
