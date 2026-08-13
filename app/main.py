@@ -480,6 +480,68 @@ def client_signup(body: ClientSignup) -> dict:
     return {"id": client["id"], "practitioner_id": body.practitioner_id}
 
 
+# --- Superadmin: manage other admin accounts ------------------------------------
+
+class AdminCreate(BaseModel):
+    email: str
+    password: str
+    name: str
+    role: str = "admin"
+
+
+@app.get("/api/superadmin/admins")
+def superadmin_list_admins(_: dict = Depends(auth.require_superadmin)) -> list[dict]:
+    return core_store.list_admins()
+
+
+@app.post("/api/superadmin/admins")
+def superadmin_create_admin(body: AdminCreate,
+                            _: dict = Depends(auth.require_superadmin)) -> dict:
+    if body.role not in core_store.ADMIN_ROLES:
+        raise HTTPException(400, f"unknown admin role: {body.role}")
+    if core_store.get_admin_by_email(body.email) is not None:
+        raise HTTPException(409, "An admin with that email already exists.")
+    return core_store.create_admin(
+        body.email, auth.hash_password(body.password), body.name, body.role)
+
+
+class AdminRoleUpdate(BaseModel):
+    role: str
+
+
+@app.put("/api/superadmin/admins/{admin_id}/role")
+def superadmin_set_admin_role(admin_id: str, body: AdminRoleUpdate,
+                              _: dict = Depends(auth.require_superadmin)) -> dict:
+    try:
+        admin = core_store.set_admin_role(admin_id, body.role)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    if admin is None:
+        raise HTTPException(404, "no such admin")
+    return admin
+
+
+@app.post("/api/superadmin/admins/{admin_id}/suspend")
+def superadmin_suspend_admin(admin_id: str,
+                             _: dict = Depends(auth.require_superadmin)) -> dict:
+    try:
+        admin = core_store.set_admin_active(admin_id, False)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    if admin is None:
+        raise HTTPException(404, "no such admin")
+    return admin
+
+
+@app.post("/api/superadmin/admins/{admin_id}/reactivate")
+def superadmin_reactivate_admin(admin_id: str,
+                                _: dict = Depends(auth.require_superadmin)) -> dict:
+    admin = core_store.set_admin_active(admin_id, True)
+    if admin is None:
+        raise HTTPException(404, "no such admin")
+    return admin
+
+
 # --- Admin: practitioner management ---------------------------------------------
 
 @app.get("/api/admin/practitioners")

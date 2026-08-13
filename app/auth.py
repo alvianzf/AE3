@@ -47,6 +47,19 @@ def require_admin(request: Request) -> dict:
     session = current_session(request)
     if session is None or session["role"] != "admin":
         raise HTTPException(status_code=401, detail="Admin login required.")
+    # Unlike require_practitioner/require_client, this hits the DB: an admin
+    # suspension needs to take effect immediately, not after a stale
+    # session's 12h cookie expires — same reasoning as
+    # require_pro_practitioner checking live plan/stripe_status.
+    admin = core_store.get_admin(session["id"])
+    if admin is None or not admin["is_active"]:
+        raise HTTPException(status_code=401, detail="Admin login required.")
+    return session
+
+
+def require_superadmin(session: dict = Depends(require_admin)) -> dict:
+    if session.get("admin_role") != "superadmin":
+        raise HTTPException(status_code=403, detail="Superadmin access required.")
     return session
 
 
@@ -77,10 +90,13 @@ def ensure_bootstrap_admin() -> None:
         return
     if core_store.get_admin_by_email(cfg.admin_bootstrap_email) is not None:
         return
+    # The bootstrap account is, by construction, the only way to get a first
+    # admin into a fresh deployment — it has to be a superadmin, or nothing
+    # could ever create a second one.
     core_store.create_admin(
         cfg.admin_bootstrap_email,
         hash_password(cfg.admin_bootstrap_password),
-        "Admin",
+        "Admin", role="superadmin",
     )
 
 
@@ -100,9 +116,12 @@ def register(app: FastAPI) -> None:
         password = str(body.get("password", ""))
 
         admin = core_store.get_admin_by_email(email)
-        if admin is not None and verify_password(password, admin["password_hash"]):
-            response = JSONResponse({"role": "admin", "id": admin["id"]})
-            _set_session_cookie(response, "admin", admin["id"])
+        if admin is not None and admin["is_active"] and \
+                verify_password(password, admin["password_hash"]):
+            response = JSONResponse(
+                {"role": "admin", "id": admin["id"], "admin_role": admin["role"]})
+            _set_session_cookie(response, "admin", admin["id"],
+                                admin_role=admin["role"])
             return response
 
         practitioner = core_store.get_practitioner_by_email(email)

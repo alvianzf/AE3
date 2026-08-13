@@ -33,6 +33,7 @@
 
     <nav style="margin-left:auto;display:flex;gap:.4rem;flex-wrap:wrap">
       <a class="btn ghost sm" href="/account">Account</a>
+      <button class="btn ghost sm" id="logout-btn">Log out</button>
     </nav>
 
     <div id="status" class="status"><span class="muted xs">checking…</span></div>
@@ -175,6 +176,32 @@
           <table id="graph-stats" class="tbl"></table>
           <div id="graph-actions" style="margin-top:.7rem"></div>
           <div id="graph-note" class="muted xs" style="margin-top:.5rem"></div>
+        </div>
+      </section>
+
+      <section class="card-panel" id="admins-panel" hidden>
+        <div class="ph">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/>
+            <path d="M4 21c0-4 3.5-7 8-7s8 3 8 7"/></svg>
+          <h2>Admins</h2>
+          <button class="help" type="button" data-tip="Superadmin only. Create other
+            admin accounts, or suspend/reactivate one. At least one active superadmin
+            always exists — the last one can't be demoted or suspended.">?</button>
+        </div>
+        <div class="pb tight">
+          <div id="admins-list" class="scrollbox"></div>
+          <form id="admin-create-form" style="padding:.6rem;display:grid;gap:.4rem">
+            <input id="na-name" placeholder="Name" aria-label="Name">
+            <input id="na-email" type="email" placeholder="Email" aria-label="Email">
+            <input id="na-password" type="password" placeholder="Password" aria-label="Password">
+            <select id="na-role" aria-label="Role">
+              <option value="admin">admin</option>
+              <option value="superadmin">superadmin</option>
+            </select>
+            <button id="na-create" class="btn sm" type="button">Add admin</button>
+          </form>
         </div>
       </section>
 

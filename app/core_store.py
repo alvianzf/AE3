@@ -51,6 +51,8 @@ def ensure_schema() -> None:
                 email TEXT NOT NULL UNIQUE,
                 password_hash TEXT NOT NULL,
                 name TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'admin',
+                is_active INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL
             );
 
@@ -140,6 +142,28 @@ def ensure_schema() -> None:
             CREATE INDEX IF NOT EXISTS core_audit_by_ts ON audit_events(ts);
             """
         )
+        # Migration for deployments whose admins table predates the
+        # superadmin/admin split — CREATE TABLE IF NOT EXISTS above doesn't
+        # add columns to an existing table. Schemas only ever grow, never
+        # rewritten in place, same rule v1 followed.
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(admins)")}
+        if "role" not in cols:
+            conn.execute("ALTER TABLE admins ADD COLUMN role TEXT NOT NULL DEFAULT 'admin'")
+        if "is_active" not in cols:
+            conn.execute("ALTER TABLE admins ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1")
+        # Every deployment needs at least one superadmin able to manage other
+        # admins. If none exists (a fresh install before the first admin is
+        # created, or an existing deployment migrating through this schema
+        # change for the first time), promote the earliest-created admin
+        # automatically rather than leaving every admin locked out.
+        has_superadmin = conn.execute(
+            "SELECT 1 FROM admins WHERE role = 'superadmin' LIMIT 1").fetchone()
+        if not has_superadmin:
+            oldest = conn.execute(
+                "SELECT id FROM admins ORDER BY created_at LIMIT 1").fetchone()
+            if oldest:
+                conn.execute(
+                    "UPDATE admins SET role = 'superadmin' WHERE id = ?", (oldest[0],))
 
 
 def ping() -> bool:
@@ -159,16 +183,26 @@ def log(actor: str, action: str, detail: str) -> None:
 
 # --- Admins --------------------------------------------------------------
 
-def create_admin(email: str, password_hash: str, name: str) -> dict:
-    admin = {"id": str(uuid.uuid4()), "email": email,
-             "password_hash": password_hash, "name": name, "created_at": _now()}
+ADMIN_ROLES = ("admin", "superadmin")
+
+
+def _decode_admin(row: sqlite3.Row) -> dict:
+    d = dict(row)
+    d["is_active"] = bool(d["is_active"])
+    return d
+
+
+def create_admin(email: str, password_hash: str, name: str, role: str = "admin") -> dict:
+    if role not in ADMIN_ROLES:
+        raise ValueError(f"unknown admin role: {role}")
+    admin_id = str(uuid.uuid4())
     with _connect() as conn:
         conn.execute(
-            "INSERT INTO admins (id, email, password_hash, name, created_at) "
-            "VALUES (:id, :email, :password_hash, :name, :created_at)",
-            admin,
+            "INSERT INTO admins (id, email, password_hash, name, role, "
+            "is_active, created_at) VALUES (?, ?, ?, ?, ?, 1, ?)",
+            (admin_id, email, password_hash, name, role, _now()),
         )
-    return admin
+    return get_admin(admin_id)
 
 
 def get_admin_by_email(email: str) -> dict | None:
@@ -176,7 +210,7 @@ def get_admin_by_email(email: str) -> dict | None:
         row = conn.execute(
             "SELECT * FROM admins WHERE email = ?", (email,)
         ).fetchone()
-    return dict(row) if row else None
+    return _decode_admin(row) if row else None
 
 
 def get_admin(admin_id: str) -> dict | None:
@@ -184,7 +218,57 @@ def get_admin(admin_id: str) -> dict | None:
         row = conn.execute(
             "SELECT * FROM admins WHERE id = ?", (admin_id,)
         ).fetchone()
-    return dict(row) if row else None
+    return _decode_admin(row) if row else None
+
+
+def list_admins() -> list[dict]:
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM admins ORDER BY created_at DESC"
+        ).fetchall()
+    return [_decode_admin(r) for r in rows]
+
+
+def _active_superadmin_count(conn: sqlite3.Connection, excluding: str) -> int:
+    return conn.execute(
+        "SELECT count(*) FROM admins WHERE role = 'superadmin' AND "
+        "is_active = 1 AND id != ?", (excluding,),
+    ).fetchone()[0]
+
+
+def set_admin_role(admin_id: str, role: str) -> dict | None:
+    if role not in ADMIN_ROLES:
+        raise ValueError(f"unknown admin role: {role}")
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT role FROM admins WHERE id = ?", (admin_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        if row["role"] == "superadmin" and role != "superadmin" and \
+                _active_superadmin_count(conn, admin_id) == 0:
+            raise ValueError("cannot demote the last superadmin")
+        conn.execute("UPDATE admins SET role = ? WHERE id = ?", (role, admin_id))
+    log("superadmin", "admin role changed", f"{admin_id} -> {role}")
+    return get_admin(admin_id)
+
+
+def set_admin_active(admin_id: str, is_active: bool) -> dict | None:
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT role, is_active FROM admins WHERE id = ?", (admin_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        if row["role"] == "superadmin" and row["is_active"] and not is_active and \
+                _active_superadmin_count(conn, admin_id) == 0:
+            raise ValueError("cannot suspend the last active superadmin")
+        conn.execute(
+            "UPDATE admins SET is_active = ? WHERE id = ?",
+            (1 if is_active else 0, admin_id),
+        )
+    log("superadmin", "admin " + ("reactivated" if is_active else "suspended"), admin_id)
+    return get_admin(admin_id)
 
 
 def set_admin_password(admin_id: str, password_hash: str) -> None:

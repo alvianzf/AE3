@@ -459,7 +459,82 @@ async function loadGraph() {
 const loadAdmin = () => Promise.all([loadFacets(), loadLibrary(), loadCoverage(),
                                      loadAudit(), loadGraph()]);
 
+/* ── Admins (superadmin only) ───────────────────────────────────────────── */
+function adminRow(a) {
+  const you = a.you ? ' <span class="muted xs">(you)</span>' : '';
+  const chip = `<span class="chip">${esc(a.role)}</span>`
+    + (a.is_active ? '' : ' <span class="chip">suspended</span>');
+  return `<li data-id="${a.id}" class="plain" style="display:block">
+    <div style="display:flex;justify-content:space-between;gap:.5rem;align-items:baseline;flex-wrap:wrap">
+      <span class="nm">${esc(a.name)}${you} <span class="muted xs">${esc(a.email)}</span></span>
+      ${chip}
+    </div>
+    <div style="display:flex;gap:.4rem;margin-top:.3rem">
+      <button class="btn ghost sm" data-role="${a.role === 'superadmin' ? 'admin' : 'superadmin'}">
+        ${a.role === 'superadmin' ? 'Demote to admin' : 'Promote to superadmin'}</button>
+      <button class="btn ghost sm" data-toggle="${a.is_active ? '0' : '1'}">
+        ${a.is_active ? 'Suspend' : 'Reactivate'}</button>
+    </div>
+  </li>`;
+}
+
+async function loadAdmins(currentId) {
+  const list = await api('/superadmin/admins');
+  list.forEach((a) => { a.you = a.id === currentId; });
+  $('admins-list').innerHTML = `<ul class="rows">${list.map(adminRow).join('')}</ul>`;
+  $('admins-list').querySelectorAll('[data-role]').forEach((btn) => {
+    btn.onclick = async () => {
+      const id = btn.closest('li').dataset.id;
+      try {
+        await api(`/superadmin/admins/${id}/role`, json('PUT', { role: btn.dataset.role }));
+        toast('Role updated'); loadAdmins(currentId);
+      } catch (e) { toast(e.message, 'bad'); }
+    };
+  });
+  $('admins-list').querySelectorAll('[data-toggle]').forEach((btn) => {
+    btn.onclick = async () => {
+      const id = btn.closest('li').dataset.id;
+      const action = btn.dataset.toggle === '1' ? 'reactivate' : 'suspend';
+      try {
+        await api(`/superadmin/admins/${id}/${action}`, { method: 'POST' });
+        toast(action === 'suspend' ? 'Admin suspended' : 'Admin reactivated');
+        loadAdmins(currentId);
+      } catch (e) { toast(e.message, 'bad'); }
+    };
+  });
+}
+
+$('na-create').onclick = async () => {
+  const name = $('na-name').value.trim();
+  const email = $('na-email').value.trim();
+  const password = $('na-password').value;
+  const role = $('na-role').value;
+  if (!name || !email || !password) { toast('Name, email and password are required', 'bad'); return; }
+  try {
+    await api('/superadmin/admins', json('POST', { name, email, password, role }));
+    $('na-name').value = ''; $('na-email').value = ''; $('na-password').value = '';
+    toast('Admin created');
+    const session = await api('/auth/me');
+    loadAdmins(session.id);
+  } catch (e) { toast(e.message, 'bad'); }
+};
+
+async function initAdminsPanel() {
+  try {
+    const session = await api('/auth/me');
+    if (session.admin_role !== 'superadmin') return;
+    $('admins-panel').hidden = false;
+    loadAdmins(session.id);
+  } catch { /* not logged in yet — health/login gating handles that elsewhere */ }
+}
+
+$('logout-btn').onclick = async () => {
+  await api('/auth/logout', { method: 'POST' }).catch(() => {});
+  location.href = '/login';
+};
+
 /* ── Boot ───────────────────────────────────────────────────────────────── */
 loadHealth();
 loadAdmin();
+initAdminsPanel();
 setInterval(loadHealth, 60000);
