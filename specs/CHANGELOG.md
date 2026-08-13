@@ -1,5 +1,28 @@
 # Specs changelog
 
+## v2.6 — PLANNED, not shipped (2026-08-14 review)
+
+Unlike every entry below, this one describes a backlog, not a change that
+happened. Two independent reviews (PM: user flows and unmet promises; QA:
+functional defects and broken links) of the live deployment produced
+[13 · Known issues](v2/13-known-issues.md) — 3 critical, 5 high, 4 medium,
+3 low findings. None of it is fixed yet.
+
+The two critical items are real, live defects, not polish:
+- A suspended practitioner's portal access isn't actually blocked —
+  `require_practitioner` never checks status against the database.
+- `POST /api/clients` can silently overwrite an existing client's password
+  with no auth check, for anyone who knows their email — a live
+  account-takeover path. Not exploited to confirm, since doing so would be
+  irreversible; found by code review instead.
+
+Also found: the Pro consultation feature (the paid product's core value)
+has no UI to set up, meaning it cannot be used by anyone through the
+deployed site right now, despite the backend being correct and complete.
+
+See [13](v2/13-known-issues.md) for the full list, evidence, and proposed
+fix direction for each.
+
 ## v2.5 — 2026-08-13 (navigation polish, round two)
 
 - **User menu trigger redesigned**: a circular avatar-style icon + separate

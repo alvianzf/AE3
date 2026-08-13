@@ -18,6 +18,7 @@ changed vs. [v1](../v1/README.md).
 | 10 | [Security & privacy](10-security.md) | Real auth, tenant isolation, what's still unprotected |
 | 11 | [Operations](11-operations.md) | Deployment additions, config, runbook |
 | 12 | [Verification](12-verification.md) | v2-specific success criteria and how each is tested |
+| 13 | [Known issues](13-known-issues.md) | **Planned, not built** — the v2.6 backlog: two live access-control bugs, several broken/missing flows, found by an independent PM+QA review |
 
 ## Reading order
 
@@ -45,3 +46,11 @@ were in the original spec, all added after initial deploy. See
 [`../CHANGELOG.md`](../CHANGELOG.md)'s v2.1/v2.2 entries for the full list
 of post-deploy corrections, including a password-hash leak found and fixed
 the same day it shipped ([10](10-security.md#the-leak-that-was-found)).
+
+**Not yet addressed:** [13 · Known issues](13-known-issues.md) — a
+2026-08-14 PM+QA review found the Pro consultation feature has no UI to set
+up (it's unusable end to end), a suspended practitioner's portal access
+isn't actually blocked, and a client-signup code path can silently
+overwrite an existing client's password with no auth check. This backlog is
+written but not built; treat everything else in this README as describing
+what's live, and [13](13-known-issues.md) as describing what isn't yet.
