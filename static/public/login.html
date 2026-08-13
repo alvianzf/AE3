@@ -65,6 +65,12 @@ const LANDING = { admin: '/admin',
                    practitioner: '/practitioner/profile',
                    client: '/client/questionnaire' };
 
+// Already signed in? Skip the form and go straight to their dashboard
+// instead of asking them to log in again.
+currentSession().then((session) => {
+  if (session) location.href = LANDING[session.role] || '/admin';
+});
+
 $('l-submit').onclick = async () => {
   const email = $('l-email').value.trim();
   const password = $('l-password').value;
