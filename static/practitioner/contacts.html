@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Contacts · Clinic</title>
+  <link rel="stylesheet" href="../style.css?v=11">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <span class="sprig" aria-hidden="true">
+      <svg viewBox="0 0 20 24" fill="none" stroke="currentColor" stroke-width="1.3"
+           stroke-linecap="round">
+        <path d="M10 23V7"/>
+        <path d="M10 13c0-3.6 2.4-6.4 6-7-.3 3.8-2.6 6.4-6 7z" fill="currentColor"
+              fill-opacity=".16"/>
+        <path d="M10 9.5C10 6 7.8 3.3 4.3 2.5 4.6 6.2 6.7 8.8 10 9.5z"
+              fill="currentColor" fill-opacity=".1"/>
+      </svg>
+    </span>
+    <span class="brand"><b>Clinic</b><span class="sub">practitioner portal</span></span>
+    <nav style="margin-left:auto;display:flex;gap:.4rem;flex-wrap:wrap">
+      <a class="btn ghost sm" href="profile.html">Profile</a>
+      <a class="btn ghost sm" href="contacts.html">Contacts</a>
+      <a class="btn ghost sm" href="clients.html">Clients</a>
+      <a class="btn ghost sm" href="consult.html">Consult</a>
+      <a class="btn ghost sm" href="upgrade.html">Upgrade</a>
+      <button class="btn ghost sm" id="logout-btn">Log out</button>
+    </nav>
+  </div>
+</header>
+
+<main class="pane on" style="max-width:44rem;margin:0 auto">
+  <section class="card-panel">
+    <div class="ph botanic">
+      <h2 style="flex:1">Contact form submissions</h2>
+      <span class="count" id="c-count"></span>
+    </div>
+    <div class="pb">
+      <select id="c-filter" aria-label="Filter by status" style="max-width:12rem;margin-bottom:.7rem">
+        <option value="">All</option>
+        <option value="new">New</option>
+        <option value="contacted">Contacted</option>
+        <option value="closed">Closed</option>
+      </select>
+      <ul id="c-list" class="rows"></ul>
+    </div>
+  </section>
+</main>
+
+<div id="toasts" class="toasts" aria-live="polite"></div>
+<script src="../shared.js"></script>
+<script>
+$('logout-btn').onclick = logout;
+
+function row(c) {
+  return `<li class="plain" data-id="${c.id}" style="display:block;cursor:default">
+    <div style="display:flex;justify-content:space-between;gap:.6rem;align-items:baseline;flex-wrap:wrap">
+      <span class="nm">${esc(c.client_name)} <span class="muted xs">${esc(c.client_email)}</span></span>
+      <span class="chip">${esc(c.status)}</span>
+    </div>
+    <p class="hint" style="margin:.3rem 0">${esc(c.message)}</p>
+    <div style="display:flex;gap:.4rem;align-items:center">
+      <span class="muted xs">${esc((c.created_at || '').slice(0, 16).replace('T', ' '))}</span>
+      ${c.status !== 'contacted' ? `<button class="btn ghost sm" data-set="contacted">Mark contacted</button>` : ''}
+      ${c.status !== 'closed' ? `<button class="btn ghost sm" data-set="closed">Mark closed</button>` : ''}
+    </div>
+  </li>`;
+}
+
+async function load() {
+  const session = await requireRole('practitioner');
+  if (!session) return;
+  const q = $('c-filter').value ? '?status=' + $('c-filter').value : '';
+  const list = await api('/me/contacts' + q);
+  $('c-count').textContent = list.length || '';
+  $('c-list').innerHTML = list.length ? list.map(row).join('')
+    : empty('No submissions yet', 'Messages from your coach-detail page will show up here.');
+
+  $('c-list').querySelectorAll('[data-set]').forEach((btn) => {
+    btn.onclick = async () => {
+      const li = btn.closest('li');
+      const status = btn.dataset.set;
+      try {
+        // 08-api.md documents GET /api/me/contacts but not a status-update
+        // route; core_store.update_contact_status(submission_id, status)
+        // exists, so this assumes a matching PATCH route. Flagging for the
+        // integrator to confirm the exact path/verb once auth.py's routes land.
+        await api(`/me/contacts/${li.dataset.id}`, json('PATCH', { status }));
+        toast('Updated');
+        load();
+      } catch (e) { toast(e.message, 'bad'); }
+    };
+  });
+}
+$('c-filter').onchange = load;
+load().catch((e) => toast(e.message, 'bad'));
+</script>
+</body>
+</html>

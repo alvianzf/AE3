@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Wearables · Clinic</title>
+  <link rel="stylesheet" href="../style.css?v=11">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <span class="sprig" aria-hidden="true">
+      <svg viewBox="0 0 20 24" fill="none" stroke="currentColor" stroke-width="1.3"
+           stroke-linecap="round">
+        <path d="M10 23V7"/>
+        <path d="M10 13c0-3.6 2.4-6.4 6-7-.3 3.8-2.6 6.4-6 7z" fill="currentColor"
+              fill-opacity=".16"/>
+        <path d="M10 9.5C10 6 7.8 3.3 4.3 2.5 4.6 6.2 6.7 8.8 10 9.5z"
+              fill="currentColor" fill-opacity=".1"/>
+      </svg>
+    </span>
+    <span class="brand"><b>Clinic</b><span class="sub">client portal</span></span>
+    <nav style="margin-left:auto;display:flex;gap:.4rem;flex-wrap:wrap">
+      <a class="btn ghost sm" href="questionnaire.html">Questionnaire</a>
+      <a class="btn ghost sm" href="files.html">Files</a>
+      <a class="btn ghost sm" href="wearables.html">Wearables</a>
+      <button class="btn ghost sm" id="logout-btn">Log out</button>
+    </nav>
+  </div>
+</header>
+
+<main class="pane on" style="max-width:34rem;margin:0 auto">
+  <section class="card-panel">
+    <div class="ph botanic"><h2 style="flex:1">Connect a wearable</h2></div>
+    <div class="pb">
+      <p class="hint">Connect a device so your practitioner can see your activity data
+        alongside your record.</p>
+      <div id="wearable-rows"></div>
+      <p class="hint" style="margin-top:1rem"><b>Sample data notice:</b> connecting a device
+        here does not pull real data from the vendor. The metrics shown after connecting are
+        fixture/sample values used to prove the connect flow — not a live feed from your
+        account.</p>
+    </div>
+  </section>
+</main>
+
+<div id="toasts" class="toasts" aria-live="polite"></div>
+<script src="../shared.js"></script>
+<script>
+$('logout-btn').onclick = logout;
+const PROVIDERS = [
+  ['oura', 'Oura'], ['whoop', 'Whoop'], ['garmin', 'Garmin'],
+];
+
+// There is no documented GET route to check which providers are already
+// connected (08-api.md lists only the connect POST and the OAuth callback
+// GET), so "connected" here is a client-side-only memory of this browser
+// having completed the flow — not authoritative. The integrator should add
+// a real status read once one exists, and swap this out.
+const LS_KEY = 'clinic_wearables_connected';
+function connectedSet() {
+  try { return new Set(JSON.parse(localStorage.getItem(LS_KEY) || '[]')); }
+  catch { return new Set(); }
+}
+function markConnected(provider) {
+  const s = connectedSet(); s.add(provider);
+  localStorage.setItem(LS_KEY, JSON.stringify([...s]));
+}
+
+function render() {
+  const connected = connectedSet();
+  $('wearable-rows').innerHTML = PROVIDERS.map(([id, label]) => {
+    const isOn = connected.has(id);
+    return `<div class="src" style="display:flex;align-items:center;gap:.8rem;margin-bottom:.6rem">
+      <span class="grow"><b>${esc(label)}</b>
+        ${isOn ? '<span class="chip" style="margin-left:.5rem">connected · sample data</span>' : ''}</span>
+      <button class="btn ${isOn ? 'ghost' : ''} sm" data-provider="${id}" ${isOn ? 'disabled' : ''}>
+        ${isOn ? 'Connected' : 'Connect'}</button>
+    </div>`;
+  }).join('');
+  $('wearable-rows').querySelectorAll('[data-provider]').forEach((btn) => {
+    btn.onclick = async () => {
+      const provider = btn.dataset.provider;
+      btn.disabled = true;
+      try {
+        const r = await api(`/me/wearables/${provider}/connect`, { method: 'POST' });
+        if (r?.url) {
+          // Real OAuth redirect to the vendor; the vendor's callback lands on
+          // GET /api/me/wearables/{provider}/callback per the contract, not
+          // back on this page directly, so we can't rely on a return redirect
+          // here to know it succeeded — hence the localStorage best-effort above.
+          location.href = r.url;
+        } else {
+          markConnected(provider);
+          toast(label(provider) + ' connected (sample data)');
+          render();
+        }
+      } catch (e) {
+        toast(e.message, 'bad');
+        btn.disabled = false;
+      }
+    };
+  });
+}
+function label(id) { return (PROVIDERS.find((p) => p[0] === id) || [id, id])[1]; }
+
+// If we arrived back with ?connected=<provider> (best-effort — not guaranteed
+// by the documented contract), record it.
+const backFrom = qs('connected');
+if (backFrom) markConnected(backFrom);
+
+requireRole('client').then((s) => { if (s) render(); }).catch(() => {});
+</script>
+</body>
+</html>

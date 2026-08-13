@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Consult · Clinic</title>
+  <link rel="stylesheet" href="../style.css?v=11">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <span class="sprig" aria-hidden="true">
+      <svg viewBox="0 0 20 24" fill="none" stroke="currentColor" stroke-width="1.3"
+           stroke-linecap="round">
+        <path d="M10 23V7"/>
+        <path d="M10 13c0-3.6 2.4-6.4 6-7-.3 3.8-2.6 6.4-6 7z" fill="currentColor"
+              fill-opacity=".16"/>
+        <path d="M10 9.5C10 6 7.8 3.3 4.3 2.5 4.6 6.2 6.7 8.8 10 9.5z"
+              fill="currentColor" fill-opacity=".1"/>
+      </svg>
+    </span>
+    <span class="brand"><b>Clinic</b><span class="sub">practitioner portal</span></span>
+    <nav style="margin-left:auto;display:flex;gap:.4rem;flex-wrap:wrap">
+      <a class="btn ghost sm" href="profile.html">Profile</a>
+      <a class="btn ghost sm" href="contacts.html">Contacts</a>
+      <a class="btn ghost sm" href="clients.html">Clients</a>
+      <a class="btn ghost sm" href="consult.html">Consult</a>
+      <a class="btn ghost sm" href="upgrade.html">Upgrade</a>
+      <button class="btn ghost sm" id="logout-btn">Log out</button>
+    </nav>
+  </div>
+</header>
+
+<main class="pane on">
+  <section class="card-panel" id="pro-gate" hidden style="max-width:32rem;margin:0 auto">
+    <div class="pb"><div class="empty">
+      <b>Consult is a Pro feature</b>
+      <p>Asking Clinic about a client needs the Pro plan.</p>
+      <a class="btn" href="upgrade.html">Upgrade to Pro</a>
+    </div></div>
+  </section>
+
+  <div class="layout practitioner" id="consult-layout" hidden>
+    <aside class="card-panel">
+      <div class="ph botanic"><h2 style="flex:1">Clients</h2></div>
+      <div class="pb tight"><ul id="client-list" class="rows"></ul></div>
+    </aside>
+
+    <div class="workspace" style="grid-template-columns:1fr">
+      <section class="card-panel leafmark" id="ask-panel">
+        <svg class="wm" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1" aria-hidden="true">
+          <path d="M12 22V8"/><path d="M12 15c0-4 3-7 8-8-.4 4.4-3.2 7.4-8 8z"/>
+          <path d="M12 11c0-4-3-7-8-8 .4 4.4 3.2 7.4 8 8z"/></svg>
+        <div class="toolbar">
+          <span class="field" style="font-weight:600" id="ask-title">Ask Clinic</span>
+          <span class="field">
+            grade ≥ <span class="gradepill" id="grade-val">7</span>
+            <input type="range" id="min-grade" min="1" max="10" value="7"
+                   aria-label="Minimum source grade">
+          </span>
+          <label class="switch field">
+            <input type="checkbox" id="run-check" checked> verify answer
+          </label>
+        </div>
+        <div id="thread" class="thread"></div>
+        <div class="composer" id="composer" hidden>
+          <div class="row">
+            <textarea id="question" rows="2" placeholder="Ask about this client…"
+                      aria-label="Question for Clinic"></textarea>
+            <button id="ask" class="btn" disabled>Ask</button>
+          </div>
+          <div class="cmeta">
+            <span class="muted xs">Enter to send · Shift + Enter for a new line</span>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<div id="toasts" class="toasts" aria-live="polite"></div>
+<script src="../shared.js"></script>
+<script>
+$('logout-btn').onclick = logout;
+let selectedClient = null;
+let sessionId = null;
+
+async function loadClients() {
+  const list = await api('/me/clients');
+  $('client-list').innerHTML = list.length
+    ? list.map((c) => `<li data-id="${c.id}" class="${c.id === selectedClient ? 'on' : ''}"
+        tabindex="0"><span class="av">${esc((c.name || '?').slice(0, 1).toUpperCase())}</span>
+        <span class="grow"><span class="nm">${esc(c.name)}</span>
+        <span class="sub2">${esc(c.email)}</span></span></li>`).join('')
+    : '<li class="plain"><span class="muted small">No clients yet — add one on the Clients page.</span></li>';
+  $('client-list').querySelectorAll('[data-id]').forEach((li) => {
+    li.onclick = () => selectClient(li.dataset.id, li.querySelector('.nm').textContent);
+  });
+}
+
+function selectClient(id, name) {
+  selectedClient = id; sessionId = null;
+  $('thread').innerHTML = '';
+  $('composer').hidden = false;
+  $('ask').disabled = false;
+  $('ask-title').textContent = 'Ask Clinic about ' + name;
+  loadClients();
+}
+
+$('min-grade').oninput = (e) => { $('grade-val').textContent = e.target.value; };
+$('question').onkeydown = (ev) => {
+  if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); $('ask').click(); }
+};
+
+function renderAnswer(question, r) {
+  const block = document.createElement('div');
+  block.className = 'turn';
+  const q = `<div class="bubble"><span>${esc(question)}</span></div>`;
+  if (!r.matched) {
+    block.innerHTML = q + `<div class="nomatch"><b>Nothing in the library matches this
+      question.</b><div class="answer">${esc(r.answer)}</div></div>`;
+    $('thread').appendChild(block); return;
+  }
+  const answer = esc(r.answer).replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>')
+    .replace(/\[S(\d+)\]/g, (_, n) => `<span class="cite">[S${n}]</span>`);
+  const check = r.check ? `<div class="checkline"><span class="badge ${r.check.verdict}">
+    <span>${r.check.verdict === 'pass' ? 'verified against its sources' : 'needs review'}</span>
+    </span> <span class="muted xs">${esc(r.check.note || '')}</span></div>` : '';
+  const sources = (r.sources || []).map((s) => `<div class="source">
+    <div class="head"><span class="lab">${s.label}</span><b>${esc(s.title)}</b>
+    <span class="grade">grade ${s.grade}</span></div>
+    <div class="snip">${esc(s.snippet)}</div></div>`).join('');
+  block.innerHTML = q + check + `<div class="answer">${answer}</div>`
+    + (sources ? `<div class="srchead">Sources behind this answer</div>${sources}` : '');
+  $('thread').appendChild(block);
+}
+
+$('ask').onclick = async () => {
+  const question = $('question').value.trim();
+  if (!question || !selectedClient) return;
+  $('ask').disabled = true;
+  $('question').value = '';
+  const pending = document.createElement('div');
+  pending.className = 'turn';
+  pending.innerHTML = `<div class="bubble"><span>${esc(question)}</span></div>
+    <div class="working"><span class="spin">Clinic is thinking</span></div>`;
+  $('thread').appendChild(pending);
+  try {
+    const r = await api('/me/consult', json('POST', {
+      client_id: selectedClient, question,
+      min_grade: +$('min-grade').value, run_check: $('run-check').checked,
+      session_id: sessionId,
+    }));
+    sessionId = r.session_id || sessionId;
+    pending.remove();
+    renderAnswer(question, r);
+  } catch (e) {
+    pending.querySelector('.working').outerHTML = `<p class="muted small">Failed: ${esc(e.message)}</p>`;
+    toast('That question could not be answered', 'bad');
+  }
+  $('ask').disabled = false;
+};
+
+async function load() {
+  const session = await requireRole('practitioner');
+  if (!session) return;
+  const p = await api('/me/profile');
+  if (p.plan !== 'pro') { $('pro-gate').hidden = false; return; }
+  $('consult-layout').hidden = false;
+  loadClients();
+}
+load().catch((e) => toast(e.message, 'bad'));
+</script>
+</body>
+</html>

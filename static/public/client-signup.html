@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign up · Clinic</title>
+  <link rel="stylesheet" href="../style.css?v=11">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <span class="sprig" aria-hidden="true">
+      <svg viewBox="0 0 20 24" fill="none" stroke="currentColor" stroke-width="1.3"
+           stroke-linecap="round">
+        <path d="M10 23V7"/>
+        <path d="M10 13c0-3.6 2.4-6.4 6-7-.3 3.8-2.6 6.4-6 7z" fill="currentColor"
+              fill-opacity=".16"/>
+        <path d="M10 9.5C10 6 7.8 3.3 4.3 2.5 4.6 6.2 6.7 8.8 10 9.5z"
+              fill="currentColor" fill-opacity=".1"/>
+      </svg>
+    </span>
+    <span class="brand"><b>Clinic</b><span class="sub">clinical knowledge assistant</span></span>
+    <nav style="margin-left:auto;display:flex;gap:.4rem;flex-wrap:wrap">
+      <a class="btn ghost sm" href="about.html">About</a>
+      <a class="btn ghost sm" href="directory.html">Find a practitioner</a>
+      <a class="btn ghost sm" href="practitioner-signup.html">Join as a practitioner</a>
+      <a class="btn ghost sm" href="client-signup.html">Sign up</a>
+      <a class="btn sm" href="login.html">Log in</a>
+    </nav>
+  </div>
+</header>
+
+<main class="pane on" style="max-width:30rem;margin:0 auto">
+  <section class="card-panel">
+    <div class="ph botanic"><h2 style="flex:1">Create your account</h2></div>
+    <div class="pb">
+      <p class="hint" id="pr-hint" hidden>Signing up as a client of the practitioner you were
+        viewing.</p>
+
+      <label class="lbl" for="s-name">Full name</label>
+      <input id="s-name" placeholder="Full name" aria-label="Full name">
+
+      <label class="lbl" for="s-email">Email</label>
+      <input id="s-email" type="email" placeholder="you@example.com" aria-label="Email">
+
+      <label class="lbl" for="s-password">Password</label>
+      <input id="s-password" type="password" placeholder="At least 8 characters"
+             aria-label="Password">
+
+      <button id="s-submit" class="btn block" style="margin-top:.9rem">Sign up</button>
+      <div id="s-status" class="muted xs" style="margin-top:.5rem"></div>
+      <p class="hint" style="margin-top:.8rem">Already have an account?
+        <a href="login.html">Log in</a>.</p>
+    </div>
+  </section>
+</main>
+
+<div id="toasts" class="toasts" aria-live="polite"></div>
+<script src="../shared.js"></script>
+<script>
+// A "become a client" link from coach.html can carry ?practitioner_id=... so
+// signup attaches straight to that practitioner instead of the client
+// picking one afterwards. Neither 06-client-portal.md nor 08-api.md spell
+// out the post-signup "pick a practitioner" step, so this is the frontend's
+// best-effort bridge — worth the integrator double-checking the field name
+// the backend actually expects.
+const practitionerId = qs('practitioner_id');
+if (practitionerId) { $('pr-hint').hidden = false; }
+
+$('s-submit').onclick = async () => {
+  const name = $('s-name').value.trim();
+  const email = $('s-email').value.trim();
+  const password = $('s-password').value;
+  if (!name || !email || !password) {
+    toast('Name, email and password are required', 'bad'); return;
+  }
+  const body = { name, email, password };
+  if (practitionerId) body.practitioner_id = practitionerId;
+
+  $('s-submit').disabled = true;
+  $('s-status').textContent = 'Creating your account…';
+  try {
+    await api('/clients', json('POST', body));
+    $('s-status').textContent = '';
+    toast('Account created — log in to continue');
+    setTimeout(() => { location.href = 'login.html'; }, 900);
+  } catch (e) {
+    $('s-status').textContent = '';
+    toast(e.message, 'bad');
+  }
+  $('s-submit').disabled = false;
+};
+</script>
+</body>
+</html>

@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>My profile · Clinic</title>
+  <link rel="stylesheet" href="../style.css?v=11">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <span class="sprig" aria-hidden="true">
+      <svg viewBox="0 0 20 24" fill="none" stroke="currentColor" stroke-width="1.3"
+           stroke-linecap="round">
+        <path d="M10 23V7"/>
+        <path d="M10 13c0-3.6 2.4-6.4 6-7-.3 3.8-2.6 6.4-6 7z" fill="currentColor"
+              fill-opacity=".16"/>
+        <path d="M10 9.5C10 6 7.8 3.3 4.3 2.5 4.6 6.2 6.7 8.8 10 9.5z"
+              fill="currentColor" fill-opacity=".1"/>
+      </svg>
+    </span>
+    <span class="brand"><b>Clinic</b><span class="sub">practitioner portal</span></span>
+    <nav style="margin-left:auto;display:flex;gap:.4rem;flex-wrap:wrap">
+      <a class="btn ghost sm" href="profile.html">Profile</a>
+      <a class="btn ghost sm" href="contacts.html">Contacts</a>
+      <a class="btn ghost sm" href="clients.html">Clients</a>
+      <a class="btn ghost sm" href="consult.html">Consult</a>
+      <a class="btn ghost sm" href="upgrade.html">Upgrade</a>
+      <button class="btn ghost sm" id="logout-btn">Log out</button>
+    </nav>
+  </div>
+</header>
+
+<main class="pane on" style="max-width:38rem;margin:0 auto">
+  <section class="card-panel">
+    <div class="ph botanic"><h2 style="flex:1">My public profile</h2></div>
+    <div class="pb" id="profile-body">
+      <div class="skel w40"></div><div class="skel w80"></div><div class="skel w60"></div>
+    </div>
+  </section>
+</main>
+
+<div id="toasts" class="toasts" aria-live="polite"></div>
+<script src="../shared.js"></script>
+<script>
+$('logout-btn').onclick = logout;
+const splitList = (v) => v.split(',').map((s) => s.trim()).filter(Boolean);
+
+function form(p) {
+  return `<label class="lbl" for="p-name">Name</label>
+    <input id="p-name" value="${esc(p.name || '')}">
+    <label class="lbl" for="p-bio">Bio</label>
+    <textarea id="p-bio" rows="4">${esc(p.bio || '')}</textarea>
+    <label class="lbl" for="p-specialties">Specialties</label>
+    <input id="p-specialties" value="${esc((p.specialties || []).join(', '))}"
+           placeholder="Comma-separated">
+    <label class="lbl" for="p-languages">Languages</label>
+    <input id="p-languages" value="${esc((p.languages || []).join(', '))}"
+           placeholder="Comma-separated">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
+      <div>
+        <label class="lbl" for="p-years">Years of experience</label>
+        <input id="p-years" type="number" min="0" value="${esc(p.years_experience || 0)}">
+      </div>
+      <div>
+        <label class="lbl" for="p-price">Consultation price (USD)</label>
+        <input id="p-price" type="number" min="0" step="0.01"
+               value="${esc(((p.consultation_price_cents || 0) / 100).toFixed(2))}">
+      </div>
+    </div>
+    <label class="lbl" for="p-photo">Replace photo</label>
+    <input id="p-photo" type="file" accept="image/*">
+    ${p.photo_path ? `<p class="hint">Current: <a href="${esc(p.photo_path)}" target="_blank" rel="noopener">${esc(p.photo_path)}</a></p>` : ''}
+    <div style="display:flex;align-items:center;gap:.6rem;margin-top:.4rem">
+      <span class="chip">${esc(p.status || 'pending')}</span>
+      <span class="chip">${esc(p.plan || 'basic')} plan</span>
+    </div>
+    <button id="p-save" class="btn block" style="margin-top:.9rem">Save changes</button>
+    <div id="p-status" class="muted xs" style="margin-top:.5rem"></div>`;
+}
+
+async function load() {
+  const session = await requireRole('practitioner');
+  if (!session) return;
+  const p = await api('/me/profile');
+  $('profile-body').innerHTML = form(p);
+  $('p-save').onclick = async () => {
+    const fields = {
+      name: $('p-name').value.trim(),
+      bio: $('p-bio').value.trim(),
+      specialties: splitList($('p-specialties').value),
+      languages: splitList($('p-languages').value),
+      years_experience: +$('p-years').value || 0,
+      consultation_price_cents: Math.round((parseFloat($('p-price').value) || 0) * 100),
+    };
+    $('p-save').disabled = true;
+    $('p-status').textContent = 'Saving…';
+    try {
+      // Photo upload alongside JSON fields isn't spelled out in 08-api.md for
+      // PUT /api/me/profile (which reads as JSON like update_practitioner_profile's
+      // signature) — if a photo was chosen we upload it as multipart instead of
+      // JSON so the file actually reaches the server; the integrator should
+      // confirm PUT accepts multipart or split this into a separate upload call.
+      if ($('p-photo').files[0]) {
+        const fd = new FormData();
+        Object.entries(fields).forEach(([k, v]) => fd.append(k, Array.isArray(v) ? JSON.stringify(v) : v));
+        fd.append('photo', $('p-photo').files[0]);
+        await api('/me/profile', { method: 'PUT', body: fd });
+      } else {
+        await api('/me/profile', json('PUT', fields));
+      }
+      $('p-status').textContent = '';
+      toast('Profile updated');
+      load();
+    } catch (e) {
+      $('p-status').textContent = '';
+      toast(e.message, 'bad');
+    }
+    $('p-save').disabled = false;
+  };
+}
+load().catch((e) => toast(e.message, 'bad'));
+</script>
+</body>
+</html>

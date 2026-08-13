@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Find a practitioner · Clinic</title>
+  <link rel="stylesheet" href="../style.css?v=11">
+  <style>
+    /* Card grid — the only layout this directory needs beyond what
+       style.css already defines for .src/.card-panel. */
+    .coach-grid { display: grid; gap: 1rem;
+                  grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr)); }
+    .coach-card { display: block; text-decoration: none; color: inherit; }
+    .coach-photo { width: 100%; aspect-ratio: 1/1; border-radius: var(--r);
+                    background: var(--bg); border: 1px solid var(--line);
+                    object-fit: cover; margin-bottom: .6rem; }
+    .coach-photo.ph-fallback { display: flex; align-items: center; justify-content: center;
+                                color: var(--muted); font-size: 1.6rem; font-weight: 700; }
+  </style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <span class="sprig" aria-hidden="true">
+      <svg viewBox="0 0 20 24" fill="none" stroke="currentColor" stroke-width="1.3"
+           stroke-linecap="round">
+        <path d="M10 23V7"/>
+        <path d="M10 13c0-3.6 2.4-6.4 6-7-.3 3.8-2.6 6.4-6 7z" fill="currentColor"
+              fill-opacity=".16"/>
+        <path d="M10 9.5C10 6 7.8 3.3 4.3 2.5 4.6 6.2 6.7 8.8 10 9.5z"
+              fill="currentColor" fill-opacity=".1"/>
+      </svg>
+    </span>
+    <span class="brand"><b>Clinic</b><span class="sub">clinical knowledge assistant</span></span>
+    <nav style="margin-left:auto;display:flex;gap:.4rem;flex-wrap:wrap">
+      <a class="btn ghost sm" href="about.html">About</a>
+      <a class="btn ghost sm" href="directory.html">Find a practitioner</a>
+      <a class="btn ghost sm" href="practitioner-signup.html">Join as a practitioner</a>
+      <a class="btn ghost sm" href="client-signup.html">Sign up</a>
+      <a class="btn sm" href="login.html">Log in</a>
+    </nav>
+  </div>
+</header>
+
+<main class="pane on" style="max-width:72rem;margin:0 auto">
+  <section class="card-panel">
+    <div class="ph botanic">
+      <h2 style="flex:1">Find a practitioner</h2>
+      <span class="count" id="d-count"></span>
+    </div>
+    <div class="pb">
+      <div class="filters">
+        <div class="filter-row" style="grid-template-columns:1fr 1fr auto">
+          <select id="f-specialty" aria-label="Filter by specialty">
+            <option value="">All specialties</option>
+          </select>
+          <select id="f-language" aria-label="Filter by language">
+            <option value="">All languages</option>
+          </select>
+          <button id="f-reset" class="iconbtn" data-tip="Clear filters"
+                  aria-label="Clear filters">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+              <path d="M6 6l12 12M18 6L6 18"/></svg>
+          </button>
+        </div>
+      </div>
+      <div id="coach-grid" class="coach-grid"></div>
+    </div>
+  </section>
+</main>
+
+<div id="toasts" class="toasts" aria-live="polite"></div>
+<script src="../shared.js"></script>
+<script>
+/* Server-side filters carry the query; the dropdown option lists themselves
+   are derived client-side from an unfiltered fetch since there's no facets
+   route for practitioners (unlike /api/facets for the library). */
+let all = [];
+
+function centsToPrice(c) {
+  if (!c && c !== 0) return null;
+  return '$' + (c / 100).toFixed(c % 100 ? 2 : 0);
+}
+function oneLine(bio) {
+  const s = (bio || '').trim().split(/\n/)[0];
+  return s.length > 110 ? s.slice(0, 108) + '…' : s;
+}
+
+function fillOptions() {
+  const specialties = new Set(), languages = new Set();
+  all.forEach((p) => {
+    (p.specialties || []).forEach((s) => specialties.add(s));
+    (p.languages || []).forEach((l) => languages.add(l));
+  });
+  const fill = (sel, values, label) => {
+    const cur = sel.value;
+    sel.innerHTML = `<option value="">${label}</option>`
+      + [...values].sort().map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+    sel.value = values.has(cur) ? cur : '';
+  };
+  fill($('f-specialty'), specialties, 'All specialties');
+  fill($('f-language'), languages, 'All languages');
+}
+
+function card(p) {
+  const photo = p.photo_path
+    ? `<img class="coach-photo" src="${esc(p.photo_path)}" alt="${esc(p.name)}">`
+    : `<div class="coach-photo ph-fallback">${esc((p.name || '?').slice(0, 1).toUpperCase())}</div>`;
+  const tags = (p.specialties || []).map((s) => `<span class="topic">${esc(s)}</span>`).join('');
+  const langs = (p.languages || []).length
+    ? `<span class="muted xs">${esc(p.languages.join(', '))}</span>` : '';
+  const price = centsToPrice(p.consultation_price_cents);
+  return `<a class="coach-card" href="coach.html?id=${encodeURIComponent(p.id)}">`
+    + `<div class="src">${photo}<h3 style="font-size:.95rem">${esc(p.name)}</h3>`
+    + `<div class="sum" style="margin:.3rem 0">${esc(oneLine(p.bio))}</div>`
+    + `<div class="topics" style="margin-bottom:.4rem">${tags}</div>`
+    + `<div class="meta">${langs}</div>`
+    + `<div class="meta">${p.years_experience ? esc(p.years_experience) + ' yrs experience' : ''}`
+    + `${price ? ' · ' + esc(price) + ' / consult' : ''}</div>`
+    + `</div></a>`;
+}
+
+async function load() {
+  const q = new URLSearchParams();
+  if ($('f-specialty').value) q.set('specialty', $('f-specialty').value);
+  if ($('f-language').value) q.set('language', $('f-language').value);
+  const list = await api('/practitioners?' + q);
+  if (!all.length) { all = list.length ? list : all; }
+  if (!$('f-specialty').options.length || $('f-specialty').options.length === 1) {
+    // Build filter option lists from the first (unfiltered) load only.
+    const unfiltered = q.toString() ? await api('/practitioners') : list;
+    all = unfiltered;
+    fillOptions();
+  }
+  $('d-count').textContent = list.length || '';
+  $('coach-grid').innerHTML = list.length
+    ? list.map(card).join('')
+    : empty('No practitioners match', 'Try clearing the filters.',
+            '<button class="btn ghost sm" id="empty-clear">Clear filters</button>');
+  if ($('empty-clear')) $('empty-clear').onclick = () => $('f-reset').click();
+}
+
+$('f-specialty').onchange = load;
+$('f-language').onchange = load;
+$('f-reset').onclick = () => { $('f-specialty').value = ''; $('f-language').value = ''; load(); };
+
+load().catch((e) => toast(e.message, 'bad'));
+</script>
+</body>
+</html>

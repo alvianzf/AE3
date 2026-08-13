@@ -31,6 +31,9 @@ class Config:
     # Encrypts a practitioner's own Anthropic API key at rest (Fernet).
     # Must be set to a real generated key in any deployment that stores one.
     vault_encryption_key = os.getenv("VAULT_ENCRYPTION_KEY", "")
+    # Practitioner profile photos — public, served directly (unlike the
+    # private originals/vault-files stores above).
+    photos_path = os.getenv("PHOTOS_PATH", "data/photos")
 
     # The AI team (one model per role)
     reader_model = os.getenv("READER_MODEL", "claude-haiku-4-5")
@@ -45,13 +48,36 @@ class Config:
     chunk_size = int(os.getenv("CHUNK_SIZE", "1200"))
     chunk_overlap = int(os.getenv("CHUNK_OVERLAP", "150"))
 
-    # Access gate — a shared door code, not user authentication. See app/gate.py.
+    # Access gate — v1's shared door code. Retained only for reference while
+    # app/gate.py is being phased out; app/auth.py's real accounts replace it.
     access_passphrase = os.getenv("ACCESS_PASSPHRASE", "DevshorePartners2026")
-    # Signs the access cookie. Set a random value per deployment; if it changes,
-    # everyone is simply asked for the phrase again.
+    # Signs the session cookie (v1's gate cookie, and v2's signed session
+    # claim). Set a random value per deployment.
     session_secret = os.getenv("SESSION_SECRET", "dev-only-not-secret")
     # Off for local http development, on behind TLS.
     cookie_secure = os.getenv("COOKIE_SECURE", "false").lower() == "true"
+
+    # The first admin account, created on boot if the admins table is empty
+    # and both are set. Unset in production once an admin exists — it's a
+    # one-time bootstrap, not a standing credential to leave configured.
+    admin_bootstrap_email = os.getenv("ADMIN_BOOTSTRAP_EMAIL", "")
+    admin_bootstrap_password = os.getenv("ADMIN_BOOTSTRAP_PASSWORD", "")
+
+    # Stripe — practitioner Pro plan billing (specs/v2/09-payments.md)
+    stripe_secret_key = os.getenv("STRIPE_SECRET_KEY", "")
+    stripe_webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+    stripe_price_id_pro = os.getenv("STRIPE_PRICE_ID_PRO", "")
+
+    # Wearable OAuth connect — v2 seeds fixture data after connecting, it does
+    # not pull live vendor data (specs/v2/06-client-portal.md).
+    oura_client_id = os.getenv("OURA_CLIENT_ID", "")
+    oura_client_secret = os.getenv("OURA_CLIENT_SECRET", "")
+    whoop_client_id = os.getenv("WHOOP_CLIENT_ID", "")
+    whoop_client_secret = os.getenv("WHOOP_CLIENT_SECRET", "")
+    garmin_client_id = os.getenv("GARMIN_CLIENT_ID", "")
+    garmin_client_secret = os.getenv("GARMIN_CLIENT_SECRET", "")
+    # Base URL this app is served at, needed to build OAuth redirect_uris.
+    public_base_url = os.getenv("PUBLIC_BASE_URL", "http://localhost:8000")
 
     # Retrieval
     min_grade = int(os.getenv("MIN_GRADE", "7"))

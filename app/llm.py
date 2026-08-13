@@ -17,10 +17,14 @@ cfg = get_config()
 _client = anthropic.Anthropic()
 
 
+def client_for(api_key: str | None) -> anthropic.Anthropic:
+    return anthropic.Anthropic(api_key=api_key) if api_key else _client
+
+
 def _json_call(model: str, system: str, prompt: str, schema: dict,
-               max_tokens: int = 2000) -> dict:
+               max_tokens: int = 2000, client: anthropic.Anthropic | None = None) -> dict:
     """One structured-output call. The schema is enforced by the API."""
-    response = _client.messages.create(
+    response = (client or _client).messages.create(
         model=model,
         max_tokens=max_tokens,
         system=system,
@@ -272,7 +276,8 @@ FOCUS_SCHEMA = {
 
 
 def question_concepts(question: str, patient_file: str,
-                      history: list[dict] | None = None) -> list[str]:
+                      history: list[dict] | None = None,
+                      client: anthropic.Anthropic | None = None) -> list[str]:
     """The concepts to hunt for in the corpus, in the same vocabulary as indexing.
 
     These anchor the traversal: a passage mentioning one of them is pulled in
@@ -291,7 +296,7 @@ def question_concepts(question: str, patient_file: str,
         "order to help answer it — including the ones implied by the patient's "
         "own labs and history, and by the earlier turns of the consultation, not "
         "only the words in the question itself.",
-        prompt, FOCUS_SCHEMA,
+        prompt, FOCUS_SCHEMA, client=client,
     )
     seen, out = set(), []
     for c in result["concepts"]:
@@ -361,7 +366,8 @@ def _history_block(history: list[dict]) -> str:
 
 
 def select_sources(question: str, patient_file: str, cards: list[dict],
-                   history: list[dict] | None = None) -> tuple[list[str], str]:
+                   history: list[dict] | None = None,
+                   client: anthropic.Anthropic | None = None) -> tuple[list[str], str]:
     """Pick which sources to open. Returns (source_ids, reasoning)."""
     if not cards:
         return [], "No source in the library met the requested grade."
@@ -383,7 +389,7 @@ def select_sources(question: str, patient_file: str, cards: list[dict],
         f"Practitioner's latest question: {question}"
     )
     result = _json_call(cfg.librarian_model, LIBRARIAN_SYSTEM, prompt,
-                        LIBRARIAN_SCHEMA)
+                        LIBRARIAN_SCHEMA, client=client)
 
     picked: list[str] = []
     for n in result["sources"]:
@@ -418,7 +424,8 @@ SPECIALIST_SYSTEM = (
 
 
 def answer(question: str, patient_file: str, passages: list[dict],
-           history: list[dict] | None = None) -> str:
+           history: list[dict] | None = None,
+           client: anthropic.Anthropic | None = None) -> str:
     if passages:
         def label(p):
             via = p.get("via", "opened")
@@ -440,7 +447,7 @@ def answer(question: str, patient_file: str, passages: list[dict],
         f"Passages from the clinic library:\n---\n{block}\n---\n\n"
         f"Practitioner's question: {question}"
     )
-    response = _client.messages.create(
+    response = (client or _client).messages.create(
         model=cfg.answer_model,
         max_tokens=8000,
         system=SPECIALIST_SYSTEM,
@@ -489,7 +496,8 @@ CHECKER_SYSTEM = (
 
 
 def check(question: str, answer_text: str, patient_file: str,
-          passages: list[dict]) -> dict:
+          passages: list[dict],
+          client: anthropic.Anthropic | None = None) -> dict:
     block = "\n\n".join(
         f"[S{i + 1}] {p['text']}" for i, p in enumerate(passages)
     ) or "(none)"
@@ -499,7 +507,7 @@ def check(question: str, answer_text: str, patient_file: str,
         f"Passages:\n---\n{block}\n---\n\n"
         f"Draft answer to verify:\n---\n{answer_text}\n---"
     )
-    return _json_call(cfg.checker_model, CHECKER_SYSTEM, prompt, CHECKER_SCHEMA)
+    return _json_call(cfg.checker_model, CHECKER_SYSTEM, prompt, CHECKER_SCHEMA, client=client)
 
 
 # --- Session summary ----------------------------------------------------------
@@ -511,8 +519,8 @@ SUMMARY_SYSTEM = (
 )
 
 
-def summarize_session(transcript: str) -> str:
-    response = _client.messages.create(
+def summarize_session(transcript: str, client: anthropic.Anthropic | None = None) -> str:
+    response = (client or _client).messages.create(
         model=cfg.checker_model,
         max_tokens=1000,
         system=SUMMARY_SYSTEM,

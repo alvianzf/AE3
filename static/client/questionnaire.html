@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Questionnaire · Clinic</title>
+  <link rel="stylesheet" href="../style.css?v=11">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <span class="sprig" aria-hidden="true">
+      <svg viewBox="0 0 20 24" fill="none" stroke="currentColor" stroke-width="1.3"
+           stroke-linecap="round">
+        <path d="M10 23V7"/>
+        <path d="M10 13c0-3.6 2.4-6.4 6-7-.3 3.8-2.6 6.4-6 7z" fill="currentColor"
+              fill-opacity=".16"/>
+        <path d="M10 9.5C10 6 7.8 3.3 4.3 2.5 4.6 6.2 6.7 8.8 10 9.5z"
+              fill="currentColor" fill-opacity=".1"/>
+      </svg>
+    </span>
+    <span class="brand"><b>Clinic</b><span class="sub">client portal</span></span>
+    <nav style="margin-left:auto;display:flex;gap:.4rem;flex-wrap:wrap">
+      <a class="btn ghost sm" href="questionnaire.html">Questionnaire</a>
+      <a class="btn ghost sm" href="files.html">Files</a>
+      <a class="btn ghost sm" href="wearables.html">Wearables</a>
+      <button class="btn ghost sm" id="logout-btn">Log out</button>
+    </nav>
+  </div>
+</header>
+
+<main class="pane on" style="max-width:38rem;margin:0 auto">
+  <section class="card-panel">
+    <div class="ph botanic"><h2 style="flex:1" id="q-title">Questionnaire</h2></div>
+    <div class="pb" id="q-body">
+      <div class="skel w40"></div><div class="skel w80"></div><div class="skel w60"></div>
+    </div>
+  </section>
+</main>
+
+<div id="toasts" class="toasts" aria-live="polite"></div>
+<script src="../shared.js"></script>
+<script>
+$('logout-btn').onclick = logout;
+
+function field(q, idx) {
+  const id = 'q-' + idx;
+  const label = `<label class="lbl" for="${id}">${esc(q.prompt)}</label>`;
+  switch (q.input_type) {
+    case 'number':
+      return label + `<input id="${id}" type="number">`;
+    case 'date':
+      return label + `<input id="${id}" type="date">`;
+    case 'choice':
+      return label + `<select id="${id}"><option value="">Choose…</option>`
+        + (q.options || []).map((o) => `<option value="${esc(o)}">${esc(o)}</option>`).join('')
+        + `</select>`;
+    case 'multi_choice':
+      return label + `<div style="display:flex;flex-wrap:wrap;gap:.4rem" id="${id}">`
+        + (q.options || []).map((o, i) => `<label style="display:flex;align-items:center;gap:.3rem;width:auto">
+            <input type="checkbox" value="${esc(o)}" style="width:auto" id="${id}-${i}">${esc(o)}</label>`).join('')
+        + `</div>`;
+    default:
+      return label + `<textarea id="${id}" rows="2"></textarea>`;
+  }
+}
+
+function readAnswer(q, idx) {
+  const id = 'q-' + idx;
+  if (q.input_type === 'multi_choice') {
+    return [...document.querySelectorAll(`#${id} input:checked`)].map((el) => el.value);
+  }
+  const el = $(id);
+  return el ? el.value : '';
+}
+
+async function load() {
+  const session = await requireRole('client');
+  if (!session) return;
+  const active = await api('/me/questionnaire');
+  if (!active) {
+    $('q-body').innerHTML = empty('No active questionnaire',
+      'Nothing to fill in right now — check back later.');
+    return;
+  }
+  $('q-title').textContent = active.title || 'Questionnaire';
+  const questions = active.questions || [];
+  $('q-body').innerHTML = questions.map(field).join('')
+    + `<button id="q-submit" class="btn block" style="margin-top:.9rem">Submit</button>
+       <div id="q-status" class="muted xs" style="margin-top:.5rem"></div>`;
+
+  $('q-submit').onclick = async () => {
+    const answers = {};
+    questions.forEach((q, i) => { answers[q.prompt] = readAnswer(q, i); });
+    $('q-submit').disabled = true;
+    $('q-status').textContent = 'Submitting…';
+    try {
+      await api('/me/questionnaire', json('POST', {
+        questionnaire_id: active.id, questionnaire_version: active.version, answers,
+      }));
+      $('q-status').textContent = '';
+      toast('Answers submitted');
+    } catch (e) {
+      $('q-status').textContent = '';
+      toast(e.message, 'bad');
+    }
+    $('q-submit').disabled = false;
+  };
+}
+load().catch((e) => toast(e.message, 'bad'));
+</script>
+</body>
+</html>

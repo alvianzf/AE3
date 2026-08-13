@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Log in · Clinic</title>
+  <link rel="stylesheet" href="../style.css?v=11">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <span class="sprig" aria-hidden="true">
+      <svg viewBox="0 0 20 24" fill="none" stroke="currentColor" stroke-width="1.3"
+           stroke-linecap="round">
+        <path d="M10 23V7"/>
+        <path d="M10 13c0-3.6 2.4-6.4 6-7-.3 3.8-2.6 6.4-6 7z" fill="currentColor"
+              fill-opacity=".16"/>
+        <path d="M10 9.5C10 6 7.8 3.3 4.3 2.5 4.6 6.2 6.7 8.8 10 9.5z"
+              fill="currentColor" fill-opacity=".1"/>
+      </svg>
+    </span>
+    <span class="brand"><b>Clinic</b><span class="sub">clinical knowledge assistant</span></span>
+    <nav style="margin-left:auto;display:flex;gap:.4rem;flex-wrap:wrap">
+      <a class="btn ghost sm" href="about.html">About</a>
+      <a class="btn ghost sm" href="directory.html">Find a practitioner</a>
+      <a class="btn ghost sm" href="client-signup.html">Sign up</a>
+    </nav>
+  </div>
+</header>
+
+<main class="pane on" style="max-width:26rem;margin:0 auto">
+  <section class="card-panel">
+    <div class="ph botanic"><h2 style="flex:1">Log in</h2></div>
+    <div class="pb">
+      <p class="hint">One sign-in for admins, practitioners and clients — where it takes you
+        depends on your account.</p>
+
+      <label class="lbl" for="l-email">Email</label>
+      <input id="l-email" type="email" placeholder="you@example.com" aria-label="Email">
+
+      <label class="lbl" for="l-password">Password</label>
+      <input id="l-password" type="password" placeholder="Password" aria-label="Password">
+
+      <button id="l-submit" class="btn block" style="margin-top:.9rem">Log in</button>
+      <div id="l-status" class="muted xs" style="margin-top:.5rem"></div>
+      <p class="hint" style="margin-top:.8rem">New here?
+        <a href="client-signup.html">Sign up as a client</a> or
+        <a href="practitioner-signup.html">join as a practitioner</a>.</p>
+    </div>
+  </section>
+</main>
+
+<div id="toasts" class="toasts" aria-live="polite"></div>
+<script src="../shared.js"></script>
+<script>
+// Role is inferred server-side (auth.py tries admin, then practitioner, then
+// client by email) — the form never asks which one. Where each role lands
+// once logged in isn't specified in the contract, so this is a best-effort
+// landing page per role; worth the integrator confirming against auth.py's
+// actual session shape once it's built.
+const LANDING = { admin: '/static/index.html',
+                   practitioner: '/static/practitioner/profile.html',
+                   client: '/static/client/questionnaire.html' };
+
+$('l-submit').onclick = async () => {
+  const email = $('l-email').value.trim();
+  const password = $('l-password').value;
+  if (!email || !password) { toast('Email and password are required', 'bad'); return; }
+  $('l-submit').disabled = true;
+  $('l-status').textContent = 'Signing in…';
+  try {
+    const session = await api('/auth/login', json('POST', { email, password }));
+    $('l-status').textContent = '';
+    const role = session?.role;
+    location.href = LANDING[role] || '/static/index.html';
+  } catch (e) {
+    $('l-status').textContent = '';
+    toast(e.status === 401 ? 'Incorrect email or password' : e.message, 'bad');
+  }
+  $('l-submit').disabled = false;
+};
+$('l-password').onkeydown = (ev) => { if (ev.key === 'Enter') $('l-submit').click(); };
+</script>
+</body>
+</html>
