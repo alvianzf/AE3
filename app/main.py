@@ -379,6 +379,20 @@ def _decrypt_api_key(encrypted: str) -> str:
     return _fernet.decrypt(encrypted.encode()).decode()
 
 
+def _public(d: dict) -> dict:
+    """Strip fields that must never cross the API boundary. core_store/vault
+    getters return password_hash (and, for practitioners,
+    anthropic_api_key_encrypted) because auth.py needs them internally for
+    credential checks — every route that hands one of those dicts to a
+    caller must pass it through this first."""
+    return {k: v for k, v in d.items()
+            if k not in ("password_hash", "anthropic_api_key_encrypted")}
+
+
+def _public_list(items: list[dict]) -> list[dict]:
+    return [_public(d) for d in items]
+
+
 def _save_photo(practitioner_id: str, file: UploadFile, raw: bytes) -> str:
     suffix = Path(file.filename or "").suffix or ".jpg"
     dest = Path(cfg.photos_path) / f"{practitioner_id}{suffix}"
@@ -399,7 +413,7 @@ def list_practitioners_public(specialty: str = "", language: str = "") -> list[d
     # practitioner (specs/v2/03-website.md).
     for p in approved:
         core_store.log_profile_view(p["id"])
-    return approved
+    return _public_list(approved)
 
 
 @app.get("/api/practitioners/{practitioner_id}")
@@ -408,7 +422,7 @@ def get_practitioner_public(practitioner_id: str) -> dict:
     if practitioner is None or practitioner["status"] != "approved":
         raise HTTPException(404, "no such practitioner")
     core_store.log_profile_view(practitioner_id)
-    return practitioner
+    return _public(practitioner)
 
 
 @app.post("/api/practitioners")
@@ -432,7 +446,7 @@ async def practitioner_signup(
         photo_path = _save_photo(practitioner["id"], photo, raw)
         practitioner = core_store.update_practitioner_profile(
             practitioner["id"], photo_path=photo_path)
-    return practitioner
+    return _public(practitioner)
 
 
 class ContactSubmission(BaseModel):
@@ -491,7 +505,7 @@ class AdminCreate(BaseModel):
 
 @app.get("/api/superadmin/admins")
 def superadmin_list_admins(_: dict = Depends(auth.require_superadmin)) -> list[dict]:
-    return core_store.list_admins()
+    return _public_list(core_store.list_admins())
 
 
 @app.post("/api/superadmin/admins")
@@ -501,8 +515,8 @@ def superadmin_create_admin(body: AdminCreate,
         raise HTTPException(400, f"unknown admin role: {body.role}")
     if core_store.get_admin_by_email(body.email) is not None:
         raise HTTPException(409, "An admin with that email already exists.")
-    return core_store.create_admin(
-        body.email, auth.hash_password(body.password), body.name, body.role)
+    return _public(core_store.create_admin(
+        body.email, auth.hash_password(body.password), body.name, body.role))
 
 
 class AdminRoleUpdate(BaseModel):
@@ -518,7 +532,7 @@ def superadmin_set_admin_role(admin_id: str, body: AdminRoleUpdate,
         raise HTTPException(400, str(exc))
     if admin is None:
         raise HTTPException(404, "no such admin")
-    return admin
+    return _public(admin)
 
 
 @app.post("/api/superadmin/admins/{admin_id}/suspend")
@@ -530,7 +544,7 @@ def superadmin_suspend_admin(admin_id: str,
         raise HTTPException(400, str(exc))
     if admin is None:
         raise HTTPException(404, "no such admin")
-    return admin
+    return _public(admin)
 
 
 @app.post("/api/superadmin/admins/{admin_id}/reactivate")
@@ -539,7 +553,7 @@ def superadmin_reactivate_admin(admin_id: str,
     admin = core_store.set_admin_active(admin_id, True)
     if admin is None:
         raise HTTPException(404, "no such admin")
-    return admin
+    return _public(admin)
 
 
 # --- Admin: practitioner management ---------------------------------------------
@@ -548,7 +562,7 @@ def superadmin_reactivate_admin(admin_id: str,
 def admin_list_practitioners(
     status: str = "", _admin: dict = Depends(auth.require_admin),
 ) -> list[dict]:
-    return core_store.list_practitioners(status=status or None)
+    return _public_list(core_store.list_practitioners(status=status or None))
 
 
 @app.post("/api/admin/practitioners/{practitioner_id}/approve")
@@ -556,7 +570,7 @@ def admin_approve(practitioner_id: str, _admin: dict = Depends(auth.require_admi
     practitioner = core_store.approve_practitioner(practitioner_id)
     if practitioner is None:
         raise HTTPException(404, "no such practitioner")
-    return practitioner
+    return _public(practitioner)
 
 
 @app.post("/api/admin/practitioners/{practitioner_id}/reject")
@@ -564,7 +578,7 @@ def admin_reject(practitioner_id: str, _admin: dict = Depends(auth.require_admin
     practitioner = core_store.reject_practitioner(practitioner_id)
     if practitioner is None:
         raise HTTPException(404, "no such practitioner")
-    return practitioner
+    return _public(practitioner)
 
 
 @app.post("/api/admin/practitioners/{practitioner_id}/suspend")
@@ -572,7 +586,7 @@ def admin_suspend(practitioner_id: str, _admin: dict = Depends(auth.require_admi
     practitioner = core_store.suspend_practitioner(practitioner_id)
     if practitioner is None:
         raise HTTPException(404, "no such practitioner")
-    return practitioner
+    return _public(practitioner)
 
 
 class PlanUpdate(BaseModel):
@@ -586,13 +600,13 @@ def admin_set_plan(practitioner_id: str, body: PlanUpdate,
         raise HTTPException(400, f"unknown plan: {body.plan}")
     if body.plan == "pro":
         try:
-            return core_store.activate_pro(practitioner_id)
+            return _public(core_store.activate_pro(practitioner_id))
         except ValueError:
             raise HTTPException(404, "no such practitioner")
     practitioner = core_store.set_plan(practitioner_id, body.plan)
     if practitioner is None:
         raise HTTPException(404, "no such practitioner")
-    return practitioner
+    return _public(practitioner)
 
 
 @app.get("/api/admin/stats")
@@ -640,7 +654,7 @@ def admin_edit_questionnaire(questionnaire_id: str, body: QuestionnaireIn,
 
 @app.get("/api/me/profile")
 def me_profile(session: dict = Depends(auth.require_practitioner)) -> dict:
-    return core_store.get_practitioner(session["id"])
+    return _public(core_store.get_practitioner(session["id"]))
 
 
 @app.put("/api/me/profile")
@@ -673,7 +687,7 @@ async def me_update_profile(request: Request,
     practitioner = core_store.update_practitioner_profile(practitioner_id, **fields)
     if practitioner is None:
         raise HTTPException(404, "no such practitioner")
-    return practitioner
+    return _public(practitioner)
 
 
 @app.get("/api/me/contacts")
@@ -722,7 +736,7 @@ class NewClient(BaseModel):
 
 @app.get("/api/me/clients")
 def me_list_clients(session: dict = Depends(auth.require_pro_practitioner)) -> list[dict]:
-    return vault.list_clients(session["id"])
+    return _public_list(vault.list_clients(session["id"]))
 
 
 @app.post("/api/me/clients")
@@ -738,7 +752,7 @@ def me_create_client(body: NewClient,
     )
     core_store.add_client_directory_entry(body.email, practitioner_id, client["id"])
     vault.log(practitioner_id, "practitioner", "client created", body.name, client["id"])
-    return client
+    return _public(client)
 
 
 @app.get("/api/me/clients/{client_id}")
@@ -747,7 +761,7 @@ def me_get_client(client_id: str,
     client = vault.get_client(session["id"], client_id)
     if client is None:
         raise HTTPException(404, "no such client")
-    return client
+    return _public(client)
 
 
 @app.delete("/api/me/clients/{client_id}")
