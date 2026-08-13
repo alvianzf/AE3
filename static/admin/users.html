@@ -29,20 +29,35 @@
     </a>
     <nav style="margin-left:auto;display:flex;gap:.4rem;flex-wrap:wrap">
       <a class="btn ghost sm" href="/admin">Knowledge admin</a>
-      <a class="btn ghost sm" href="/account">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
-             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-7 8-7s8 3 8 7"/></svg>
-        Account</a>
-      <button class="btn ghost sm" id="logout-btn">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
-             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
-          <path d="M10 17l5-5-5-5"/><path d="M15 12H3"/></svg>
-        Log out</button>
+      <div class="user-menu-wrap">
+        <button class="btn ghost sm user-menu-btn" id="user-menu-btn" type="button"
+                aria-haspopup="true" aria-expanded="false" aria-label="Account menu">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-7 8-7s8 3 8 7"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="user-menu" id="user-menu" hidden>
+          <a class="user-menu-item" href="/account">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-7 8-7s8 3 8 7"/></svg>
+            Account</a>
+          <button class="user-menu-item" id="logout-btn" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+              <path d="M10 17l5-5-5-5"/><path d="M15 12H3"/></svg>
+            Log out</button>
+        </div>
+      </div>
     </nav>
   </div>
 </header>
+
+<nav class="breadcrumbs" aria-label="Breadcrumb"><a href="/admin">Admin</a><span class="sep">/</span><span class="here">Users</span></nav>
 
 <main class="pane on" style="max-width:60rem;margin:0 auto">
   <section class="card-panel" id="practitioners-panel">

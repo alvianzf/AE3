@@ -65,3 +65,31 @@ async function logout() {
   await api('/auth/logout', { method: 'POST' }).catch(() => {});
   location.href = '/login';
 }
+
+// User menu: a single icon+chevron button in the topbar that opens a small
+// dropdown (Account, Log out) instead of showing both as separate buttons.
+// Delegated on document so it works regardless of when #user-menu-btn is
+// added to the page.
+document.addEventListener('click', (ev) => {
+  const btn = ev.target.closest('#user-menu-btn');
+  const menu = $('user-menu');
+  if (btn && menu) {
+    ev.stopPropagation();
+    const opening = menu.hidden;
+    menu.hidden = !opening;
+    btn.setAttribute('aria-expanded', String(opening));
+    return;
+  }
+  if (menu && !menu.hidden && !ev.target.closest('#user-menu')) {
+    menu.hidden = true;
+    $('user-menu-btn')?.setAttribute('aria-expanded', 'false');
+  }
+});
+document.addEventListener('keydown', (ev) => {
+  if (ev.key !== 'Escape') return;
+  const menu = $('user-menu');
+  if (menu && !menu.hidden) {
+    menu.hidden = true;
+    $('user-menu-btn')?.setAttribute('aria-expanded', 'false');
+  }
+});

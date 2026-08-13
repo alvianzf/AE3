@@ -464,6 +464,31 @@ $('logout-btn').onclick = async () => {
   location.href = '/login';
 };
 
+/* ── User menu (icon + chevron -> Account / Log out dropdown) ────────────── */
+document.addEventListener('click', (ev) => {
+  const btn = ev.target.closest('#user-menu-btn');
+  const menu = $('user-menu');
+  if (btn && menu) {
+    ev.stopPropagation();
+    const opening = menu.hidden;
+    menu.hidden = !opening;
+    btn.setAttribute('aria-expanded', String(opening));
+    return;
+  }
+  if (menu && !menu.hidden && !ev.target.closest('#user-menu')) {
+    menu.hidden = true;
+    $('user-menu-btn')?.setAttribute('aria-expanded', 'false');
+  }
+});
+document.addEventListener('keydown', (ev) => {
+  if (ev.key !== 'Escape') return;
+  const menu = $('user-menu');
+  if (menu && !menu.hidden) {
+    menu.hidden = true;
+    $('user-menu-btn')?.setAttribute('aria-expanded', 'false');
+  }
+});
+
 /* ── Boot ───────────────────────────────────────────────────────────────── */
 loadHealth();
 loadAdmin();
