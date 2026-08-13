@@ -1,5 +1,28 @@
 # Specs changelog
 
+## v2.1 — 2026-08-13 (post-deploy fixes)
+
+Same version, no new scope — corrections made after v2 went live at
+https://telehealth.devshorepartners.id, tracked here rather than silently
+folded into the v2 entry below since the spec was already "finalized" when
+these were found.
+
+- **Retired the rest of v1's UI.** `/` used to serve v1's combined SPA
+  unauthenticated; it now redirects to `/login`. The SPA's old
+  "Practitioner" tab (patient records, consult) called `/api/patients` and
+  `/api/consult`, both retired when v2 shipped — deleted rather than left
+  broken, along with the now-fully-unused `app/gate.py` and
+  `app/patients.py`.
+- **Added `POST /api/auth/change-password`** ([08](v2/08-api.md#any-authenticated-role))
+  and an account settings page — v1's shared passphrase had nothing to
+  rotate; v2's real accounts needed a way to and none existed until this.
+- **Clean top-level page routes** ([03](v2/03-website.md)) replacing
+  `/static/public/...`-style URLs, which leaked the on-disk directory
+  layout into every link a visitor could see or share.
+- **Migrated v1's test patient data** into a Pro practitioner's vault by
+  hand (one-off script, not a route) so existing POC demo data stayed
+  visible after the cutover instead of being silently orphaned.
+
 ## v2 — 2026-08-13
 
 Scope expanded from a single-practitioner PoC to the full multi-tenant

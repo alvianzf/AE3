@@ -74,6 +74,7 @@ svg { flex: 0 0 auto; }
   display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
   padding: .7rem 1.25rem .55rem;
 }
+.brand-link { display: flex; align-items: center; gap: .6rem; text-decoration: none; color: inherit; }
 .brand { display: flex; align-items: baseline; gap: .5rem; }
 .brand b { font-size: 1.1rem; font-weight: 650; letter-spacing: -.01em; }
 .brand .sub { font-size: .78rem; color: var(--muted); }
@@ -110,6 +111,15 @@ svg { flex: 0 0 auto; }
 /* ── Layout ──────────────────────────────────────────────────────────────── */
 .pane { display: none; padding: 1.1rem 1.25rem 3rem; }
 .pane.on { display: block; }
+
+/* Single-card pages (login, signup, profile forms, coach detail, etc.)
+   vertically center their one card below the topbar. margin:auto on the
+   child rather than justify-content:center on the parent, so a card taller
+   than the viewport settles to the top instead of overflowing above the
+   visible area. Pages with their own multi-panel layout (the admin
+   dashboard, consult's client-list sidebar) don't get this class. */
+.pane.on.centered { display: flex; flex-direction: column; min-height: 100vh; }
+.pane.on.centered > .card-panel { margin: auto 0; width: 100%; }
 
 .layout { display: grid; gap: 1rem; align-items: start; }
 .layout.practitioner { grid-template-columns: 300px minmax(0, 1fr); }

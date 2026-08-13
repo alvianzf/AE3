@@ -6,13 +6,19 @@ profile is open to anyone.
 
 ## Pages
 
-| Page | Purpose |
-|---|---|
-| **About** | What the clinic is, static content, admin-editable copy |
-| **Practitioner signup** | Form → creates a `pending` practitioner row ([04](04-admin-portal.md)) |
-| **Practitioner directory** | Browsable/filterable list of `approved` practitioners |
-| **Coach detail** | One practitioner's full profile + contact form |
-| **Client signup** | Regular email/password signup ([06](06-client-portal.md)) |
+| Page | Route | Purpose |
+|---|---|---|
+| **About** | `/about` | What the clinic is, static content |
+| **Practitioner signup** | `/join` | Form → creates a `pending` practitioner row ([04](04-admin-portal.md)) |
+| **Practitioner directory** | `/directory` | Browsable/filterable list of `approved` practitioners |
+| **Coach detail** | `/coach/{id}` | One practitioner's full profile + contact form |
+| **Client signup** | `/signup` | Regular email/password signup ([06](06-client-portal.md)) |
+| **Log in** | `/login` | One form for all three roles — role is resolved server-side, not chosen |
+| **Account** | `/account` | Change password, works for whichever role is signed in ([08](08-api.md#any-authenticated-role)) |
+
+Clean top-level routes, not the `static/public/...` directory layout —
+`/static/` is mounted only for the pages' own assets. `GET /` redirects to
+`/login`.
 
 ## Practitioner directory
 

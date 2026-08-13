@@ -3,11 +3,24 @@
 JSON over HTTP, FastAPI, same conventions as v1
 ([v1/05-api.md](../v1/05-api.md)). What's new here is **real per-role auth**
 replacing v1's single shared passphrase ([10](10-security.md)) — every route
-below states which role(s) may call it.
+below states which role(s) may call it. Reflects what's actually
+implemented and deployed, not a plan — see [12](12-verification.md) for how
+it was proven.
 
-Grouped by app, not exhaustively enumerated field-by-field; that level of
-detail belongs in the API doc once each app's build starts, not guessed here
-for endpoints that don't exist yet.
+## Page routes vs. API routes
+
+Two separate route families, easy to conflate:
+
+- **Page routes** (`GET /login`, `/directory`, `/coach/{id}`,
+  `/practitioner/profile`, `/client/questionnaire`, `/admin`, …) serve the
+  static HTML pages under `static/`. They carry no `/api` prefix and no
+  `/static/public|practitioner|client` segment — the directory layout on
+  disk is not exposed in the URL. `/static/*` itself is mounted only for the
+  page's own assets (`style.css`, `shared.js`, `app.js`), not as an
+  alternate way to reach a page.
+- **API routes** (below, all under `/api/`) are what those pages' JS calls.
+
+`GET /` redirects to `/login`.
 
 ## Public (no auth)
 
@@ -15,18 +28,31 @@ for endpoints that don't exist yet.
 |---|---|
 | `GET /api/practitioners` | Directory list — `approved` only, filterable by specialty/language |
 | `GET /api/practitioners/{id}` | Coach detail — 404 if not `approved` |
-| `POST /api/practitioners` | Practitioner signup → `status=pending` |
+| `POST /api/practitioners` | Practitioner signup (multipart, for the photo) → `status=pending` |
 | `POST /api/practitioners/{id}/contact` | Contact form submission |
-| `POST /api/clients` | Client signup |
+| `POST /api/clients` | Client signup — attaches to `practitioner_id` if new, or completes an existing practitioner-created invite by email |
+| `POST /api/auth/login` | `{email, password}` → sets the session cookie; role is resolved server-side (tries admin, then practitioner, then client), never chosen by the caller |
+| `POST /api/auth/logout` | Clears the session cookie |
+| `POST /api/stripe/webhook` | Stripe webhook — verified by signature, not a session ([09](09-payments.md)) |
+| `GET /api/me/wearables/{provider}/callback` | OAuth callback — verified by a signed `state` param, not a session |
 | `GET /api/health` | Liveness, open by design as in v1 |
+
+## Any authenticated role
+
+| Route | Purpose |
+|---|---|
+| `GET /api/auth/me` | Current session `{role, id}`, or 401 |
+| `POST /api/auth/change-password` | `{current_password, new_password}` — works for whichever role is signed in, verified against that role's own store before setting a new hash. Added after initial deploy: v1 had a shared passphrase with nothing to rotate; v2's real accounts needed a way to change one and none existed until this route. |
 
 ## Practitioner (Basic or Pro, own resources only)
 
 | Route | Purpose |
 |---|---|
-| `GET/PUT /api/me/profile` | Own public profile |
-| `GET /api/me/contacts` | Contact form submissions addressed to them |
+| `GET/PUT /api/me/profile` | Own public profile — PUT accepts JSON or multipart (photo) |
+| `GET /api/me/contacts` | Contact form submissions addressed to them, filterable by status |
+| `PATCH /api/me/contacts/{id}` | Mark a submission contacted/closed |
 | `POST /api/me/upgrade` | Start Stripe checkout for Pro ([09](09-payments.md)) |
+| `GET /api/me/billing-portal` | Stripe Billing Portal link (Pro only in practice — no active subscription without one) |
 
 ## Practitioner (Pro only)
 
@@ -35,16 +61,20 @@ for endpoints that don't exist yet.
 | `POST /api/me/anthropic-key` | Set/rotate their own key — write-only, never read back |
 | `GET/POST /api/me/clients` | Create/list their clients |
 | `GET /api/me/clients/{id}` | Client record: entries, sessions, files, wearable data |
-| `POST /api/me/consult` | Ask a question about a client — runs Librarian → Specialist → Checker with their key ([07](07-ai-team.md)) |
+| `DELETE /api/me/clients/{id}` | Erase a client — redacts vault audit detail, keeps the rows ([10](10-security.md)) |
+| `POST /api/me/consult` | Ask a question about a client — runs Librarian → Specialist → Checker with their key ([07](07-ai-team.md)); 400 if no key is on file yet |
 
 ## Client
+
+Every client-scoped route resolves the practitioner's vault from the
+session's `practitioner_id` claim (set at login, since `vault.py` shards by
+practitioner) — never from a request parameter.
 
 | Route | Purpose |
 |---|---|
 | `GET/POST /api/me/questionnaire` | Fetch active questionnaire, submit response |
 | `POST /api/me/files` | Upload a lab file etc. |
-| `POST /api/me/wearables/{provider}/connect` | Start OAuth flow |
-| `GET /api/me/wearables/{provider}/callback` | OAuth callback → writes `wearable_connections`, seeds fixture data ([06](06-client-portal.md)) |
+| `POST /api/me/wearables/{provider}/connect` | Start OAuth flow, `practitioner_id` from the session |
 
 ## Admin
 
@@ -52,11 +82,16 @@ for endpoints that don't exist yet.
 |---|---|
 | `GET /api/admin/practitioners` | Review queue + full roster, filterable by status |
 | `POST /api/admin/practitioners/{id}/approve` `/reject` `/suspend` | Status transitions |
-| `PUT /api/admin/practitioners/{id}/plan` | Basic ↔ Pro override |
-| `…library routes` | Unchanged from v1 — `/api/sources`, `/api/graph`, `/api/relink`, `/api/consolidate` ([v1/05-api.md](../v1/05-api.md)) |
-| `GET/POST /api/admin/questionnaires` | CRUD + versioning |
-| `GET /api/admin/stats` | Site + per-practitioner traffic and contact-form stats |
-| `GET /api/admin/practitioners/{id}/client-count` | Fans out to that practitioner's vault ([02](02-data-model.md)) |
+| `PUT /api/admin/practitioners/{id}/plan` | Basic ↔ Pro override — setting `pro` calls the same `activate_pro()` Stripe's webhook calls, so Pro can be granted without Stripe ([09](09-payments.md)) |
+| `…library routes` | Unchanged from v1 — `/api/sources`, `/api/graph`, `/api/relink`, `/api/consolidate`, `/api/coverage`, `/api/audit` (library-only, not merged with any vault — [10](10-security.md)) ([v1/05-api.md](../v1/05-api.md)) |
+| `GET/POST /api/admin/questionnaires` | List / create (v1). `POST /api/admin/questionnaires/{id}` creates a new version rather than editing in place |
+| `GET /api/admin/stats` | `{total_views, total_contacts}` site-wide |
+| `GET /api/admin/practitioners/{id}/client-count` | Fans out to that practitioner's vault ([02](02-data-model.md)); `0` for Basic |
+
+**Not built**: a route to delete a practitioner outright (only suspend —
+[10](10-security.md) records this as a known gap), and a route exposing a
+Pro practitioner's own vault audit trail to either the practitioner or the
+admin.
 
 ## Failure modes
 
@@ -64,4 +99,4 @@ Same shape as v1: structured JSON error body, 401 for missing/invalid auth,
 404 rather than a silent empty result for a resource that doesn't exist or
 belongs to another tenant (a Pro practitioner requesting another
 practitioner's client 404s, not 403 — existence of another tenant's client
-id is not confirmed or denied).
+id is not confirmed or denied). Verified live in [12](12-verification.md).
