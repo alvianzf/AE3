@@ -28,10 +28,16 @@ superadmin, for the same reason.
 
 ## 1. Practitioner management
 
+Lives at `/admin/users` — split into its own page from `/admin`'s
+knowledge-library dashboard ([08](08-api.md)), since the two have nothing
+to do with each other beyond both being admin-only. Available to both
+admin and superadmin.
+
 | Action | Effect |
 |---|---|
+| Add directly | Admin creates a practitioner (name, email, password, profile fields) and it's `approved` immediately — no pending review, since the admin is already vouching for it. Distinct from public signup, which always starts `pending`. |
 | Review queue | List of `pending` practitioners with their submitted profile, approve or reject |
-| Approve | `status → approved`; now visible in the public directory |
+| Approve | `status → approved`; now visible in the public directory. Also reactivates a `suspended` or `rejected` practitioner — there's no separate "reactivate," approving from any prior status works. |
 | Reject | `status → rejected`; the applicant is told, not silently dropped |
 | Suspend | `status → suspended`; removed from the directory, portal access blocked, vault untouched |
 | Edit plan | Basic ↔ Pro. Downgrading Pro → Basic does not delete the vault — see [09 · Payments](09-payments.md#downgrade) |

@@ -12,7 +12,7 @@ it was proven.
 Two separate route families, easy to conflate:
 
 - **Page routes** (`GET /login`, `/directory`, `/coach/{id}`,
-  `/practitioner/profile`, `/client/questionnaire`, `/admin`, …) serve the
+  `/practitioner/profile`, `/client/questionnaire`, `/admin`, `/admin/users`, …) serve the
   static HTML pages under `static/`. They carry no `/api` prefix and no
   `/static/public|practitioner|client` segment — the directory layout on
   disk is not exposed in the URL. `/static/*` itself is mounted only for the
@@ -81,7 +81,8 @@ practitioner) — never from a request parameter.
 | Route | Purpose |
 |---|---|
 | `GET /api/admin/practitioners` | Review queue + full roster, filterable by status |
-| `POST /api/admin/practitioners/{id}/approve` `/reject` `/suspend` | Status transitions |
+| `POST /api/admin/practitioners` | Admin creates a practitioner directly — `approved` immediately, unlike public signup's `pending` |
+| `POST /api/admin/practitioners/{id}/approve` `/reject` `/suspend` | Status transitions — `approve` also works from `rejected`/`suspended` (reactivation) |
 | `PUT /api/admin/practitioners/{id}/plan` | Basic ↔ Pro override — setting `pro` calls the same `activate_pro()` Stripe's webhook calls, so Pro can be granted without Stripe ([09](09-payments.md)) |
 | `…library routes` | Unchanged from v1 — `/api/sources`, `/api/graph`, `/api/relink`, `/api/consolidate`, `/api/coverage`, `/api/audit` (library-only, not merged with any vault — [10](10-security.md)) ([v1/05-api.md](../v1/05-api.md)) |
 | `GET/POST /api/admin/questionnaires` | List / create (v1). `POST /api/admin/questionnaires/{id}` creates a new version rather than editing in place |

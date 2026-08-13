@@ -1,5 +1,18 @@
 # Specs changelog
 
+## v2.3 — 2026-08-13 (dedicated user-management page)
+
+- **`POST /api/admin/practitioners`** — admin or superadmin creates a
+  practitioner directly, approved immediately rather than entering the
+  pending review queue ([04](v2/04-admin-portal.md#1-practitioner-management)).
+- **New `/admin/users` page**, split out of `/admin`'s knowledge-library
+  dashboard: practitioner list/filter/actions/create for any admin, plus an
+  admin-management section (moved from `/admin`, unchanged) visible only to
+  superadmin sessions.
+- Every practitioner and client page was missing a link to `/account` —
+  there was no way to reach password-change from them. Added, along with
+  icons on every Account link and Log out button site-wide.
+
 ## v2.2 — 2026-08-13 (superadmin hierarchy + a real production leak)
 
 Also same version, more post-deploy corrections.
