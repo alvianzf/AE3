@@ -21,21 +21,37 @@ app, Neo4j, reverse-proxied behind Cloudflare. What's added:
 
 ## Configuration additions over v1
 
-| Var | Purpose |
-|---|---|
-| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_PRO` | Billing ([09](09-payments.md)) |
-| `VAULT_ENCRYPTION_KEY` | Encrypts `anthropic_api_key_encrypted` at rest ([10](10-security.md)) |
-| `OURA_CLIENT_ID/SECRET`, `WHOOP_CLIENT_ID/SECRET`, `GARMIN_CLIENT_ID/SECRET` | OAuth app credentials for the connect flow |
+| Var | Purpose | Required before first use |
+|---|---|---|
+| `CORE_DB_PATH`, `VAULTS_PATH`, `VAULT_FILES_PATH`, `PHOTOS_PATH` | New data stores ([02](02-data-model.md)) — sensible relative-path defaults, but set them under `/opt/clinic/data/` in production like v1's `SQLITE_PATH`/`ORIGINALS_PATH` | No — defaults work, just confirm they land under the same data volume as everything else |
+| `ADMIN_BOOTSTRAP_EMAIL`, `ADMIN_BOOTSTRAP_PASSWORD` | Creates the first admin account on boot if none exists ([10](10-security.md)) | **Yes** — with no accounts and no signup route for admins, there is no other way to get the first one in |
+| `VAULT_ENCRYPTION_KEY` | Encrypts `anthropic_api_key_encrypted` at rest ([10](10-security.md)) | **Yes** — unset, the app generates a throwaway key every process start, so every stored Pro key becomes unreadable on the next restart |
+| `PUBLIC_BASE_URL` | Builds Stripe checkout/webhook return URLs and OAuth redirect URIs | **Yes**, once Stripe/wearables are turned on — must be the real public origin, not `localhost` |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_PRO` | Billing ([09](09-payments.md)) | Only if Pro upgrade via Stripe is enabled — the admin plan-override path works without these |
+| `OURA_CLIENT_ID/SECRET`, `WHOOP_CLIENT_ID/SECRET`, `GARMIN_CLIENT_ID/SECRET` | OAuth app credentials for the connect flow | Only if wearable connect is enabled |
 
 ## Runbook additions
 
 - **New practitioner vault** is created automatically on Pro activation
   ([09](09-payments.md)) — no manual step.
-- **Deleting a practitioner** (explicit admin action, not a subscription
-  lapse) removes their vault file, their `vault-files/` directory, and their
-  `core.db` row. Irreversible, same as v1's source deletion — no backups
-  exist yet ([10](10-security.md)) to undo it.
+- **There is no route to delete a practitioner outright** in this version —
+  only suspend (removes them from the directory, blocks portal access,
+  leaves the vault untouched). Found during the [12 ·
+  Verification](12-verification.md) pass; noted as a gap in
+  [10 · Security](10-security.md), not fixed here. Until it exists, a
+  practitioner who wants to leave the platform has their account suspended,
+  not erased.
 - **Backups** are not built for this version. Flagged again here because
   operationally this is where it bites: at 10-20 practitioners, one host
   failure without backups is 10-20 practitioners' clinical data, not one
   demo's.
+
+## First boot on a fresh deployment
+
+1. Set `ADMIN_BOOTSTRAP_EMAIL`/`ADMIN_BOOTSTRAP_PASSWORD` and
+   `VAULT_ENCRYPTION_KEY` in `.env` *before* starting the app for the first
+   time.
+2. Start the app — it creates the admin account automatically.
+3. Log in as that admin, then consider removing the bootstrap vars from
+   `.env` (per [10](10-security.md), they're a one-time bootstrap, not a
+   standing credential worth leaving configured).

@@ -41,14 +41,19 @@ Anything else scripted against this host needs to do the same.
 
 ## Access
 
-The whole app sits behind a single shared passphrase — see `app/gate.py`. This is
-a door code, **not** authentication: there are no user accounts, and everyone who
-knows the phrase has full access to every patient record.
+**v2 replaces the shared passphrase with real accounts** — see
+`app/auth.py` and [`specs/v2/10-security.md`](specs/v2/10-security.md). Three
+roles (admin, practitioner, client), each with their own login at
+`/static/public/login.html`. `app/gate.py`'s passphrase (`DevshorePartners2026`)
+no longer gates anything once v2 is deployed.
 
-- Passphrase: `DevshorePartners2026` (`ACCESS_PASSPHRASE` in `/opt/clinic/.env`)
-- Cookie lasts 12 hours; changing `SESSION_SECRET` logs everyone out.
-- `/api/health` is deliberately left open so a monitor can check the service
-  without holding the door code. Every other route is gated, API included.
+- `/api/health` is still deliberately left open so a monitor can check the
+  service without a session. Every other route requires the matching
+  `require_*` dependency.
+- The **first admin account** only exists if `ADMIN_BOOTSTRAP_EMAIL` /
+  `ADMIN_BOOTSTRAP_PASSWORD` were set in `.env` *before* the app's first boot
+  after this deploy — see "Updating to v2" below. There is no other way to
+  create the first admin.
 
 ## What runs where
 
@@ -83,7 +88,7 @@ Both are easy to lose in a rewrite and each breaks a core feature silently:
 large concurrent load — if the box starts swapping, the first thing to check is
 Neo4j's heap.
 
-## Updating
+## Updating (v1, still applies to the library pipeline)
 
 ```bash
 # from the project root
@@ -92,19 +97,47 @@ scp static/* ubuntu@43.156.136.92:/opt/clinic/static/
 ssh ubuntu@43.156.136.92 'sudo systemctl restart clinic'
 ```
 
-Verify end to end against the deployment:
+`verify.py`'s grounding/citation/grade-threshold checks are unaffected by v2 —
+the library pipeline (`app/knowledge.py`, `app/llm.py`'s Reader/Indexer/
+Librarian/Specialist/Checker) is unchanged. What v1's `verify.py` can no
+longer do post-v2 is drive it through `/api/patients` and `/api/consult` — those
+routes are retired; `verify_v2.py` exercises the same guarantees through
+`/api/me/consult` instead (see its "carried forward" section), alongside the
+nine v2-specific checks.
+
+## Updating to v2
+
+This is a **breaking cutover**, not an incremental update: the shared
+passphrase stops working, `/api/patients` and `/api/consult` are gone, and
+v1's SPA "practitioner" tab (patient/consult) at `/` will 404 once deployed
+— the admin/library tab still works, now behind real login.
 
 ```bash
-CLINIC_URL=https://telehealth.devshorepartners.id .venv/bin/python verify.py
+# 1. One-time, BEFORE the first restart — add to /opt/clinic/.env:
+#    ADMIN_BOOTSTRAP_EMAIL=<your admin email>
+#    ADMIN_BOOTSTRAP_PASSWORD=<a real password — remove this line after first login>
+#    VAULT_ENCRYPTION_KEY=<python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())">
+#    PUBLIC_BASE_URL=https://telehealth.devshorepartners.id
+#    (Stripe / wearable OAuth vars only if turning those on now — see
+#    specs/v2/11-operations.md's config table)
+
+# 2. From the project root:
+scp requirements.txt ubuntu@43.156.136.92:/opt/clinic/requirements.txt
+ssh ubuntu@43.156.136.92 'sudo -u clinic /opt/clinic/.venv/bin/pip install -r /opt/clinic/requirements.txt'
+scp app/*.py ubuntu@43.156.136.92:/opt/clinic/app/
+scp -r static/public static/practitioner static/client static/shared.js \
+    ubuntu@43.156.136.92:/opt/clinic/static/
+ssh ubuntu@43.156.136.92 'sudo systemctl restart clinic'
+
+# 3. Verify
+CLINIC_URL=https://telehealth.devshorepartners.id \
+ADMIN_BOOTSTRAP_EMAIL=<same as above> ADMIN_BOOTSTRAP_PASSWORD=<same as above> \
+ANTHROPIC_API_KEY=<a real key> .venv/bin/python verify_v2.py
 ```
 
-It ingests its own fixtures and removes them again on the way out, so it can be
-run against the live instance without leaving debris in the library. Two caveats:
-
-- Step 9 is skipped against a remote target — it talks to the store directly and
-  would otherwise test your laptop's database instead of the server's.
-- The test patient is left behind on purpose (deleting patients is not exposed in
-  the API). Remove it before a demo if you want a clean patient list.
+`/opt/clinic/data/patients.db` (v1's patient data) is orphaned by this
+cutover — nothing in v2 reads it, and nothing deletes it either; it's left in
+place.
 
 ## Logs
 

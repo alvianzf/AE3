@@ -688,6 +688,14 @@ def me_get_client(client_id: str,
     return client
 
 
+@app.delete("/api/me/clients/{client_id}")
+def me_delete_client(client_id: str,
+                     session: dict = Depends(auth.require_pro_practitioner)) -> dict:
+    if not vault.delete_client(session["id"], client_id):
+        raise HTTPException(404, "no such client")
+    return {"deleted": client_id}
+
+
 class MeConsult(BaseModel):
     client_id: str
     question: str

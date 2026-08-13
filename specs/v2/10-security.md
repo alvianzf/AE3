@@ -54,6 +54,19 @@ one key per practitioner.
 | Backups | None specified yet — worse here than v1, since real client accounts and payment state now exist |
 | Rate limiting on public forms | Contact form and signup are spammable |
 | GDPR/consent apparatus | No consent records, retention policy, export, or processor register, despite now holding real client PII |
+| Full practitioner account deletion | Admin can suspend a practitioner (removes them from the directory, blocks portal access) but there is no route that deletes the account or its vault outright. Found writing [12 · Verification](12-verification.md)'s test suite: cleanup there can only suspend its own fixtures, not remove them. Deliberate per [09 · Payments](09-payments.md#downgrade)'s "never delete a vault as a side effect" rule for *billing* events — but there is currently no *explicit* deletion path either, for an admin who genuinely wants one gone (e.g. a GDPR erasure request from the practitioner side, not just a client's). |
+| No exposed audit trail for a vault | [08 · HTTP API](08-api.md) never lists a route to read a Pro practitioner's own `vault.audit()` — neither the practitioner nor the admin can currently see it through the API, only `verify_v2.py`'s direct-store checks can. v1's admin UI showed a merged library+patient audit; v2 replaced that with a library-only `/api/audit` ([04 · Admin portal](04-admin-portal.md)) and never added the vault-side equivalent back. |
+
+## VAULT_ENCRYPTION_KEY must be set explicitly
+
+`app/main.py` generates an ephemeral Fernet key at process start when
+`VAULT_ENCRYPTION_KEY` is unset, so local development works without any
+setup. In any real deployment this is a trap, not a convenience: every
+`anthropic_api_key_encrypted` value becomes permanently undecryptable the
+moment the process restarts, silently locking every Pro practitioner out of
+consultations until they re-enter their key. Set the env var before the
+first practitioner sets a key, not after the first restart reveals the
+problem.
 
 ## Recommendation
 
