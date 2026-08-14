@@ -24,11 +24,10 @@
       <span class="brand"><b>Clinic</b><span class="sub">practitioner portal</span><span class="tag">Phase 2 POC</span></span>
     </a>
     <nav class="sidebar-nav">
-      <a class="sidebar-link" href="/practitioner/profile">Profile</a>
-      <a class="sidebar-link" href="/practitioner/contacts">Contacts</a>
-      <a class="sidebar-link" href="/practitioner/clients">Clients</a>
       <a class="sidebar-link active" href="/practitioner/consult">Consult</a>
-      <a class="sidebar-link" href="/practitioner/upgrade">Upgrade</a>
+      <a class="sidebar-link" href="/practitioner/contacts">Contacts</a>
+      <a class="sidebar-link" href="/practitioner/knowledge">Knowledge base</a>
+      <a class="sidebar-link" href="/practitioner/upgrade" id="nav-upgrade">Upgrade</a>
     </nav>
   </aside>
   <div class="app-main">
@@ -47,6 +46,11 @@
             <path d="M6 9l6 6 6-6"/></svg>
         </button>
         <div class="user-menu" id="user-menu" hidden>
+          <a class="user-menu-item" href="/practitioner/profile">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-7 8-7s8 3 8 7"/></svg>
+            Profile</a>
           <a class="user-menu-item" href="/account">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -73,7 +77,10 @@
 
   <div class="layout practitioner" id="consult-layout" hidden>
     <aside class="card-panel">
-      <div class="ph botanic"><h2 style="flex:1">Clients</h2></div>
+      <div class="ph botanic">
+        <h2 style="flex:1">Clients</h2>
+        <a class="btn ghost sm" href="/practitioner/clients">Add a client</a>
+      </div>
       <div class="pb tight"><ul id="client-list" class="rows"></ul></div>
     </aside>
 
@@ -123,8 +130,10 @@ async function loadClients() {
     ? list.map((c) => `<li data-id="${c.id}" class="${c.id === selectedClient ? 'on' : ''}"
         tabindex="0"><span class="av">${esc((c.name || '?').slice(0, 1).toUpperCase())}</span>
         <span class="grow"><span class="nm">${esc(c.name)}</span>
-        <span class="sub2">${esc(c.email)}</span></span></li>`).join('')
-    : '<li class="plain"><span class="muted small">No clients yet — add one on the Clients page.</span></li>';
+        <span class="sub2">${esc(c.email)}</span></span>
+        <a class="btn ghost sm" data-detail href="/practitioner/clients/${c.id}"
+           title="Intake review &amp; consultation history" onclick="event.stopPropagation()">Details</a></li>`).join('')
+    : '<li class="plain"><span class="muted small">No clients yet — add one above.</span></li>';
   $('client-list').querySelectorAll('[data-id]').forEach((li) => {
     li.onclick = () => selectClient(li.dataset.id, li.querySelector('.nm').textContent);
   });
@@ -203,6 +212,7 @@ async function load() {
   const session = await requireRole('practitioner');
   if (!session) return;
   const p = await api('/me/profile');
+  if (p.plan === 'pro') $('nav-upgrade').hidden = true;
   if (p.plan !== 'pro') { $('pro-gate').hidden = false; return; }
   $('consult-layout').hidden = false;
   loadClients();

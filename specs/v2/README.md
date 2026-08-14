@@ -19,6 +19,7 @@ changed vs. [v1](../v1/README.md).
 | 11 | [Operations](11-operations.md) | Deployment additions, config, runbook |
 | 12 | [Verification](12-verification.md) | v2-specific success criteria and how each is tested |
 | 13 | [Known issues](13-known-issues.md) | v2.6 backlog from an independent PM+QA review — all Critical/High findings fixed same-day; email-dependent Medium/Low findings deliberately deferred |
+| 14 | [UX findings v2.7](14-ux-findings-v2.7.md) | v2.7 candidate backlog from a UX audit on top of 13 — spec only, not yet implemented except one same-day fix |
 
 ## Reading order
 

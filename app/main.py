@@ -787,6 +787,28 @@ def me_set_api_key(body: ApiKeyUpdate,
     return {"ok": True}
 
 
+@app.get("/api/me/knowledge")
+def me_knowledge(session: dict = Depends(auth.require_pro_practitioner)) -> list[dict]:
+    weights = vault.get_source_weights(session["id"])
+    cards = knowledge.catalogue(1)
+    for card in cards:
+        card["weight"] = weights.get(card["id"], card["grade"])
+    return cards
+
+
+class SourceWeightIn(BaseModel):
+    weight: int
+
+
+@app.put("/api/me/knowledge/{source_id}/weight")
+def me_set_source_weight(source_id: str, body: SourceWeightIn,
+                         session: dict = Depends(auth.require_pro_practitioner)) -> dict:
+    try:
+        return vault.set_source_weight(session["id"], source_id, body.weight)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
 # --- Practitioner portal: Pro clients + consultation -----------------------------
 
 class NewClient(BaseModel):
@@ -863,7 +885,14 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
         session_id = vault.create_session(practitioner_id, body.client_id, body.question)["id"]
     history = vault.session_history(practitioner_id, session_id)[-6:]
 
-    cards = knowledge.catalogue(body.min_grade)
+    # Apply this practitioner's own source weights (never the shared admin
+    # grade) before the Librarian sees the list, so a personal down/up-weight
+    # affects only their own consultations — see specs/v2/14 addendum #5.
+    weights = vault.get_source_weights(practitioner_id)
+    cards = knowledge.catalogue(1)
+    for card in cards:
+        card["grade"] = weights.get(card["id"], card["grade"])
+    cards = [c for c in cards if c["grade"] >= body.min_grade]
     chosen, reasoning = llm.select_sources(body.question, client_file, cards,
                                           history, client=client_llm)
     focus = llm.question_concepts(body.question, client_file, history,
@@ -1203,6 +1232,11 @@ def practitioner_consult_page() -> FileResponse:
 @app.get("/practitioner/upgrade")
 def practitioner_upgrade_page() -> FileResponse:
     return _page("practitioner", "upgrade.html")
+
+
+@app.get("/practitioner/knowledge")
+def practitioner_knowledge_page() -> FileResponse:
+    return _page("practitioner", "knowledge.html")
 
 
 @app.get("/client/questionnaire")

@@ -130,6 +130,14 @@ def ensure_schema(practitioner_id: str) -> None:
                 updated_at TEXT NOT NULL,
                 PRIMARY KEY (client_id, theme)
             );
+            -- A practitioner's own personal weight for a shared library
+            -- source — never touches the admin-set grade on the Source node
+            -- itself, and invisible to every other practitioner and admin.
+            CREATE TABLE IF NOT EXISTS source_weights (
+                source_id TEXT PRIMARY KEY,
+                weight INTEGER NOT NULL,
+                updated_at TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS session_turns (
                 id TEXT PRIMARY KEY,
                 session_id TEXT NOT NULL,
@@ -665,3 +673,27 @@ def list_intake_notes(practitioner_id: str, client_id: str) -> dict:
             (client_id,),
         ).fetchall()
     return {r["theme"]: r["note"] for r in rows}
+
+
+# --- Source weights (practitioner's own view of the shared library) -----------
+
+def get_source_weights(practitioner_id: str) -> dict:
+    """Returns {source_id: weight} — this practitioner's own overrides only."""
+    with _connect(practitioner_id) as conn:
+        rows = conn.execute("SELECT source_id, weight FROM source_weights").fetchall()
+    return {r["source_id"]: r["weight"] for r in rows}
+
+
+def set_source_weight(practitioner_id: str, source_id: str, weight: int) -> dict:
+    if not 1 <= weight <= 10:
+        raise ValueError("weight must be between 1 and 10")
+    row = {"source_id": source_id, "weight": weight, "updated_at": _now()}
+    with _connect(practitioner_id) as conn:
+        conn.execute(
+            "INSERT INTO source_weights (source_id, weight, updated_at) "
+            "VALUES (:source_id, :weight, :updated_at) "
+            "ON CONFLICT(source_id) DO UPDATE SET "
+            "weight = excluded.weight, updated_at = excluded.updated_at",
+            row,
+        )
+    return row

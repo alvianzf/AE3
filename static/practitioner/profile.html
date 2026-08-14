@@ -24,11 +24,10 @@
       <span class="brand"><b>Clinic</b><span class="sub">practitioner portal</span><span class="tag">Phase 2 POC</span></span>
     </a>
     <nav class="sidebar-nav">
-      <a class="sidebar-link active" href="/practitioner/profile">Profile</a>
-      <a class="sidebar-link" href="/practitioner/contacts">Contacts</a>
-      <a class="sidebar-link" href="/practitioner/clients">Clients</a>
       <a class="sidebar-link" href="/practitioner/consult">Consult</a>
-      <a class="sidebar-link" href="/practitioner/upgrade">Upgrade</a>
+      <a class="sidebar-link" href="/practitioner/contacts">Contacts</a>
+      <a class="sidebar-link" href="/practitioner/knowledge">Knowledge base</a>
+      <a class="sidebar-link" href="/practitioner/upgrade" id="nav-upgrade">Upgrade</a>
     </nav>
   </aside>
   <div class="app-main">
@@ -47,6 +46,11 @@
             <path d="M6 9l6 6 6-6"/></svg>
         </button>
         <div class="user-menu" id="user-menu" hidden>
+          <a class="user-menu-item" href="/practitioner/profile">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-7 8-7s8 3 8 7"/></svg>
+            Profile</a>
           <a class="user-menu-item" href="/account">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -155,6 +159,7 @@ async function load() {
   const session = await requireRole('practitioner');
   if (!session) return;
   const p = await api('/me/profile');
+  if (p.plan === 'pro') $('nav-upgrade').hidden = true;
   $('profile-body').innerHTML = form(p);
   $('api-key-panel').hidden = p.plan !== 'pro';
   setKeyBadge(p.has_anthropic_key);

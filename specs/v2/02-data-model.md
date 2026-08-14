@@ -59,8 +59,9 @@ questionnaires (
 questionnaire_questions (
   id TEXT PRIMARY KEY, questionnaire_id, ordinal, prompt,
   input_type,          -- text | choice | multi_choice | number | date
-  options_json
-)
+  options_json,
+  theme TEXT NOT NULL DEFAULT 'General'   -- v2.7: groups questions for the
+)                                          -- practitioner's themed intake review
 
 profile_view_events (
   id TEXT PRIMARY KEY, practitioner_id, ts
@@ -134,11 +135,31 @@ record_entries (
   id TEXT PRIMARY KEY, client_id, kind, content, created_at
 )  -- kind ∈ lab | history | note | session_summary — same shape as v1
 
-sessions ( id TEXT PRIMARY KEY, client_id, title, started_at )
+sessions (
+  id TEXT PRIMARY KEY, client_id, title, started_at,
+  status TEXT NOT NULL DEFAULT 'in_progress'  -- v2.7: in_progress | done
+)
 
 session_turns (
   id TEXT PRIMARY KEY, session_id, ordinal, question, answer, payload,
   created_at
+)
+
+-- v2.7: one clinician note + one client report per session, each with its
+-- own draft/final state — separate documents, not two views of one text.
+session_documents (
+  id TEXT PRIMARY KEY, session_id, client_id,
+  kind TEXT NOT NULL,          -- clinician_note | client_report
+  status TEXT NOT NULL DEFAULT 'draft',   -- draft | final
+  content TEXT NOT NULL DEFAULT '', updated_at,
+  UNIQUE(session_id, kind)
+)
+
+-- v2.7: a clinician's freeform note per questionnaire theme for a client —
+-- separate from the client's own answers, one row per (client, theme).
+intake_notes (
+  client_id, theme, note TEXT NOT NULL DEFAULT '', updated_at,
+  PRIMARY KEY (client_id, theme)
 )
 
 audit_events (

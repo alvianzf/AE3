@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Contacts · Clinic</title>
+  <title>Knowledge base · Clinic</title>
   <link rel="stylesheet" href="/static/style.css?v=11">
 </head>
 <body>
@@ -25,14 +25,14 @@
     </a>
     <nav class="sidebar-nav">
       <a class="sidebar-link" href="/practitioner/consult">Consult</a>
-      <a class="sidebar-link active" href="/practitioner/contacts">Contacts</a>
-      <a class="sidebar-link" href="/practitioner/knowledge">Knowledge base</a>
+      <a class="sidebar-link" href="/practitioner/contacts">Contacts</a>
+      <a class="sidebar-link active" href="/practitioner/knowledge">Knowledge base</a>
       <a class="sidebar-link" href="/practitioner/upgrade" id="nav-upgrade">Upgrade</a>
     </nav>
   </aside>
   <div class="app-main">
     <header class="app-topbar">
-      <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="/practitioner/consult">Practitioner</a><span class="sep">/</span><span class="here">Contacts</span></nav>
+      <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="/practitioner/consult">Practitioner</a><span class="sep">/</span><span class="here">Knowledge base</span></nav>
       <div class="user-menu-wrap">
         <button class="user-menu-btn" id="user-menu-btn" type="button"
                 aria-haspopup="true" aria-expanded="false" aria-label="Account menu">
@@ -66,74 +66,86 @@
       </div>
     </header>
 
-<main class="pane on centered" style="max-width:44rem;margin:0 auto">
-  <section class="card-panel">
-    <div class="ph botanic">
-      <h2 style="flex:1">Contact form submissions</h2>
-      <span class="count" id="c-count"></span>
-    </div>
-    <div class="pb">
-      <select id="c-filter" aria-label="Filter by status" style="max-width:12rem;margin-bottom:.7rem">
-        <option value="">All</option>
-        <option value="new">New</option>
-        <option value="contacted">Contacted</option>
-        <option value="closed">Closed</option>
-      </select>
-      <ul id="c-list" class="rows"></ul>
-    </div>
-  </section>
-</main>
+    <main class="pane on" style="max-width:52rem;margin:0 auto">
+      <section class="card-panel" id="pro-gate" hidden>
+        <div class="pb"><div class="empty">
+          <b>Knowledge base is a Pro feature</b>
+          <p>Browsing the library and personalizing source weight needs the Pro plan.</p>
+          <a class="btn" href="/practitioner/upgrade">Upgrade to Pro</a>
+        </div></div>
+      </section>
+
+      <section class="card-panel" id="kb-panel" hidden>
+        <div class="ph botanic">
+          <h2 style="flex:1">Knowledge base</h2>
+          <span class="count" id="kb-count"></span>
+        </div>
+        <div class="pb">
+          <p class="hint">This is the shared library every practitioner's consultations draw
+            from. The grade shown is set by an admin. Your weight is personal — adjusting it
+            only changes which sources your own consultations consider; it's invisible to
+            everyone else and never changes the admin's grade.</p>
+          <div id="kb-list"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
 
 <div id="toasts" class="toasts" aria-live="polite"></div>
 <script src="/static/shared.js"></script>
 <script>
 $('logout-btn').onclick = logout;
 
-function row(c) {
-  return `<li class="plain" data-id="${c.id}" style="display:block;cursor:default">
-    <div style="display:flex;justify-content:space-between;gap:.6rem;align-items:baseline;flex-wrap:wrap">
-      <span class="nm">${esc(c.client_name)} <span class="muted xs">${esc(c.client_email)}</span></span>
-      <span class="chip">${esc(c.status)}</span>
+function sourceRow(s) {
+  const overridden = s.weight !== s.grade;
+  return `<div class="card-panel" style="padding:.7rem;margin-bottom:.6rem" data-id="${esc(s.id)}">
+    <div style="display:flex;justify-content:space-between;gap:.5rem;align-items:baseline;flex-wrap:wrap">
+      <b>${esc(s.title)}</b>
+      <span class="chip">grade ${s.grade}</span>
     </div>
-    <p class="hint" style="margin:.3rem 0">${esc(c.message)}</p>
-    <div style="display:flex;gap:.4rem;align-items:center">
-      <span class="muted xs">${esc((c.created_at || '').slice(0, 16).replace('T', ' '))}</span>
-      ${c.status !== 'contacted' ? `<button class="btn ghost sm" data-set="contacted">Mark contacted</button>` : ''}
-      ${c.status !== 'closed' ? `<button class="btn ghost sm" data-set="closed">Mark closed</button>` : ''}
+    <div class="muted xs">${esc(s.kind || '')} · ${esc(s.origin || '')}
+      ${(s.topics || []).length ? '· ' + s.topics.map(esc).join(', ') : ''}</div>
+    <div style="display:flex;align-items:center;gap:.6rem;margin-top:.5rem">
+      <label class="lbl" style="margin:0">Your weight</label>
+      <input type="number" min="1" max="10" value="${s.weight}" data-weight
+             style="width:5rem">
+      <button class="btn ghost sm" data-save type="button">Save</button>
+      <span class="chip${overridden ? '' : ' warn'}" data-status style="margin-left:auto">
+        ${overridden ? 'personalized' : 'matches admin grade'}</span>
     </div>
-  </li>`;
+  </div>`;
+}
+
+async function loadKnowledge() {
+  const list = await api('/me/knowledge');
+  $('kb-count').textContent = list.length || '';
+  $('kb-list').innerHTML = list.length
+    ? list.map(sourceRow).join('')
+    : empty('No sources yet', 'Nothing has been added to the library yet.');
+  $('kb-list').querySelectorAll('[data-save]').forEach((btn) => {
+    btn.onclick = async () => {
+      const row = btn.closest('[data-id]');
+      const weight = +row.querySelector('[data-weight]').value;
+      try {
+        await api(`/me/knowledge/${row.dataset.id}/weight`, json('PUT', { weight }));
+        toast('Weight saved');
+        loadKnowledge();
+      } catch (e) { toast(e.message, 'bad'); }
+    };
+  });
 }
 
 async function load() {
   const session = await requireRole('practitioner');
   if (!session) return;
-  api('/me/profile').then((p) => { if (p.plan === 'pro') $('nav-upgrade').hidden = true; });
-  const q = $('c-filter').value ? '?status=' + $('c-filter').value : '';
-  const list = await api('/me/contacts' + q);
-  $('c-count').textContent = list.length || '';
-  $('c-list').innerHTML = list.length ? list.map(row).join('')
-    : empty('No submissions yet', 'Messages from your coach-detail page will show up here.');
-
-  $('c-list').querySelectorAll('[data-set]').forEach((btn) => {
-    btn.onclick = async () => {
-      const li = btn.closest('li');
-      const status = btn.dataset.set;
-      try {
-        // 08-api.md documents GET /api/me/contacts but not a status-update
-        // route; core_store.update_contact_status(submission_id, status)
-        // exists, so this assumes a matching PATCH route. Flagging for the
-        // integrator to confirm the exact path/verb once auth.py's routes land.
-        await api(`/me/contacts/${li.dataset.id}`, json('PATCH', { status }));
-        toast('Updated');
-        load();
-      } catch (e) { toast(e.message, 'bad'); }
-    };
-  });
+  const p = await api('/me/profile');
+  if (p.plan !== 'pro') { $('pro-gate').hidden = false; return; }
+  $('nav-upgrade').hidden = true;
+  $('kb-panel').hidden = false;
+  loadKnowledge();
 }
-$('c-filter').onchange = load;
 load().catch((e) => toast(e.message, 'bad'));
 </script>
-</div>
-</div>
 </body>
 </html>

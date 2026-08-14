@@ -63,6 +63,13 @@ Two separate route families, easy to conflate:
 | `GET /api/me/clients/{id}` | Client record: entries, sessions, files, wearable data |
 | `DELETE /api/me/clients/{id}` | Erase a client — redacts vault audit detail, keeps the rows ([10](10-security.md)) |
 | `POST /api/me/consult` | Ask a question about a client — runs Librarian → Specialist → Checker with their key ([07](07-ai-team.md)); 400 if no key is on file yet |
+| `GET /api/me/clients/{id}/sessions` | List a client's consultations (v2.7), newest first, with `status` and turn count |
+| `GET /api/me/clients/{id}/sessions/{session_id}` | Full turn transcript + both documents (`clinician_note`, `client_report`) for one consultation (v2.7) |
+| `PATCH /api/me/clients/{id}/sessions/{session_id}/status` | Toggle `in_progress` ↔ `done` (v2.7) |
+| `PUT /api/me/clients/{id}/sessions/{session_id}/documents/{kind}` | Save a `clinician_note` or `client_report` as `draft` or `final` (v2.7) |
+| `GET /api/me/clients/{id}/documents` | All documents across a client's sessions, newest first — the reports & documents panel (v2.7) |
+| `GET /api/me/clients/{id}/intake` | Client's questionnaire response + the questionnaire structure (with themes) + saved clinician notes per theme (v2.7) |
+| `PUT /api/me/clients/{id}/intake/notes` | Upsert one clinician note for one theme (v2.7) |
 
 ## Client
 
@@ -85,7 +92,8 @@ practitioner) — never from a request parameter.
 | `POST /api/admin/practitioners/{id}/approve` `/reject` `/suspend` | Status transitions — `approve` also works from `rejected`/`suspended` (reactivation) |
 | `PUT /api/admin/practitioners/{id}/plan` | Basic ↔ Pro override — setting `pro` calls the same `activate_pro()` Stripe's webhook calls, so Pro can be granted without Stripe ([09](09-payments.md)) |
 | `…library routes` | Unchanged from v1 — `/api/sources`, `/api/graph`, `/api/relink`, `/api/consolidate`, `/api/coverage`, `/api/audit` (library-only, not merged with any vault — [10](10-security.md)) ([v1/05-api.md](../v1/05-api.md)) |
-| `GET/POST /api/admin/questionnaires` | List / create (v1). `POST /api/admin/questionnaires/{id}` creates a new version rather than editing in place |
+| `GET/POST /api/admin/questionnaires` | List / create. `POST /api/admin/questionnaires/{id}` creates a new version rather than editing in place |
+| `GET /api/admin/questionnaires/{id}` | Fetch one questionnaire with its questions (v2.7 — backs the builder's edit view) |
 | `GET /api/admin/stats` | `{total_views, total_contacts}` site-wide |
 | `GET /api/admin/practitioners/{id}/client-count` | Fans out to that practitioner's vault ([02](02-data-model.md)); `0` for Basic |
 

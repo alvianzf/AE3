@@ -1,5 +1,53 @@
 # Specs changelog
 
+## v2.7 — 2026-08-14 (client history/reports, themed intake, sidebar nav)
+
+Three previously-unspecified feature requests, scoped down before building
+([02](v2/02-data-model.md), [04](v2/04-admin-portal.md),
+[08](v2/08-api.md)): an admin questionnaire builder with mixed question
+types and themes, a themed "Intake review" for practitioners (no AI
+synthesis yet — deferred as its own follow-up), and a per-client
+consultation history with draft/final clinician notes and client reports.
+
+**Admin — questionnaire builder** (`/admin/questionnaires`): create/edit
+questionnaires with mixed question types (text, number, date, choice,
+checklist) grouped into themes (`questionnaire_questions.theme`, migrated).
+Editing still creates a new version rather than mutating in place, unchanged
+from v1's rule. Added `GET /api/admin/questionnaires/{id}` to back the
+builder's edit view.
+
+**Practitioner — client detail page** (`/practitioner/clients/{id}`, new):
+- *Intake review* tab — a client's questionnaire answers grouped by theme,
+  with a free-text clinician-notes box per theme (`intake_notes` table, new).
+- *Consultations & reports* tab — past consultations with `in_progress`/
+  `done` status (`sessions.status`, migrated), expandable Q&A turns, and two
+  documents per consultation — a Clinician note and a Client report, each
+  independently draft/final (`session_documents` table, new) — plus a
+  Reports & documents panel listing every document across a client's
+  sessions.
+- Six new practitioner-scoped routes under `/api/me/clients/{id}/...` for
+  sessions, session status, documents, and intake notes/notes-save.
+
+**Fixed same day, before any real client data depended on it:** the client
+questionnaire's submit handler keyed answers by prompt text; Intake review
+reads them by question id. Every answer would have shown "not answered."
+Found by a PM-agent UX audit, fixed by keying both sides on question id.
+
+**Navigation redesigned:** page-navigation links moved from the top bar into
+a left sidebar on every authenticated/portal page; the account/logout menu
+stays in a slim top strip. Auth flows (login, both signups, the
+practitioner-signup thank-you page) and the client questionnaire page keep
+the plain top bar instead — single-task screens where a persistent portal
+sidebar is a distraction, not an aid. Practitioner's default landing page
+changed from Profile to Consult.
+
+**Specced, not yet built:** a follow-up UX audit (PM agent → Engineer)
+produced [14 · UX findings v2.7](v2/14-ux-findings-v2.7.md) — 20 findings
+across all four portals (e.g. "Start consultation" doesn't carry client
+context into Consult; `/account` has no way back to your own portal). None
+of these are implemented yet; sequencing which ones to build is a separate
+decision.
+
 ## v2.6 — 2026-08-14 (PM+QA review, all Critical/High findings fixed)
 
 Two independent reviews (PM: user flows and unmet promises; QA: functional
