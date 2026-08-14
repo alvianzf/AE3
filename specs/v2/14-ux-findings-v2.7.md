@@ -135,16 +135,19 @@ failed question.
 banner/empty-state on Consult itself pointing at the profile key panel,
 instead of only reacting after a failed question.
 
-### P8 — Low: Upgrade page's "Already on Pro" copy references Clients but the practitioner's default landing is now Consult
+### P8 — RESOLVED (fixed same day, alongside the addendum's nav changes): Upgrade page's "Already on Pro" copy referenced Clients while the practitioner's default landing was Consult
 
-`upgrade.html`'s post-upgrade message says "Head to Clients to get
+`upgrade.html`'s post-upgrade message said "Head to Clients to get
 started" — but the actual default landing page (per this session's
-context) is now Consult, not Clients. Minor inconsistency between the
-copy's implied next step and the real navigation default.
+context) was Consult, not Clients. Fixed by pointing the copy at Consult
+in the same edit that hid the Upgrade nav link once already on Pro (see
+addendum #3). Superseded again by the v2.8 dashboard round, where the
+default landing became `/practitioner/dashboard` — the copy should be
+re-checked against that if dashboards are audited next.
 
-**Fix direction:** point the copy at Consult (or Clients, whichever is
+~~Fix direction: point the copy at Consult (or Clients, whichever is
 the intended first Pro action) to match the current landing-page
-decision.
+decision.~~
 
 ### P9 — Low: "Add a client" is tucked inside a collapsed `<details>` on a page with no other content
 
@@ -366,14 +369,14 @@ page in your sidebar."
 
 | ID | Portal | Severity | Status |
 |---|---|---|---|
-| P1 | Practitioner | Critical | Open |
-| P2 | Practitioner | High | Open |
-| P3 | Practitioner | High | Open |
-| P4 | Practitioner | Medium | Open |
+| P1 | Practitioner | Critical | RESOLVED (fixed v2.9) |
+| P2 | Practitioner | High | RESOLVED (fixed v2.9) |
+| P3 | Practitioner | High | RESOLVED (fixed v2.9) |
+| P4 | Practitioner | Medium | RESOLVED (fixed v2.9 — intake shown in the overview panel, not a list chip) |
 | P5 | Practitioner | High | Open |
 | P6 | Practitioner | Medium | Open |
 | P7 | Practitioner | Medium | Open |
-| P8 | Practitioner | Low | Open |
+| P8 | Practitioner | Low | RESOLVED (fixed same day) |
 | P9 | Practitioner | Low | Open |
 | A1 | Admin | High | Open |
 | A2 | Admin | Medium | Open |

@@ -1,5 +1,30 @@
 # Specs changelog
 
+## v2.9 — 2026-08-14 (Consult shows everything about the selected client)
+
+Resolves [14 · UX findings](v2/14-ux-findings-v2.7.md) P1-P4: a practitioner
+had to leave Consult to check a client's intake or history, and nothing
+linked the two pages together.
+
+- **Client overview panel** on `/practitioner/consult`, next to the ask
+  panel whenever a client is selected: their questionnaire answers grouped
+  by theme (same data as the intake review tab) and their 5 most recent
+  consultations with status — all without navigating away.
+- **`?client=<id>` and `?session=<id>` query params**: `client-detail.html`'s
+  "Start consultation" button and each session's new "Continue in Consult"
+  link now carry real context into Consult, which reads them on load and
+  auto-selects the client (and replays that session's transcript into the
+  thread if a session id is present) instead of landing on the generic
+  picker. Consult also keeps the URL in sync as a client is selected, so
+  a consultation-in-progress can be bookmarked or shared.
+- **Renamed "Resume" → "Reopen"** on the done/in-progress toggle in
+  `client-detail.html`'s session list, since "Resume" now means something
+  different (continue chatting in Consult) — the two were easy to conflate
+  under one label.
+
+Dashboard layouts also switched from multi-column card grids to a single
+stacked column — the grids left visible empty space with only 2-3 cards.
+
 ## v2.8 — 2026-08-14 (dashboards for every portal)
 
 Each portal (admin, practitioner, client) gets a `Dashboard` page — an

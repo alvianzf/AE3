@@ -236,12 +236,16 @@ async function expandSession(sessionId, container) {
 
 function sessionRow(s, i) {
   const started = (s.started_at || '').slice(0, 16).replace('T', ' ');
+  const continueLink = s.status !== 'done'
+    ? `<a class="btn sm" href="/practitioner/consult?client=${clientId}&session=${s.id}">Continue in Consult</a>`
+    : '';
   return `<li class="plain" data-id="${s.id}" style="display:block">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem;flex-wrap:wrap">
       <span><b>#${i + 1}</b> ${esc(s.title)} <span class="muted xs">${started} · ${s.turns} turn${s.turns === 1 ? '' : 's'}</span></span>
       <span style="display:flex;gap:.4rem;align-items:center">
         <span class="chip${s.status === 'done' ? '' : ' warn'}">${s.status === 'done' ? 'done' : 'in progress'}</span>
-        <button class="btn ghost sm" data-toggle-status type="button">${s.status === 'done' ? 'Resume' : 'Mark done'}</button>
+        ${continueLink}
+        <button class="btn ghost sm" data-toggle-status type="button">${s.status === 'done' ? 'Reopen' : 'Mark done'}</button>
         <button class="btn ghost sm" data-open type="button">Open</button>
       </span>
     </div>
@@ -266,7 +270,7 @@ async function loadSessions() {
   $('sessions-body').querySelectorAll('[data-toggle-status]').forEach((btn) => {
     btn.onclick = async () => {
       const li = btn.closest('[data-id]');
-      const current = btn.textContent.trim() === 'Resume' ? 'done' : 'in_progress';
+      const current = btn.textContent.trim() === 'Reopen' ? 'done' : 'in_progress';
       const next = current === 'done' ? 'in_progress' : 'done';
       try {
         await api(`/me/clients/${clientId}/sessions/${li.dataset.id}/status`,
@@ -309,7 +313,7 @@ async function load() {
   $('bc-name').textContent = client.name;
   $('cl-email').textContent = client.email;
   $('cl-avatar').textContent = (client.name || '?').slice(0, 1).toUpperCase();
-  $('cl-consult-link').href = '/practitioner/consult';
+  $('cl-consult-link').href = '/practitioner/consult?client=' + clientId;
 
   showTab('intake');
   loadIntake().catch((e) => toast(e.message, 'bad'));

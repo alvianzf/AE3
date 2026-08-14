@@ -67,7 +67,7 @@
       </div>
     </header>
 
-    <main class="pane on" style="max-width:56rem;margin:0 auto">
+    <main class="pane on" style="max-width:42rem;margin:0 auto">
       <section class="card-panel" id="welcome-panel">
         <div class="pb" style="display:flex;align-items:center;gap:.8rem;flex-wrap:wrap">
           <div class="grow">
@@ -82,7 +82,7 @@
         </div>
       </section>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-top:1rem" id="stat-cards"></div>
+      <div style="display:flex;flex-direction:column;gap:.7rem;margin-top:1rem" id="stat-cards"></div>
 
       <section class="card-panel" id="history-panel" hidden style="margin-top:1rem">
         <div class="ph botanic">
@@ -109,9 +109,10 @@
 $('logout-btn').onclick = logout;
 
 function statCard(label, value, href) {
-  return `<a class="card-panel" href="${href}" style="padding:.9rem;text-decoration:none;color:inherit;display:block">
-    <div class="muted xs">${esc(label)}</div>
-    <div style="font-size:1.6rem;font-weight:700;margin-top:.2rem">${value}</div>
+  return `<a class="card-panel" href="${href}" style="padding:.9rem 1.1rem;text-decoration:none;
+      color:inherit;display:flex;align-items:center;justify-content:space-between;gap:1rem">
+    <span class="muted xs">${esc(label)}</span>
+    <span style="font-size:1.4rem;font-weight:700">${value}</span>
   </a>`;
 }
 

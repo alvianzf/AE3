@@ -61,8 +61,8 @@
       </div>
     </header>
 
-    <main class="pane on" style="max-width:48rem;margin:0 auto">
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem" id="stat-cards"></div>
+    <main class="pane on" style="max-width:34rem;margin:0 auto">
+      <div style="display:flex;flex-direction:column;gap:.7rem" id="stat-cards"></div>
     </main>
   </div>
 </div>
@@ -73,10 +73,13 @@
 $('logout-btn').onclick = logout;
 
 function statCard(label, value, sub, href) {
-  return `<a class="card-panel" href="${href}" style="padding:.9rem;text-decoration:none;color:inherit;display:block">
-    <div class="muted xs">${esc(label)}</div>
-    <div style="font-size:1.4rem;font-weight:700;margin-top:.2rem">${esc(value)}</div>
-    <div class="muted xs" style="margin-top:.2rem">${esc(sub)}</div>
+  return `<a class="card-panel" href="${href}" style="padding:.9rem 1.1rem;text-decoration:none;
+      color:inherit;display:flex;align-items:center;justify-content:space-between;gap:1rem">
+    <span>
+      <span class="nm" style="display:block">${esc(label)}</span>
+      <span class="muted xs">${esc(sub)}</span>
+    </span>
+    <span style="font-size:1.3rem;font-weight:700;flex:0 0 auto">${esc(value)}</span>
   </a>`;
 }
 
