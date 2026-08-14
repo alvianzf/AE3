@@ -70,6 +70,9 @@ Two separate route families, easy to conflate:
 | `GET /api/me/clients/{id}/documents` | All documents across a client's sessions, newest first — the reports & documents panel (v2.7) |
 | `GET /api/me/clients/{id}/intake` | Client's questionnaire response + the questionnaire structure (with themes) + saved clinician notes per theme (v2.7) |
 | `PUT /api/me/clients/{id}/intake/notes` | Upsert one clinician note for one theme (v2.7) |
+| `GET /api/me/knowledge` | The shared library merged with this practitioner's own source weight overrides (v2.7) |
+| `PUT /api/me/knowledge/{source_id}/weight` | Set this practitioner's personal weight (1-10) for a source — stored in their own vault, never touches the admin grade (v2.7) |
+| `GET /api/me/sessions/recent` | Most recent consultations across every client, joined with client name — the dashboard's historical-consultations widget (v2.8) |
 
 ## Client
 
@@ -80,6 +83,7 @@ practitioner) — never from a request parameter.
 | Route | Purpose |
 |---|---|
 | `GET/POST /api/me/questionnaire` | Fetch active questionnaire, submit response |
+| `GET /api/me/questionnaire/response` | The client's own submitted response, or `null` — the client dashboard's questionnaire-status card (v2.8) |
 | `POST /api/me/files` | Upload a lab file etc. |
 | `POST /api/me/wearables/{provider}/connect` | Start OAuth flow, `practitioner_id` from the session |
 

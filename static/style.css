@@ -376,6 +376,22 @@ label.lbl:first-child { margin-top: 0; }
 .fade { opacity: 0; transition: opacity .12s; }
 .rows li:hover .fade, .fade:focus-visible { opacity: 1; }
 
+/* Calendar-style date marker: large day number, month abbreviation below —
+   used by dashboard widgets (e.g. historical consultations) instead of a
+   plain timestamp string. */
+.cal-icon {
+  width: 3rem; flex: 0 0 auto; border: 1px solid var(--line); border-radius: var(--r);
+  background: var(--panel); overflow: hidden; text-align: center;
+}
+.cal-icon .day {
+  display: block; font-size: 1.3rem; font-weight: 750; line-height: 1.15;
+  padding-top: .15rem; color: var(--ink);
+}
+.cal-icon .mon {
+  display: block; font-size: .62rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .05em; background: var(--accent); color: #fff; padding: .12rem 0;
+}
+
 /* ── Patient header ──────────────────────────────────────────────────────── */
 .pt-head { display: flex; align-items: center; gap: .8rem; padding: .9rem 1rem; }
 .pt-head .av { width: 2.4rem; height: 2.4rem; font-size: .85rem; }

@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard · Clinic</title>
+  <link rel="stylesheet" href="/static/style.css?v=11">
+</head>
+<body>
+
+<div class="app-shell">
+  <aside class="sidebar">
+    <a href="/practitioner/dashboard" class="brand-link">
+      <span class="sprig" aria-hidden="true">
+      <svg viewBox="0 0 20 24" fill="none" stroke="currentColor" stroke-width="1.3"
+           stroke-linecap="round">
+        <path d="M10 23V7"/>
+        <path d="M10 13c0-3.6 2.4-6.4 6-7-.3 3.8-2.6 6.4-6 7z" fill="currentColor"
+              fill-opacity=".16"/>
+        <path d="M10 9.5C10 6 7.8 3.3 4.3 2.5 4.6 6.2 6.7 8.8 10 9.5z"
+              fill="currentColor" fill-opacity=".1"/>
+      </svg>
+      </span>
+      <span class="brand"><b>Clinic</b><span class="sub">practitioner portal</span><span class="tag">Phase 2 POC</span></span>
+    </a>
+    <nav class="sidebar-nav">
+      <a class="sidebar-link active" href="/practitioner/dashboard">Dashboard</a>
+      <a class="sidebar-link" href="/practitioner/consult">Consult</a>
+      <a class="sidebar-link" href="/practitioner/contacts">Contacts</a>
+      <a class="sidebar-link" href="/practitioner/knowledge">Knowledge base</a>
+      <a class="sidebar-link" href="/practitioner/upgrade" id="nav-upgrade">Upgrade</a>
+    </nav>
+  </aside>
+  <div class="app-main">
+    <header class="app-topbar">
+      <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="/practitioner/dashboard">Practitioner</a><span class="sep">/</span><span class="here">Dashboard</span></nav>
+      <div class="user-menu-wrap">
+        <button class="user-menu-btn" id="user-menu-btn" type="button"
+                aria-haspopup="true" aria-expanded="false" aria-label="Account menu">
+          <span class="user-icon-circle">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-7 8-7s8 3 8 7"/></svg>
+          </span>
+          <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="user-menu" id="user-menu" hidden>
+          <a class="user-menu-item" href="/practitioner/profile">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-7 8-7s8 3 8 7"/></svg>
+            Profile</a>
+          <a class="user-menu-item" href="/account">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+            Account</a>
+          <button class="user-menu-item" id="logout-btn" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+              <path d="M10 17l5-5-5-5"/><path d="M15 12H3"/></svg>
+            Log out</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="pane on" style="max-width:56rem;margin:0 auto">
+      <section class="card-panel" id="welcome-panel">
+        <div class="pb" style="display:flex;align-items:center;gap:.8rem;flex-wrap:wrap">
+          <div class="grow">
+            <div style="font-weight:650;font-size:1.05rem" id="w-name">…</div>
+            <div class="muted xs">
+              <span class="chip" id="w-plan"></span>
+              <span class="chip" id="w-status"></span>
+              <span class="chip" id="w-key" hidden></span>
+            </div>
+          </div>
+          <a class="btn" href="/practitioner/consult">Go to Consult</a>
+        </div>
+      </section>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-top:1rem" id="stat-cards"></div>
+
+      <section class="card-panel" id="history-panel" hidden style="margin-top:1rem">
+        <div class="ph botanic">
+          <h2 style="flex:1">Historical consultations</h2>
+          <a class="btn ghost sm" href="/practitioner/consult">Go to Consult</a>
+        </div>
+        <div class="pb tight" id="history-list"></div>
+      </section>
+
+      <section class="card-panel" id="recent-panel" style="margin-top:1rem">
+        <div class="ph botanic">
+          <h2 style="flex:1">Recent contact submissions</h2>
+          <a class="btn ghost sm" href="/practitioner/contacts">View all</a>
+        </div>
+        <div class="pb tight" id="recent-contacts"></div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<div id="toasts" class="toasts" aria-live="polite"></div>
+<script src="/static/shared.js"></script>
+<script>
+$('logout-btn').onclick = logout;
+
+function statCard(label, value, href) {
+  return `<a class="card-panel" href="${href}" style="padding:.9rem;text-decoration:none;color:inherit;display:block">
+    <div class="muted xs">${esc(label)}</div>
+    <div style="font-size:1.6rem;font-weight:700;margin-top:.2rem">${value}</div>
+  </a>`;
+}
+
+const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+
+function historyRow(s) {
+  const d = new Date(s.started_at);
+  const day = isNaN(d) ? '–' : d.getDate();
+  const mon = isNaN(d) ? '' : MONTHS[d.getMonth()];
+  return `<li class="plain" style="display:flex;gap:.7rem;align-items:center">
+    <span class="cal-icon"><span class="day">${day}</span><span class="mon">${mon}</span></span>
+    <a href="/practitioner/clients/${s.client_id}" class="grow" style="text-decoration:none;color:inherit">
+      <span class="nm">${esc(s.client_name)} <span class="chip${s.status === 'done' ? '' : ' warn'}" style="margin-left:.3rem">${s.status === 'done' ? 'done' : 'in progress'}</span></span>
+      <span class="sub2">${esc(s.title)} · ${s.turns} turn${s.turns === 1 ? '' : 's'}</span>
+    </a>
+  </li>`;
+}
+
+function contactRow(c) {
+  return `<li class="plain" style="display:block">
+    <div style="display:flex;justify-content:space-between;gap:.5rem;align-items:baseline;flex-wrap:wrap">
+      <span class="nm">${esc(c.client_name)} <span class="muted xs">${esc(c.client_email)}</span></span>
+      <span class="chip">${esc(c.status)}</span>
+    </div>
+  </li>`;
+}
+
+async function load() {
+  const session = await requireRole('practitioner');
+  if (!session) return;
+  const p = await api('/me/profile');
+
+  $('w-name').textContent = p.name;
+  $('w-plan').textContent = p.plan + ' plan';
+  $('w-status').textContent = p.status;
+  if (p.plan === 'pro') {
+    $('nav-upgrade').hidden = true;
+    $('w-key').hidden = false;
+    $('w-key').textContent = p.has_anthropic_key ? 'API key on file' : 'No API key set';
+    $('w-key').classList.toggle('warn', !p.has_anthropic_key);
+  }
+
+  const contacts = await api('/me/contacts');
+  const newContacts = contacts.filter((c) => c.status === 'new');
+
+  const cards = [statCard('Contact submissions', contacts.length, '/practitioner/contacts')];
+  if (p.plan === 'pro') {
+    const clients = await api('/me/clients');
+    cards.push(statCard('Clients', clients.length, '/practitioner/consult'));
+    $('history-panel').hidden = false;
+    api('/me/sessions/recent').then((sessions) => {
+      $('history-list').innerHTML = sessions.length
+        ? `<ul class="rows">${sessions.map(historyRow).join('')}</ul>`
+        : empty('No consultations yet', 'Start one from Consult.');
+    }).catch((e) => { $('history-list').innerHTML = empty('Could not load', e.message); });
+  } else {
+    cards.push(statCard('Upgrade to Pro', '→', '/practitioner/upgrade'));
+    $('history-panel').hidden = true;
+  }
+  $('stat-cards').innerHTML = cards.join('');
+
+  $('recent-contacts').innerHTML = newContacts.length
+    ? `<ul class="rows">${newContacts.slice(0, 5).map(contactRow).join('')}</ul>`
+    : empty('No new submissions', 'You\'re all caught up.');
+}
+load().catch((e) => toast(e.message, 'bad'));
+</script>
+</body>
+</html>

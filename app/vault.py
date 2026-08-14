@@ -387,6 +387,24 @@ def add_turn(practitioner_id: str, session_id: str, question: str, answer: str,
         )
 
 
+def list_recent_sessions(practitioner_id: str, limit: int = 8) -> list[dict]:
+    """Most recent consultations across every client — the practitioner
+    dashboard's historical-consultation widget, not scoped to one client."""
+    with _connect(practitioner_id) as conn:
+        rows = conn.execute(
+            """
+            SELECT s.id, s.title, s.started_at, s.status, s.client_id,
+                   c.name AS client_name,
+                   (SELECT count(*) FROM session_turns t WHERE t.session_id = s.id)
+                       AS turns
+            FROM sessions s JOIN clients c ON c.id = s.client_id
+            ORDER BY s.started_at DESC LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def list_sessions(practitioner_id: str, client_id: str) -> list[dict]:
     with _connect(practitioner_id) as conn:
         rows = conn.execute(

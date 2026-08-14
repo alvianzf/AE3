@@ -978,6 +978,11 @@ def _owned_session(practitioner_id: str, client_id: str, session_id: str) -> dic
     return session
 
 
+@app.get("/api/me/sessions/recent")
+def me_recent_sessions(session: dict = Depends(auth.require_pro_practitioner)) -> list[dict]:
+    return vault.list_recent_sessions(session["id"])
+
+
 @app.get("/api/me/clients/{client_id}/sessions")
 def me_list_sessions(client_id: str,
                      session: dict = Depends(auth.require_pro_practitioner)) -> list[dict]:
@@ -1111,6 +1116,11 @@ async def me_upload_file(
     )
 
 
+@app.get("/api/me/questionnaire/response")
+def me_questionnaire_response(session: dict = Depends(auth.require_client)) -> dict | None:
+    return vault.get_questionnaire_response(session["practitioner_id"], session["id"])
+
+
 @app.get("/api/me/files")
 def me_list_files(session: dict = Depends(auth.require_client)) -> list[dict]:
     # storage_path is an internal filesystem path, not the client's business.
@@ -1136,6 +1146,11 @@ def _page(*parts: str) -> FileResponse:
 @app.get("/")
 def index() -> RedirectResponse:
     return RedirectResponse("/login")
+
+
+@app.get("/admin/dashboard")
+def admin_dashboard_page() -> FileResponse:
+    return _page("admin", "dashboard.html")
 
 
 @app.get("/admin")
@@ -1217,6 +1232,11 @@ def practitioner_clients_page() -> FileResponse:
     return _page("practitioner", "clients.html")
 
 
+@app.get("/practitioner/dashboard")
+def practitioner_dashboard_page() -> FileResponse:
+    return _page("practitioner", "dashboard.html")
+
+
 @app.get("/practitioner/clients/{client_id}")
 def practitioner_client_detail_page(client_id: str) -> FileResponse:
     # client_id isn't used server-side — read from location.pathname client-side,
@@ -1237,6 +1257,11 @@ def practitioner_upgrade_page() -> FileResponse:
 @app.get("/practitioner/knowledge")
 def practitioner_knowledge_page() -> FileResponse:
     return _page("practitioner", "knowledge.html")
+
+
+@app.get("/client/dashboard")
+def client_dashboard_page() -> FileResponse:
+    return _page("client", "dashboard.html")
 
 
 @app.get("/client/questionnaire")

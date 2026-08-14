@@ -162,6 +162,15 @@ intake_notes (
   PRIMARY KEY (client_id, theme)
 )
 
+-- v2.7: a practitioner's own personal weight for a shared library source.
+-- Never touches the admin-set grade on the Neo4j Source node, and invisible
+-- to every other practitioner and to admin — it only re-scores the source
+-- list this practitioner's own POST /api/me/consult sees before the
+-- Librarian chooses from it.
+source_weights (
+  source_id TEXT PRIMARY KEY, weight INTEGER NOT NULL, updated_at
+)
+
 audit_events (
   id TEXT PRIMARY KEY, ts, actor, action, detail, client_id
 )  -- anything naming a client or quoting a clinical question goes here,

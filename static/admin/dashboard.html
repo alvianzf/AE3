@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard · Clinic</title>
+  <link rel="stylesheet" href="/static/style.css?v=11">
+</head>
+<body>
+
+<div class="app-shell">
+  <aside class="sidebar">
+    <a href="/admin/dashboard" class="brand-link">
+      <span class="sprig" aria-hidden="true">
+        <svg viewBox="0 0 20 24" fill="none" stroke="currentColor" stroke-width="1.3"
+             stroke-linecap="round">
+          <path d="M10 23V7"/>
+          <path d="M10 13c0-3.6 2.4-6.4 6-7-.3 3.8-2.6 6.4-6 7z" fill="currentColor"
+                fill-opacity=".16"/>
+          <path d="M10 9.5C10 6 7.8 3.3 4.3 2.5 4.6 6.2 6.7 8.8 10 9.5z"
+                fill="currentColor" fill-opacity=".1"/>
+        </svg>
+      </span>
+      <span class="brand">
+        <b>Clinic</b>
+        <span class="sub">dashboard</span>
+        <span class="tag">Phase 2 POC</span>
+      </span>
+    </a>
+    <nav class="sidebar-nav">
+      <a class="sidebar-link active" href="/admin/dashboard">Dashboard</a>
+      <a class="sidebar-link" href="/admin">Knowledge admin</a>
+      <a class="sidebar-link" href="/admin/users">Users</a>
+      <a class="sidebar-link" href="/admin/questionnaires">Questionnaires</a>
+    </nav>
+  </aside>
+  <div class="app-main">
+    <header class="app-topbar">
+      <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="/admin/dashboard">Admin</a><span class="sep">/</span><span class="here">Dashboard</span></nav>
+      <div class="user-menu-wrap">
+        <button class="user-menu-btn" id="user-menu-btn" type="button"
+                aria-haspopup="true" aria-expanded="false" aria-label="Account menu">
+          <span class="user-icon-circle">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-7 8-7s8 3 8 7"/></svg>
+          </span>
+          <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="user-menu" id="user-menu" hidden>
+          <a class="user-menu-item" href="/account">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+            Account</a>
+          <button class="user-menu-item" id="logout-btn" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+              <path d="M10 17l5-5-5-5"/><path d="M15 12H3"/></svg>
+            Log out</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="pane on" style="max-width:60rem;margin:0 auto">
+      <section class="card-panel" id="stats-panel">
+        <div class="ph botanic"><h2 style="flex:1">Site overview</h2></div>
+        <div class="pb">
+          <table class="tbl" id="site-stats"><tbody></tbody></table>
+        </div>
+      </section>
+
+      <section class="card-panel" id="pending-panel" style="margin-top:1rem">
+        <div class="ph botanic">
+          <h2 style="flex:1">Pending applications</h2>
+          <span class="count" id="pending-count"></span>
+        </div>
+        <div class="pb tight">
+          <div id="pending-list"></div>
+        </div>
+      </section>
+
+      <section class="card-panel" id="library-panel" style="margin-top:1rem">
+        <div class="ph botanic"><h2 style="flex:1">Knowledge library</h2></div>
+        <div class="pb">
+          <table class="tbl" id="library-stats"><tbody></tbody></table>
+          <a class="btn ghost sm" href="/admin" style="margin-top:.6rem">Open knowledge admin</a>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<div id="toasts" class="toasts" aria-live="polite"></div>
+<script src="/static/shared.js"></script>
+<script>
+$('logout-btn').onclick = logout;
+
+function pendingRow(p) {
+  return `<li class="plain" style="display:block">
+    <div style="display:flex;justify-content:space-between;gap:.5rem;align-items:baseline;flex-wrap:wrap">
+      <span class="nm">${esc(p.name)} <span class="muted xs">${esc(p.email)}</span></span>
+      <a class="btn ghost sm" href="/admin/users">Review</a>
+    </div>
+  </li>`;
+}
+
+async function load() {
+  const session = await requireRole('admin');
+  if (!session) return;
+
+  const [stats, practitioners, coverage] = await Promise.all([
+    api('/admin/stats'),
+    api('/admin/practitioners'),
+    api('/coverage'),
+  ]);
+
+  $('site-stats').querySelector('tbody').innerHTML =
+    `<tr><td>Directory / profile views</td><td>${stats.total_views}</td></tr>
+     <tr><td>Contact form submissions</td><td>${stats.total_contacts}</td></tr>
+     <tr><td>Total practitioners</td><td>${practitioners.length}</td></tr>
+     <tr><td>Pro plan</td><td>${practitioners.filter((p) => p.plan === 'pro').length}</td></tr>`;
+
+  const pending = practitioners.filter((p) => p.status === 'pending');
+  $('pending-count').textContent = pending.length || '';
+  $('pending-list').innerHTML = pending.length
+    ? `<ul class="rows">${pending.map(pendingRow).join('')}</ul>`
+    : empty('No pending applications', 'New practitioner sign-ups will show up here.');
+
+  const sources = coverage.reduce((sum, t) => sum + t.sources, 0);
+  const chunks = coverage.reduce((sum, t) => sum + t.chunks, 0);
+  $('library-stats').querySelector('tbody').innerHTML =
+    `<tr><td>Topics covered</td><td>${coverage.length}</td></tr>
+     <tr><td>Source-topic tags</td><td>${sources}</td></tr>
+     <tr><td>Passages</td><td>${chunks}</td></tr>`;
+}
+load().catch((e) => toast(e.message, 'bad'));
+</script>
+</body>
+</html>

@@ -61,9 +61,9 @@
 // once logged in isn't specified in the contract, so this is a best-effort
 // landing page per role; worth the integrator confirming against auth.py's
 // actual session shape once it's built.
-const LANDING = { admin: '/admin',
-                   practitioner: '/practitioner/consult',
-                   client: '/client/questionnaire' };
+const LANDING = { admin: '/admin/dashboard',
+                   practitioner: '/practitioner/dashboard',
+                   client: '/client/dashboard' };
 
 // Already signed in? Skip the form and go straight to their dashboard
 // instead of asking them to log in again.

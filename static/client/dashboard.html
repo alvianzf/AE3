@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Upgrade to Pro · Clinic</title>
+  <title>Dashboard · Clinic</title>
   <link rel="stylesheet" href="/static/style.css?v=11">
 </head>
 <body>
 
 <div class="app-shell">
   <aside class="sidebar">
-    <a href="/practitioner/dashboard" class="brand-link">
+    <a href="/client/dashboard" class="brand-link">
       <span class="sprig" aria-hidden="true">
       <svg viewBox="0 0 20 24" fill="none" stroke="currentColor" stroke-width="1.3"
            stroke-linecap="round">
@@ -21,19 +21,18 @@
               fill="currentColor" fill-opacity=".1"/>
       </svg>
       </span>
-      <span class="brand"><b>Clinic</b><span class="sub">practitioner portal</span><span class="tag">Phase 2 POC</span></span>
+      <span class="brand"><b>Clinic</b><span class="sub">client portal</span><span class="tag">Phase 2 POC</span></span>
     </a>
     <nav class="sidebar-nav">
-      <a class="sidebar-link" href="/practitioner/dashboard">Dashboard</a>
-      <a class="sidebar-link" href="/practitioner/consult">Consult</a>
-      <a class="sidebar-link" href="/practitioner/contacts">Contacts</a>
-      <a class="sidebar-link" href="/practitioner/knowledge">Knowledge base</a>
-      <a class="sidebar-link active" id="nav-upgrade" href="/practitioner/upgrade">Upgrade</a>
+      <a class="sidebar-link active" href="/client/dashboard">Dashboard</a>
+      <a class="sidebar-link" href="/client/questionnaire">Questionnaire</a>
+      <a class="sidebar-link" href="/client/files">Files</a>
+      <a class="sidebar-link" href="/client/wearables">Wearables</a>
     </nav>
   </aside>
   <div class="app-main">
     <header class="app-topbar">
-      <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="/practitioner/dashboard">Practitioner</a><span class="sep">/</span><span class="here">Upgrade</span></nav>
+      <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="/client/dashboard">Client</a><span class="sep">/</span><span class="here">Dashboard</span></nav>
       <div class="user-menu-wrap">
         <button class="user-menu-btn" id="user-menu-btn" type="button"
                 aria-haspopup="true" aria-expanded="false" aria-label="Account menu">
@@ -47,11 +46,6 @@
             <path d="M6 9l6 6 6-6"/></svg>
         </button>
         <div class="user-menu" id="user-menu" hidden>
-          <a class="user-menu-item" href="/practitioner/profile">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
-                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-7 8-7s8 3 8 7"/></svg>
-            Profile</a>
           <a class="user-menu-item" href="/account">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -67,51 +61,44 @@
       </div>
     </header>
 
-<main class="pane on centered" style="max-width:32rem;margin:0 auto">
-  <section class="card-panel">
-    <div class="ph botanic"><h2 style="flex:1">Upgrade to Pro</h2></div>
-    <div class="pb" id="upgrade-body">
-      <p class="hint">Pro adds RAG-backed consultations against the shared knowledge library,
-        your own client vault, and the ability to add clients directly. Billed through Stripe.</p>
-      <button id="u-go" class="btn block">Upgrade to Pro</button>
-      <div id="u-status" class="muted xs" style="margin-top:.5rem"></div>
-    </div>
-  </section>
-</main>
+    <main class="pane on" style="max-width:48rem;margin:0 auto">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem" id="stat-cards"></div>
+    </main>
+  </div>
+</div>
 
 <div id="toasts" class="toasts" aria-live="polite"></div>
 <script src="/static/shared.js"></script>
 <script>
 $('logout-btn').onclick = logout;
 
-async function load() {
-  const session = await requireRole('practitioner');
-  if (!session) return;
-  const p = await api('/me/profile');
-  if (p.plan === 'pro') {
-    $('nav-upgrade').hidden = true;
-    $('upgrade-body').innerHTML = `<div class="empty">${icon('leaf')}<b>Already on Pro</b>`
-      + `<p>Head to <a href="/practitioner/consult">Consult</a> to get started.</p></div>`;
-  }
+function statCard(label, value, sub, href) {
+  return `<a class="card-panel" href="${href}" style="padding:.9rem;text-decoration:none;color:inherit;display:block">
+    <div class="muted xs">${esc(label)}</div>
+    <div style="font-size:1.4rem;font-weight:700;margin-top:.2rem">${esc(value)}</div>
+    <div class="muted xs" style="margin-top:.2rem">${esc(sub)}</div>
+  </a>`;
 }
 
-$('u-go').onclick = async () => {
-  $('u-go').disabled = true;
-  $('u-status').textContent = 'Starting checkout…';
-  try {
-    const r = await api('/me/upgrade', { method: 'POST' });
-    if (r?.url) { location.href = r.url; }
-    else { $('u-status').textContent = ''; toast('No checkout URL returned', 'bad'); }
-  } catch (e) {
-    $('u-status').textContent = '';
-    toast(e.message, 'bad');
-  }
-  $('u-go').disabled = false;
-};
+async function load() {
+  const session = await requireRole('client');
+  if (!session) return;
 
+  const [response, files, wearables] = await Promise.all([
+    api('/me/questionnaire/response').catch(() => null),
+    api('/me/files').catch(() => []),
+    api('/me/wearables').catch(() => []),
+  ]);
+
+  const connected = (wearables || []).filter((w) => w.status === 'connected').length;
+
+  $('stat-cards').innerHTML = [
+    statCard('Questionnaire', response ? 'Submitted' : 'Not yet', response ? 'You can review it any time' : 'Fill it in for your practitioner', '/client/questionnaire'),
+    statCard('Files', (files || []).length, 'Uploaded documents', '/client/files'),
+    statCard('Wearables', connected, connected ? 'connected' : 'Connect a device', '/client/wearables'),
+  ].join('');
+}
 load().catch((e) => toast(e.message, 'bad'));
 </script>
-</div>
-</div>
 </body>
 </html>

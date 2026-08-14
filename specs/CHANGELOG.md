@@ -1,5 +1,36 @@
 # Specs changelog
 
+## v2.8 — 2026-08-14 (dashboards for every portal)
+
+Each portal (admin, practitioner, client) gets a `Dashboard` page — an
+overview landing screen, first item in that portal's sidebar, and now the
+default page after login (`LANDING` map in `static/public/login.html`).
+
+- **Admin dashboard** (`/admin/dashboard`): site stats, a pending-applications
+  quick list linking into `/admin/users`, and a knowledge-library summary
+  (topics covered, source-topic tags, passages) via the existing
+  `GET /api/coverage`.
+- **Practitioner dashboard** (`/practitioner/dashboard`): plan/status/API-key
+  chips, a contact-submissions count, a client count (Pro), recent new
+  contact submissions, and a **historical consultations** widget — each row
+  shows a calendar-style date marker (large day number, 3-letter month
+  below it) instead of a plain timestamp, linking into that client's detail
+  page. Backed by a new `vault.list_recent_sessions()` / `GET
+  /api/me/sessions/recent`, joining `sessions` with `clients` for the name
+  in one query rather than fanning out per client.
+- **Client dashboard** (`/client/dashboard`): questionnaire submission
+  status (new `GET /api/me/questionnaire/response`), file count, and
+  wearable-connection count, each linking to its own page.
+- **Practitioner sidebar reordered**: Dashboard first, Consult second
+  (unchanged from v2.7's decision to make Consult the entry point — Dashboard
+  now sits above it as the true landing page).
+- **Knowledge base weight control** (`/practitioner/knowledge`, from v2.7) is
+  now a slider and a number input kept in sync, not a number input alone.
+- **Account dropdown icon changed to a lock**, distinguishing it from the
+  Profile item's person icon — Account is specifically where credentials
+  (password) are managed, a lock reads more accurately than a second
+  person icon next to Profile's.
+
 ## v2.7 — 2026-08-14 (client history/reports, themed intake, sidebar nav)
 
 Three previously-unspecified feature requests, scoped down before building
