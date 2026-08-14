@@ -122,7 +122,7 @@ async function load() {
 
   $('q-submit').onclick = async () => {
     const answers = {};
-    questions.forEach((q, i) => { answers[q.prompt] = readAnswer(q, i); });
+    questions.forEach((q, i) => { answers[q.id] = readAnswer(q, i); });
     $('q-submit').disabled = true;
     $('q-status').textContent = 'Submitting…';
     try {
