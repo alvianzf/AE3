@@ -101,10 +101,35 @@ def ensure_schema(practitioner_id: str) -> None:
                 id TEXT PRIMARY KEY,
                 client_id TEXT NOT NULL,
                 title TEXT NOT NULL,
-                started_at TEXT NOT NULL
+                started_at TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'in_progress'
             );
             CREATE INDEX IF NOT EXISTS sessions_by_client
                 ON sessions(client_id, started_at);
+            -- One clinician note + one client report per session, each with
+            -- its own draft/final state — these are separate documents, not
+            -- alternate views of the same text.
+            CREATE TABLE IF NOT EXISTS session_documents (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                client_id TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'draft',
+                content TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL,
+                UNIQUE(session_id, kind)
+            );
+            CREATE INDEX IF NOT EXISTS documents_by_client
+                ON session_documents(client_id, updated_at);
+            -- A clinician's freeform note per intake theme for a client —
+            -- separate from the client's own questionnaire answers.
+            CREATE TABLE IF NOT EXISTS intake_notes (
+                client_id TEXT NOT NULL,
+                theme TEXT NOT NULL,
+                note TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (client_id, theme)
+            );
             CREATE TABLE IF NOT EXISTS session_turns (
                 id TEXT PRIMARY KEY,
                 session_id TEXT NOT NULL,
@@ -167,6 +192,10 @@ def ensure_schema(practitioner_id: str) -> None:
         if "password_set" not in cols:
             conn.execute(
                 "ALTER TABLE clients ADD COLUMN password_set INTEGER NOT NULL DEFAULT 1")
+        session_cols = {row[1] for row in conn.execute("PRAGMA table_info(sessions)")}
+        if "status" not in session_cols:
+            conn.execute(
+                "ALTER TABLE sessions ADD COLUMN status TEXT NOT NULL DEFAULT 'in_progress'")
 
 
 def ping(practitioner_id: str) -> bool:
@@ -311,14 +340,29 @@ def add_entry(practitioner_id: str, client_id: str, kind: str, content: str) -> 
 
 # --- Consultation sessions ----------------------------------------------------
 
+SESSION_STATUSES = ("in_progress", "done")
+
+
 def create_session(practitioner_id: str, client_id: str, title: str) -> dict:
     row = {"id": str(uuid.uuid4()), "client_id": client_id,
-           "title": title[:90], "started_at": _now()}
+           "title": title[:90], "started_at": _now(), "status": "in_progress"}
     with _connect(practitioner_id) as conn:
         conn.execute(
-            "INSERT INTO sessions (id, client_id, title, started_at) "
-            "VALUES (:id, :client_id, :title, :started_at)", row)
+            "INSERT INTO sessions (id, client_id, title, started_at, status) "
+            "VALUES (:id, :client_id, :title, :started_at, :status)", row)
     return row
+
+
+def set_session_status(practitioner_id: str, session_id: str, status: str) -> dict | None:
+    if status not in SESSION_STATUSES:
+        raise ValueError(f"unknown session status: {status}")
+    with _connect(practitioner_id) as conn:
+        exists = conn.execute(
+            "SELECT 1 FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        if not exists:
+            return None
+        conn.execute("UPDATE sessions SET status = ? WHERE id = ?", (status, session_id))
+    return get_session(practitioner_id, session_id)
 
 
 def add_turn(practitioner_id: str, session_id: str, question: str, answer: str,
@@ -339,7 +383,7 @@ def list_sessions(practitioner_id: str, client_id: str) -> list[dict]:
     with _connect(practitioner_id) as conn:
         rows = conn.execute(
             """
-            SELECT s.id, s.title, s.started_at,
+            SELECT s.id, s.title, s.started_at, s.status,
                    (SELECT count(*) FROM session_turns t WHERE t.session_id = s.id)
                        AS turns
             FROM sessions s WHERE s.client_id = ?
@@ -545,3 +589,79 @@ def list_wearable_data(practitioner_id: str, client_id: str) -> list[dict]:
             (client_id,),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+# --- Session documents (clinician note / client report) -----------------------
+
+DOCUMENT_KINDS = ("clinician_note", "client_report")
+DOCUMENT_STATUSES = ("draft", "final")
+
+
+def save_document(
+    practitioner_id: str, session_id: str, client_id: str, kind: str,
+    content: str, status: str = "draft",
+) -> dict:
+    if kind not in DOCUMENT_KINDS:
+        raise ValueError(f"unknown document kind: {kind}")
+    if status not in DOCUMENT_STATUSES:
+        raise ValueError(f"unknown document status: {status}")
+    row = {"id": str(uuid.uuid4()), "session_id": session_id, "client_id": client_id,
+           "kind": kind, "status": status, "content": content, "updated_at": _now()}
+    with _connect(practitioner_id) as conn:
+        conn.execute(
+            "INSERT INTO session_documents (id, session_id, client_id, kind, "
+            "status, content, updated_at) VALUES (:id, :session_id, :client_id, "
+            ":kind, :status, :content, :updated_at) "
+            "ON CONFLICT(session_id, kind) DO UPDATE SET "
+            "status = excluded.status, content = excluded.content, "
+            "updated_at = excluded.updated_at",
+            row,
+        )
+    return get_document(practitioner_id, session_id, kind)
+
+
+def get_document(practitioner_id: str, session_id: str, kind: str) -> dict | None:
+    with _connect(practitioner_id) as conn:
+        row = conn.execute(
+            "SELECT * FROM session_documents WHERE session_id = ? AND kind = ?",
+            (session_id, kind),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def list_documents(practitioner_id: str, client_id: str) -> list[dict]:
+    """All documents across a client's sessions, newest first — the
+    reports & documents side panel."""
+    with _connect(practitioner_id) as conn:
+        rows = conn.execute(
+            "SELECT d.*, s.title AS session_title FROM session_documents d "
+            "JOIN sessions s ON s.id = d.session_id "
+            "WHERE d.client_id = ? ORDER BY d.updated_at DESC",
+            (client_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+# --- Intake notes (clinician notes per questionnaire theme) --------------------
+
+def upsert_intake_note(practitioner_id: str, client_id: str, theme: str, note: str) -> dict:
+    row = {"client_id": client_id, "theme": theme, "note": note, "updated_at": _now()}
+    with _connect(practitioner_id) as conn:
+        conn.execute(
+            "INSERT INTO intake_notes (client_id, theme, note, updated_at) "
+            "VALUES (:client_id, :theme, :note, :updated_at) "
+            "ON CONFLICT(client_id, theme) DO UPDATE SET "
+            "note = excluded.note, updated_at = excluded.updated_at",
+            row,
+        )
+    return row
+
+
+def list_intake_notes(practitioner_id: str, client_id: str) -> dict:
+    """Returns {theme: note} for a client."""
+    with _connect(practitioner_id) as conn:
+        rows = conn.execute(
+            "SELECT theme, note FROM intake_notes WHERE client_id = ?",
+            (client_id,),
+        ).fetchall()
+    return {r["theme"]: r["note"] for r in rows}

@@ -10,8 +10,8 @@
 </head>
 <body>
 
-<header class="topbar">
-  <div class="topbar-inner">
+<div class="app-shell">
+  <aside class="sidebar">
     <a href="/admin" class="brand-link">
       <span class="sprig" aria-hidden="true">
         <!-- Wordmark sprig: stem with two leaves, drawn as a vector not an icon. -->
@@ -30,10 +30,15 @@
         <span class="tag">Phase 2 POC</span>
       </span>
     </a>
-
-    <nav style="margin-left:auto;display:flex;gap:.4rem;flex-wrap:wrap">
-      <a class="btn ghost sm" href="/admin/users">Users</a>
-      <div class="user-menu-wrap">
+    <nav class="sidebar-nav">
+      <a class="sidebar-link active" href="/admin">Knowledge admin</a>
+      <a class="sidebar-link" href="/admin/users">Users</a>
+      <a class="sidebar-link" href="/admin/questionnaires">Questionnaires</a>
+    </nav>
+  </aside>
+  <div class="app-main">
+    <header class="app-topbar">
+      <div class="user-menu-wrap" style="margin-left:auto">
         <button class="user-menu-btn" id="user-menu-btn" type="button"
                 aria-haspopup="true" aria-expanded="false" aria-label="Account menu">
           <span class="user-icon-circle">
@@ -59,9 +64,7 @@
             Log out</button>
         </div>
       </div>
-    </nav>
-  </div>
-</header>
+    </header>
 
 <!-- ══ Knowledge admin ════════════════════════════════════════════════════ -->
 <main id="tab-admin" class="pane on" role="tabpanel">
@@ -229,5 +232,7 @@
 <div id="toasts" class="toasts" aria-live="polite"></div>
 
 <script src="/static/app.js?v=11"></script>
+</div>
+</div>
 </body>
 </html>

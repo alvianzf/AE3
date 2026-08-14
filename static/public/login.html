@@ -8,8 +8,8 @@
 </head>
 <body>
 
-<header class="topbar">
-  <div class="topbar-inner">
+<div class="app-shell">
+  <aside class="sidebar">
     <a href="/directory" class="brand-link">
       <span class="sprig" aria-hidden="true">
       <svg viewBox="0 0 20 24" fill="none" stroke="currentColor" stroke-width="1.3"
@@ -23,13 +23,13 @@
       </span>
       <span class="brand"><b>Clinic</b><span class="sub">clinical knowledge assistant</span><span class="tag">Phase 2 POC</span></span>
     </a>
-    <nav style="margin-left:auto;display:flex;gap:.4rem;flex-wrap:wrap">
-      <a class="btn ghost sm" href="/about">About</a>
-      <a class="btn ghost sm" href="/directory">Find a practitioner</a>
-      <a class="btn ghost sm" href="/signup">Sign up</a>
+    <nav class="sidebar-nav">
+      <a class="sidebar-link" href="/about">About</a>
+      <a class="sidebar-link" href="/directory">Find a practitioner</a>
+      <a class="sidebar-link" href="/signup">Sign up</a>
     </nav>
-  </div>
-</header>
+  </aside>
+  <div class="app-main">
 
 <main class="pane on centered" style="max-width:26rem;margin:0 auto">
   <section class="card-panel">
@@ -62,7 +62,7 @@
 // landing page per role; worth the integrator confirming against auth.py's
 // actual session shape once it's built.
 const LANDING = { admin: '/admin',
-                   practitioner: '/practitioner/profile',
+                   practitioner: '/practitioner/consult',
                    client: '/client/questionnaire' };
 
 // Already signed in? Skip the form and go straight to their dashboard
@@ -90,5 +90,7 @@ $('l-submit').onclick = async () => {
 };
 $('l-password').onkeydown = (ev) => { if (ev.key === 'Enter') $('l-submit').click(); };
 </script>
+</div>
+</div>
 </body>
 </html>

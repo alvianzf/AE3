@@ -114,7 +114,8 @@ def ensure_schema() -> None:
                 ordinal INTEGER NOT NULL,
                 prompt TEXT NOT NULL,
                 input_type TEXT NOT NULL,
-                options_json TEXT NOT NULL DEFAULT '[]'
+                options_json TEXT NOT NULL DEFAULT '[]',
+                theme TEXT NOT NULL DEFAULT 'General'
             );
             CREATE INDEX IF NOT EXISTS questions_by_questionnaire
                 ON questionnaire_questions(questionnaire_id, ordinal);
@@ -151,6 +152,10 @@ def ensure_schema() -> None:
             conn.execute("ALTER TABLE admins ADD COLUMN role TEXT NOT NULL DEFAULT 'admin'")
         if "is_active" not in cols:
             conn.execute("ALTER TABLE admins ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1")
+        q_cols = {row[1] for row in conn.execute("PRAGMA table_info(questionnaire_questions)")}
+        if "theme" not in q_cols:
+            conn.execute(
+                "ALTER TABLE questionnaire_questions ADD COLUMN theme TEXT NOT NULL DEFAULT 'General'")
         # Every deployment needs at least one superadmin able to manage other
         # admins. If none exists (a fresh install before the first admin is
         # created, or an existing deployment migrating through this schema
@@ -587,6 +592,9 @@ def practitioner_stats(practitioner_id: str) -> dict:
 
 # --- Questionnaires (versioned) -----------------------------------------------
 
+QUESTION_TYPES = ("text", "number", "date", "choice", "multi_choice")
+
+
 def _decode_question(row: sqlite3.Row) -> dict:
     d = dict(row)
     d["options"] = json.loads(d.pop("options_json"))
@@ -598,6 +606,9 @@ def _insert_questionnaire(
 ) -> str:
     """Insert a new questionnaire version and deactivate every other one —
     only one questionnaire is active at a time."""
+    for q in questions:
+        if q["input_type"] not in QUESTION_TYPES:
+            raise ValueError(f"unknown question type: {q['input_type']}")
     questionnaire_id = str(uuid.uuid4())
     with _connect() as conn:
         conn.execute("UPDATE questionnaires SET is_active = 0")
@@ -609,10 +620,11 @@ def _insert_questionnaire(
         for ordinal, q in enumerate(questions):
             conn.execute(
                 "INSERT INTO questionnaire_questions (id, questionnaire_id, "
-                "ordinal, prompt, input_type, options_json) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "ordinal, prompt, input_type, options_json, theme) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (str(uuid.uuid4()), questionnaire_id, ordinal, q["prompt"],
-                 q["input_type"], json.dumps(q.get("options", []))),
+                 q["input_type"], json.dumps(q.get("options", [])),
+                 q.get("theme") or "General"),
             )
     return questionnaire_id
 

@@ -687,6 +687,15 @@ def admin_list_questionnaires(_admin: dict = Depends(auth.require_admin)) -> lis
     return core_store.list_questionnaires()
 
 
+@app.get("/api/admin/questionnaires/{questionnaire_id}")
+def admin_get_questionnaire(questionnaire_id: str,
+                            _admin: dict = Depends(auth.require_admin)) -> dict:
+    questionnaire = core_store.get_questionnaire(questionnaire_id)
+    if questionnaire is None:
+        raise HTTPException(404, "no such questionnaire")
+    return questionnaire
+
+
 @app.post("/api/admin/questionnaires")
 def admin_create_questionnaire(body: QuestionnaireIn,
                                admin: dict = Depends(auth.require_admin)) -> dict:
@@ -928,6 +937,111 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
     return result
 
 
+# --- Practitioner portal: client detail (consultations, reports, intake) --------
+
+def _owned_session(practitioner_id: str, client_id: str, session_id: str) -> dict:
+    """A session belongs to this practitioner's vault and to this client —
+    the 404 stays the same whether the session id is wrong or just points at
+    someone else's client, so a guess can't distinguish the two."""
+    session = vault.get_session(practitioner_id, session_id)
+    if session is None or session["client_id"] != client_id:
+        raise HTTPException(404, "no such consultation")
+    return session
+
+
+@app.get("/api/me/clients/{client_id}/sessions")
+def me_list_sessions(client_id: str,
+                     session: dict = Depends(auth.require_pro_practitioner)) -> list[dict]:
+    if vault.get_client(session["id"], client_id) is None:
+        raise HTTPException(404, "no such client")
+    return vault.list_sessions(session["id"], client_id)
+
+
+@app.get("/api/me/clients/{client_id}/sessions/{session_id}")
+def me_get_session(client_id: str, session_id: str,
+                   session: dict = Depends(auth.require_pro_practitioner)) -> dict:
+    practitioner_id = session["id"]
+    s = _owned_session(practitioner_id, client_id, session_id)
+    return {
+        **s,
+        "documents": {
+            kind: vault.get_document(practitioner_id, session_id, kind)
+            for kind in vault.DOCUMENT_KINDS
+        },
+    }
+
+
+class SessionStatusUpdate(BaseModel):
+    status: str
+
+
+@app.patch("/api/me/clients/{client_id}/sessions/{session_id}/status")
+def me_set_session_status(client_id: str, session_id: str, body: SessionStatusUpdate,
+                          session: dict = Depends(auth.require_pro_practitioner)) -> dict:
+    practitioner_id = session["id"]
+    _owned_session(practitioner_id, client_id, session_id)
+    try:
+        return vault.set_session_status(practitioner_id, session_id, body.status)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+class DocumentIn(BaseModel):
+    content: str
+    status: str = "draft"
+
+
+@app.put("/api/me/clients/{client_id}/sessions/{session_id}/documents/{kind}")
+def me_save_document(client_id: str, session_id: str, kind: str, body: DocumentIn,
+                     session: dict = Depends(auth.require_pro_practitioner)) -> dict:
+    practitioner_id = session["id"]
+    _owned_session(practitioner_id, client_id, session_id)
+    try:
+        return vault.save_document(
+            practitioner_id, session_id, client_id, kind, body.content, body.status)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.get("/api/me/clients/{client_id}/documents")
+def me_list_documents(client_id: str,
+                      session: dict = Depends(auth.require_pro_practitioner)) -> list[dict]:
+    if vault.get_client(session["id"], client_id) is None:
+        raise HTTPException(404, "no such client")
+    return vault.list_documents(session["id"], client_id)
+
+
+@app.get("/api/me/clients/{client_id}/intake")
+def me_get_intake(client_id: str,
+                  session: dict = Depends(auth.require_pro_practitioner)) -> dict:
+    practitioner_id = session["id"]
+    if vault.get_client(practitioner_id, client_id) is None:
+        raise HTTPException(404, "no such client")
+    response = vault.get_questionnaire_response(practitioner_id, client_id)
+    questionnaire = (
+        core_store.get_questionnaire(response["questionnaire_id"]) if response else None
+    )
+    return {
+        "response": response,
+        "questionnaire": questionnaire,
+        "notes": vault.list_intake_notes(practitioner_id, client_id),
+    }
+
+
+class IntakeNoteIn(BaseModel):
+    theme: str
+    note: str
+
+
+@app.put("/api/me/clients/{client_id}/intake/notes")
+def me_save_intake_note(client_id: str, body: IntakeNoteIn,
+                        session: dict = Depends(auth.require_pro_practitioner)) -> dict:
+    practitioner_id = session["id"]
+    if vault.get_client(practitioner_id, client_id) is None:
+        raise HTTPException(404, "no such client")
+    return vault.upsert_intake_note(practitioner_id, client_id, body.theme, body.note)
+
+
 # --- Client portal -----------------------------------------------------------------
 
 @app.get("/api/me/questionnaire")
@@ -1011,6 +1125,11 @@ def admin_users_page() -> FileResponse:
     return _page("admin", "users.html")
 
 
+@app.get("/admin/questionnaires")
+def admin_questionnaires_page() -> FileResponse:
+    return _page("admin", "questionnaires.html")
+
+
 @app.get("/about")
 def about_page() -> FileResponse:
     return _page("public", "about.html")
@@ -1067,6 +1186,13 @@ def practitioner_contacts_page() -> FileResponse:
 @app.get("/practitioner/clients")
 def practitioner_clients_page() -> FileResponse:
     return _page("practitioner", "clients.html")
+
+
+@app.get("/practitioner/clients/{client_id}")
+def practitioner_client_detail_page(client_id: str) -> FileResponse:
+    # client_id isn't used server-side — read from location.pathname client-side,
+    # same convention as /coach/{practitioner_id}.
+    return _page("practitioner", "client-detail.html")
 
 
 @app.get("/practitioner/consult")

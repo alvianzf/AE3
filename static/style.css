@@ -152,6 +152,43 @@ svg { flex: 0 0 auto; }
 .breadcrumbs .sep { opacity: .5; }
 .breadcrumbs .here { color: var(--ink); font-weight: 600; }
 
+/* ── App shell: sidebar nav ─────────────────────────────────────────────────
+   Page navigation lives in a left aside; the topbar is reduced to
+   breadcrumbs + the account/logout menu only. */
+.app-shell { display: flex; min-height: 100vh; align-items: stretch; }
+.sidebar {
+  width: 14.5rem; flex: 0 0 auto; display: flex; flex-direction: column;
+  gap: 1.2rem; padding: 1.1rem .9rem; border-right: 1px solid var(--glass-line);
+  background: rgba(255, 255, 255, .55);
+  -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
+  position: sticky; top: 0; align-self: flex-start; height: 100vh; overflow-y: auto;
+}
+.sidebar .brand-link { padding: 0 .3rem; }
+.sidebar-nav { display: flex; flex-direction: column; gap: .15rem; }
+.sidebar-link {
+  display: block; padding: .5rem .7rem; border-radius: var(--r);
+  color: var(--ink-2); text-decoration: none; font-size: .86rem; font-weight: 550;
+  transition: background .15s var(--ease), color .15s var(--ease);
+}
+.sidebar-link:hover { background: var(--panel-2); color: var(--ink); }
+.sidebar-link.active { background: var(--accent-soft); color: var(--accent-ink); font-weight: 700; }
+.app-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.app-topbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: .6rem 1.25rem; border-bottom: 1px solid var(--glass-line);
+  position: sticky; top: 0; z-index: 40; background: rgba(255, 255, 255, .68);
+  -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
+}
+.app-topbar .breadcrumbs { padding: 0; }
+@media (max-width: 900px) {
+  .app-shell { flex-direction: column; }
+  .sidebar {
+    width: 100%; height: auto; position: static; overflow-y: visible;
+    flex-direction: row; align-items: center; gap: .8rem; overflow-x: auto;
+  }
+  .sidebar-nav { flex-direction: row; }
+}
+
 /* ── Layout ──────────────────────────────────────────────────────────────── */
 .pane { display: none; padding: 1.1rem 1.25rem 3rem; }
 .pane.on { display: block; }
@@ -245,6 +282,7 @@ label.lbl:first-child { margin-top: 0; }
 .btn svg { width: 15px; height: 15px; }
 .btn.block { width: 100%; }
 .btn.ghost { background: transparent; color: var(--ink-2); border-color: var(--line-2); }
+.btn.ghost.on { background: var(--accent-soft); color: var(--accent-ink); border-color: var(--accent); }
 .btn.ghost:hover:not(:disabled) { background: var(--bg); color: var(--ink);
                                   border-color: var(--line-2); }
 .btn.sm { padding: .32rem .6rem; font-size: .82rem; }
