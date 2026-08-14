@@ -1,27 +1,44 @@
 # Specs changelog
 
-## v2.6 — PLANNED, not shipped (2026-08-14 review)
+## v2.6 — 2026-08-14 (PM+QA review, all Critical/High findings fixed)
 
-Unlike every entry below, this one describes a backlog, not a change that
-happened. Two independent reviews (PM: user flows and unmet promises; QA:
-functional defects and broken links) of the live deployment produced
+Two independent reviews (PM: user flows and unmet promises; QA: functional
+defects and broken links) of the live deployment produced
 [13 · Known issues](v2/13-known-issues.md) — 3 critical, 5 high, 4 medium,
-3 low findings. None of it is fixed yet.
+3 low findings. All Critical and High findings were fixed and deployed the
+same day; email-dependent Medium/Low findings were explicitly deferred (no
+email system exists in this codebase, building one was out of scope).
 
-The two critical items are real, live defects, not polish:
-- A suspended practitioner's portal access isn't actually blocked —
-  `require_practitioner` never checks status against the database.
-- `POST /api/clients` can silently overwrite an existing client's password
-  with no auth check, for anyone who knows their email — a live
-  account-takeover path. Not exploited to confirm, since doing so would be
-  irreversible; found by code review instead.
+**Fixed — Critical:**
+- A suspended practitioner's portal access wasn't actually blocked —
+  `require_practitioner`/`require_client` now check live status against
+  the database, same pattern `require_admin` already used. Login itself
+  now blocks `suspended` accounts too; `pending` still allows login on
+  purpose (seeing your own status is wanted behavior).
+- `POST /api/clients` could silently overwrite an existing client's
+  password with no auth check — closed with a `password_set` flag on the
+  vault `clients` row (migrated for existing vaults); a second signup
+  attempt on an already-active email now 409s instead of succeeding.
+- The Pro consultation feature had no UI to set an Anthropic key anywhere
+  — added a key-entry panel to `/practitioner/profile`; `consult.html`'s
+  error now links there instead of a bare toast.
 
-Also found: the Pro consultation feature (the paid product's core value)
-has no UI to set up, meaning it cannot be used by anyone through the
-deployed site right now, despite the backend being correct and complete.
+**Fixed — High:** the site-wide "Sign up" link now shows a practitioner
+picker instead of 400ing; coach pages only show the signup CTA for Pro
+practitioners; wearable connect 409s instead of redirecting to a dead
+OAuth URL when a provider isn't configured (and the OAuth callback now
+redirects back into the app instead of leaving a bare JSON response);
+admin-created passwords are shown once in a copyable panel;
+`/admin/users` gained a site-stats panel and per-practitioner
+client/view/contact counts.
 
-See [13](v2/13-known-issues.md) for the full list, evidence, and proposed
-fix direction for each.
+**Fixed — Medium (partial):** real wearable connection state
+(`GET /api/me/wearables`, replacing a `localStorage`-only guess) and a
+file list on `/client/files` (`GET /api/me/files`).
+
+**Deferred:** everything tied to email/notifications, and hard account
+deletion (a separate scope/risk decision). See
+[13](v2/13-known-issues.md) for exactly what's still open.
 
 ## v2.5 — 2026-08-13 (navigation polish, round two)
 

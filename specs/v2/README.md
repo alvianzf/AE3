@@ -18,7 +18,7 @@ changed vs. [v1](../v1/README.md).
 | 10 | [Security & privacy](10-security.md) | Real auth, tenant isolation, what's still unprotected |
 | 11 | [Operations](11-operations.md) | Deployment additions, config, runbook |
 | 12 | [Verification](12-verification.md) | v2-specific success criteria and how each is tested |
-| 13 | [Known issues](13-known-issues.md) | **Planned, not built** — the v2.6 backlog: two live access-control bugs, several broken/missing flows, found by an independent PM+QA review |
+| 13 | [Known issues](13-known-issues.md) | v2.6 backlog from an independent PM+QA review — all Critical/High findings fixed same-day; email-dependent Medium/Low findings deliberately deferred |
 
 ## Reading order
 
@@ -47,10 +47,12 @@ were in the original spec, all added after initial deploy. See
 of post-deploy corrections, including a password-hash leak found and fixed
 the same day it shipped ([10](10-security.md#the-leak-that-was-found)).
 
-**Not yet addressed:** [13 · Known issues](13-known-issues.md) — a
-2026-08-14 PM+QA review found the Pro consultation feature has no UI to set
-up (it's unusable end to end), a suspended practitioner's portal access
-isn't actually blocked, and a client-signup code path can silently
-overwrite an existing client's password with no auth check. This backlog is
-written but not built; treat everything else in this README as describing
-what's live, and [13](13-known-issues.md) as describing what isn't yet.
+**[13 · Known issues](13-known-issues.md):** a 2026-08-14 PM+QA review found
+3 critical, 5 high, 4 medium, and 3 low findings. All Critical and High
+findings were fixed and deployed the same day — a suspended practitioner's
+access is now actually blocked, the client-signup account-takeover path is
+closed, the Pro consultation feature has a working key-entry UI, and four
+other broken/missing flows were fixed. Findings tied to email/notifications
+remain open (no email system exists in this codebase; building one was
+out of scope for that pass) — see [13](13-known-issues.md) for exactly
+what's still outstanding.
