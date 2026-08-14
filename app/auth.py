@@ -67,6 +67,15 @@ def require_practitioner(request: Request) -> dict:
     session = current_session(request)
     if session is None or session["role"] != "practitioner":
         raise HTTPException(status_code=401, detail="Practitioner login required.")
+    # Live DB check, same reasoning as require_admin's is_active check: a
+    # suspension needs to take effect immediately, not after a stale 12h
+    # cookie expires. Found missing in the v2.6 review — a suspended
+    # practitioner kept full portal access until this was added. Only
+    # 'suspended' blocks access here — 'pending' can still log in and see
+    # their own status; that's a feature, not the bug that was found.
+    practitioner = core_store.get_practitioner(session["id"])
+    if practitioner is None or practitioner["status"] == "suspended":
+        raise HTTPException(status_code=401, detail="Practitioner login required.")
     return session
 
 
@@ -81,6 +90,12 @@ def require_pro_practitioner(session: dict = Depends(require_practitioner)) -> d
 def require_client(request: Request) -> dict:
     session = current_session(request)
     if session is None or session["role"] != "client":
+        raise HTTPException(status_code=401, detail="Client login required.")
+    # A client's access is meaningless once their practitioner is
+    # suspended — there's no separate "suspend a client" action, so this is
+    # the only lever that matters for a client's own portal access.
+    practitioner = core_store.get_practitioner(session["practitioner_id"])
+    if practitioner is None or practitioner["status"] == "suspended":
         raise HTTPException(status_code=401, detail="Client login required.")
     return session
 
@@ -125,7 +140,8 @@ def register(app: FastAPI) -> None:
             return response
 
         practitioner = core_store.get_practitioner_by_email(email)
-        if practitioner is not None and verify_password(password, practitioner["password_hash"]):
+        if practitioner is not None and practitioner["status"] != "suspended" and \
+                verify_password(password, practitioner["password_hash"]):
             response = JSONResponse({"role": "practitioner", "id": practitioner["id"]})
             _set_session_cookie(response, "practitioner", practitioner["id"])
             return response

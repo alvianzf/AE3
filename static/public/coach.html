@@ -114,8 +114,14 @@ async function load() {
     + `<div class="vine" aria-hidden="true"><span class="leaf soft"></span></div>`
     + `<p style="white-space:pre-wrap;line-height:1.7">${esc(p.bio || '')}</p>`;
   $('contact-panel').hidden = false;
-  $('signup-panel').hidden = false;
-  $('become-client-link').href = '/signup?practitioner_id=' + encodeURIComponent(p.id);
+  // Only Pro practitioners can accept clients (POST /api/clients 400s
+  // otherwise) — showing this CTA for Basic practitioners let a visitor
+  // fill out the whole form before hitting a failure (specs/v2/13-known-
+  // issues.md H2).
+  if (p.plan === 'pro') {
+    $('signup-panel').hidden = false;
+    $('become-client-link').href = '/signup?practitioner_id=' + encodeURIComponent(p.id);
+  }
 }
 
 $('c-send').onclick = async () => {

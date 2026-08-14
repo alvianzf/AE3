@@ -82,23 +82,16 @@ const PROVIDERS = [
   ['oura', 'Oura'], ['whoop', 'Whoop'], ['garmin', 'Garmin'],
 ];
 
-// There is no documented GET route to check which providers are already
-// connected (08-api.md lists only the connect POST and the OAuth callback
-// GET), so "connected" here is a client-side-only memory of this browser
-// having completed the flow — not authoritative. The integrator should add
-// a real status read once one exists, and swap this out.
-const LS_KEY = 'clinic_wearables_connected';
-function connectedSet() {
-  try { return new Set(JSON.parse(localStorage.getItem(LS_KEY) || '[]')); }
-  catch { return new Set(); }
-}
-function markConnected(provider) {
-  const s = connectedSet(); s.add(provider);
-  localStorage.setItem(LS_KEY, JSON.stringify([...s]));
+// GET /api/me/wearables returns the real wearable_connections rows for
+// this client — no longer a client-side-only guess (specs/v2/13-known-
+// issues.md M2).
+async function loadConnected() {
+  const rows = await api('/me/wearables');
+  return new Set(rows.map((r) => r.provider));
 }
 
-function render() {
-  const connected = connectedSet();
+async function render() {
+  const connected = await loadConnected();
   $('wearable-rows').innerHTML = PROVIDERS.map(([id, label]) => {
     const isOn = connected.has(id);
     return `<div class="src" style="display:flex;align-items:center;gap:.8rem;margin-bottom:.6rem">
@@ -114,30 +107,24 @@ function render() {
       btn.disabled = true;
       try {
         const r = await api(`/me/wearables/${provider}/connect`, { method: 'POST' });
-        if (r?.url) {
-          // Real OAuth redirect to the vendor; the vendor's callback lands on
-          // GET /api/me/wearables/{provider}/callback per the contract, not
-          // back on this page directly, so we can't rely on a return redirect
-          // here to know it succeeded — hence the localStorage best-effort above.
-          location.href = r.url;
-        } else {
-          markConnected(provider);
-          toast(label(provider) + ' connected (sample data)');
-          render();
-        }
+        // Real OAuth redirect to the vendor — the vendor's callback lands on
+        // GET /api/me/wearables/{provider}/callback per the contract, not
+        // back on this page directly, so this page won't see the result of
+        // a successful connect until it's reloaded.
+        location.href = r.url;
       } catch (e) {
-        toast(e.message, 'bad');
+        // 409 specifically means this provider has no OAuth credentials
+        // configured on this deployment — don't strand the user on a
+        // vendor page that will fail (specs/v2/13-known-issues.md H3).
+        toast(e.status === 409
+          ? `${label(provider)} isn't set up on this deployment yet.`
+          : e.message, 'bad');
         btn.disabled = false;
       }
     };
   });
 }
 function label(id) { return (PROVIDERS.find((p) => p[0] === id) || [id, id])[1]; }
-
-// If we arrived back with ?connected=<provider> (best-effort — not guaranteed
-// by the documented contract), record it.
-const backFrom = qs('connected');
-if (backFrom) markConnected(backFrom);
 
 requireRole('client').then((s) => { if (s) render(); }).catch(() => {});
 </script>

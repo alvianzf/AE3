@@ -62,12 +62,27 @@
 <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="/practitioner/profile">Practitioner</a><span class="sep">/</span><span class="here">Profile</span></nav>
 
 <main class="pane on centered" style="max-width:38rem;margin:0 auto">
-  <section class="card-panel">
-    <div class="ph botanic"><h2 style="flex:1">My public profile</h2></div>
-    <div class="pb" id="profile-body">
-      <div class="skel w40"></div><div class="skel w80"></div><div class="skel w60"></div>
-    </div>
-  </section>
+  <div style="margin:auto 0;width:100%;display:flex;flex-direction:column;gap:1rem">
+    <section class="card-panel">
+      <div class="ph botanic"><h2 style="flex:1">My public profile</h2></div>
+      <div class="pb" id="profile-body">
+        <div class="skel w40"></div><div class="skel w80"></div><div class="skel w60"></div>
+      </div>
+    </section>
+
+    <section class="card-panel" id="api-key-panel" hidden>
+      <div class="ph botanic"><h2 style="flex:1">Anthropic API key</h2></div>
+      <div class="pb">
+        <p class="hint">Pro consultations run on your own Anthropic key, not the
+          clinic's — set it here before asking Consult anything. Write-only: once
+          saved, it can't be read back, only replaced.</p>
+        <label class="lbl" for="ak-key">API key</label>
+        <input id="ak-key" type="password" placeholder="sk-ant-…" autocomplete="off">
+        <button id="ak-save" class="btn block" style="margin-top:.7rem">Save key</button>
+        <div id="ak-status" class="muted xs" style="margin-top:.5rem"></div>
+      </div>
+    </section>
+  </div>
 </main>
 
 <div id="toasts" class="toasts" aria-live="polite"></div>
@@ -109,11 +124,29 @@ function form(p) {
     <div id="p-status" class="muted xs" style="margin-top:.5rem"></div>`;
 }
 
+$('ak-save').onclick = async () => {
+  const api_key = $('ak-key').value.trim();
+  if (!api_key) { toast('Enter a key first', 'bad'); return; }
+  $('ak-save').disabled = true;
+  $('ak-status').textContent = 'Saving…';
+  try {
+    await api('/me/anthropic-key', json('POST', { api_key }));
+    $('ak-key').value = '';
+    $('ak-status').textContent = '';
+    toast('API key saved');
+  } catch (e) {
+    $('ak-status').textContent = '';
+    toast(e.message, 'bad');
+  }
+  $('ak-save').disabled = false;
+};
+
 async function load() {
   const session = await requireRole('practitioner');
   if (!session) return;
   const p = await api('/me/profile');
   $('profile-body').innerHTML = form(p);
+  $('api-key-panel').hidden = p.plan !== 'pro';
   $('p-save').onclick = async () => {
     const fields = {
       name: $('p-name').value.trim(),

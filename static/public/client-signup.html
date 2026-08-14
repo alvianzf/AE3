@@ -40,6 +40,16 @@
       <p class="hint" id="pr-hint" hidden>Signing up as a client of the practitioner you were
         viewing.</p>
 
+      <div id="pr-picker" hidden>
+        <label class="lbl" for="s-practitioner">Choose your practitioner</label>
+        <select id="s-practitioner" aria-label="Choose your practitioner">
+          <option value="">Select a practitioner…</option>
+        </select>
+        <p class="hint xs">Only practitioners on the Pro plan can currently accept
+          new clients — <a href="/directory">browse the directory</a> to pick one
+          if you don't see who you're looking for.</p>
+      </div>
+
       <label class="lbl" for="s-name">Full name</label>
       <input id="s-name" placeholder="Full name" aria-label="Full name">
 
@@ -61,14 +71,23 @@
 <div id="toasts" class="toasts" aria-live="polite"></div>
 <script src="/static/shared.js"></script>
 <script>
-// A "become a client" link from coach.html can carry ?practitioner_id=... so
-// signup attaches straight to that practitioner instead of the client
-// picking one afterwards. Neither 06-client-portal.md nor 08-api.md spell
-// out the post-signup "pick a practitioner" step, so this is the frontend's
-// best-effort bridge — worth the integrator double-checking the field name
-// the backend actually expects.
+// A "become a client" link from coach.html carries ?practitioner_id=..., so
+// signup attaches straight to that practitioner. Reaching this page any
+// other way (e.g. the site-wide "Sign up" nav link) leaves practitioner_id
+// unset — that used to just 400 with no way to recover; now it shows a
+// picker instead (specs/v2/13-known-issues.md H1).
 const practitionerId = qs('practitioner_id');
-if (practitionerId) { $('pr-hint').hidden = false; }
+if (practitionerId) {
+  $('pr-hint').hidden = false;
+} else {
+  $('pr-picker').hidden = false;
+  api('/practitioners').then((list) => {
+    const pro = list.filter((p) => p.plan === 'pro');
+    const sel = $('s-practitioner');
+    sel.innerHTML = '<option value="">Select a practitioner…</option>'
+      + pro.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
+  }).catch(() => {});
+}
 
 $('s-submit').onclick = async () => {
   const name = $('s-name').value.trim();
@@ -77,8 +96,11 @@ $('s-submit').onclick = async () => {
   if (!name || !email || !password) {
     toast('Name, email and password are required', 'bad'); return;
   }
-  const body = { name, email, password };
-  if (practitionerId) body.practitioner_id = practitionerId;
+  const chosenId = practitionerId || $('s-practitioner')?.value;
+  if (!chosenId) {
+    toast('Choose a practitioner first', 'bad'); return;
+  }
+  const body = { name, email, password, practitioner_id: chosenId };
 
   $('s-submit').disabled = true;
   $('s-status').textContent = 'Creating your account…';

@@ -477,11 +477,19 @@ def client_signup(body: ClientSignup) -> dict:
     if existing is not None:
         # A Pro practitioner pre-created this client (specs/v2/05-practitioner-
         # portal.md); completing signup sets their password rather than
-        # creating a duplicate account.
+        # creating a duplicate account. password_set gates this: it's only
+        # ever unset for a practitioner-created invite nobody has completed
+        # yet. Without this check, anyone who merely knows an existing
+        # client's email could silently reset their password — a real
+        # account-takeover path found in the v2.6 review.
         client = vault.get_client(existing["practitioner_id"], existing["client_id"])
         if client is None:
             raise HTTPException(404, "invited client record is missing")
-        vault.set_client_password(existing["practitioner_id"], client["id"], password_hash)
+        if client.get("password_set"):
+            raise HTTPException(
+                409, "An account with that email already exists. Please log in.")
+        vault.set_client_password(existing["practitioner_id"], client["id"],
+                                  password_hash, mark_set=True)
         return {"id": client["id"], "practitioner_id": existing["practitioner_id"]}
 
     if not body.practitioner_id:
@@ -777,7 +785,7 @@ def me_create_client(body: NewClient,
     client = vault.create_client(
         practitioner_id, body.name, body.email,
         password_hash=auth.hash_password(str(uuid.uuid4())),
-        dob=body.dob, country=body.country,
+        dob=body.dob, country=body.country, password_set=False,
     )
     core_store.add_client_directory_entry(body.email, practitioner_id, client["id"])
     vault.log(practitioner_id, "practitioner", "client created", body.name, client["id"])
@@ -942,6 +950,13 @@ async def me_upload_file(
         file.content_type or _media_type(filename),
         str(vault_files.path(practitioner_id, file_id, filename)),
     )
+
+
+@app.get("/api/me/files")
+def me_list_files(session: dict = Depends(auth.require_client)) -> list[dict]:
+    # storage_path is an internal filesystem path, not the client's business.
+    return [{k: v for k, v in f.items() if k != "storage_path"}
+            for f in vault.list_uploaded_files(session["practitioner_id"], session["id"])]
 
 
 # --- Frontend -----------------------------------------------------------------

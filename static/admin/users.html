@@ -61,8 +61,30 @@
 
 <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="/admin">Admin</a><span class="sep">/</span><span class="here">Users</span></nav>
 
+<div id="new-credentials" class="card-panel" hidden
+     style="max-width:60rem;margin:1rem auto 0;border-color:var(--accent)">
+  <div class="pb" style="display:flex;align-items:center;gap:.8rem;flex-wrap:wrap">
+    <div class="grow">
+      <b>Account created</b> — this password won't be shown again. Copy it now
+      and pass it to them directly.
+      <div class="muted small" style="margin-top:.3rem">
+        <span id="nc-email"></span> · <code id="nc-password"></code>
+      </div>
+    </div>
+    <button id="nc-copy" class="btn ghost sm" type="button">Copy password</button>
+    <button id="nc-dismiss" class="btn ghost sm" type="button">Dismiss</button>
+  </div>
+</div>
+
 <main class="pane on" style="max-width:60rem;margin:0 auto">
-  <section class="card-panel" id="practitioners-panel">
+  <section class="card-panel" id="stats-panel">
+    <div class="ph botanic"><h2 style="flex:1">Site statistics</h2></div>
+    <div class="pb">
+      <table class="tbl" id="site-stats"><tbody></tbody></table>
+    </div>
+  </section>
+
+  <section class="card-panel" id="practitioners-panel" style="margin-top:1rem">
     <div class="ph botanic">
       <h2 style="flex:1">Practitioners</h2>
       <span class="count" id="p-count"></span>
@@ -131,6 +153,13 @@ const STATUS_ACTIONS = {
   suspended: [['approve', 'Reactivate']],
 };
 
+async function loadSiteStats() {
+  const s = await api('/admin/stats');
+  $('site-stats').querySelector('tbody').innerHTML =
+    `<tr><td>Directory / profile views</td><td>${s.total_views}</td></tr>
+     <tr><td>Contact form submissions</td><td>${s.total_contacts}</td></tr>`;
+}
+
 function practitionerRow(p) {
   const actions = (STATUS_ACTIONS[p.status] || [])
     .map(([action, label]) => `<button class="btn ghost sm" data-action="${action}">${label}</button>`)
@@ -144,6 +173,7 @@ function practitionerRow(p) {
       <span class="nm">${esc(p.name)} <span class="muted xs">${esc(p.email)}</span></span>
       <span class="chip">${esc(p.status)}</span> <span class="chip">${esc(p.plan)}</span>
     </div>
+    <div class="muted xs" data-stats-for="${p.id}" style="margin-top:.2rem">loading stats…</div>
     <div style="display:flex;gap:.4rem;margin-top:.3rem;flex-wrap:wrap">${actions}${planToggle}</div>
   </li>`;
 }
@@ -154,6 +184,18 @@ async function loadPractitioners() {
   $('p-count').textContent = list.length || '';
   $('practitioners-list').innerHTML = `<ul class="rows">${list.map(practitionerRow).join('')}</ul>`
     || empty('No practitioners', 'None match this filter.');
+  // Fan-out, one call per row — fine at 10-20 practitioner scale
+  // (specs/v2/02-data-model.md already makes this call for client-count).
+  list.forEach(async (p) => {
+    const el = $('practitioners-list').querySelector(`[data-stats-for="${p.id}"]`);
+    if (!el) return;
+    try {
+      const s = await api(`/admin/practitioners/${p.id}/client-count`);
+      el.textContent = `${s.clients} client${s.clients === 1 ? '' : 's'} · `
+        + `${s.views} view${s.views === 1 ? '' : 's'} · `
+        + `${s.contacts} contact${s.contacts === 1 ? '' : 's'}`;
+    } catch { el.textContent = ''; }
+  });
   $('practitioners-list').querySelectorAll('[data-action]').forEach((btn) => {
     btn.onclick = async () => {
       const id = btn.closest('li').dataset.id;
@@ -175,6 +217,22 @@ async function loadPractitioners() {
 }
 $('p-filter').onchange = loadPractitioners;
 
+function showCredentials(email, password) {
+  $('nc-email').textContent = email;
+  $('nc-password').textContent = password;
+  $('new-credentials').hidden = false;
+  $('new-credentials').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+$('nc-dismiss').onclick = () => { $('new-credentials').hidden = true; };
+$('nc-copy').onclick = async () => {
+  try {
+    await navigator.clipboard.writeText($('nc-password').textContent);
+    toast('Password copied');
+  } catch {
+    toast('Could not copy — select and copy manually', 'bad');
+  }
+};
+
 $('np-create').onclick = async () => {
   const name = $('np-name').value.trim();
   const email = $('np-email').value.trim();
@@ -190,6 +248,7 @@ $('np-create').onclick = async () => {
       years_experience: parseInt($('np-years').value || '0', 10),
       consultation_price_cents: Math.round(priceUsd * 100),
     }));
+    showCredentials(email, password);
     ['np-name','np-email','np-password','np-bio','np-specialties','np-languages','np-years','np-price']
       .forEach((id) => { $(id).value = ''; });
     toast('Practitioner added');
@@ -250,6 +309,7 @@ $('na-create').onclick = async () => {
   if (!name || !email || !password) { toast('Name, email and password are required', 'bad'); return; }
   try {
     await api('/superadmin/admins', json('POST', { name, email, password, role }));
+    showCredentials(email, password);
     $('na-name').value = ''; $('na-email').value = ''; $('na-password').value = '';
     toast('Admin created');
     const session = await api('/auth/me');
@@ -262,6 +322,7 @@ $('logout-btn').onclick = logout;
 async function load() {
   const session = await requireRole('admin');
   if (!session) return;
+  loadSiteStats();
   loadPractitioners();
   if (session.admin_role === 'superadmin') {
     $('admins-panel').hidden = false;

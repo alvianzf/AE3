@@ -34,6 +34,7 @@ from base64 import urlsafe_b64encode
 from urllib.parse import urlencode
 
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.responses import RedirectResponse
 from itsdangerous import BadSignature, URLSafeSerializer
 
 from . import auth, vault
@@ -190,11 +191,29 @@ def register(app: FastAPI) -> None:
     ):
         if provider not in PROVIDERS:
             raise HTTPException(status_code=404, detail="Unknown wearable provider.")
+        # No OAuth app credentials configured for this provider on this
+        # deployment — redirecting anyway sends the client to a vendor page
+        # that will fail with no way back (specs/v2/13-known-issues.md H3).
+        if not PROVIDERS[provider]["client_id"]:
+            raise HTTPException(
+                status_code=409,
+                detail=f"{provider.capitalize()} isn't configured on this deployment yet.")
 
         practitioner_id = session["practitioner_id"]
         client_id = session["id"]
         return {"url": connect_url(provider, practitioner_id, client_id)}
 
+    @app.get("/api/me/wearables")
+    async def list_connections(session: dict = Depends(auth.require_client)):
+        return vault.list_wearable_connections(session["practitioner_id"], session["id"])
+
     @app.get("/api/me/wearables/{provider}/callback")
     async def oauth_callback(provider: str, code: str, state: str):
-        return handle_callback(provider, code, state)
+        # The vendor's browser redirect lands here directly — send the
+        # user back into the app instead of leaving their browser sitting
+        # on a bare JSON response with no way back
+        # (specs/v2/13-known-issues.md, adjacent to H3/M2). The page
+        # re-fetches real connection state on load, so no query param is
+        # needed for it to show as connected.
+        handle_callback(provider, code, state)
+        return RedirectResponse("/client/wearables")

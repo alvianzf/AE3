@@ -67,6 +67,7 @@ def ensure_schema(practitioner_id: str) -> None:
                 name TEXT NOT NULL,
                 email TEXT NOT NULL,
                 password_hash TEXT NOT NULL,
+                password_set INTEGER NOT NULL DEFAULT 1,
                 dob TEXT,
                 country TEXT,
                 created_at TEXT NOT NULL
@@ -156,6 +157,16 @@ def ensure_schema(practitioner_id: str) -> None:
                 ON wearable_data_points(client_id, recorded_at);
             """
         )
+        # Migration for vaults created before password_set existed —
+        # CREATE TABLE IF NOT EXISTS above doesn't add columns to an
+        # existing table. Default is 1 (already-active): every real client
+        # in an existing vault got their password some other way already,
+        # so treating them as "still pending signup" would be the wrong
+        # default, not a safe one.
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(clients)")}
+        if "password_set" not in cols:
+            conn.execute(
+                "ALTER TABLE clients ADD COLUMN password_set INTEGER NOT NULL DEFAULT 1")
 
 
 def ping(practitioner_id: str) -> bool:
@@ -166,16 +177,20 @@ def ping(practitioner_id: str) -> bool:
 
 def create_client(
     practitioner_id: str, name: str, email: str, password_hash: str,
-    dob: str | None = None, country: str | None = None,
+    dob: str | None = None, country: str | None = None, password_set: bool = True,
 ) -> dict:
+    """password_set=False marks a practitioner-created invite: a real
+    password hasn't been chosen by the client yet (the caller passes a
+    throwaway hash nobody knows), and completing signup later is allowed to
+    set a real one exactly once — see set_client_password's mark_set."""
     client = {"id": str(uuid.uuid4()), "name": name, "email": email,
-              "password_hash": password_hash, "dob": dob, "country": country,
-              "created_at": _now()}
+              "password_hash": password_hash, "password_set": int(password_set),
+              "dob": dob, "country": country, "created_at": _now()}
     with _connect(practitioner_id) as conn:
         conn.execute(
-            "INSERT INTO clients (id, name, email, password_hash, dob, country,"
-            " created_at) VALUES (:id, :name, :email, :password_hash, :dob,"
-            " :country, :created_at)",
+            "INSERT INTO clients (id, name, email, password_hash, password_set,"
+            " dob, country, created_at) VALUES (:id, :name, :email,"
+            " :password_hash, :password_set, :dob, :country, :created_at)",
             client,
         )
     return client
@@ -196,17 +211,28 @@ def get_client(practitioner_id: str, client_id: str) -> dict | None:
     return {**dict(row), "entries": [dict(e) for e in entries]}
 
 
-def set_client_password(practitioner_id: str, client_id: str, password_hash: str) -> None:
+def set_client_password(
+    practitioner_id: str, client_id: str, password_hash: str, mark_set: bool = False,
+) -> None:
     """Set/replace a client's password.
 
     Used both when a Pro practitioner-created client (no password yet)
-    completes their own signup, and for an ordinary password change.
+    completes their own signup (mark_set=True — flips password_set so this
+    can't be done a second time by whoever merely knows the email), and for
+    an ordinary already-authenticated password change (mark_set=False —
+    leaves the flag as it already was).
     """
     with _connect(practitioner_id) as conn:
-        conn.execute(
-            "UPDATE clients SET password_hash = ? WHERE id = ?",
-            (password_hash, client_id),
-        )
+        if mark_set:
+            conn.execute(
+                "UPDATE clients SET password_hash = ?, password_set = 1 WHERE id = ?",
+                (password_hash, client_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE clients SET password_hash = ? WHERE id = ?",
+                (password_hash, client_id),
+            )
 
 
 def get_client_by_email(practitioner_id: str, email: str) -> dict | None:
@@ -458,6 +484,15 @@ def list_uploaded_files(practitioner_id: str, client_id: str) -> list[dict]:
 
 
 # --- Wearables ------------------------------------------------------------------
+
+def list_wearable_connections(practitioner_id: str, client_id: str) -> list[dict]:
+    with _connect(practitioner_id) as conn:
+        rows = conn.execute(
+            "SELECT provider, status, connected_at FROM wearable_connections "
+            "WHERE client_id = ? ORDER BY connected_at", (client_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
 
 def create_wearable_connection(
     practitioner_id: str, client_id: str, provider: str,

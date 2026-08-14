@@ -186,7 +186,13 @@ $('ask').onclick = async () => {
     pending.remove();
     renderAnswer(question, r);
   } catch (e) {
-    pending.querySelector('.working').outerHTML = `<p class="muted small">Failed: ${esc(e.message)}</p>`;
+    // 400 here specifically means no Anthropic key is on file yet — the
+    // only 400 this endpoint returns — so point straight at where to fix
+    // it instead of leaving a bare error.
+    const fix = e.status === 400
+      ? ' <a href="/practitioner/profile">Set your API key</a>.' : '';
+    pending.querySelector('.working').outerHTML =
+      `<p class="muted small">Failed: ${esc(e.message)}${fix}</p>`;
     toast('That question could not be answered', 'bad');
   }
   $('ask').disabled = false;
