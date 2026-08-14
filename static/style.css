@@ -347,6 +347,7 @@ label.lbl:first-child { margin-top: 0; }
   font-size: .7rem; background: var(--bg); border: 1px solid var(--line);
   padding: .05rem .4rem; border-radius: 99px; color: var(--muted);
 }
+.chip.warn { background: var(--warn-soft); border-color: var(--warn); color: var(--warn); }
 
 /* ── Record entries ──────────────────────────────────────────────────────── */
 .entry { border-left: 2px solid var(--line); padding: .1rem .65rem; margin-bottom: .6rem; }

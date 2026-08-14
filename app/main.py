@@ -402,6 +402,13 @@ def _public_list(items: list[dict]) -> list[dict]:
     return [_public(d) for d in items]
 
 
+def _practitioner_public(p: dict) -> dict:
+    """_public(), plus a has_anthropic_key flag so the practitioner's own
+    profile page can show whether a key is on file — without ever
+    exposing the encrypted value itself, which _public() still strips."""
+    return {**_public(p), "has_anthropic_key": bool(p.get("anthropic_api_key_encrypted"))}
+
+
 def _save_photo(practitioner_id: str, file: UploadFile, raw: bytes) -> str:
     suffix = Path(file.filename or "").suffix or ".jpg"
     dest = Path(cfg.photos_path) / f"{practitioner_id}{suffix}"
@@ -700,7 +707,7 @@ def admin_edit_questionnaire(questionnaire_id: str, body: QuestionnaireIn,
 
 @app.get("/api/me/profile")
 def me_profile(session: dict = Depends(auth.require_practitioner)) -> dict:
-    return _public(core_store.get_practitioner(session["id"]))
+    return _practitioner_public(core_store.get_practitioner(session["id"]))
 
 
 @app.put("/api/me/profile")
@@ -733,7 +740,7 @@ async def me_update_profile(request: Request,
     practitioner = core_store.update_practitioner_profile(practitioner_id, **fields)
     if practitioner is None:
         raise HTTPException(404, "no such practitioner")
-    return _public(practitioner)
+    return _practitioner_public(practitioner)
 
 
 @app.get("/api/me/contacts")

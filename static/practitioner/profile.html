@@ -71,7 +71,10 @@
     </section>
 
     <section class="card-panel" id="api-key-panel" hidden>
-      <div class="ph botanic"><h2 style="flex:1">Anthropic API key</h2></div>
+      <div class="ph botanic">
+        <h2 style="flex:1">Anthropic API key</h2>
+        <span class="chip" id="ak-badge"></span>
+      </div>
       <div class="pb">
         <p class="hint">Pro consultations run on your own Anthropic key, not the
           clinic's — set it here before asking Consult anything. Write-only: once
@@ -124,6 +127,11 @@ function form(p) {
     <div id="p-status" class="muted xs" style="margin-top:.5rem"></div>`;
 }
 
+function setKeyBadge(hasKey) {
+  $('ak-badge').textContent = hasKey ? 'key on file' : 'no key set';
+  $('ak-badge').classList.toggle('warn', !hasKey);
+}
+
 $('ak-save').onclick = async () => {
   const api_key = $('ak-key').value.trim();
   if (!api_key) { toast('Enter a key first', 'bad'); return; }
@@ -133,6 +141,7 @@ $('ak-save').onclick = async () => {
     await api('/me/anthropic-key', json('POST', { api_key }));
     $('ak-key').value = '';
     $('ak-status').textContent = '';
+    setKeyBadge(true);
     toast('API key saved');
   } catch (e) {
     $('ak-status').textContent = '';
@@ -147,6 +156,7 @@ async function load() {
   const p = await api('/me/profile');
   $('profile-body').innerHTML = form(p);
   $('api-key-panel').hidden = p.plan !== 'pro';
+  setKeyBadge(p.has_anthropic_key);
   $('p-save').onclick = async () => {
     const fields = {
       name: $('p-name').value.trim(),
