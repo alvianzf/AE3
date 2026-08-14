@@ -32,12 +32,20 @@
 
 * { box-sizing: border-box; }
 html, body { height: 100%; }
+html { max-width: 100%; overflow-x: hidden; }
 body {
   margin: 0; background: var(--bg); color: var(--ink);
   font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   accent-color: var(--accent);
   -webkit-font-smoothing: antialiased;
+  max-width: 100%; overflow-x: hidden;
+  overflow-wrap: break-word;
 }
+/* Anything that legitimately needs its own horizontal scroll (a wide
+   table, a code block) should scroll inside itself, not push the page —
+   this is the shared way to opt in rather than every page reinventing it. */
+.scroll-x { overflow-x: auto; }
+img, svg, video { max-width: 100%; height: auto; }
 
 /* Ambient backdrop: two slow-drifting washes give the frosted panels something
    to blur. Fixed and behind everything, so it never affects layout. */
@@ -228,13 +236,25 @@ svg { flex: 0 0 auto; }
 .layout.admin { grid-template-columns: 330px minmax(0, 1fr) 300px; }
 .workspace { display: grid; gap: 1rem; grid-template-columns: 400px minmax(0, 1fr);
              align-items: start; }
+/* Ask panel + client-overview rail on Consult — a class instead of an
+   inline style so the media queries below can actually override it; an
+   inline `style=` attribute beats any stylesheet rule regardless of
+   whether its media query matches, which silently broke the mobile
+   collapse. */
+.workspace.overview-right { grid-template-columns: minmax(0, 1fr) 20rem; }
+/* Main list + a narrow rail (client-detail.html's Consultations & reports
+   panel, e.g.) — same shape as .workspace.overview-right, reused so a
+   third inline-style instance doesn't reintroduce the same bug. */
+.split-rail { display: grid; gap: 1rem; align-items: start;
+              grid-template-columns: minmax(0, 1fr) 18rem; }
 @media (max-width: 1250px) {
   .layout.admin { grid-template-columns: 300px minmax(0, 1fr); }
   .layout.admin .rail-right { grid-column: 1 / -1; }
-  .workspace { grid-template-columns: 1fr; }
+  .workspace, .workspace.overview-right { grid-template-columns: 1fr; }
 }
 @media (max-width: 900px) {
   .layout.practitioner, .layout.admin { grid-template-columns: 1fr; }
+  .split-rail { grid-template-columns: 1fr; }
 }
 
 .card-panel {
