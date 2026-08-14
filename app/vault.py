@@ -155,7 +155,8 @@ def ensure_schema(practitioner_id: str) -> None:
                 questionnaire_id TEXT NOT NULL,
                 questionnaire_version INTEGER NOT NULL,
                 answers_json TEXT NOT NULL,
-                submitted_at TEXT NOT NULL
+                submitted_at TEXT NOT NULL,
+                viewed_at TEXT
             );
             CREATE INDEX IF NOT EXISTS responses_by_client
                 ON questionnaire_responses(client_id, submitted_at);
@@ -204,6 +205,9 @@ def ensure_schema(practitioner_id: str) -> None:
         if "status" not in session_cols:
             conn.execute(
                 "ALTER TABLE sessions ADD COLUMN status TEXT NOT NULL DEFAULT 'in_progress'")
+        response_cols = {row[1] for row in conn.execute("PRAGMA table_info(questionnaire_responses)")}
+        if "viewed_at" not in response_cols:
+            conn.execute("ALTER TABLE questionnaire_responses ADD COLUMN viewed_at TEXT")
 
 
 def ping(practitioner_id: str) -> bool:
@@ -522,6 +526,34 @@ def get_questionnaire_response(practitioner_id: str, client_id: str) -> dict | N
     data = dict(row)
     data["answers"] = json.loads(data.pop("answers_json"))
     return data
+
+
+def mark_intake_viewed(practitioner_id: str, client_id: str) -> None:
+    """Mark a client's latest questionnaire response as viewed — called when
+    a practitioner opens their intake review, so the unviewed-count badge
+    clears without needing a separate explicit action."""
+    with _connect(practitioner_id) as conn:
+        conn.execute(
+            "UPDATE questionnaire_responses SET viewed_at = ? WHERE id = ("
+            "  SELECT id FROM questionnaire_responses WHERE client_id = ? "
+            "  ORDER BY submitted_at DESC LIMIT 1)",
+            (_now(), client_id),
+        )
+
+
+def count_unviewed_intake(practitioner_id: str) -> int:
+    """Clients whose most recent questionnaire response hasn't been viewed."""
+    with _connect(practitioner_id) as conn:
+        row = conn.execute(
+            """
+            SELECT count(*) FROM questionnaire_responses qr
+            WHERE qr.viewed_at IS NULL
+              AND qr.submitted_at = (
+                  SELECT max(qr2.submitted_at) FROM questionnaire_responses qr2
+                  WHERE qr2.client_id = qr.client_id)
+            """
+        ).fetchone()
+    return row[0] if row else 0
 
 
 # --- Uploaded files -------------------------------------------------------------

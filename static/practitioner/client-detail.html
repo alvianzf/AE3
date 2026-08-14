@@ -244,22 +244,29 @@ async function expandSession(sessionId, container) {
   });
 }
 
+const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+
 function sessionRow(s, i) {
-  const started = (s.started_at || '').slice(0, 16).replace('T', ' ');
+  const d = new Date(s.started_at);
+  const day = isNaN(d) ? '–' : d.getDate();
+  const mon = isNaN(d) ? '' : MONTHS[d.getMonth()];
   const continueLink = s.status !== 'done'
     ? `<a class="btn sm" href="/practitioner/consult?client=${clientId}&session=${s.id}">Continue in Consult</a>`
     : '';
-  return `<li class="plain" data-id="${s.id}" style="display:block">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem;flex-wrap:wrap">
-      <span><b>#${i + 1}</b> ${esc(s.title)} <span class="muted xs">${started} · ${s.turns} turn${s.turns === 1 ? '' : 's'}</span></span>
-      <span style="display:flex;gap:.4rem;align-items:center">
-        <span class="chip${s.status === 'done' ? '' : ' warn'}">${s.status === 'done' ? 'done' : 'in progress'}</span>
-        ${continueLink}
-        <button class="btn ghost sm" data-toggle-status type="button">${s.status === 'done' ? 'Reopen' : 'Mark done'}</button>
-        <button class="btn ghost sm" data-open type="button">Open</button>
-      </span>
+  return `<li class="plain" data-id="${s.id}" style="display:flex;gap:.7rem;align-items:flex-start">
+    <span class="cal-icon"><span class="day">${day}</span><span class="mon">${mon}</span></span>
+    <div class="grow">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem;flex-wrap:wrap">
+        <span><b>${esc(s.title)}</b> <span class="chip${s.status === 'done' ? '' : ' warn'}" style="margin-left:.3rem">${s.status === 'done' ? 'done' : 'in progress'}</span></span>
+        <span style="display:flex;gap:.4rem;align-items:center">
+          ${continueLink}
+          <button class="btn ghost sm" data-toggle-status type="button">${s.status === 'done' ? 'Reopen' : 'Mark done'}</button>
+          <button class="btn ghost sm" data-open type="button">Open</button>
+        </span>
+      </div>
+      <span class="muted xs">${s.turns} turn${s.turns === 1 ? '' : 's'}</span>
+      <div data-detail hidden></div>
     </div>
-    <div data-detail hidden></div>
   </li>`;
 }
 
@@ -327,6 +334,7 @@ async function loadDocuments() {
 
 async function load() {
   const session = await requireRole('practitioner');
+  loadPractitionerNotifications();
   if (!session) return;
   practitionerId = session.id;
   const p = await api('/me/profile');

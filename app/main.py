@@ -582,6 +582,12 @@ def superadmin_reactivate_admin(admin_id: str,
 
 # --- Admin: practitioner management ---------------------------------------------
 
+@app.get("/api/admin/notifications")
+def admin_notifications(_admin: dict = Depends(auth.require_admin)) -> dict:
+    pending = len(core_store.list_practitioners(status="pending"))
+    return {"pending_practitioners": pending}
+
+
 @app.get("/api/admin/practitioners")
 def admin_list_practitioners(
     status: str = "", _admin: dict = Depends(auth.require_admin),
@@ -757,6 +763,17 @@ def me_contacts(status: str = "",
                 session: dict = Depends(auth.require_practitioner)) -> list[dict]:
     return core_store.list_contact_submissions(
         practitioner_id=session["id"], status=status or None)
+
+
+@app.get("/api/me/notifications")
+def me_notifications(session: dict = Depends(auth.require_practitioner)) -> dict:
+    new_contacts = len(core_store.list_contact_submissions(
+        practitioner_id=session["id"], status="new"))
+    practitioner = core_store.get_practitioner(session["id"])
+    unviewed_intake = (
+        vault.count_unviewed_intake(session["id"]) if practitioner["plan"] == "pro" else 0
+    )
+    return {"new_contacts": new_contacts, "unviewed_intake": unviewed_intake}
 
 
 class ContactStatusUpdate(BaseModel):
@@ -1055,6 +1072,8 @@ def me_get_intake(client_id: str,
     questionnaire = (
         core_store.get_questionnaire(response["questionnaire_id"]) if response else None
     )
+    if response:
+        vault.mark_intake_viewed(practitioner_id, client_id)
     return {
         "response": response,
         "questionnaire": questionnaire,

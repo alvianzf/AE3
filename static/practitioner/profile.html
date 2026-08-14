@@ -158,6 +158,7 @@ $('ak-save').onclick = async () => {
 
 async function load() {
   const session = await requireRole('practitioner');
+  loadPractitionerNotifications();
   if (!session) return;
   const p = await api('/me/profile');
   if (p.plan === 'pro') $('nav-upgrade').hidden = true;

@@ -73,6 +73,7 @@ Two separate route families, easy to conflate:
 | `GET /api/me/knowledge` | The shared library merged with this practitioner's own source weight overrides (v2.7) |
 | `PUT /api/me/knowledge/{source_id}/weight` | Set this practitioner's personal weight (1-10) for a source — stored in their own vault, never touches the admin grade (v2.7) |
 | `GET /api/me/sessions/recent` | Most recent consultations across every client, joined with client name — the dashboard's historical-consultations widget (v2.8) |
+| `GET /api/me/notifications` | `{new_contacts, unviewed_intake}` — backs the sidebar badge on Contacts/Dashboard (v2.13) |
 
 ## Client
 
@@ -100,6 +101,7 @@ practitioner) — never from a request parameter.
 | `GET /api/admin/questionnaires/{id}` | Fetch one questionnaire with its questions (v2.7 — backs the builder's edit view) |
 | `GET /api/admin/stats` | `{total_views, total_contacts}` site-wide |
 | `GET /api/admin/practitioners/{id}/client-count` | Fans out to that practitioner's vault ([02](02-data-model.md)); `0` for Basic |
+| `GET /api/admin/notifications` | `{pending_practitioners}` — backs the sidebar badge on Users (v2.13) |
 
 **Not built**: a route to delete a practitioner outright (only suspend —
 [10](10-security.md) records this as a known gap), and a route exposing a

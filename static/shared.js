@@ -104,6 +104,33 @@ document.addEventListener('keydown', (ev) => {
 const DASHBOARD_FOR_ROLE = {
   admin: '/admin/dashboard', practitioner: '/practitioner/dashboard', client: '/client/dashboard',
 };
+// Small numeric badge on a sidebar-nav link (e.g. "Contacts (3)") for
+// counts the signed-in user hasn't looked at yet. Call once per page load
+// per role — see loadAdminNotifications()/loadPractitionerNotifications().
+function setNavBadge(href, count) {
+  const link = document.querySelector(`.sidebar-link[href="${href}"]`);
+  if (!link) return;
+  link.querySelector('.nav-badge')?.remove();
+  if (!count) return;
+  const badge = document.createElement('span');
+  badge.className = 'nav-badge';
+  badge.textContent = count > 99 ? '99+' : String(count);
+  link.appendChild(badge);
+}
+async function loadAdminNotifications() {
+  try {
+    const n = await api('/admin/notifications');
+    setNavBadge('/admin/users', n.pending_practitioners);
+  } catch { /* not fatal — the page still works without badges */ }
+}
+async function loadPractitionerNotifications() {
+  try {
+    const n = await api('/me/notifications');
+    setNavBadge('/practitioner/contacts', n.new_contacts);
+    setNavBadge('/practitioner/dashboard', n.new_contacts + n.unviewed_intake);
+  } catch { /* not fatal — the page still works without badges */ }
+}
+
 async function adaptPublicAuthLinks() {
   const session = await currentSession();
   if (!session) return;

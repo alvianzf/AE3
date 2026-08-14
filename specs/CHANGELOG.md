@@ -1,5 +1,41 @@
 # Specs changelog
 
+## v2.13 — 2026-08-14 (notification badges; dashboard layout widened)
+
+**Dashboards use their available width properly now.** The single-column
+stacking from v2.8/v2.9 (a fix for sparse multi-column card grids) went too
+far the other way on wide screens, leaving most of the content area empty.
+Admin and practitioner dashboards now use a two-column `.layout` (secondary
+widgets in a 300px rail, primary content — Pending applications / Historical
+consultations — filling the rest); the client dashboard's three stat cards
+use a `repeat(auto-fit, minmax(16rem,1fr))` grid instead of a fixed
+single column, so they fill the row on wide screens and wrap cleanly on
+narrow ones.
+
+**Notification badges** — a small count badge on a sidebar-nav link for
+updates the signed-in user hasn't looked at yet, via a new
+`setNavBadge()`/`loadAdminNotifications()`/`loadPractitionerNotifications()`
+trio in `shared.js`, called from every admin/practitioner page's `load()`:
+- **Admin**: badge on Users = count of `pending` practitioner applications
+  (`GET /api/admin/notifications`).
+- **Practitioner**: badge on Contacts = count of `new`-status contact
+  submissions; badge on Dashboard = that count plus unviewed intake
+  responses (`GET /api/me/notifications`).
+- **Unviewed intake** is new state: `questionnaire_responses.viewed_at`
+  (migrated, nullable) is set the moment a practitioner opens a client's
+  intake review (`GET /api/me/clients/{id}/intake`, including via Consult's
+  overview panel) — `vault.count_unviewed_intake()` counts clients whose
+  *latest* response is still unviewed, not just any old unviewed row.
+- Explicitly out of scope for now: a per-client-report "unread by the
+  client" badge — there's no client-facing view of clinician-authored
+  reports yet, so "unread" wouldn't mean anything there.
+
+**Consultation list on `client-detail.html`** now uses the same
+calendar-style date marker (large day number, 3-letter month) as the
+dashboard's historical-consultations widget, instead of a plain
+timestamp — the two lists of the same underlying data now look like the
+same thing.
+
 ## v2.12 — 2026-08-14 (remaining v2.7 findings closed out — A1-A4, C2, C3, S1-S4)
 
 All 20 findings from [14 · UX findings](v2/14-ux-findings-v2.7.md) are now

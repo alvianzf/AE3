@@ -326,6 +326,7 @@ $('logout-btn').onclick = logout;
 
 async function load() {
   const session = await requireRole('admin');
+  loadAdminNotifications();
   if (!session) return;
   loadSiteStats();
   loadPractitioners();

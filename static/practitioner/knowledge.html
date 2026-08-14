@@ -147,6 +147,7 @@ async function loadKnowledge() {
 
 async function load() {
   const session = await requireRole('practitioner');
+  loadPractitionerNotifications();
   if (!session) return;
   const p = await api('/me/profile');
   if (p.plan !== 'pro') { $('pro-gate').hidden = false; return; }

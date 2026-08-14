@@ -112,8 +112,9 @@ clients (
 
 questionnaire_responses (
   id TEXT PRIMARY KEY, client_id, questionnaire_id, questionnaire_version,
-  answers_json, submitted_at
-)
+  answers_json, submitted_at,
+  viewed_at TEXT   -- v2.13: null until the practitioner opens this client's
+)                   -- intake review; backs the unviewed-intake badge count
 
 uploaded_files (
   id TEXT PRIMARY KEY, client_id, original_name, media_type,
