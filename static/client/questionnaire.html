@@ -128,13 +128,22 @@ async function load() {
       await api('/me/questionnaire', json('POST', {
         questionnaire_id: active.id, questionnaire_version: active.version, answers,
       }));
-      $('q-status').textContent = '';
       toast('Answers submitted');
+      // A toast alone faded out before the user necessarily saw it, and the
+      // form itself never changed — it looked like nothing had happened.
+      // Replace it with a durable confirmation instead of leaving the same
+      // filled-in form sitting there.
+      $('q-body').innerHTML = empty(
+        'Answers submitted',
+        'Your practitioner can now see your responses. You can also '
+        + '<a href="/client/files">upload a file</a> or '
+        + '<a href="/client/wearables">connect a wearable</a> next.',
+      );
     } catch (e) {
       $('q-status').textContent = '';
       toast(e.message, 'bad');
+      $('q-submit').disabled = false;
     }
-    $('q-submit').disabled = false;
   };
 }
 load().catch((e) => toast(e.message, 'bad'));
