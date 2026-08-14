@@ -93,3 +93,28 @@ document.addEventListener('keydown', (ev) => {
     $('user-menu-btn')?.setAttribute('aria-expanded', 'false');
   }
 });
+
+// Public pages (directory, about, coach, both signup flows) show
+// "Sign up"/"Log in" links unconditionally in their markup — fine for a
+// signed-out visitor, misleading for someone already signed in who
+// navigated back here (specs/v2/14-ux-findings-v2.7.md S1). Pages that
+// want this handled mark their links with data-auth-link="signup"/"login"
+// and call this once on load; a session swaps the first such link for a
+// single "Go to my dashboard" link and removes the rest.
+const DASHBOARD_FOR_ROLE = {
+  admin: '/admin/dashboard', practitioner: '/practitioner/dashboard', client: '/client/dashboard',
+};
+async function adaptPublicAuthLinks() {
+  const session = await currentSession();
+  if (!session) return;
+  const links = document.querySelectorAll('[data-auth-link]');
+  links.forEach((el, i) => {
+    if (i === 0) {
+      el.textContent = 'Go to my dashboard';
+      el.href = DASHBOARD_FOR_ROLE[session.role] || '/login';
+      el.classList.remove('ghost');
+    } else {
+      el.remove();
+    }
+  });
+}

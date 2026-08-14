@@ -27,8 +27,8 @@
       <a class="btn ghost sm" href="/about">About</a>
       <a class="btn ghost sm" href="/directory">Find a practitioner</a>
       <a class="btn ghost sm" href="/join">Join as a practitioner</a>
-      <a class="btn ghost sm" href="/signup">Sign up</a>
-      <a class="btn sm" href="/login">Log in</a>
+      <a class="btn ghost sm" href="/signup" data-auth-link="signup">Sign up</a>
+      <a class="btn sm" href="/login" data-auth-link="login">Log in</a>
     </nav>
   </div>
 </header>
@@ -76,6 +76,7 @@
 // other way (e.g. the site-wide "Sign up" nav link) leaves practitioner_id
 // unset — that used to just 400 with no way to recover; now it shows a
 // picker instead (specs/v2/13-known-issues.md H1).
+adaptPublicAuthLinks();
 const practitionerId = qs('practitioner_id');
 if (practitionerId) {
   $('pr-hint').hidden = false;

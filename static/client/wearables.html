@@ -104,9 +104,14 @@ async function render() {
     </div>`;
   }).join('');
   $('wearable-rows').querySelectorAll('[data-provider]').forEach((btn) => {
+    const original = btn.textContent;
     btn.onclick = async () => {
       const provider = btn.dataset.provider;
       btn.disabled = true;
+      // The gap between the API responding and the browser actually
+      // navigating away otherwise looks inert — nothing on the button
+      // signals a redirect is coming (specs/v2/14-ux-findings-v2.7.md C2).
+      btn.innerHTML = '<span class="spin">Redirecting</span>';
       try {
         const r = await api(`/me/wearables/${provider}/connect`, { method: 'POST' });
         // Real OAuth redirect to the vendor — the vendor's callback lands on
@@ -115,6 +120,7 @@ async function render() {
         // a successful connect until it's reloaded.
         location.href = r.url;
       } catch (e) {
+        btn.textContent = original;
         // 409 specifically means this provider has no OAuth credentials
         // configured on this deployment — don't strand the user on a
         // vendor page that will fail (specs/v2/13-known-issues.md H3).

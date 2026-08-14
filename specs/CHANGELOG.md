@@ -1,5 +1,47 @@
 # Specs changelog
 
+## v2.12 — 2026-08-14 (remaining v2.7 findings closed out — A1-A4, C2, C3, S1-S4)
+
+All 20 findings from [14 · UX findings](v2/14-ux-findings-v2.7.md) are now
+resolved.
+
+**Admin:**
+- **A1** — saving a questionnaire edit that isn't already the active one now
+  asks for confirmation first ("Saving will make this the active
+  questionnaire, replacing the one clients currently answer. Continue?"),
+  since it silently changes what every client sees.
+- **A2** — the active questionnaire is now pinned in its own "currently
+  active" card above a "Previous versions" list, instead of one flat list
+  where every row looked equally current.
+- **A3** — `/admin` (the knowledge-library dashboard) gained the same
+  "Admin / …" breadcrumb its sibling pages already had.
+- **A4** — the "Account created" credentials panel now renders inside the
+  form that created the account (`#np-credentials-slot` /
+  `#na-credentials-slot`), not at page-top — adding a practitioner or admin
+  no longer reflows Site statistics and the roster list underneath it.
+
+**Client:**
+- **C2** — the wearable connect button shows "Redirecting…" between the API
+  response and the browser navigating to the vendor, instead of just
+  sitting disabled with no explanation.
+- **C3** — the no-active-questionnaire empty state now links to Files and
+  Wearables, matching the post-submit state's "next steps" links.
+
+**Public/shared:**
+- **S1** — public pages (`about`, `directory`, `coach`, both signup flows,
+  the practitioner thank-you page) now check for a session on load and
+  swap "Sign up"/"Log in" for a single "Go to my dashboard" link when one
+  exists, via a new `adaptPublicAuthLinks()` helper in `shared.js`.
+- **S2** — `/account` gained a "Back to my portal" sidebar link and its
+  logo now points at the signed-in role's own dashboard instead of the
+  public directory — previously it was a dead end reachable only by the
+  browser's back button.
+- **S3** — the mobile (≤900px) sidebar drops the tagline/tag pill so nav
+  links surface sooner, and gets an edge-fade mask signaling the row
+  scrolls further.
+- **S4** — the practitioner thank-you page's copy now says Upgrade is "the
+  Upgrade page in your sidebar," matching where it actually lives.
+
 ## v2.11 — 2026-08-14 (proactive API-key banner; add-client form open when empty)
 
 Resolves [14 · UX findings](v2/14-ux-findings-v2.7.md) P7 and P9.

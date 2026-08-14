@@ -39,8 +39,8 @@
       <a class="sidebar-link" href="/about">About</a>
       <a class="sidebar-link active" href="/directory">Find a practitioner</a>
       <a class="sidebar-link" href="/join">Join as a practitioner</a>
-      <a class="sidebar-link" href="/signup">Sign up</a>
-      <a class="sidebar-link" href="/login">Log in</a>
+      <a class="sidebar-link" href="/signup" data-auth-link="signup">Sign up</a>
+      <a class="sidebar-link" href="/login" data-auth-link="login">Log in</a>
     </nav>
   </aside>
   <div class="app-main">
@@ -149,6 +149,7 @@ $('f-language').onchange = load;
 $('f-reset').onclick = () => { $('f-specialty').value = ''; $('f-language').value = ''; load(); };
 
 load().catch((e) => toast(e.message, 'bad'));
+adaptPublicAuthLinks();
 </script>
 </div>
 </div>

@@ -65,21 +65,6 @@
       </div>
     </header>
 
-<div id="new-credentials" class="card-panel" hidden
-     style="max-width:60rem;margin:1rem auto 0;border-color:var(--accent)">
-  <div class="pb" style="display:flex;align-items:center;gap:.8rem;flex-wrap:wrap">
-    <div class="grow">
-      <b>Account created</b> — this password won't be shown again. Copy it now
-      and pass it to them directly.
-      <div class="muted small" style="margin-top:.3rem">
-        <span id="nc-email"></span> · <code id="nc-password"></code>
-      </div>
-    </div>
-    <button id="nc-copy" class="btn ghost sm" type="button">Copy password</button>
-    <button id="nc-dismiss" class="btn ghost sm" type="button">Dismiss</button>
-  </div>
-</div>
-
 <main class="pane on" style="max-width:60rem;margin:0 auto">
   <section class="card-panel" id="stats-panel">
     <div class="ph botanic"><h2 style="flex:1">Site statistics</h2></div>
@@ -122,6 +107,7 @@
         </div>
         <button id="np-create" class="btn sm" type="button">Add practitioner</button>
       </form>
+      <div id="np-credentials-slot" style="padding:0 .6rem"></div>
     </div>
   </section>
 
@@ -143,6 +129,7 @@
         </select>
         <button id="na-create" class="btn sm" type="button">Add admin</button>
       </form>
+      <div id="na-credentials-slot" style="padding:0 .6rem"></div>
     </div>
   </section>
 </main>
@@ -221,21 +208,35 @@ async function loadPractitioners() {
 }
 $('p-filter').onchange = loadPractitioners;
 
-function showCredentials(email, password) {
-  $('nc-email').textContent = email;
-  $('nc-password').textContent = password;
-  $('new-credentials').hidden = false;
-  $('new-credentials').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+// Anchored right after the form that created the account, not page-top —
+// showing it shouldn't reflow Site statistics or the Practitioners list
+// (specs/v2/14-ux-findings-v2.7.md A4).
+function showCredentials(slotId, email, password) {
+  const slot = $(slotId);
+  slot.innerHTML = `<div class="card-panel" style="padding:.7rem;margin-top:.6rem;border-color:var(--accent)">
+    <div style="display:flex;align-items:center;gap:.8rem;flex-wrap:wrap">
+      <div class="grow">
+        <b>Account created</b> — this password won't be shown again. Copy it now
+        and pass it to them directly.
+        <div class="muted small" style="margin-top:.3rem">
+          <span>${esc(email)}</span> · <code>${esc(password)}</code>
+        </div>
+      </div>
+      <button class="btn ghost sm" data-nc-copy type="button">Copy password</button>
+      <button class="btn ghost sm" data-nc-dismiss type="button">Dismiss</button>
+    </div>
+  </div>`;
+  slot.querySelector('[data-nc-copy]').onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(password);
+      toast('Password copied');
+    } catch {
+      toast('Could not copy — select and copy manually', 'bad');
+    }
+  };
+  slot.querySelector('[data-nc-dismiss]').onclick = () => { slot.innerHTML = ''; };
+  slot.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
-$('nc-dismiss').onclick = () => { $('new-credentials').hidden = true; };
-$('nc-copy').onclick = async () => {
-  try {
-    await navigator.clipboard.writeText($('nc-password').textContent);
-    toast('Password copied');
-  } catch {
-    toast('Could not copy — select and copy manually', 'bad');
-  }
-};
 
 $('np-create').onclick = async () => {
   const name = $('np-name').value.trim();
@@ -252,7 +253,7 @@ $('np-create').onclick = async () => {
       years_experience: parseInt($('np-years').value || '0', 10),
       consultation_price_cents: Math.round(priceUsd * 100),
     }));
-    showCredentials(email, password);
+    showCredentials('np-credentials-slot', email, password);
     ['np-name','np-email','np-password','np-bio','np-specialties','np-languages','np-years','np-price']
       .forEach((id) => { $(id).value = ''; });
     toast('Practitioner added');
@@ -313,7 +314,7 @@ $('na-create').onclick = async () => {
   if (!name || !email || !password) { toast('Name, email and password are required', 'bad'); return; }
   try {
     await api('/superadmin/admins', json('POST', { name, email, password, role }));
-    showCredentials(email, password);
+    showCredentials('na-credentials-slot', email, password);
     $('na-name').value = ''; $('na-email').value = ''; $('na-password').value = '';
     toast('Admin created');
     const session = await api('/auth/me');

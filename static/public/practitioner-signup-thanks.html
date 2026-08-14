@@ -26,7 +26,7 @@
     <nav style="margin-left:auto;display:flex;gap:.4rem;flex-wrap:wrap">
       <a class="btn ghost sm" href="/about">About</a>
       <a class="btn ghost sm" href="/directory">Find a practitioner</a>
-      <a class="btn sm" href="/login">Log in</a>
+      <a class="btn sm" href="/login" data-auth-link="login">Log in</a>
     </nav>
   </div>
 </header>
@@ -49,13 +49,15 @@
           action needed on your part.</li>
         <li>Every new account starts on the Basic plan (public profile
           only). Upgrading to Pro — for RAG-assisted consultations and a
-          client list — is a separate step available from your profile
-          page once you're approved.</li>
+          client list — is a separate step available from the Upgrade
+          page in your sidebar once you're approved.</li>
       </ul>
       <a class="btn block" href="/login" style="margin-top:.9rem">Log in to check status</a>
     </div>
   </section>
 </main>
 
+<script src="/static/shared.js"></script>
+<script>adaptPublicAuthLinks();</script>
 </body>
 </html>

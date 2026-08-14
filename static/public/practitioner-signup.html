@@ -27,8 +27,8 @@
       <a class="btn ghost sm" href="/about">About</a>
       <a class="btn ghost sm" href="/directory">Find a practitioner</a>
       <a class="btn ghost sm" href="/join">Join as a practitioner</a>
-      <a class="btn ghost sm" href="/signup">Sign up</a>
-      <a class="btn sm" href="/login">Log in</a>
+      <a class="btn ghost sm" href="/signup" data-auth-link="signup">Sign up</a>
+      <a class="btn sm" href="/login" data-auth-link="login">Log in</a>
     </nav>
   </div>
 </header>
@@ -86,6 +86,7 @@
 <div id="toasts" class="toasts" aria-live="polite"></div>
 <script src="/static/shared.js"></script>
 <script>
+adaptPublicAuthLinks();
 const splitList = (v) => v.split(',').map((s) => s.trim()).filter(Boolean);
 
 $('s-submit').onclick = async () => {

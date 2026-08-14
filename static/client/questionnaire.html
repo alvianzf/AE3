@@ -111,7 +111,9 @@ async function load() {
   const active = await api('/me/questionnaire');
   if (!active) {
     $('q-body').innerHTML = empty('No active questionnaire',
-      'Nothing to fill in right now — check back later.');
+      'Nothing to fill in right now — check back later. In the meantime, you can '
+      + '<a href="/client/files">upload a file</a> or '
+      + '<a href="/client/wearables">connect a wearable</a>.');
     return;
   }
   $('q-title').textContent = active.title || 'Questionnaire';

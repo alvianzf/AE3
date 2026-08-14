@@ -74,6 +74,7 @@
       <p class="hint" style="padding:.6rem .6rem 0">Only one questionnaire is active
         at a time — clients always answer the active one. Editing creates a new
         version; a client's already-submitted answers never change.</p>
+      <div id="q-active" style="padding:0 .6rem"></div>
       <div id="q-list" class="scrollbox"></div>
     </div>
   </section>
@@ -192,7 +193,6 @@ function questionnaireRow(q) {
   return `<li data-id="${q.id}" class="plain" style="display:block">
     <div style="display:flex;justify-content:space-between;gap:.5rem;align-items:baseline;flex-wrap:wrap">
       <span class="nm">${esc(q.title)} <span class="muted xs">v${q.version}</span></span>
-      <span class="chip${q.is_active ? '' : ' warn'}">${q.is_active ? 'active' : 'inactive'}</span>
     </div>
     <div style="display:flex;gap:.4rem;margin-top:.3rem">
       <button class="btn ghost sm" data-edit type="button">Edit (new version)</button>
@@ -200,11 +200,33 @@ function questionnaireRow(q) {
   </li>`;
 }
 
+let activeQuestionnaireId = null;
+
 async function loadList() {
   const list = await api('/admin/questionnaires');
   $('q-count').textContent = list.length || '';
-  $('q-list').innerHTML = `<ul class="rows">${list.map(questionnaireRow).join('')}</ul>`
-    || empty('No questionnaires yet', 'Build one below.');
+  const active = list.find((q) => q.is_active);
+  activeQuestionnaireId = active ? active.id : null;
+
+  $('q-active').innerHTML = active
+    ? `<div class="card-panel" style="padding:.7rem;margin-bottom:.6rem;border-color:var(--accent)">
+        <div style="display:flex;justify-content:space-between;gap:.5rem;align-items:baseline">
+          <span class="nm">${esc(active.title)} <span class="muted xs">v${active.version}</span></span>
+          <span class="chip">currently active</span>
+        </div>
+        <p class="hint" style="margin:.3rem 0 0">Clients answer this one right now.</p>
+        <button class="btn ghost sm" data-edit="${active.id}" type="button" style="margin-top:.4rem">Edit (new version)</button>
+      </div>`
+    : empty('No active questionnaire', 'Build one below — clients see nothing until one is active.');
+  $('q-active').querySelectorAll('[data-edit]').forEach((btn) => {
+    btn.onclick = () => editQuestionnaire(btn.dataset.edit);
+  });
+
+  const others = list.filter((q) => !q.is_active);
+  $('q-list').innerHTML = others.length
+    ? `<p class="hint xs" style="padding:.4rem .6rem 0">Previous versions</p>
+       <ul class="rows">${others.map(questionnaireRow).join('')}</ul>`
+    : '';
   $('q-list').querySelectorAll('[data-edit]').forEach((btn) => {
     btn.onclick = () => editQuestionnaire(btn.closest('li').dataset.id);
   });
@@ -219,6 +241,15 @@ $('b-save').onclick = async () => {
   }));
   if (!cleaned.length || cleaned.some((q) => !q.prompt)) {
     toast('Every question needs a prompt', 'bad'); return;
+  }
+  // Saving always makes this the sole active questionnaire — if a
+  // different one is currently active, that's a real behavior change for
+  // every client, not just an edit to this lineage. Confirm it explicitly
+  // rather than swap it silently (specs/v2/14-ux-findings-v2.7.md A1).
+  if (activeQuestionnaireId && editingId !== activeQuestionnaireId) {
+    const ok = confirm('Saving will make this the active questionnaire, '
+      + 'replacing the one clients currently answer. Continue?');
+    if (!ok) return;
   }
   $('b-save').disabled = true;
   $('b-status').textContent = 'Saving…';

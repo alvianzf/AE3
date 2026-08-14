@@ -13,11 +13,12 @@ covered by 13. Grouped by portal, each finding gives severity, the
 problem as observed against the shipped code, and a fix direction
 (layout/flow only — no visual-style changes were audited or proposed).
 
-**Status: spec only — none of these findings have been implemented yet.**
-This document records what the audit found; it does not decide build
-order or priority. The one exception is **C1**, which was found and
-fixed live the same day, before any real client data was affected by it
-— carried here as RESOLVED, not as an open item.
+**Status: all 20 findings resolved as of v2.12** (see
+[CHANGELOG](../CHANGELOG.md) v2.7–v2.12 for what shipped and when — each
+finding's entry above names the version that fixed it). This document
+originally recorded a spec-only backlog; it's kept as the historical
+record of what the audit found and how each item was actually addressed,
+not as an open todo list anymore.
 
 ---
 
@@ -378,17 +379,17 @@ page in your sidebar."
 | P7 | Practitioner | Medium | RESOLVED (fixed v2.11) |
 | P8 | Practitioner | Low | RESOLVED (fixed same day) |
 | P9 | Practitioner | Low | RESOLVED (fixed v2.11) |
-| A1 | Admin | High | Open |
-| A2 | Admin | Medium | Open |
-| A3 | Admin | Medium | Open |
-| A4 | Admin | Low | Open |
+| A1 | Admin | High | RESOLVED (fixed v2.12) |
+| A2 | Admin | Medium | RESOLVED (fixed v2.12) |
+| A3 | Admin | Medium | RESOLVED (fixed v2.12) |
+| A4 | Admin | Low | RESOLVED (fixed v2.12) |
 | C1 | Client | — | RESOLVED (fixed live same-day) |
-| C2 | Client | Low | Open |
-| C3 | Client | Low | Open |
-| S1 | Public | High | Open |
-| S2 | Public | High | Open |
-| S3 | Public | Medium | Open |
-| S4 | Public | Low | Open |
+| C2 | Client | Low | RESOLVED (fixed v2.12) |
+| C3 | Client | Low | RESOLVED (fixed v2.12) |
+| S1 | Public | High | RESOLVED (fixed v2.12) |
+| S2 | Public | High | RESOLVED (fixed v2.12) |
+| S3 | Public | Medium | RESOLVED (fixed v2.12) |
+| S4 | Public | Low | RESOLVED (fixed v2.12) |
 
 1 Critical, 6 High, 6 Medium, 6 Low findings open; 1 (C1) already
 resolved. Build order/priority across these is a separate, later

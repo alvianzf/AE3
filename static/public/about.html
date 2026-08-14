@@ -31,8 +31,8 @@
       <a class="sidebar-link active" href="/about">About</a>
       <a class="sidebar-link" href="/directory">Find a practitioner</a>
       <a class="sidebar-link" href="/join">Join as a practitioner</a>
-      <a class="sidebar-link" href="/signup">Sign up</a>
-      <a class="sidebar-link" href="/login">Log in</a>
+      <a class="sidebar-link" href="/signup" data-auth-link="signup">Sign up</a>
+      <a class="sidebar-link" href="/login" data-auth-link="login">Log in</a>
     </nav>
   </aside>
   <div class="app-main">
@@ -61,6 +61,7 @@
 
 <div id="toasts" class="toasts" aria-live="polite"></div>
 <script src="/static/shared.js"></script>
+<script>adaptPublicAuthLinks();</script>
 </div>
 </div>
 </body>

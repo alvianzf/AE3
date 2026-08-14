@@ -10,7 +10,7 @@
 
 <div class="app-shell">
   <aside class="sidebar">
-    <a href="/directory" class="brand-link">
+    <a href="/directory" class="brand-link" id="acc-brand-link">
       <span class="sprig" aria-hidden="true">
       <svg viewBox="0 0 20 24" fill="none" stroke="currentColor" stroke-width="1.3"
            stroke-linecap="round">
@@ -23,6 +23,9 @@
       </span>
       <span class="brand"><b>Clinic</b><span class="sub">account settings</span><span class="tag">Phase 2 POC</span></span>
     </a>
+    <nav class="sidebar-nav">
+      <a class="sidebar-link" href="#" id="acc-back-link">Back to my portal</a>
+    </nav>
   </aside>
   <div class="app-main">
     <header class="app-topbar">
@@ -60,6 +63,12 @@ async function load() {
   const session = await currentSession();
   if (!session) { location.href = '/login'; return; }
   $('acc-role').textContent = `Signed in as ${session.role}.`;
+  // Every other authenticated page's logo goes to that role's own portal
+  // home — account.html was the one exception, pointing at the public
+  // marketing site instead (specs/v2/14-ux-findings-v2.7.md S2).
+  const home = DASHBOARD_FOR_ROLE[session.role] || '/login';
+  $('acc-brand-link').href = home;
+  $('acc-back-link').href = home;
 }
 load();
 

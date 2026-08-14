@@ -185,8 +185,14 @@ svg { flex: 0 0 auto; }
   .sidebar {
     width: 100%; height: auto; position: static; overflow-y: visible;
     flex-direction: row; align-items: center; gap: .8rem; overflow-x: auto;
+    /* Edge-fade so a scrollable row of nav links doesn't look complete when
+       it isn't — the mark alone (no tagline/tag pill) also gets nav links
+       on-screen sooner instead of losing width to the full brand block. */
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 12px, #000 calc(100% - 12px), transparent);
+            mask-image: linear-gradient(to right, transparent, #000 12px, #000 calc(100% - 12px), transparent);
   }
-  .sidebar-nav { flex-direction: row; }
+  .sidebar .brand .sub, .sidebar .brand .tag { display: none; }
+  .sidebar-nav { flex-direction: row; flex: 0 0 auto; }
 }
 
 /* ── Layout ──────────────────────────────────────────────────────────────── */
