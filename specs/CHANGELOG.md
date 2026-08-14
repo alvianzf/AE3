@@ -1,5 +1,17 @@
 # Specs changelog
 
+## v2.11 — 2026-08-14 (proactive API-key banner; add-client form open when empty)
+
+Resolves [14 · UX findings](v2/14-ux-findings-v2.7.md) P7 and P9.
+
+- **Consult shows a banner** ("Set your Anthropic API key to start
+  consulting") whenever a Pro practitioner has no key on file, as soon as
+  the page loads — not only after they've already typed a question and hit
+  the 400 from `POST /api/me/consult`.
+- **"Add a client" opens by default** on `/practitioner/clients` when the
+  list is empty — a brand-new Pro practitioner's single most useful action
+  on that page no longer starts hidden behind a collapsed `<details>`.
+
 ## v2.10 — 2026-08-14 (documents panel jumps to its session; note vs. report distinguished)
 
 Resolves [14 · UX findings](v2/14-ux-findings-v2.7.md) P5 and P6.

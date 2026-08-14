@@ -76,6 +76,17 @@
     </div></div>
   </section>
 
+  <section class="card-panel" id="key-banner" hidden style="border-color:var(--accent);margin-bottom:1rem">
+    <div class="pb" style="display:flex;align-items:center;gap:.8rem;flex-wrap:wrap">
+      <div class="grow">
+        <b>Set your Anthropic API key to start consulting</b>
+        <p class="hint" style="margin:.2rem 0 0">Pro consultations run on your own key, not the
+          clinic's. Nothing can be asked until one is on file.</p>
+      </div>
+      <a class="btn" href="/practitioner/profile">Set API key</a>
+    </div>
+  </section>
+
   <div class="layout practitioner" id="consult-layout" hidden>
     <aside class="card-panel">
       <div class="ph botanic">
@@ -307,6 +318,7 @@ async function load() {
   const p = await api('/me/profile');
   if (p.plan === 'pro') $('nav-upgrade').hidden = true;
   if (p.plan !== 'pro') { $('pro-gate').hidden = false; return; }
+  if (!p.has_anthropic_key) $('key-banner').hidden = false;
   $('consult-layout').hidden = false;
   await loadClients();
 

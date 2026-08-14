@@ -83,7 +83,7 @@
     </div>
     <div class="pb">
       <ul id="cl-list" class="rows"></ul>
-      <details class="disc" style="margin-top:.6rem">
+      <details class="disc" id="cl-add-details" style="margin-top:.6rem">
         <summary>Add a client</summary>
         <div>
           <input id="cl-name" placeholder="Full name" aria-label="Client name">
@@ -123,6 +123,10 @@ async function load() {
   $('cl-count').textContent = list.length || '';
   $('cl-list').innerHTML = list.length ? list.map(row).join('')
     : empty('No clients yet', 'Add one below, or wait for a client to sign up and pick you.');
+  // Nothing else on this page for a brand-new practitioner to look at —
+  // don't make the single most useful action a collapsed disclosure they
+  // have to notice and open first (specs/v2/14-ux-findings-v2.7.md P9).
+  if (!list.length) $('cl-add-details').open = true;
 }
 
 $('cl-create').onclick = async () => {

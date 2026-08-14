@@ -375,9 +375,9 @@ page in your sidebar."
 | P4 | Practitioner | Medium | RESOLVED (fixed v2.9 — intake shown in the overview panel, not a list chip) |
 | P5 | Practitioner | High | RESOLVED (fixed v2.10) |
 | P6 | Practitioner | Medium | RESOLVED (fixed v2.10) |
-| P7 | Practitioner | Medium | Open |
+| P7 | Practitioner | Medium | RESOLVED (fixed v2.11) |
 | P8 | Practitioner | Low | RESOLVED (fixed same day) |
-| P9 | Practitioner | Low | Open |
+| P9 | Practitioner | Low | RESOLVED (fixed v2.11) |
 | A1 | Admin | High | Open |
 | A2 | Admin | Medium | Open |
 | A3 | Admin | Medium | Open |
