@@ -1,5 +1,20 @@
 # Specs changelog
 
+## v2.10 — 2026-08-14 (documents panel jumps to its session; note vs. report distinguished)
+
+Resolves [14 · UX findings](v2/14-ux-findings-v2.7.md) P5 and P6.
+
+- **Reports & documents rows are clickable** (`client-detail.html`): clicking
+  one switches to the Consultations & reports tab, expands that document's
+  parent session if it wasn't already open, scrolls it into view, and
+  briefly outlines it — previously the panel was a flat, unclickable list
+  and finding the source session meant scrolling and matching manually.
+- **Clinician note vs. client report now visually distinguished by
+  audience**: each gets a left border accent and an explicit "Internal —
+  only you can see this" / "Shared with the client" label, instead of two
+  identically-weighted textareas side by side with only their heading text
+  to tell them apart.
+
 ## v2.9 — 2026-08-14 (Consult shows everything about the selected client)
 
 Resolves [14 · UX findings](v2/14-ux-findings-v2.7.md) P1-P4: a practitioner

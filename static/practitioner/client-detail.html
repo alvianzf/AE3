@@ -195,14 +195,24 @@ function turnRow(t, i) {
   </div>`;
 }
 
+const DOC_AUDIENCE = {
+  clinician_note: { label: 'Clinician note', audience: 'Internal — only you can see this', accent: 'var(--line-2)' },
+  client_report: { label: 'Client report', audience: 'Shared with the client', accent: 'var(--accent)' },
+};
+
 function documentEditor(sessionId, kind, doc, label) {
   const status = doc?.status || 'draft';
-  return `<div style="margin-top:.6rem">
-    <div style="display:flex;justify-content:space-between;align-items:center">
-      <label class="lbl" style="margin:0">${label}</label>
+  const meta = DOC_AUDIENCE[kind];
+  return `<div style="margin-top:.7rem;padding:.6rem .7rem;border-left:3px solid ${meta.accent};background:var(--panel-2);border-radius:0 var(--r) var(--r) 0">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:.3rem">
+      <div>
+        <label class="lbl" style="margin:0">${label}</label>
+        <div class="muted xs">${meta.audience}</div>
+      </div>
       <span class="chip${status === 'final' ? '' : ' warn'}">${status}</span>
     </div>
-    <textarea data-doc="${kind}" rows="4" placeholder="Write ${label.toLowerCase()}…">${esc(doc?.content || '')}</textarea>
+    <textarea data-doc="${kind}" rows="4" placeholder="Write ${label.toLowerCase()}…"
+              style="margin-top:.4rem">${esc(doc?.content || '')}</textarea>
     <div style="display:flex;gap:.4rem;margin-top:.3rem">
       <button class="btn ghost sm" data-save-doc="${kind}" data-status="draft" type="button">Save draft</button>
       <button class="btn ghost sm" data-save-doc="${kind}" data-status="final" type="button">Mark final</button>
@@ -283,10 +293,10 @@ async function loadSessions() {
 }
 
 function documentRow(d) {
-  const label = d.kind === 'clinician_note' ? 'Clinician note' : 'Client report';
-  return `<div style="padding:.5rem 0;border-top:1px solid var(--line)">
+  const meta = DOC_AUDIENCE[d.kind] || { label: d.kind };
+  return `<div data-jump-session="${d.session_id}" style="padding:.5rem 0;border-top:1px solid var(--line);cursor:pointer">
     <div style="display:flex;justify-content:space-between;gap:.4rem">
-      <span class="nm" style="font-size:.85rem">${label}</span>
+      <span class="nm" style="font-size:.85rem">${meta.label}</span>
       <span class="chip${d.status === 'final' ? '' : ' warn'}">${d.status}</span>
     </div>
     <div class="muted xs">${esc(d.session_title)}</div>
@@ -298,6 +308,21 @@ async function loadDocuments() {
   $('documents-body').innerHTML = list.length
     ? list.map(documentRow).join('')
     : empty('No documents yet', 'Notes and reports appear here once written.');
+  $('documents-body').querySelectorAll('[data-jump-session]').forEach((row) => {
+    row.onclick = () => {
+      showTab('history');
+      const li = $('sessions-body').querySelector(`[data-id="${row.dataset.jumpSession}"]`);
+      if (!li) return;
+      const detail = li.querySelector('[data-detail]');
+      if (detail.hidden) {
+        detail.hidden = false;
+        expandSession(row.dataset.jumpSession, detail);
+      }
+      li.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      li.style.outline = '2px solid var(--accent)';
+      setTimeout(() => { li.style.outline = ''; }, 1500);
+    };
+  });
 }
 
 async function load() {
