@@ -63,7 +63,7 @@ Two separate route families, easy to conflate:
 | `GET /api/me/clients/{id}` | Client record: entries, sessions, files, wearable data |
 | `DELETE /api/me/clients/{id}` | Erase a client — redacts vault audit detail, keeps the rows ([10](10-security.md)) |
 | `POST /api/me/consult` | Ask a question about a client — runs Librarian → Specialist → Checker with their key ([07](07-ai-team.md)); 400 if no key is on file yet |
-| `GET /api/me/clients/{id}/sessions` | List a client's consultations (v2.7), newest first, with `status` and turn count |
+| `GET /api/me/clients/{id}/sessions` | List a client's consultations (v2.7), newest first, with `status`, turn count, and `last_question` (the most recent turn's question, v2.14) |
 | `GET /api/me/clients/{id}/sessions/{session_id}` | Full turn transcript + both documents (`clinician_note`, `client_report`) for one consultation (v2.7) |
 | `PATCH /api/me/clients/{id}/sessions/{session_id}/status` | Toggle `in_progress` ↔ `done` (v2.7) |
 | `PUT /api/me/clients/{id}/sessions/{session_id}/documents/{kind}` | Save a `clinician_note` or `client_report` as `draft` or `final` (v2.7) |
@@ -72,7 +72,7 @@ Two separate route families, easy to conflate:
 | `PUT /api/me/clients/{id}/intake/notes` | Upsert one clinician note for one theme (v2.7) |
 | `GET /api/me/knowledge` | The shared library merged with this practitioner's own source weight overrides (v2.7) |
 | `PUT /api/me/knowledge/{source_id}/weight` | Set this practitioner's personal weight (1-10) for a source — stored in their own vault, never touches the admin grade (v2.7) |
-| `GET /api/me/sessions/recent` | Most recent consultations across every client, joined with client name — the dashboard's historical-consultations widget (v2.8) |
+| `GET /api/me/sessions/recent` | Most recent consultations across every client, joined with client name and `last_question` (v2.14) — the dashboard's historical-consultations widget (v2.8) |
 | `GET /api/me/notifications` | `{new_contacts, unviewed_intake}` — backs the sidebar badge on Contacts/Dashboard (v2.13) |
 
 ## Client

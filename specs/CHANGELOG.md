@@ -1,5 +1,39 @@
 # Specs changelog
 
+## v2.14 — 2026-08-14 (responsive/overflow fixes; password visibility toggle; login validation; consultation-list polish)
+
+- **No horizontal overflow, site-wide.** Added a global guard
+  (`html`/`body { overflow-x: hidden }`, `overflow-wrap: break-word`,
+  `img/svg/video { max-width: 100% }`). Found and fixed the actual bug
+  behind two layouts not collapsing on narrow screens: `consult.html` and
+  `client-detail.html` set `grid-template-columns` via an inline `style=`
+  attribute, which always wins over a stylesheet rule regardless of
+  whether its `@media` query matches — so the existing mobile-collapse
+  rules never applied to them. Replaced both with classes
+  (`.workspace.overview-right`, `.split-rail`) that carry their own
+  `@media (max-width: 900px)` collapse.
+- **Show/hide toggle on every password field, site-wide** — a new
+  `wirePasswordToggles()` in `shared.js` runs on `DOMContentLoaded`,
+  finds every `input[type=password]` on the page, and adds an eye-icon
+  button that flips it to `type=text`. No per-page markup change needed;
+  applies everywhere `shared.js` is already loaded (login, both signups,
+  account password change, profile's API key field, admin's
+  practitioner/admin creation forms).
+- **Login form**: email now trims on blur (not just at submit) and gets a
+  live regex check as the user types — an inline hint appears and submit
+  is blocked on an invalid format, instead of only failing after a
+  round-trip to the server.
+- **Consultation lists show a snippet of the last question.**
+  `vault.list_sessions()`/`list_recent_sessions()` now include
+  `last_question` (the most recent turn's question, via a correlated
+  subquery — no schema change) rendered as a truncated preview on every
+  consultation row: Consult's client-overview panel, the dashboard's
+  historical-consultations widget, and `client-detail.html`'s
+  consultation list all now share the same calendar-icon-plus-snippet
+  format.
+- The "Phase 2 POC" tag moved out of the sidebar's brand header to its own
+  element pinned to the bottom of the sidebar.
+
 ## v2.13 — 2026-08-14 (notification badges; dashboard layout widened)
 
 **Dashboards use their available width properly now.** The single-column
