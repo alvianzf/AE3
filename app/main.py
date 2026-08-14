@@ -56,6 +56,15 @@ async def lifespan(app: FastAPI):
         raise RuntimeError(f"Neo4j unreachable after 60s: {last}")
     core_store.ensure_schema()
     auth.ensure_bootstrap_admin()
+    # vault.ensure_schema() is what applies schema migrations (e.g. the
+    # password_set column added in v2.6) — it only ran automatically for a
+    # vault at the moment it was first created (activate_pro). Any vault
+    # that already existed before a migration shipped never got it applied,
+    # and broke the next write to that vault (found live: sqlite3.
+    # OperationalError on an existing practitioner's client signup). Re-run
+    # it against every existing vault on every boot so this can't recur.
+    for db_file in Path(cfg.vaults_path).glob("*.db"):
+        vault.ensure_schema(db_file.stem)
     yield
 
 
