@@ -94,6 +94,47 @@ document.addEventListener('keydown', (ev) => {
   }
 });
 
+// Show/hide toggle on every password field, site-wide — wraps each
+// input[type=password] in a positioning container and adds an eye button
+// that flips it to type=text. Fully automatic: no per-page markup or call
+// needed, just shared.js being loaded (every page already does).
+function wirePasswordToggles() {
+  document.querySelectorAll('input[type="password"]').forEach((input) => {
+    if (input.closest('.pw-wrap')) return; // already wired
+    const wrap = document.createElement('div');
+    wrap.className = 'pw-wrap';
+    input.parentNode.insertBefore(wrap, input);
+    wrap.appendChild(input);
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'pw-toggle';
+    btn.setAttribute('aria-label', 'Show password');
+    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"'
+      + ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+      + '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>';
+    wrap.appendChild(btn);
+
+    btn.onclick = () => {
+      const showing = input.type === 'text';
+      input.type = showing ? 'password' : 'text';
+      btn.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
+      btn.innerHTML = showing
+        ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"'
+          + ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+          + '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>'
+        : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"'
+          + ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+          + '<path d="M17.9 17.9A10.4 10.4 0 0 1 12 19c-6.5 0-10-7-10-7a18.4 18.4 0 0 1 4.2-5.2M9.9 4.2A9.8 9.8 0 0 1 12 4c6.5 0 10 7 10 7a18.5 18.5 0 0 1-2.2 3.1M14.1 14.1a3 3 0 1 1-4.2-4.2"/>'
+          + '<path d="M2 2l20 20"/></svg>';
+    };
+  });
+}
+document.addEventListener('DOMContentLoaded', wirePasswordToggles);
+// Some pages render their password fields after DOMContentLoaded already
+// fired (async load()), so also expose this for pages that build a field
+// dynamically — call it again after inserting new markup.
+
 // Public pages (directory, about, coach, both signup flows) show
 // "Sign up"/"Log in" links unconditionally in their markup — fine for a
 // signed-out visitor, misleading for someone already signed in who
