@@ -246,6 +246,7 @@ async function expandSession(sessionId, container) {
 }
 
 const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+const snippet = (s, n = 46) => !s ? '' : (s.length > n ? s.slice(0, n).trimEnd() + '…' : s);
 
 function sessionRow(s, i) {
   const d = new Date(s.started_at);
@@ -265,7 +266,7 @@ function sessionRow(s, i) {
           <button class="btn ghost sm" data-open type="button">Open</button>
         </span>
       </div>
-      <span class="muted xs">${s.turns} turn${s.turns === 1 ? '' : 's'}</span>
+      <span class="muted xs">${s.turns} turn${s.turns === 1 ? '' : 's'}${s.last_question ? ' · “' + esc(snippet(s.last_question)) + '”' : ''}</span>
       <div data-detail hidden></div>
     </div>
   </li>`;

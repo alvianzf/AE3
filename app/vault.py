@@ -400,7 +400,9 @@ def list_recent_sessions(practitioner_id: str, limit: int = 8) -> list[dict]:
             SELECT s.id, s.title, s.started_at, s.status, s.client_id,
                    c.name AS client_name,
                    (SELECT count(*) FROM session_turns t WHERE t.session_id = s.id)
-                       AS turns
+                       AS turns,
+                   (SELECT t.question FROM session_turns t WHERE t.session_id = s.id
+                       ORDER BY t.ordinal DESC LIMIT 1) AS last_question
             FROM sessions s JOIN clients c ON c.id = s.client_id
             ORDER BY s.started_at DESC LIMIT ?
             """,
@@ -415,7 +417,9 @@ def list_sessions(practitioner_id: str, client_id: str) -> list[dict]:
             """
             SELECT s.id, s.title, s.started_at, s.status,
                    (SELECT count(*) FROM session_turns t WHERE t.session_id = s.id)
-                       AS turns
+                       AS turns,
+                   (SELECT t.question FROM session_turns t WHERE t.session_id = s.id
+                       ORDER BY t.ordinal DESC LIMIT 1) AS last_question
             FROM sessions s WHERE s.client_id = ?
             ORDER BY s.started_at DESC
             """,

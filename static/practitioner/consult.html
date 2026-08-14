@@ -150,6 +150,8 @@
 <script src="/static/shared.js"></script>
 <script>
 $('logout-btn').onclick = logout;
+const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+const snippet = (s, n = 46) => !s ? '' : (s.length > n ? s.slice(0, n).trimEnd() + '…' : s);
 let selectedClient = null;
 let sessionId = null;
 let clientCache = [];
@@ -221,14 +223,21 @@ async function loadOverview(clientId) {
   try {
     const sessions = await api(`/me/clients/${clientId}/sessions`);
     $('ov-sessions').innerHTML = sessions.length
-      ? `<ul class="rows">${sessions.slice(0, 5).map((s) => `
-          <li class="plain" data-resume="${s.id}" style="display:block">
-            <div style="display:flex;justify-content:space-between;gap:.4rem;align-items:baseline">
-              <span class="nm" style="font-size:.82rem">${esc(s.title)}</span>
-              <span class="chip${s.status === 'done' ? '' : ' warn'}">${s.status === 'done' ? 'done' : 'open'}</span>
-            </div>
-            <span class="muted xs">${esc((s.started_at || '').slice(0, 16).replace('T', ' '))} · ${s.turns} turn${s.turns === 1 ? '' : 's'}</span>
-          </li>`).join('')}</ul>`
+      ? `<ul class="rows">${sessions.slice(0, 5).map((s) => {
+          const d = new Date(s.started_at);
+          const day = isNaN(d) ? '–' : d.getDate();
+          const mon = isNaN(d) ? '' : MONTHS[d.getMonth()];
+          return `<li class="plain" data-resume="${s.id}" style="display:flex;gap:.6rem;align-items:center">
+            <span class="cal-icon"><span class="day">${day}</span><span class="mon">${mon}</span></span>
+            <span class="grow">
+              <span style="display:flex;justify-content:space-between;gap:.4rem;align-items:baseline">
+                <span class="nm" style="font-size:.82rem">${esc(s.title)}</span>
+                <span class="chip${s.status === 'done' ? '' : ' warn'}">${s.status === 'done' ? 'done' : 'open'}</span>
+              </span>
+              <span class="muted xs">${s.turns} turn${s.turns === 1 ? '' : 's'}${s.last_question ? ' · “' + esc(snippet(s.last_question)) + '”' : ''}</span>
+            </span>
+          </li>`;
+        }).join('')}</ul>`
       : empty('No consultations yet', 'This will be the first one.');
     $('ov-sessions').querySelectorAll('[data-resume]').forEach((li) => {
       li.style.cursor = 'pointer';

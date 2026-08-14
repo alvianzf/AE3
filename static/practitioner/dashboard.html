@@ -122,6 +122,8 @@ function statCard(label, value, href) {
 
 const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
 
+const snippet = (s, n = 46) => !s ? '' : (s.length > n ? s.slice(0, n).trimEnd() + '…' : s);
+
 function historyRow(s) {
   const d = new Date(s.started_at);
   const day = isNaN(d) ? '–' : d.getDate();
@@ -130,7 +132,7 @@ function historyRow(s) {
     <span class="cal-icon"><span class="day">${day}</span><span class="mon">${mon}</span></span>
     <a href="/practitioner/clients/${s.client_id}" class="grow" style="text-decoration:none;color:inherit">
       <span class="nm">${esc(s.client_name)} <span class="chip${s.status === 'done' ? '' : ' warn'}" style="margin-left:.3rem">${s.status === 'done' ? 'done' : 'in progress'}</span></span>
-      <span class="sub2">${esc(s.title)} · ${s.turns} turn${s.turns === 1 ? '' : 's'}</span>
+      <span class="sub2">${esc(s.title)} · ${s.turns} turn${s.turns === 1 ? '' : 's'}${s.last_question ? ' · “' + esc(snippet(s.last_question)) + '”' : ''}</span>
     </a>
   </li>`;
 }
