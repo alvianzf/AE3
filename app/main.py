@@ -1042,6 +1042,11 @@ def practitioner_signup_page() -> FileResponse:
     return _page("public", "practitioner-signup.html")
 
 
+@app.get("/join/submitted")
+def practitioner_signup_thanks_page() -> FileResponse:
+    return _page("public", "practitioner-signup-thanks.html")
+
+
 @app.get("/practitioner/profile")
 def practitioner_profile_page() -> FileResponse:
     return _page("practitioner", "profile.html")

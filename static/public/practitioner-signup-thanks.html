@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Application submitted · Clinic</title>
+  <link rel="stylesheet" href="/static/style.css?v=11">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a href="/directory" class="brand-link">
+      <span class="sprig" aria-hidden="true">
+      <svg viewBox="0 0 20 24" fill="none" stroke="currentColor" stroke-width="1.3"
+           stroke-linecap="round">
+        <path d="M10 23V7"/>
+        <path d="M10 13c0-3.6 2.4-6.4 6-7-.3 3.8-2.6 6.4-6 7z" fill="currentColor"
+              fill-opacity=".16"/>
+        <path d="M10 9.5C10 6 7.8 3.3 4.3 2.5 4.6 6.2 6.7 8.8 10 9.5z"
+              fill="currentColor" fill-opacity=".1"/>
+      </svg>
+      </span>
+      <span class="brand"><b>Clinic</b><span class="sub">clinical knowledge assistant</span><span class="tag">Phase 2 POC</span></span>
+    </a>
+    <nav style="margin-left:auto;display:flex;gap:.4rem;flex-wrap:wrap">
+      <a class="btn ghost sm" href="/about">About</a>
+      <a class="btn ghost sm" href="/directory">Find a practitioner</a>
+      <a class="btn sm" href="/login">Log in</a>
+    </nav>
+  </div>
+</header>
+
+<main class="pane on centered" style="max-width:32rem;margin:0 auto">
+  <section class="card-panel">
+    <div class="ph botanic"><h2 style="flex:1">Application submitted</h2></div>
+    <div class="pb">
+      <p class="hint">Thanks — your application is in the review queue. Here's
+        what happens next:</p>
+      <ul style="padding-left:1.2rem;line-height:1.8;color:var(--ink-2)">
+        <li>An admin reviews new applications — there's no fixed timeline
+          for this in a small clinic, so check back if you don't hear
+          anything right away.</li>
+        <li>You can log in now with the email and password you just set.
+          Your profile page shows your current status (pending, approved,
+          or rejected) even before a decision is made.</li>
+        <li>Once approved, you'll appear in the public
+          <a href="/directory">directory</a> automatically — no further
+          action needed on your part.</li>
+        <li>Every new account starts on the Basic plan (public profile
+          only). Upgrading to Pro — for RAG-assisted consultations and a
+          client list — is a separate step available from your profile
+          page once you're approved.</li>
+      </ul>
+      <a class="btn block" href="/login" style="margin-top:.9rem">Log in to check status</a>
+    </div>
+  </section>
+</main>
+
+</body>
+</html>

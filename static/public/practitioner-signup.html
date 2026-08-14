@@ -112,11 +112,11 @@ $('s-submit').onclick = async () => {
   $('s-status').textContent = 'Submitting…';
   try {
     await api('/practitioners', { method: 'POST', body: form });
-    $('s-status').textContent = '';
-    toast('Application submitted — you’ll be listed once an admin approves it');
-    ['s-name','s-email','s-password','s-bio','s-specialties','s-languages','s-years','s-price']
-      .forEach((id) => { $(id).value = ''; });
-    $('s-photo').value = '';
+    // Don't linger on the form after a successful submit — go straight to
+    // a dedicated page with what happens next instead of just clearing the
+    // fields and hoping a toast gets noticed.
+    location.href = '/join/submitted';
+    return;
   } catch (e) {
     $('s-status').textContent = '';
     toast(e.message, 'bad');
