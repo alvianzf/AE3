@@ -83,6 +83,9 @@ svg { flex: 0 0 auto; }
   background: var(--accent-soft); color: var(--accent-ink);
   padding: .16rem .45rem; border-radius: 99px; font-weight: 700;
 }
+/* Pinned to the bottom of the sidebar (.sidebar is display:flex, column) —
+   no longer inline in the brand header. */
+.sidebar .tag.sidebar-foot { align-self: flex-start; margin-top: auto; }
 
 /* Segmented portal switch */
 .seg {
@@ -170,6 +173,11 @@ svg { flex: 0 0 auto; }
   color: var(--ink-2); text-decoration: none; font-size: .86rem; font-weight: 550;
   transition: background .15s var(--ease), color .15s var(--ease);
 }
+/* .sidebar-link's own `display: block` otherwise wins the cascade over the
+   UA stylesheet's `[hidden] { display: none }` (same specificity, author
+   rule loads later) — setting `.hidden = true` on an Upgrade/etc. link
+   silently did nothing without this. */
+.sidebar-link[hidden] { display: none; }
 .sidebar-link:hover { background: var(--panel-2); color: var(--ink); }
 .sidebar-link.active { background: var(--accent-soft); color: var(--accent-ink); font-weight: 700; }
 .nav-badge {
@@ -197,8 +205,9 @@ svg { flex: 0 0 auto; }
     -webkit-mask-image: linear-gradient(to right, transparent, #000 12px, #000 calc(100% - 12px), transparent);
             mask-image: linear-gradient(to right, transparent, #000 12px, #000 calc(100% - 12px), transparent);
   }
-  .sidebar .brand .sub, .sidebar .brand .tag { display: none; }
+  .sidebar .brand .sub { display: none; }
   .sidebar-nav { flex-direction: row; flex: 0 0 auto; }
+  .sidebar-foot { display: none; }
 }
 
 /* ── Layout ──────────────────────────────────────────────────────────────── */
