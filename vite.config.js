@@ -14,6 +14,7 @@ export default defineConfig({
         login: "src/pages/login.js",
         "practitioner-signup": "src/pages/practitioner-signup.js",
         "client-signup": "src/pages/client-signup.js",
+        account: "src/pages/account.js",
       },
       output: {
         // No hashing: this project has no CDN cache-busting infra (pages
