@@ -474,6 +474,15 @@ label.lbl:first-child { margin-top: 0; }
   padding: .05rem .4rem; border-radius: 99px; color: var(--muted);
 }
 .chip.warn { background: var(--warn-soft); border-color: var(--warn); color: var(--warn); }
+/* .chip's base pairing (--bg, never redefined by .ph.botanic, with
+   --muted, which is) is low-contrast inside a .ph band — confirmed live,
+   profile.html's API-key status badge sits in one. Same fix pattern as
+   .help below: use the pairing .ph already establishes for exactly this
+   (light-on-dark) rather than the page-background/muted-text pairing
+   meant for a chip sitting directly on the page. .warn is unaffected —
+   --warn/--warn-soft are never redefined by .ph, so that variant was
+   already consistent in every context. */
+.ph .chip:not(.warn) { background: var(--accent-soft); border-color: transparent; color: var(--accent-ink); }
 
 /* ── Record entries ──────────────────────────────────────────────────────── */
 .entry { border-left: 2px solid var(--line); padding: .1rem .65rem; margin-bottom: .6rem; }
