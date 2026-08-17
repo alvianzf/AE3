@@ -1094,6 +1094,29 @@ def me_save_document(client_id: str, session_id: str, kind: str, body: DocumentI
         raise HTTPException(400, str(exc))
 
 
+@app.post("/api/me/clients/{client_id}/sessions/{session_id}/summary")
+def me_summarize_session(client_id: str, session_id: str,
+                         session: dict = Depends(auth.require_pro_practitioner)) -> dict:
+    """Runs the Summariser (specs/v3/07-ai-team.md) — fully implemented since
+    v1 but never reachable from a route until now."""
+    practitioner_id = session["id"]
+    _owned_session(practitioner_id, client_id, session_id)
+    practitioner = core_store.get_practitioner(practitioner_id)
+    if not practitioner.get("anthropic_api_key_encrypted"):
+        raise HTTPException(
+            400, "Set your Anthropic API key before summarizing a consultation.")
+    client_llm = llm.client_for(_decrypt_api_key(practitioner["anthropic_api_key_encrypted"]))
+    transcript = vault.session_transcript(practitioner_id, session_id)
+    try:
+        summary = llm.summarize_session(transcript, client=client_llm)
+    except anthropic.APIError as exc:
+        raise HTTPException(
+            502, "The AI service is temporarily unavailable. Try again shortly."
+        ) from exc
+    vault.add_entry(practitioner_id, client_id, "session_summary", summary)
+    return {"summary": summary}
+
+
 @app.get("/api/me/clients/{client_id}/documents")
 def me_list_documents(client_id: str,
                       session: dict = Depends(auth.require_pro_practitioner)) -> list[dict]:
