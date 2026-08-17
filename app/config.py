@@ -8,6 +8,10 @@ load_dotenv()
 
 
 class Config:
+    # "production" enforces the fail-closed checks in get_config() below.
+    # Any other value (default) keeps the dev-friendly fallbacks.
+    env = os.getenv("ENV", "development")
+
     # Neo4j — the knowledge library
     neo4j_uri = os.getenv("NEO4J_URI", "bolt://localhost:7687")
     neo4j_user = os.getenv("NEO4J_USER", "neo4j")
@@ -92,4 +96,14 @@ class Config:
 
 @lru_cache
 def get_config() -> Config:
-    return Config()
+    cfg = Config()
+    if cfg.env == "production":
+        if cfg.session_secret in ("", "dev-only-not-secret"):
+            raise RuntimeError(
+                "SESSION_SECRET must be set to a real value when ENV=production"
+            )
+        if cfg.neo4j_password in ("", "graphrag-poc"):
+            raise RuntimeError(
+                "NEO4J_PASSWORD must be set to a real value when ENV=production"
+            )
+    return cfg
