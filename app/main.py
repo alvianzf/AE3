@@ -16,6 +16,7 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import anthropic
 import neo4j.exceptions
 from cryptography.fernet import Fernet
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, UploadFile
@@ -910,30 +911,64 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
     for card in cards:
         card["grade"] = weights.get(card["id"], card["grade"])
     cards = [c for c in cards if c["grade"] >= body.min_grade]
-    chosen, reasoning = llm.select_sources(body.question, client_file, cards,
-                                          history, client=client_llm)
-    focus = llm.question_concepts(body.question, client_file, history,
-                                  client=client_llm) if chosen else []
-    passages, hops = knowledge.traverse(chosen, body.min_grade, focus)
-    available = hops["available"]
 
-    matched = bool(passages)
-    verdict = None
-    if not matched:
-        answer_text = (
-            "No source in the library answers this question, so I have nothing to "
-            "base an answer on and will not guess.\n\n"
-            f"Why: {reasoning}\n\n"
-            f"{len(cards)} source(s) were available at grade "
-            f"≥ {body.min_grade}. Either lower the grade threshold, or add a "
-            "source covering this topic to the library."
-        )
-    else:
-        answer_text = llm.answer(body.question, client_file, passages, history,
-                                 client=client_llm)
-        if body.run_check:
-            verdict = llm.check(body.question, answer_text, client_file, passages,
-                                client=client_llm)
+    total_input_tokens = 0
+    total_output_tokens = 0
+
+    def _track(usage: dict) -> None:
+        nonlocal total_input_tokens, total_output_tokens
+        total_input_tokens += usage["input_tokens"]
+        total_output_tokens += usage["output_tokens"]
+
+    try:
+        chosen, reasoning, librarian_usage = llm.select_sources(
+            body.question, client_file, cards, history, client=client_llm)
+        _track(librarian_usage)
+        focus = llm.question_concepts(body.question, client_file, history,
+                                      client=client_llm) if chosen else []
+        passages, hops = knowledge.traverse(chosen, body.min_grade, focus)
+        available = hops["available"]
+
+        matched = bool(passages)
+        verdict = None
+        revised = False
+        if not matched:
+            answer_text = (
+                "No source in the library answers this question, so I have nothing to "
+                "base an answer on and will not guess.\n\n"
+                f"Why: {reasoning}\n\n"
+                f"{len(cards)} source(s) were available at grade "
+                f"≥ {body.min_grade}. Either lower the grade threshold, or add a "
+                "source covering this topic to the library."
+            )
+        else:
+            answer_text, answer_usage = llm.answer(
+                body.question, client_file, passages, history, client=client_llm)
+            _track(answer_usage)
+            if body.run_check:
+                verdict = llm.check(body.question, answer_text, client_file, passages,
+                                    client=client_llm)
+                _track(verdict["usage"])
+                # Bounded retry, hard-capped at one attempt (specs/v3/07-ai-team.md):
+                # a "weak" verdict gets one revision with the same passages and the
+                # Checker's own unsupported-claim list, then one re-check. Whichever
+                # answer has the better verdict is kept; a second "weak" still ships
+                # as "weak", not silently upgraded.
+                if verdict["verdict"] == "weak":
+                    revised_text, revised_usage = llm.answer(
+                        body.question, client_file, passages, history,
+                        client=client_llm, unsupported=verdict["unsupported"])
+                    _track(revised_usage)
+                    revised_verdict = llm.check(body.question, revised_text, client_file,
+                                                passages, client=client_llm)
+                    _track(revised_verdict["usage"])
+                    if (revised_verdict["verdict"] == "pass"
+                            or len(revised_verdict["unsupported"]) < len(verdict["unsupported"])):
+                        answer_text, verdict, revised = revised_text, revised_verdict, True
+    except anthropic.APIError as exc:
+        raise HTTPException(
+            502, "The AI service is temporarily unavailable. Try again shortly."
+        ) from exc
 
     vault.log(
         practitioner_id, "practitioner", "question asked",
@@ -941,12 +976,17 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
         f"grade ≥{body.min_grade}",
         body.client_id,
     )
+    if verdict is not None:
+        verdict = {k: v for k, v in verdict.items() if k != "usage"}
     result = {
         "session_id": session_id,
         "answer": answer_text,
         "matched": matched,
         "min_grade": body.min_grade,
         "check": verdict,
+        "revised": revised,
+        "total_input_tokens": total_input_tokens,
+        "total_output_tokens": total_output_tokens,
         "librarian": {
             "reasoning": reasoning,
             "considered": len(cards),

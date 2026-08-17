@@ -21,9 +21,19 @@ def client_for(api_key: str | None) -> anthropic.Anthropic:
     return anthropic.Anthropic(api_key=api_key) if api_key else _client
 
 
+def _usage_of(response) -> dict:
+    return {"input_tokens": response.usage.input_tokens,
+            "output_tokens": response.usage.output_tokens}
+
+
 def _json_call(model: str, system: str, prompt: str, schema: dict,
-               max_tokens: int = 2000, client: anthropic.Anthropic | None = None) -> dict:
-    """One structured-output call. The schema is enforced by the API."""
+               max_tokens: int = 2000, client: anthropic.Anthropic | None = None,
+               return_usage: bool = False):
+    """One structured-output call. The schema is enforced by the API.
+
+    Returns the parsed dict, or (dict, usage) when return_usage is True —
+    kept opt-in so existing callers are unaffected.
+    """
     response = (client or _client).messages.create(
         model=model,
         max_tokens=max_tokens,
@@ -32,7 +42,8 @@ def _json_call(model: str, system: str, prompt: str, schema: dict,
         output_config={"format": {"type": "json_schema", "schema": schema}},
     )
     text = next(b.text for b in response.content if b.type == "text")
-    return json.loads(text)
+    result = json.loads(text)
+    return (result, _usage_of(response)) if return_usage else result
 
 
 def ping() -> bool:
@@ -367,10 +378,12 @@ def _history_block(history: list[dict]) -> str:
 
 def select_sources(question: str, patient_file: str, cards: list[dict],
                    history: list[dict] | None = None,
-                   client: anthropic.Anthropic | None = None) -> tuple[list[str], str]:
-    """Pick which sources to open. Returns (source_ids, reasoning)."""
+                   client: anthropic.Anthropic | None = None
+                   ) -> tuple[list[str], str, dict]:
+    """Pick which sources to open. Returns (source_ids, reasoning, usage)."""
     if not cards:
-        return [], "No source in the library met the requested grade."
+        return [], "No source in the library met the requested grade.", \
+            {"input_tokens": 0, "output_tokens": 0}
 
     # The grade is deliberately withheld. It has already been applied by
     # catalogue(), and showing it makes the Librarian re-litigate reliability —
@@ -388,8 +401,8 @@ def select_sources(question: str, patient_file: str, cards: list[dict],
         f"Catalogue of available sources:\n---\n{listing}\n---\n\n"
         f"Practitioner's latest question: {question}"
     )
-    result = _json_call(cfg.librarian_model, LIBRARIAN_SYSTEM, prompt,
-                        LIBRARIAN_SCHEMA, client=client)
+    result, usage = _json_call(cfg.librarian_model, LIBRARIAN_SYSTEM, prompt,
+                               LIBRARIAN_SCHEMA, client=client, return_usage=True)
 
     picked: list[str] = []
     for n in result["sources"]:
@@ -397,7 +410,7 @@ def select_sources(question: str, patient_file: str, cards: list[dict],
             source_id = cards[n - 1]["id"]
             if source_id not in picked:
                 picked.append(source_id)
-    return picked[: cfg.max_sources], result["reasoning"]
+    return picked[: cfg.max_sources], result["reasoning"], usage
 
 
 # --- Specialist ---------------------------------------------------------------
@@ -425,7 +438,18 @@ SPECIALIST_SYSTEM = (
 
 def answer(question: str, patient_file: str, passages: list[dict],
            history: list[dict] | None = None,
-           client: anthropic.Anthropic | None = None) -> str:
+           client: anthropic.Anthropic | None = None,
+           unsupported: list[str] | None = None) -> tuple[str, dict]:
+    """Returns (answer_text, usage).
+
+    `unsupported` is only passed on the one bounded revision retry
+    (specs/v3/07-ai-team.md): the Checker's own list of claims it could not
+    ground in a passage. The instruction is strictly "ground it or drop
+    it" — no new passages are supplied, so there is no way to satisfy a
+    flagged claim except by tying it to material already given or removing
+    it; paraphrasing a passage more loosely to make it look like it covers
+    the claim is not an option this prompt offers.
+    """
     if passages:
         def label(p):
             via = p.get("via", "opened")
@@ -442,10 +466,23 @@ def answer(question: str, patient_file: str, passages: list[dict],
         )
     else:
         block = "(no passages in the library matched this question)"
+    revision_block = ""
+    if unsupported:
+        claims = "\n".join(f"- {c}" for c in unsupported)
+        revision_block = (
+            "\n\nAn independent check of your previous draft found these claims "
+            "not actually supported by the passages above:\n"
+            f"{claims}\n\n"
+            "Write a new answer. For each of those claims, either tie it "
+            "explicitly to a passage that genuinely supports it, or remove it — "
+            "do not keep it by rephrasing it more vaguely. Do not introduce new "
+            "claims the passages don't cover either."
+        )
     prompt = (
         f"Patient file:\n---\n{patient_file}\n---\n\n"
         f"Passages from the clinic library:\n---\n{block}\n---\n\n"
         f"Practitioner's question: {question}"
+        f"{revision_block}"
     )
     response = (client or _client).messages.create(
         model=cfg.answer_model,
@@ -454,7 +491,8 @@ def answer(question: str, patient_file: str, passages: list[dict],
         output_config={"effort": "medium"},
         messages=[{"role": "user", "content": prompt}],
     )
-    return "".join(b.text for b in response.content if b.type == "text").strip()
+    text = "".join(b.text for b in response.content if b.type == "text").strip()
+    return text, _usage_of(response)
 
 
 # --- Checker (anti-hallucination) ---------------------------------------------
@@ -507,7 +545,9 @@ def check(question: str, answer_text: str, patient_file: str,
         f"Passages:\n---\n{block}\n---\n\n"
         f"Draft answer to verify:\n---\n{answer_text}\n---"
     )
-    return _json_call(cfg.checker_model, CHECKER_SYSTEM, prompt, CHECKER_SCHEMA, client=client)
+    result, usage = _json_call(cfg.checker_model, CHECKER_SYSTEM, prompt, CHECKER_SCHEMA,
+                               client=client, return_usage=True)
+    return {**result, "usage": usage}
 
 
 # --- Session summary ----------------------------------------------------------
