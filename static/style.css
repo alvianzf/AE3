@@ -340,14 +340,23 @@ label.lbl:first-child { margin-top: 0; }
      <a class="btn"> always has, since this rule never reset it. */
   text-decoration: none;
 }
-.btn:hover:not(:disabled) { background: var(--accent-ink); border-color: var(--accent-ink); }
+/* A true flip (background <-> text color) on hover, for every .btn
+   variant, deliberately built from --accent and a literal white rather
+   than --ink/--bg: .ph.botanic (the dark header band) locally redefines
+   --ink to a near-white value for readability against its own dark
+   background — the previous ghost-hover rule read --bg (light, never
+   locally redefined) for background and --ink for text, which inside a
+   .ph band meant near-white text on a near-white background. --accent is
+   redefined per-context too (.ph gives it a lighter tint) but stays a
+   saturated color either way, so it and #fff remain a legible pair in
+   every context this button appears in, not just the common one. */
+.btn:hover:not(:disabled) { background: #fff; color: var(--accent); border-color: var(--accent); }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
 .btn svg { width: 15px; height: 15px; }
 .btn.block { width: 100%; }
 .btn.ghost { background: transparent; color: var(--ink-2); border-color: var(--line-2); }
 .btn.ghost.on { background: var(--accent-soft); color: var(--accent-ink); border-color: var(--accent); }
-.btn.ghost:hover:not(:disabled) { background: var(--bg); color: var(--ink);
-                                  border-color: var(--line-2); }
+.btn.ghost:hover:not(:disabled) { background: var(--accent); color: #fff; border-color: var(--accent); }
 .btn.sm { padding: .32rem .6rem; font-size: .82rem; }
 .btn.danger { background: transparent; color: var(--accent); border-color: var(--line-2); }
 .btn.danger:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
