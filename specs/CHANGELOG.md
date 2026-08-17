@@ -1,5 +1,63 @@
 # Specs changelog
 
+## v3 — 2026-08-17 (bounded AI-answer revision, reachable Summariser, Material Design 3) {#v3}
+
+Prompted by "can we make the agents talk to each other?" A three-agent
+(PM/Analyst/Architect) review of the seven-role AI pipeline
+([07](v3/07-ai-team.md)) concluded general agent-to-agent messaging isn't
+warranted — the fixed pipeline's auditability (each role's input/output is a
+reviewable code-level contract, e.g. the Librarian is structurally blind to
+source grades) is the actual product value, and a framework like LangGraph
+or CrewAI would be disproportionate for seven plain functions in one file.
+It did find one real gap, one orphaned feature, and a few security items,
+all closed here:
+
+- **Bounded Checker → Specialist retry** ([07](v3/07-ai-team.md),
+  [08](v3/08-api.md)): a `weak` verdict previously went nowhere — the flawed
+  answer shipped with a badge and the Checker's own `unsupported` list was
+  never acted on. Now triggers exactly one revision attempt, hard-capped in
+  the route handler, never left to the model to extend.
+- **Summariser reachable**: fully implemented since v1 (`summarize_session()`
+  in `app/llm.py`, a `session_summary` vault entry kind), never wired to a
+  route — an orphaned feature, not a deferred one. New `POST
+  /api/me/clients/{id}/sessions/{session_id}/summary`.
+- **Error handling added to the consultation path** — previously the only
+  LLM call site with no try/except; an Anthropic API failure now returns a
+  structured 502 instead of an unhandled exception.
+- **Two hardcoded fallback secrets fixed**: `session_secret` and
+  `neo4j_password` in `app/config.py` silently defaulted if unset, the same
+  failure shape already documented for `VAULT_ENCRYPTION_KEY` but not
+  itself flagged until this review. Both now fail closed in production
+  ([10](v3/10-security.md)).
+- **HTTP `QUERY` method**, experimental: adopted on three filter-heavy read
+  endpoints (practitioner directory, admin roster, library source search),
+  `POST` kept as fallback since it's a still-draft HTTP method not yet
+  universally proxied ([08](v3/08-api.md)).
+- **Material Design 3**, via Google's `@material/web` component library —
+  this project's first real external dependency and first build step
+  (`npm` + Vite, [11](v3/11-operations.md#build-step)). Presentation-layer
+  only: no information architecture changed, so [03](v3/03-website.md)
+  through [06](v3/06-client-portal.md) carry forward from v2 unedited. See
+  [15 · Design system](v3/15-design-system.md) for what's replaced (buttons,
+  fields, menus, dialogs, snackbars, chips) and what isn't (the sidebar
+  shell, kept hand-built and re-themed).
+
+- **Live agent-progress toast**: `POST /api/me/consult` becomes an SSE
+  stream reporting which of the seven roles is currently running and a live
+  cumulative token count (from the Anthropic response's real `usage`
+  figures, not an estimate), rendered as a persistent `md-snackbar` during
+  the request ([08](v3/08-api.md#live-progress-stream),
+  [15](v3/15-design-system.md#live-agent-toast)). Granularity is per-agent-
+  call, not per-token — true token-by-token would mean switching every role
+  to streaming completions, out of scope here.
+
+**Explicitly deferred**, real findings from the same review not bundled into
+this release: a Librarian empty-result fallback UX (suggest broadening the
+grade threshold, nudge an admin to add a source), and a Reader/Indexer
+shared-context pass to reduce topic/concept vocabulary drift. See
+[v3/TODO.md](v3/TODO.md) for the full sequencing and everything still open
+from v2.
+
 ## v2.14 — 2026-08-14 (responsive/overflow fixes; password visibility toggle; login validation; consultation-list polish)
 
 - **No horizontal overflow, site-wide.** Added a global guard

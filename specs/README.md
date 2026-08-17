@@ -7,7 +7,8 @@ edited after the fact; a change becomes a new version.
 
 | Version | Status | Covers |
 |---|---|---|
-| [v2](v2/README.md) | **current** | Full product: public website, admin portal, practitioner portal, client portal |
+| [v3](v3/README.md) | **current** | v2 plus bounded AI-answer revision, a reachable Summariser, and Material Design 3 |
+| [v2](v2/README.md) | superseded | Full product: public website, admin portal, practitioner portal, client portal |
 | [v1](v1/README.md) | superseded | Phase 1 PoC: single-passphrase access, one practitioner portal, RAG over a graded library |
 
 See [`CHANGELOG.md`](CHANGELOG.md) for what changed between versions and why.
