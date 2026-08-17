@@ -10,9 +10,17 @@
   --ink: #221f1b;
   --ink-2: #4a453e;
   --muted: #7d766c;
-  --accent: #9c3f5a;
-  --accent-ink: #7d2f47;
-  --accent-soft: #f7eaee;
+  /* Falls back to the original hardcoded values on any page that hasn't
+     loaded dist/theme.css yet (specs/v3/15-design-system.md) — on a page
+     that has, these pick up the generated MD3 palette instead, so the
+     hand-built shell (sidebar, breadcrumbs, topbar — not itself migrated
+     to components) stays visually consistent with the MD3 components
+     sitting inside it. Approximate mapping, not a strict token-role match:
+     --accent-ink/-soft were a single darker/lighter pair, primary-container
+     is nearest in role to -soft; exact enough for visual harmony. */
+  --accent: var(--md-sys-color-primary, #9c3f5a);
+  --accent-ink: var(--md-sys-color-on-primary-container, #7d2f47);
+  --accent-soft: var(--md-sys-color-primary-container, #f7eaee);
   --ok: #2f7a4f;
   --ok-soft: #e8f4ec;
   --warn: #a86a12;
