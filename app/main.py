@@ -228,6 +228,26 @@ def get_sources(
         max_grade=max_grade, sort=sort, page=page, per_page=per_page)
 
 
+class SourceFilter(BaseModel):
+    search: str = ""
+    topic: str = ""
+    kind: str = ""
+    min_grade: int = 1
+    max_grade: int = 10
+    sort: str = "newest"
+    page: int = 1
+    per_page: int = 10
+
+
+@app.api_route("/api/sources", methods=["QUERY"])
+def get_sources_query(
+    body: SourceFilter, _admin: dict = Depends(auth.require_admin),
+) -> dict:
+    """Same as GET /api/sources (specs/v3/08-api.md#http-query-method)."""
+    return get_sources(body.search, body.topic, body.kind, body.min_grade,
+                       body.max_grade, body.sort, body.page, body.per_page, _admin)
+
+
 @app.get("/api/facets")
 def get_facets(_admin: dict = Depends(auth.require_admin)) -> dict:
     return knowledge.facets()
@@ -433,6 +453,19 @@ def list_practitioners_public(specialty: str = "", language: str = "") -> list[d
     return _public_list(approved)
 
 
+class PractitionerFilter(BaseModel):
+    specialty: str = ""
+    language: str = ""
+
+
+@app.api_route("/api/practitioners", methods=["QUERY"])
+def list_practitioners_public_query(body: PractitionerFilter) -> list[dict]:
+    """Same as GET /api/practitioners, body-shaped instead of query-string
+    (specs/v3/08-api.md#http-query-method) — still a still-draft HTTP method,
+    kept alongside the GET route, not replacing it."""
+    return list_practitioners_public(body.specialty, body.language)
+
+
 @app.get("/api/practitioners/{practitioner_id}")
 def get_practitioner_public(practitioner_id: str) -> dict:
     practitioner = core_store.get_practitioner(practitioner_id)
@@ -594,6 +627,18 @@ def admin_list_practitioners(
     status: str = "", _admin: dict = Depends(auth.require_admin),
 ) -> list[dict]:
     return _public_list(core_store.list_practitioners(status=status or None))
+
+
+class AdminPractitionerFilter(BaseModel):
+    status: str = ""
+
+
+@app.api_route("/api/admin/practitioners", methods=["QUERY"])
+def admin_list_practitioners_query(
+    body: AdminPractitionerFilter, _admin: dict = Depends(auth.require_admin),
+) -> list[dict]:
+    """Same as GET /api/admin/practitioners (specs/v3/08-api.md#http-query-method)."""
+    return admin_list_practitioners(body.status, _admin)
 
 
 class AdminPractitionerCreate(BaseModel):

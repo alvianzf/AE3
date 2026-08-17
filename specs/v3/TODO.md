@@ -132,14 +132,27 @@ a later one. Tests are explicitly out of scope for this pass.
 
 ## 5. HTTP QUERY method ([08](08-api.md))
 
+- [x] Add `QUERY` alongside `GET` on: `/api/practitioners`,
+      `/api/admin/practitioners`, `/api/sources` — each a thin route that
+      parses a JSON body into the same params the existing `GET` handler
+      already takes as query-string args, then calls that handler directly.
+      Confirmed `methods=["QUERY"]` actually routes on this project's
+      pinned FastAPI/Starlette versions (tested against a throwaway app,
+      not assumed).
 - [ ] Confirm with the hosting/proxy setup whether Cloudflare passes an
-      unrecognized `QUERY` method through unmodified (test against a
-      throwaway route before wiring real endpoints).
-- [ ] Add `QUERY` to `methods=[...]` alongside `GET` on: `/api/practitioners`,
-      `/api/admin/practitioners`, source search.
-- [ ] `shared.js`: helper that attempts `QUERY`, falls back to `POST` on a
-      network-level failure (not a 4xx/5xx).
-- [ ] Skip `/api/me/consult` — explicitly not a QUERY candidate, stays POST.
+      unrecognized `QUERY` method through unmodified — not checked; the
+      client doesn't call `QUERY` yet (below), so nothing depends on this
+      until it does.
+- [ ] `shared.js`: **not built.** All three pages that read these endpoints
+      already call them via plain `GET` + query string, which works,
+      requires no fallback logic, and is what every HTTP intermediary
+      already supports. Swapping working `GET` calls to an experimental
+      draft method for identical behavior isn't worth the added client
+      complexity — the server routes exist and are ready if a future
+      caller needs body-shaped filters `GET` can't express (e.g. an
+      array-valued specialty filter), but nothing today does.
+- [x] Skip `/api/me/consult` — explicitly not a `QUERY` candidate, stays
+      `POST` (now also streaming, [08](08-api.md#live-progress-stream)).
 
 ## Explicitly deferred (not in this TODO)
 
