@@ -51,6 +51,74 @@ function toast(msg, kind = 'ok') {
 const empty = (title, body, cta = '') => `<div class="empty">${icon('leaf')}`
   + `<b>${esc(title)}</b><p>${body}</p>${cta}</div>`;
 
+// Live agent-progress toast (specs/v3/15-design-system.md#live-agent-toast).
+// Separate from toast() above: this one stays up for the life of a request
+// instead of auto-dismissing, since it's reporting an in-progress state, not
+// a completed action. A stopgap element (not an md-snackbar yet) until the
+// MD3 migration lands — same content contract either way.
+const AGENT_LABELS = {
+  librarian: 'Librarian is choosing sources',
+  specialist: 'Specialist is drafting an answer',
+  checker: 'Checker is verifying citations',
+};
+function agentToast() {
+  const el = document.createElement('div');
+  el.className = 'toast ok agent-toast';
+  el.innerHTML = `<span class="agent-line">Starting…</span>`;
+  ($('toasts') || (() => {
+    const box = document.createElement('div');
+    box.id = 'toasts'; box.className = 'toasts'; box.setAttribute('aria-live', 'polite');
+    document.body.appendChild(box);
+    return box;
+  })()).appendChild(el);
+  const line = el.querySelector('.agent-line');
+  let tokens = 0;
+  return {
+    update(evt) {
+      if (evt.event === 'agent_start') {
+        const label = AGENT_LABELS[evt.agent] || evt.agent;
+        line.textContent = evt.retry
+          ? `Checker flagged part of the answer — Specialist is revising…`
+          : `${label}…`;
+      } else if (evt.event === 'agent_done') {
+        tokens += (evt.input_tokens || 0) + (evt.output_tokens || 0);
+        line.textContent += ` (${tokens} tokens so far)`;
+      }
+    },
+    remove() { el.remove(); },
+  };
+}
+
+// Reads a POST-with-body SSE stream (fetch, not EventSource — EventSource
+// cannot send a request body). Calls onEvent for each parsed `data:` line.
+async function postSSE(path, body, onEvent) {
+  const res = await fetch('/api' + path, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}));
+    const d = errBody.detail;
+    const err = new Error((d && typeof d === 'object' ? d.message : d) || res.statusText);
+    err.status = res.status;
+    throw err;
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n\n');
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      onEvent(JSON.parse(line.slice(6)));
+    }
+  }
+}
+
 // Session helper: resolves to {role, id} or null. Used by portal pages to
 // redirect to login when there is no valid cookie.
 async function currentSession() {

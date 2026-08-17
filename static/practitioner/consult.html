@@ -300,16 +300,24 @@ $('ask').onclick = async () => {
   pending.innerHTML = `<div class="bubble"><span>${esc(question)}</span></div>
     <div class="working"><span class="spin">Clinic is thinking</span></div>`;
   $('thread').appendChild(pending);
+  const progress = agentToast();
   try {
-    const r = await api('/me/consult', json('POST', {
+    let r = null;
+    await postSSE('/me/consult', {
       client_id: selectedClient, question,
       min_grade: +$('min-grade').value, run_check: $('run-check').checked,
       session_id: sessionId,
-    }));
+    }, (evt) => {
+      if (evt.event === 'result') { r = evt; return; }
+      if (evt.event === 'error') { throw new Error(evt.message); }
+      progress.update(evt);
+    });
+    progress.remove();
     sessionId = r.session_id || sessionId;
     pending.remove();
     renderAnswer(question, r);
   } catch (e) {
+    progress.remove();
     // 400 here specifically means no Anthropic key is on file yet — the
     // only 400 this endpoint returns — so point straight at where to fix
     // it instead of leaving a bare error.
