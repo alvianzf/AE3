@@ -54,18 +54,23 @@ a later one. Tests are explicitly out of scope for this pass.
 
 ## 4. Material Design 3 / build step ([11](11-operations.md), [15](15-design-system.md))
 
-- [ ] Add `package.json`, `package-lock.json`, `vite.config.js`.
-- [ ] Add `@material/web` dependency.
-- [ ] Generate MD3 `theme.css` from the current brand seed color.
-- [ ] Set up `static/dist/` as Vite's build output; add to `.gitignore`;
-      confirm the existing FastAPI static mount serves it unchanged.
-- [ ] Add `.nvmrc`, pin Node version.
-- [ ] Update deploy pipeline: `npm ci && npm run build` before app start.
+- [x] Add `package.json`, `package-lock.json`, `vite.config.js`.
+- [x] Add `@material/web` dependency.
+- [x] Generate MD3 `theme.css` from the current brand seed color
+      (`scripts/gen-theme.mjs`, seed `#9c3f5a`).
+- [x] Set up `static/dist/` as Vite's build output; added to `.gitignore`;
+      confirmed the existing FastAPI `/static` mount serves it unchanged
+      (no new route needed).
+- [x] Add `.nvmrc`, pin Node version (22).
+- [ ] Update deploy pipeline: `npm ci && npm run build` before app start —
+      not yet done on the live host; the current deploy still ships without
+      a Node toolchain there.
 - [ ] Migrate pages one at a time (see order below), verifying each against
       its existing spec section (03/04/05/06 — unchanged this version) before
       moving to the next:
-  1. `login.html`, both signup flows — smallest surface, most-used entry
-     points, good first proof the pipeline works end to end.
+  1. `login.html` — **done**, `npm run build` verified clean; **not yet
+     checked in an actual browser** (no display in the sandbox this was
+     built in). Both signup flows still pending.
   2. `account.html` — text fields + the password-visibility toggle, replaced
      by `md-outlined-text-field`'s built-in trailing icon.
   3. Shared shell (sidebar, breadcrumbs, topbar user menu) — stays hand-built
