@@ -86,11 +86,11 @@
     <div class="pb tight">
       <div style="padding:.6rem">
         <md-outlined-select id="p-filter" label="Filter by status">
-          <md-select-option value="" selected headline="All statuses"></md-select-option>
-          <md-select-option value="pending" headline="Pending"></md-select-option>
-          <md-select-option value="approved" headline="Approved"></md-select-option>
-          <md-select-option value="rejected" headline="Rejected"></md-select-option>
-          <md-select-option value="suspended" headline="Suspended"></md-select-option>
+          <md-select-option value="" selected><div slot="headline">All statuses</div></md-select-option>
+          <md-select-option value="pending"><div slot="headline">Pending</div></md-select-option>
+          <md-select-option value="approved"><div slot="headline">Approved</div></md-select-option>
+          <md-select-option value="rejected"><div slot="headline">Rejected</div></md-select-option>
+          <md-select-option value="suspended"><div slot="headline">Suspended</div></md-select-option>
         </md-outlined-select>
       </div>
       <div id="practitioners-list" class="scrollbox"></div>
@@ -144,8 +144,8 @@
           </md-icon-button>
         </md-outlined-text-field>
         <md-outlined-select id="na-role" label="Role">
-          <md-select-option value="admin" selected headline="admin"></md-select-option>
-          <md-select-option value="superadmin" headline="superadmin"></md-select-option>
+          <md-select-option value="admin" selected><div slot="headline">admin</div></md-select-option>
+          <md-select-option value="superadmin"><div slot="headline">superadmin</div></md-select-option>
         </md-outlined-select>
         <md-filled-button id="na-create">Add admin</md-filled-button>
       </form>

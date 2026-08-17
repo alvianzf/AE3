@@ -79,10 +79,10 @@
     <div class="pb">
       <md-outlined-select id="c-filter" label="Filter by status"
           style="max-width:12rem;margin-bottom:.7rem">
-        <md-select-option value="" selected headline="All"></md-select-option>
-        <md-select-option value="new" headline="New"></md-select-option>
-        <md-select-option value="contacted" headline="Contacted"></md-select-option>
-        <md-select-option value="closed" headline="Closed"></md-select-option>
+        <md-select-option value="" selected><div slot="headline">All</div></md-select-option>
+        <md-select-option value="new"><div slot="headline">New</div></md-select-option>
+        <md-select-option value="contacted"><div slot="headline">Contacted</div></md-select-option>
+        <md-select-option value="closed"><div slot="headline">Closed</div></md-select-option>
       </md-outlined-select>
       <ul id="c-list" class="rows"></ul>
     </div>
