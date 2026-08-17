@@ -20,6 +20,8 @@ export default defineConfig({
         profile: "src/pages/profile.js",
         upgrade: "src/pages/upgrade.js",
         contacts: "src/pages/contacts.js",
+        users: "src/pages/users.js",
+        questionnaires: "src/pages/questionnaires.js",
       },
       output: {
         // No hashing: this project has no CDN cache-busting infra (pages

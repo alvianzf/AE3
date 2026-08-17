@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Questionnaires · Clinic</title>
   <link rel="stylesheet" href="/static/style.css?v=11">
+  <link rel="stylesheet" href="/static/dist/theme.css">
+  <script type="module" src="/static/dist/questionnaires.js"></script>
 </head>
 <body>
 
@@ -83,17 +85,16 @@
   <section class="card-panel" id="builder-panel" style="margin-top:1rem">
     <div class="ph botanic">
       <h2 style="flex:1" id="builder-title">New questionnaire</h2>
-      <button class="btn ghost sm" id="b-new" type="button">Start new</button>
+      <md-text-button id="b-new">Start new</md-text-button>
     </div>
     <div class="pb">
-      <label class="lbl" for="b-title">Title</label>
-      <input id="b-title" placeholder="e.g. Intake questionnaire">
+      <md-outlined-text-field id="b-title" label="Title" style="width:100%"></md-outlined-text-field>
 
       <div id="b-questions" style="display:flex;flex-direction:column;gap:.7rem;margin-top:.8rem"></div>
 
-      <button class="btn ghost sm" id="b-add-question" type="button" style="margin-top:.6rem">+ Add question</button>
+      <md-text-button id="b-add-question" style="margin-top:.6rem">+ Add question</md-text-button>
       <div style="margin-top:1rem">
-        <button class="btn block" id="b-save" type="button">Save as new version</button>
+        <md-filled-button id="b-save" style="width:100%">Save as new version</md-filled-button>
       </div>
       <div id="b-status" class="muted xs" style="margin-top:.5rem"></div>
     </div>

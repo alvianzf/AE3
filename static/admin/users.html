@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Users · Clinic</title>
   <link rel="stylesheet" href="/static/style.css?v=11">
+  <link rel="stylesheet" href="/static/dist/theme.css">
+  <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20,400,0,0">
+  <script type="module" src="/static/dist/users.js"></script>
 </head>
 <body>
 
@@ -81,32 +85,42 @@
     </div>
     <div class="pb tight">
       <div style="padding:.6rem">
-        <select id="p-filter" aria-label="Filter by status">
-          <option value="">All statuses</option>
-          <option value="pending">Pending</option>
-          <option value="approved">Approved</option>
-          <option value="rejected">Rejected</option>
-          <option value="suspended">Suspended</option>
-        </select>
+        <md-outlined-select id="p-filter" label="Filter by status">
+          <md-select-option value="" selected headline="All statuses"></md-select-option>
+          <md-select-option value="pending" headline="Pending"></md-select-option>
+          <md-select-option value="approved" headline="Approved"></md-select-option>
+          <md-select-option value="rejected" headline="Rejected"></md-select-option>
+          <md-select-option value="suspended" headline="Suspended"></md-select-option>
+        </md-outlined-select>
       </div>
       <div id="practitioners-list" class="scrollbox"></div>
 
       <form id="practitioner-create-form" style="padding:.6rem;display:grid;gap:.4rem;margin-top:.4rem;border-top:1px solid var(--line)">
         <p class="hint" style="margin:.4rem 0 0">Add a practitioner directly — they're
           approved immediately, no review queue.</p>
-        <input id="np-name" placeholder="Name" aria-label="Name">
-        <input id="np-email" type="email" placeholder="Email" aria-label="Email">
-        <input id="np-password" type="password" placeholder="Password" aria-label="Password">
-        <textarea id="np-bio" rows="2" placeholder="Bio (optional)" aria-label="Bio"></textarea>
+        <md-outlined-text-field id="np-name" label="Name" style="width:100%"></md-outlined-text-field>
+        <md-outlined-text-field id="np-email" type="email" label="Email" style="width:100%"></md-outlined-text-field>
+        <md-outlined-text-field id="np-password" type="password" label="Password" style="width:100%">
+          <md-icon-button toggle slot="trailing-icon" aria-label="Show password">
+            <md-icon>visibility</md-icon>
+            <md-icon slot="selected">visibility_off</md-icon>
+          </md-icon-button>
+        </md-outlined-text-field>
+        <md-outlined-text-field id="np-bio" type="textarea" rows="2" label="Bio (optional)"
+            style="width:100%"></md-outlined-text-field>
         <div class="filter-row" style="grid-template-columns:1fr 1fr">
-          <input id="np-specialties" placeholder="Specialties, comma separated" aria-label="Specialties">
-          <input id="np-languages" placeholder="Languages, comma separated" aria-label="Languages">
+          <md-outlined-text-field id="np-specialties" label="Specialties, comma separated"
+              style="width:100%"></md-outlined-text-field>
+          <md-outlined-text-field id="np-languages" label="Languages, comma separated"
+              style="width:100%"></md-outlined-text-field>
         </div>
         <div class="filter-row" style="grid-template-columns:1fr 1fr">
-          <input id="np-years" type="number" min="0" placeholder="Years of experience" aria-label="Years of experience">
-          <input id="np-price" type="number" min="0" step="0.01" placeholder="Consultation price (USD)" aria-label="Consultation price">
+          <md-outlined-text-field id="np-years" type="number" min="0" label="Years of experience"
+              style="width:100%"></md-outlined-text-field>
+          <md-outlined-text-field id="np-price" type="number" min="0" step="0.01"
+              label="Consultation price (USD)" style="width:100%"></md-outlined-text-field>
         </div>
-        <button id="np-create" class="btn sm" type="button">Add practitioner</button>
+        <md-filled-button id="np-create">Add practitioner</md-filled-button>
       </form>
       <div id="np-credentials-slot" style="padding:0 .6rem"></div>
     </div>
@@ -121,14 +135,19 @@
         active superadmin always exists — the last one can't be demoted or suspended.</p>
       <div id="admins-list" class="scrollbox"></div>
       <form id="admin-create-form" style="padding:.6rem;display:grid;gap:.4rem;margin-top:.4rem;border-top:1px solid var(--line)">
-        <input id="na-name" placeholder="Name" aria-label="Name">
-        <input id="na-email" type="email" placeholder="Email" aria-label="Email">
-        <input id="na-password" type="password" placeholder="Password" aria-label="Password">
-        <select id="na-role" aria-label="Role">
-          <option value="admin">admin</option>
-          <option value="superadmin">superadmin</option>
-        </select>
-        <button id="na-create" class="btn sm" type="button">Add admin</button>
+        <md-outlined-text-field id="na-name" label="Name" style="width:100%"></md-outlined-text-field>
+        <md-outlined-text-field id="na-email" type="email" label="Email" style="width:100%"></md-outlined-text-field>
+        <md-outlined-text-field id="na-password" type="password" label="Password" style="width:100%">
+          <md-icon-button toggle slot="trailing-icon" aria-label="Show password">
+            <md-icon>visibility</md-icon>
+            <md-icon slot="selected">visibility_off</md-icon>
+          </md-icon-button>
+        </md-outlined-text-field>
+        <md-outlined-select id="na-role" label="Role">
+          <md-select-option value="admin" selected headline="admin"></md-select-option>
+          <md-select-option value="superadmin" headline="superadmin"></md-select-option>
+        </md-outlined-select>
+        <md-filled-button id="na-create">Add admin</md-filled-button>
       </form>
       <div id="na-credentials-slot" style="padding:0 .6rem"></div>
     </div>
