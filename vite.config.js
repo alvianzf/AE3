@@ -22,6 +22,8 @@ export default defineConfig({
         contacts: "src/pages/contacts.js",
         users: "src/pages/users.js",
         questionnaires: "src/pages/questionnaires.js",
+        files: "src/pages/files.js",
+        coach: "src/pages/coach.js",
       },
       output: {
         // No hashing: this project has no CDN cache-busting infra (pages

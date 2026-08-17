@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Practitioner · Clinic</title>
   <link rel="stylesheet" href="/static/style.css?v=11">
+  <link rel="stylesheet" href="/static/dist/theme.css">
+  <script type="module" src="/static/dist/coach.js"></script>
   <style>
     .coach-photo-lg { width: 9rem; height: 9rem; border-radius: var(--r-lg);
                        object-fit: cover; background: var(--bg); border: 1px solid var(--line); }
@@ -51,13 +53,12 @@
     <div class="pb">
       <p class="hint">Send a message to ask about working together. This starts a
         conversation — it doesn't book a slot.</p>
-      <label class="lbl" for="c-name">Your name</label>
-      <input id="c-name" placeholder="Full name" aria-label="Your name">
-      <label class="lbl" for="c-email">Your email</label>
-      <input id="c-email" type="email" placeholder="you@example.com" aria-label="Your email">
-      <label class="lbl" for="c-message">Message</label>
-      <textarea id="c-message" rows="4" placeholder="What would you like help with?"></textarea>
-      <button id="c-send" class="btn block" style="margin-top:.7rem">Send message</button>
+      <md-outlined-text-field id="c-name" label="Your name" style="width:100%"></md-outlined-text-field>
+      <md-outlined-text-field id="c-email" type="email" label="Your email"
+          style="width:100%;margin-top:.9rem"></md-outlined-text-field>
+      <md-outlined-text-field id="c-message" type="textarea" rows="4" label="What would you like help with?"
+          style="width:100%;margin-top:.9rem"></md-outlined-text-field>
+      <md-filled-button id="c-send" style="width:100%;margin-top:.7rem">Send message</md-filled-button>
     </div>
   </section>
 
