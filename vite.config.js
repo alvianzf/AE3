@@ -11,6 +11,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         theme: "src/theme.css",
+        components: "src/components.css",
         login: "src/pages/login.js",
         "practitioner-signup": "src/pages/practitioner-signup.js",
         "client-signup": "src/pages/client-signup.js",

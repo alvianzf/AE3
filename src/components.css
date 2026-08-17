@@ -1,0 +1,34 @@
+/* Hand-written MD3 component tuning — not generated, unlike theme.css.
+   Loaded alongside theme.css on every migrated page. */
+
+/* Safety net: no Material Web button variant sets text-decoration in its
+   own CSS (checked node_modules/@material/web/button/internal/*.css —
+   none of them do), so an underline can only be an unstyled browser
+   default leaking through. Harmless either way. */
+md-filled-button, md-outlined-button, md-text-button, md-icon-button {
+  text-decoration: none;
+}
+
+/* MD3's own hover design is a translucent state-layer over the existing
+   container color, not a color swap — there is no exposed "hover
+   container color" token for filled/outlined/text buttons, only a
+   state-layer color + opacity. Setting that opacity to 1 makes the state
+   layer fully replace the visible container color, which combined with
+   the label-text-color override below gives a full background/text flip
+   on hover, per request. */
+md-filled-button {
+  --md-filled-button-hover-state-layer-color: var(--md-sys-color-on-primary);
+  --md-filled-button-hover-state-layer-opacity: 1;
+  --md-filled-button-hover-label-text-color: var(--md-sys-color-primary);
+  --md-filled-button-hover-icon-color: var(--md-sys-color-primary);
+}
+md-outlined-button, md-text-button {
+  --md-outlined-button-hover-state-layer-color: var(--md-sys-color-primary);
+  --md-outlined-button-hover-state-layer-opacity: 1;
+  --md-outlined-button-hover-label-text-color: var(--md-sys-color-on-primary);
+  --md-outlined-button-hover-icon-color: var(--md-sys-color-on-primary);
+  --md-text-button-hover-state-layer-color: var(--md-sys-color-primary);
+  --md-text-button-hover-state-layer-opacity: 1;
+  --md-text-button-hover-label-text-color: var(--md-sys-color-on-primary);
+  --md-text-button-hover-icon-color: var(--md-sys-color-on-primary);
+}
