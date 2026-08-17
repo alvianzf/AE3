@@ -48,9 +48,12 @@ a later one. Tests are explicitly out of scope for this pass.
       either way.
 - [ ] `shared.js`: small SSE line-parser (`fetch` + `ReadableStream`, not
       `EventSource`, since the request needs a POST body).
-- [ ] `consult.html`: wire the parser to an `md-snackbar` — role label in
-      plain language, running token total, retry-aware copy, collapses to
-      the verdict badge on `result`.
+- [x] `app/main.py` / `shared.js` / `consult.html`: SSE stream, `postSSE()`
+      parser, and a live toast wired up — **shipped as a stopgap element**
+      (`agentToast()` in `shared.js`), not an `md-snackbar`, since this
+      landed before the MD3 build pipeline existed. Swapping it to
+      `md-snackbar` is now unblocked but not yet done — folded into the
+      MD3 pass below rather than tracked separately.
 
 ## 4. Material Design 3 / build step ([11](11-operations.md), [15](15-design-system.md))
 
@@ -64,24 +67,68 @@ a later one. Tests are explicitly out of scope for this pass.
 - [x] Add `.nvmrc`, pin Node version (22).
 - [ ] Update deploy pipeline: `npm ci && npm run build` before app start —
       not yet done on the live host; the current deploy still ships without
-      a Node toolchain there.
-- [ ] Migrate pages one at a time (see order below), verifying each against
-      its existing spec section (03/04/05/06 — unchanged this version) before
-      moving to the next:
-  1. `login.html` — **done**, `npm run build` verified clean; **not yet
-     checked in an actual browser** (no display in the sandbox this was
-     built in). Both signup flows still pending.
-  2. `account.html` — text fields + the password-visibility toggle, replaced
-     by `md-outlined-text-field`'s built-in trailing icon.
-  3. Shared shell (sidebar, breadcrumbs, topbar user menu) — stays hand-built
-     CSS per [15](15-design-system.md), but re-themed with MD3 tokens so it
-     matches the components migrated around it.
-  4. Practitioner portal (5 pages).
-  5. Admin portal.
-  6. Client portal.
-  7. Public site (about, directory, coach detail).
-- [ ] Remove `wirePasswordToggles()` from `shared.js` once every password
-      field has migrated to `md-outlined-text-field`.
+      a Node toolchain there. **Not yet deployed to production at all** —
+      everything in this section is committed to `main` only.
+- [ ] **No page has been checked in an actual browser** — every migration
+      below is verified only by `npm run build` succeeding and a Node
+      syntax check (`node --check`) on the built JS and each page's inline
+      script. That catches syntax errors, not rendering/layout/behavior
+      bugs. Treat every "done" below as "builds clean, unseen."
+- Migrated (forms/buttons only — see per-page notes for what was
+  deliberately left native):
+  - [x] `login.html`
+  - [x] `practitioner-signup.html`, `client-signup.html`
+  - [x] `account.html`
+  - [x] Shared shell tokens (`static/style.css`'s `--accent`/`-ink`/`-soft`
+        now read `var(--md-sys-color-*, <original hardcoded value>)`) — the
+        shell markup itself (sidebar, breadcrumbs, topbar) stays hand-built
+        CSS, not migrated to components; only its color tokens harmonize
+        with MD3 pages now. No dark-mode reconciliation (site has none).
+  - [x] Practitioner portal: `clients.html` (add-client form),
+        `consult.html` (Ask button only — question `<textarea>` and the
+        agent-progress toast left native, see above), `profile.html`
+        (API key field, profile edit form), `upgrade.html`,
+        `contacts.html` (status filter → `md-outlined-select`)
+  - [x] Admin portal: `users.html` (status filter, both create forms),
+        `questionnaires.html` (title field, the three builder-level
+        actions — not the per-question builder)
+  - [x] Client portal: `files.html` (Upload button)
+  - [x] Public site: `coach.html` (contact form)
+  - [ ] `dashboard.html` (all three portals) — no form controls to migrate,
+        left entirely untouched (no theme.css link either — no MD3
+        components on the page, linking the theme would just tint hand-
+        built elements slightly differently than their hardcoded values
+        for no benefit)
+- **Explicitly left native, each for a specific, checked reason** (not
+  just general caution):
+  - [ ] `directory.html`'s specialty/language filters — confirmed the page's
+        own JS reads `.options.length` (`static/public/directory.html:134`),
+        a native-`<select>`-only property `md-outlined-select` doesn't have.
+        Migrating would silently break that check, not just look different.
+  - [ ] `client/questionnaire.html` — entire form is built per-question from
+        a runtime type switch (text/number/date/select/textarea) including
+        a dynamically populated `<select>`. Highest-risk dynamic-form page
+        on the site; skipped rather than guessed blind.
+  - [ ] Dynamically `.map()`-templated per-row controls: `knowledge.html`'s
+        per-source weight input/save button, `client-detail.html`'s tab/
+        save-note/save-doc/toggle-status buttons, `contacts.html`'s
+        per-row mark-contacted/closed buttons, `users.html`'s per-row
+        approve/reject/suspend/plan/role buttons, `wearables.html`'s
+        per-provider connect buttons. MD3 buttons are also likely
+        oversized for this density — not just a migration-risk question.
+  - [ ] `practitioner-signup.html`'s photo file input, `profile.html`'s
+        photo file input — `@material/web` has no file-picker component.
+  - [ ] `client-signup.html`'s practitioner `<select>` — dynamically
+        populated (same class of risk as the directory filters, not yet
+        confirmed to break anything specific the way `.options.length`
+        does, but not checked either).
+- [ ] Remove `wirePasswordToggles()` from `shared.js` — **not done, and
+      can't be yet**: `account.html`'s own DOMContentLoaded-time call to it
+      was never removed, and several unmigrated pages (v2.14's site-wide
+      toggle) still depend on it for their plain `<input type=password>`
+      fields. Only safe to remove once every password field on the site has
+      migrated — currently true for login/both-signups/account/np-password/
+      na-password/ak-key, not yet true site-wide.
 
 ## 5. HTTP QUERY method ([08](08-api.md))
 
