@@ -88,6 +88,23 @@ class Session:
                 if raw:
                     return res.read(), res.headers
                 text = res.read()
+                if res.headers.get("Content-Type", "").startswith("text/event-stream"):
+                    # /me/consult streams progress events (specs/v3/08-api.md);
+                    # verify_v2.py only cares about the final payload.
+                    result = None
+                    for line in text.decode().split("\n\n"):
+                        if not line.startswith("data: "):
+                            continue
+                        evt = jsonlib.loads(line[len("data: "):])
+                        if evt["event"] == "error":
+                            sys.exit(f"FAIL [{self.label}] {method} {path} -> "
+                                     f"stream error: {evt['message']}")
+                        if evt["event"] == "result":
+                            result = evt
+                    if result is None:
+                        sys.exit(f"FAIL [{self.label}] {method} {path} -> "
+                                 f"stream ended with no result event")
+                    return result
                 return jsonlib.loads(text) if text else None
         except urllib.error.HTTPError as exc:
             payload = exc.read().decode()
