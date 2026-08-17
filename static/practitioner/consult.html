@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Consult · Clinic</title>
   <link rel="stylesheet" href="/static/style.css?v=11">
+  <link rel="stylesheet" href="/static/dist/theme.css">
+  <script type="module" src="/static/dist/consult.js"></script>
 </head>
 <body>
 
@@ -119,7 +121,7 @@
           <div class="row">
             <textarea id="question" rows="2" placeholder="Ask about this client…"
                       aria-label="Question for Clinic"></textarea>
-            <button id="ask" class="btn" disabled>Ask</button>
+            <md-filled-button id="ask" disabled style="flex:0 0 auto">Ask</md-filled-button>
           </div>
           <div class="cmeta">
             <span class="muted xs">Enter to send · Shift + Enter for a new line</span>

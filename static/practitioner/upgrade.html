@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Upgrade to Pro · Clinic</title>
   <link rel="stylesheet" href="/static/style.css?v=11">
+  <link rel="stylesheet" href="/static/dist/theme.css">
+  <script type="module" src="/static/dist/upgrade.js"></script>
 </head>
 <body>
 
@@ -74,7 +76,7 @@
     <div class="pb" id="upgrade-body">
       <p class="hint">Pro adds RAG-backed consultations against the shared knowledge library,
         your own client vault, and the ability to add clients directly. Billed through Stripe.</p>
-      <button id="u-go" class="btn block">Upgrade to Pro</button>
+      <md-filled-button id="u-go" style="width:100%">Upgrade to Pro</md-filled-button>
       <div id="u-status" class="muted xs" style="margin-top:.5rem"></div>
     </div>
   </section>

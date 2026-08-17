@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>My profile · Clinic</title>
   <link rel="stylesheet" href="/static/style.css?v=11">
+  <link rel="stylesheet" href="/static/dist/theme.css">
+  <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20,400,0,0">
+  <script type="module" src="/static/dist/profile.js"></script>
 </head>
 <body>
 
@@ -86,9 +90,14 @@
         <p class="hint">Pro consultations run on your own Anthropic key, not the
           clinic's — set it here before asking Consult anything. Write-only: once
           saved, it can't be read back, only replaced.</p>
-        <label class="lbl" for="ak-key">API key</label>
-        <input id="ak-key" type="password" placeholder="sk-ant-…" autocomplete="off">
-        <button id="ak-save" class="btn block" style="margin-top:.7rem">Save key</button>
+        <md-outlined-text-field id="ak-key" type="password" label="API key"
+            autocomplete="off" style="width:100%">
+          <md-icon-button toggle slot="trailing-icon" aria-label="Show key">
+            <md-icon>visibility</md-icon>
+            <md-icon slot="selected">visibility_off</md-icon>
+          </md-icon-button>
+        </md-outlined-text-field>
+        <md-filled-button id="ak-save" style="width:100%;margin-top:.7rem">Save key</md-filled-button>
         <div id="ak-status" class="muted xs" style="margin-top:.5rem"></div>
       </div>
     </section>
@@ -102,35 +111,32 @@ $('logout-btn').onclick = logout;
 const splitList = (v) => v.split(',').map((s) => s.trim()).filter(Boolean);
 
 function form(p) {
-  return `<label class="lbl" for="p-name">Name</label>
-    <input id="p-name" value="${esc(p.name || '')}">
-    <label class="lbl" for="p-bio">Bio</label>
-    <textarea id="p-bio" rows="4">${esc(p.bio || '')}</textarea>
-    <label class="lbl" for="p-specialties">Specialties</label>
-    <input id="p-specialties" value="${esc((p.specialties || []).join(', '))}"
-           placeholder="Comma-separated">
-    <label class="lbl" for="p-languages">Languages</label>
-    <input id="p-languages" value="${esc((p.languages || []).join(', '))}"
-           placeholder="Comma-separated">
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
-      <div>
-        <label class="lbl" for="p-years">Years of experience</label>
-        <input id="p-years" type="number" min="0" value="${esc(p.years_experience || 0)}">
-      </div>
-      <div>
-        <label class="lbl" for="p-price">Consultation price (USD)</label>
-        <input id="p-price" type="number" min="0" step="0.01"
-               value="${esc(((p.consultation_price_cents || 0) / 100).toFixed(2))}">
-      </div>
+  return `<md-outlined-text-field id="p-name" label="Name" value="${esc(p.name || '')}"
+      style="width:100%"></md-outlined-text-field>
+    <md-outlined-text-field id="p-bio" type="textarea" rows="4" label="Bio"
+        value="${esc(p.bio || '')}" style="width:100%;margin-top:.9rem"></md-outlined-text-field>
+    <md-outlined-text-field id="p-specialties" label="Specialties, comma-separated"
+        value="${esc((p.specialties || []).join(', '))}"
+        style="width:100%;margin-top:.9rem"></md-outlined-text-field>
+    <md-outlined-text-field id="p-languages" label="Languages, comma-separated"
+        value="${esc((p.languages || []).join(', '))}"
+        style="width:100%;margin-top:.9rem"></md-outlined-text-field>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-top:.9rem">
+      <md-outlined-text-field id="p-years" type="number" min="0" label="Years of experience"
+          value="${esc(p.years_experience || 0)}" style="width:100%"></md-outlined-text-field>
+      <md-outlined-text-field id="p-price" type="number" min="0" step="0.01"
+          label="Consultation price (USD)"
+          value="${esc(((p.consultation_price_cents || 0) / 100).toFixed(2))}"
+          style="width:100%"></md-outlined-text-field>
     </div>
-    <label class="lbl" for="p-photo">Replace photo</label>
+    <label class="lbl" for="p-photo" style="margin-top:.9rem">Replace photo</label>
     <input id="p-photo" type="file" accept="image/*">
     ${p.photo_path ? `<p class="hint">Current: <a href="${esc(p.photo_path)}" target="_blank" rel="noopener">${esc(p.photo_path)}</a></p>` : ''}
     <div style="display:flex;align-items:center;gap:.6rem;margin-top:.4rem">
       <span class="chip">${esc(p.status || 'pending')}</span>
       <span class="chip">${esc(p.plan || 'basic')} plan</span>
     </div>
-    <button id="p-save" class="btn block" style="margin-top:.9rem">Save changes</button>
+    <md-filled-button id="p-save" style="width:100%;margin-top:.9rem">Save changes</md-filled-button>
     <div id="p-status" class="muted xs" style="margin-top:.5rem"></div>`;
 }
 
