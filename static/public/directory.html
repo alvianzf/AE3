@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Find a practitioner · Clinic</title>
-  <link rel="stylesheet" href="/static/style.css?v=17">
+  <link rel="stylesheet" href="/static/style.css?v=18">
   <style>
     /* Card grid — the only layout this directory needs beyond what
        style.css already defines for .src/.card-panel. */
@@ -122,7 +122,7 @@ function fillOptions() {
 
 function card(p) {
   const photo = p.photo_path
-    ? `<img class="coach-photo" src="${esc(p.photo_path)}" alt="${esc(p.name)}">`
+    ? `<img class="coach-photo" src="${esc(p.photo_path)}" alt="${esc(p.name)}" loading="lazy">`
     : `<div class="coach-photo ph-fallback">${esc((p.name || '?').slice(0, 1).toUpperCase())}</div>`;
   const tags = (p.specialties || []).map((s) => `<span class="topic">${esc(s)}</span>`).join('');
   const langs = (p.languages || []).length
@@ -155,6 +155,12 @@ function renderGrid() {
             '<button class="btn ghost sm" id="empty-clear">Clear filters</button>');
   if ($('empty-clear')) $('empty-clear').onclick = () => $('f-reset').click();
 }
+
+// Card-shaped skeleton (not skeletonRows()/skeletonLines() — this is a
+// grid of cards, not a list or table) while the first fetch resolves.
+$('coach-grid').innerHTML = Array.from({ length: 6 }, () =>
+  `<div class="src"><div class="skel" style="height:9rem;border-radius:var(--r)"></div>
+   <div class="skel w60" style="margin-top:.6rem"></div><div class="skel w40"></div></div>`).join('');
 
 async function load() {
   const q = new URLSearchParams();

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Questionnaires · Clinic</title>
-  <link rel="stylesheet" href="/static/style.css?v=17">
+  <link rel="stylesheet" href="/static/style.css?v=18">
   <link rel="stylesheet" href="/static/dist/theme.css">
   <link rel="stylesheet" href="/static/dist/components.css">
   <script type="module" src="/static/dist/questionnaires.js"></script>
@@ -279,6 +279,9 @@ $('b-save').onclick = async () => {
 };
 
 $('logout-btn').onclick = logout;
+
+$('q-active').innerHTML = skeletonLines(2);
+$('q-list').innerHTML = skeletonLines(3);
 
 async function load() {
   const session = await requireRole('admin');

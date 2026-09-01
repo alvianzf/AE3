@@ -30,6 +30,17 @@ function wireSortableHeaders(theadEl, state, onChange) {
   });
 }
 
+// Skeleton loading placeholders — the role a declarative Suspense/lazy
+// boundary fills in a React app; this codebase has no React and isn't
+// getting one for that (a framework swap is disproportionate to a
+// loading-state gap — .skel shimmer bars already exist in style.css,
+// just inconsistently applied). Fill a list/table with these before the
+// first fetch resolves instead of leaving it blank.
+const skeletonRows = (cols, rows = 3) => Array.from({ length: rows }, () =>
+  `<tr>${Array.from({ length: cols }, () => '<td><div class="skel w80"></div></td>').join('')}</tr>`).join('');
+const skeletonLines = (n = 3) => Array.from({ length: n }, (_, i) =>
+  `<div class="skel ${['w80', 'w60', 'w40'][i % 3]}"></div>`).join('');
+
 // Count-up animation for dashboard stat numbers (specs/v3/17-full-app-
 // redesign.md X5) — every other part of the motion system animates things
 // appearing on the page; the numbers a user actually opens a dashboard to

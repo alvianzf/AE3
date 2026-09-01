@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Users · Clinic</title>
-  <link rel="stylesheet" href="/static/style.css?v=17">
+  <link rel="stylesheet" href="/static/style.css?v=18">
   <link rel="stylesheet" href="/static/dist/theme.css">
   <link rel="stylesheet" href="/static/dist/components.css">
   <link rel="stylesheet"
@@ -456,6 +456,11 @@ $('na-create').onclick = async () => {
 };
 
 $('logout-btn').onclick = logout;
+
+// Skeleton while the session check + first fetch resolve, instead of a
+// blank table (specs/v3: skeleton/lazy-load pass).
+$('practitioners-list').innerHTML = skeletonRows(7, 3);
+$('admins-list').innerHTML = skeletonRows(4, 2);
 
 async function load() {
   const session = await requireRole('admin');
