@@ -3,11 +3,30 @@
 Requested directly: "as a really world level UI UX designer, tear down the
 app, build a new FE that is better, more user friendly, less cramped, and
 much better while keeping the gradient color since user love it... write it
-in Sveltekit." Confirmed via follow-up: **adapter-node** (real SSR, a new
-Node process in production — not the static-adapter option that would have
-kept today's "Vite output served by FastAPI's static mount" deploy shape
-unchanged), and **spec only** right now — no code, nothing touches
+in Sveltekit." **Spec only** right now — no code, nothing touches
 production until this is reviewed.
+
+**Deployment target: the static adapter, with per-route prerendering for
+the public portal — not adapter-node.** This document originally specced
+adapter-node (real SSR, a new Node server process in production), confirmed
+in an earlier round. Revisited once the memory math below was on the
+table: **"reactive" and "SSR" are two different things that got
+conflated.** Svelte's reactivity — components updating live, forms, the SSE
+consult stream — is a client-side/hydration concern, identical whether a
+page arrives as a server-rendered response or a static shell. SSR's actual
+payoff is faster first paint and SEO, and three of this app's four portals
+(client/practitioner/admin) sit behind login — a search engine never sees
+them, and first-paint speed on an authenticated dashboard isn't a
+conversion-critical moment the way it is on a public marketing page. Only
+the public portal (directory, coach profiles, about) plausibly benefits
+from SSR/SEO, and SvelteKit's per-route `export const prerender = true`
+gets that exact benefit at *build* time, with no server needed per request.
+Net effect: **zero new Node process in production** — FastAPI keeps serving
+the build output from `/opt/clinic/static` exactly like it serves
+`static/dist/` today, and the entire memory-risk section this document
+used to carry is eliminated, not mitigated. See
+[§Deployment](#deployment-static-adapter-fastapi-keeps-serving-it) for the
+concrete version of this.
 
 **This reverses a standing decision, not just a big addition** —
 [v3/01-overview.md decision 5](../v3/01-overview.md#decisions): *"v2 keeps
@@ -286,13 +305,19 @@ visitor actually lands, matching how `03-website.md`'s own practitioner
 directory section frames it as the primary discovery surface. `/about`
 stays a page, just not the root.
 
-Auth guards (`+layout.server.ts`'s `load()` calling `requireRole`-equivalent
-against the FastAPI session) replace `shared.js`'s client-side
-`requireRole('admin')`/etc. pattern — this is a *strictly better* version
-of the same check, not a new one: today's guard runs after the page has
-already painted (a flash of the page's shell before the redirect fires,
-visible on a slow connection), SSR-side guard redirects before any markup
-reaches the browser.
+Auth guards (`+layout.ts`'s universal `load()` calling a
+`requireRole`-equivalent against the FastAPI session) replace `shared.js`'s
+client-side `requireRole('admin')`/etc. pattern. Worth being precise about
+what this actually improves, now that the static adapter (not adapter-node)
+is the target: it's **not** the "redirect before any markup reaches the
+browser" guarantee true SSR would give — the client/practitioner/admin
+portals are CSR-only, so the same static app shell always loads first,
+same as today. What it *does* improve: `load()` in a `+layout.ts` blocks
+that route's content from rendering until the role check resolves, so an
+unauthorized visitor sees a loading state, never a flash of the actual
+protected page's shell before the redirect fires — the flash `shared.js`'s
+current post-paint check produces. A smaller, honest win, not the bigger
+one SSR would have bought.
 
 ## Data layer: `load()` functions against the unchanged FastAPI API
 
@@ -302,43 +327,43 @@ same auth dependencies (`app/auth.py`'s `require_admin`/
 `require_pro_practitioner`/etc.), same request/response shapes. This
 rewrite is a client swap, not an API redesign.
 
-**Cookie forwarding, the one real mechanical wrinkle of adapter-node SSR.**
+**Cookie handling stays exactly as simple as it is today.**
 `app/auth.py`'s session cookie is `httponly, samesite=lax, secure=$COOKIE_SECURE`
 ([app/auth.py:120-122](../../app/auth.py)) — invisible to browser JS by
-design, which is correct and unaffected by this rewrite. What changes is
-*who* needs to read it: today, every fetch is client-side, so the browser
-attaches the cookie automatically. Under adapter-node SSR, a page's
-`load()` function runs **on the SvelteKit Node server**, which needs to
-explicitly forward the incoming request's `Cookie` header to its own call
-to FastAPI:
+design, unaffected by this rewrite. The static-adapter target means every
+`load()` in the client/practitioner/admin portals runs **in the browser**
+(a universal `+layout.ts`/`+page.ts`, not a `.server.ts`), so the browser
+attaches the cookie to the request automatically, exactly like `shared.js`'s
+`api()` helper does today — no cookie-forwarding wrinkle to design around,
+because there's no server-side request in this rewrite's version of the
+data layer at all. (This is the concrete mechanical simplification the
+static-adapter decision above buys, beyond just removing the memory risk.)
 
 ```ts
-// src/routes/(practitioner)/dashboard/+page.server.ts
-export async function load({ fetch, cookies }) {
-  const res = await fetch(`${env.API_BASE}/api/me/profile`, {
-    headers: { cookie: `clinic_session=${cookies.get('clinic_session')}` }
-  });
+// src/routes/(practitioner)/dashboard/+layout.ts — runs client-side
+export async function load({ fetch }) {
+  const res = await fetch(`${env.PUBLIC_API_BASE}/api/me/profile`);
   if (res.status === 401) throw redirect(303, '/login');
   return { profile: await res.json() };
 }
 ```
 
-SvelteKit's `event.fetch` (not the global `fetch`) is required here — it's
-the version that participates in SvelteKit's SSR request lifecycle and
-correctly handles relative URLs against the internal API origin. This
-pattern is one hook (`src/hooks.server.ts`, or a `$lib/server/api.ts`
-wrapper) written once and reused by every `load()`, not fifty ad hoc cookie
-reads.
+SvelteKit's `event.fetch` is still the one to use (not the raw global) —
+under the static adapter it's mainly relevant for SSR'd/prerendered routes,
+but using it consistently keeps every `load()` written the same way
+regardless of which routes are prerendered vs. client-only. One
+`$lib/api.ts` wrapper around it, reused by every `load()`, replaces
+`shared.js`'s `api()` helper.
 
 **The SSE consult stream** ([v3/08 §Live progress stream](../v3/08-api.md#live-progress-stream))
-is the one endpoint that can't go through a `load()` function at all —
-it's a long-lived, user-initiated `POST` with a streaming response, not
-page data. It stays a client-side `fetch()` with a `ReadableStream` reader,
-exactly as [v3/08](../v3/08-api.md#live-progress-stream) already specifies
-for `shared.js` today — this becomes a `$lib/consultStream.ts` module a
-Svelte component calls from an event handler (button click), same shape as
-today's plain-JS version, just typed and componentized. Runs in the
-browser either way; adapter-node's SSR doesn't touch it.
+was always going to be client-side regardless of adapter choice — it's a
+long-lived, user-initiated `POST` with a streaming response, not page data,
+so it was never going through `load()` in the first place. Stays a
+client-side `fetch()` with a `ReadableStream` reader, exactly as
+[v3/08](../v3/08-api.md#live-progress-stream) already specifies for
+`shared.js` today — a `$lib/consultStream.ts` module a Svelte component
+calls from an event handler (button click), same shape as today's plain-JS
+version, just typed and componentized.
 
 **Error handling**: FastAPI's existing 401/403/404/502 responses
 ([v3/08 §Failure modes](../v3/08-api.md#failure-modes)) map to SvelteKit's
@@ -347,38 +372,29 @@ to the same `toast()`-equivalent pattern for in-page action failures
 (create/update/delete calls staying client-side, same as today) — no new
 failure modes invented, just relocated to SvelteKit's idioms.
 
-## Deployment: adapter-node alongside the existing FastAPI process
+## Deployment: static adapter, FastAPI keeps serving it
 
-This is the section with the most concrete, checkable numbers, because it's
-the one part of this proposal that's wrong if it ignores the box it has to
-run on.
+Originally specced as adapter-node with a new Node server process; revised
+after the memory math below made the tradeoff explicit (see the note at
+the top of this document). This version of the section is what's actually
+recommended.
 
-### What the VPS actually has today
+### The memory question this used to raise, and why it's now moot
 
-Per `DEPLOY.md`: **1.9 GB total RAM**, Neo4j's JVM the bulk of it (heap
-512m + pagecache 256m, `/etc/neo4j/neo4j.conf`), FastAPI/uvicorn capped at
-`MemoryMax=500M` (the `clinic` systemd unit), leaving **~500-700 MB
-available at steady state** — DEPLOY.md's own words: *"there is no headroom
-for a second JVM or a large concurrent load."* A Node SvelteKit adapter-node
-process is not a JVM, but it is a second long-running server process with
-its own baseline (a minimal SvelteKit adapter-node app idles around
-60-100MB RSS; under concurrent SSR requests — several `load()` calls each
-holding a FastAPI round-trip open — that climbs, plausibly into the
-150-300MB range under real traffic, though this hasn't been load-tested
-against this specific app's `load()` fan-out).
-
-**Honest read: this fits, barely, with no margin for anything else.**
-500-700MB available today, a SvelteKit process eating an estimated
-150-300MB under load, leaves 200-550MB — enough to not immediately OOM, not
-enough to add a third thing (a Redis cache, a second Node worker for
-zero-downtime deploys, headroom for a Neo4j heap bump if the library
-grows past today's 10-20-practitioner sizing). **The honest answer, not
-dodged: budget for a VPS resize before or immediately after this ships** —
-even a bump to 4GB total removes the "barely fits" risk entirely for a
-cost that's noise next to the engineering time this rewrite already costs.
-Shipping adapter-node on the current 1.9GB box without a resize is the one
-part of this plan that could turn into a production incident (OOM-killed
-Node process under a traffic spike) rather than a design regret.
+Per `DEPLOY.md`: **1.9 GB total RAM**, Neo4j's JVM the bulk of it, FastAPI/
+uvicorn capped at `MemoryMax=500M`, leaving **~500-700 MB available at
+steady state** — DEPLOY.md's own words: *"there is no headroom for a
+second JVM or a large concurrent load."* Adapter-node would have added a
+second long-running server process into that headroom, estimated (not
+measured) at 150-300MB under real traffic — "fits, barely, no margin,"
+and the one part of that version of this plan that could have become a
+production incident rather than a design regret. **The static adapter has
+no server process to add.** `npm run build` produces plain HTML/JS/CSS —
+the public portal's routes pre-rendered at build time, everything else a
+client-side bundle — synced to `/opt/clinic/static` and served by the
+exact same FastAPI static mount that serves `static/dist/` today. The VPS's
+memory budget is untouched by this rewrite, full stop; no resize to budget
+for, no new systemd unit whose OOM risk needs a `MemoryMax` ceiling.
 
 ### Process topology
 
@@ -386,62 +402,32 @@ Node process under a traffic spike) rather than a design regret.
 Cloudflare (Full mode, unchanged)
   → nginx :443/:80 (unchanged: self-signed origin-tls, client_max_body_size 25m,
                      proxy_read_timeout 300s — clinic-proxy.conf, unchanged)
-      → SvelteKit (adapter-node) on 127.0.0.1:3000, new systemd unit `clinic-web`
-          → proxies /api/* internally to FastAPI on 127.0.0.1:8000 (unchanged `clinic` unit)
-      OR
-      → FastAPI directly on /api/* (nginx-level split, bypassing SvelteKit for API calls)
+      → FastAPI/uvicorn on 127.0.0.1:8000 (unchanged `clinic` systemd unit)
+          → serves /api/* (unchanged)
+          → serves the SvelteKit build's static output from its existing
+            /static mount (prerendered HTML for the public portal,
+            the client-side bundle + its own thin HTML shell for
+            client/practitioner/admin)
 ```
 
-**Recommendation: nginx splits at the edge, not SvelteKit proxying
-internally.** Two reasons: (1) it means a `/api/*` request never pays for a
-hop through the Node process at all — one less thing in the request path
-for the majority of traffic once the SPA has hydrated and is calling the
-API directly from the browser (post-hydration, most calls are plain
-client-side `fetch()`, not `load()`-driven SSR — only the *first* page load
-of a session goes through SSR `load()`, which is the only place the
-Node-process-proxies-to-FastAPI question matters at all); (2) it keeps
-nginx as the one place routing decisions live, matching how `DEPLOY.md`
-already documents the Cloudflare-real-IP and TLS setup as nginx's job, not
-an app-level concern. Concretely, one new `location /api/ { proxy_pass
-http://127.0.0.1:8000; }` block added to the existing `clinic` nginx site
-config, alongside a new `location / { proxy_pass http://127.0.0.1:3000;
-}` for everything SvelteKit serves.
-
-New systemd unit (`/etc/systemd/system/clinic-web.service`), same shape as
-the existing `clinic` unit:
-
-```ini
-[Unit]
-Description=Clinic SvelteKit frontend
-After=network.target clinic.service
-[Service]
-Type=simple
-User=clinic
-WorkingDirectory=/opt/clinic-web
-ExecStart=/usr/bin/node build/index.js
-Environment=PORT=3000
-Environment=API_BASE=http://127.0.0.1:8000
-MemoryMax=300M
-Restart=on-failure
-[Install]
-WantedBy=multi-user.target
-```
-
-`MemoryMax=300M` mirrors the existing `clinic` unit's own self-imposed cap
-(`500M`) — a ceiling, not a request; systemd kills the process on breach
-rather than letting an unbounded Node process take down Neo4j by memory
-pressure, same protective reasoning the existing unit already applies to
-uvicorn.
+One process, one systemd unit, same as today — this rewrite changes what's
+*inside* `/opt/clinic/static`, not how many things run on the box.
 
 ### Build/deploy pipeline
 
 Adds one stage to what [v3/11 §Build step](../v3/11-operations.md#build-step)
 already documents (Vite building `static/dist/`): `npm run build` inside
-the SvelteKit project produces `build/` (adapter-node's output, a
-standalone Node app), synced to `/opt/clinic-web` the same way `static/`
-and `src/` are synced to `/opt/clinic` today, then `systemctl restart
-clinic-web` alongside the existing `systemctl restart clinic`. No change to
-how FastAPI itself deploys.
+the SvelteKit project (using `@sveltejs/adapter-static`) produces `build/`
+— a directory of prerendered HTML for `(public)` routes and a
+client-side-rendered SPA shell for the rest — synced into
+`/opt/clinic/static` the same way `static/dist/` is synced today, no new
+`systemctl` unit to restart. `svelte.config.js` sets
+`kit.adapter = adapter-static` with `fallback: 'app.html'` (the SPA shell
+non-prerendered routes hydrate into) and each `(public)` route exports
+`export const prerender = true`; everything under `(client)`/
+`(practitioner)`/`(admin)` exports `export const ssr = false` (no
+prerendering attempted for routes that require auth and would just 401 at
+build time anyway).
 
 ## Migration/cutover plan
 
@@ -459,35 +445,38 @@ worked (per [v3/17](../v3/17-full-app-redesign.md)'s own retrospective:
 *"this app already went through two real redesign passes and it shows"*).
 Concretely:
 
-1. Stand up `clinic-web` on the VPS listening on `127.0.0.1:3000`, **not**
-   yet reachable from nginx — build and verify the whole route tree against
-   the real FastAPI backend from a local machine or a staging subdomain
-   first, not the production edge.
-2. Add an nginx path-based split for one low-traffic, low-risk route first
-   (`/about` is the obvious first candidate — static content, no auth, no
-   forms) — `location = /about { proxy_pass http://127.0.0.1:3000; }`
-   ahead of the general `location / { proxy_pass http://127.0.0.1:8000/static/...; }`
-   fallback that still serves every other page from the current stack.
+1. Build the SvelteKit app against a local/staging copy of the FastAPI
+   backend first — verify the whole route tree, every auth-guarded portal,
+   and the SSE consult stream work before either build ever reaches the
+   production VPS.
+2. Sync the build's output into `/opt/clinic/static` under a **separate
+   path prefix first** (e.g. `/opt/clinic/static/v4/`), not overwriting
+   today's files — reachable at a throwaway URL
+   (`telehealth.devshorepartners.id/v4/about`) for a final production-data
+   smoke test that doesn't touch what real visitors see.
 3. Promote one portal at a time (public → client → practitioner → admin,
    roughly ascending order of how much a bug would cost — admin last since
-   an admin-portal regression blocks the operator, not a visitor), each
-   verified in production behind its own nginx `location` block before the
-   next moves.
-4. Once every route is proxied to `clinic-web`, delete the old `location`
-   fallbacks and, separately, archive (don't delete) `static/*.html` and
-   `src/pages/*.js` — the same "keep the record, don't just delete"
-   instinct [v3/README.md](../v3/README.md) already applies to superseded
-   spec versions.
+   an admin-portal regression blocks the operator, not a visitor) by
+   replacing that portal's files in the real `static/` paths and verifying
+   in production, same "page by page, not big-bang" spirit
+   [v3/15](../v3/15-design-system.md#migration-approach)'s own MD3
+   migration already used successfully on this exact app. No nginx changes
+   at any step — FastAPI's static mount doesn't care whether a file under
+   `static/practitioner/dashboard.html` was hand-written or built by Vite
+   or built by SvelteKit, only that the path resolves.
+4. Once every portal is promoted, archive (don't delete) the old
+   `static/*.html` and `src/pages/*.js` files — the same "keep the record,
+   don't just delete" instinct [v3/README.md](../v3/README.md) already
+   applies to superseded spec versions.
 
 **What "spec only, not yet implemented" leaves as open engineering risk,
-stated plainly**: this plan is not load-tested, the per-`load()`-call
-memory estimate above is an estimate not a measurement, the auth-guard
-SSR-redirect behavior needs to be verified against every one of
-`app/auth.py`'s actual role-check edge cases (not just the happy path), and
-the nginx path-split approach needs the exact `location` block precedence
-verified against the *existing* `clinic-proxy.conf` shared snippet (a
-misordered `location` block silently serving the wrong app for a path is
-the realistic failure mode of step 2-3 above, not a dramatic outage).
+stated plainly**: this plan is not yet built or tested against the real
+backend, and the auth-guard client-side-redirect behavior needs to be
+verified against every one of `app/auth.py`'s actual role-check edge cases
+(not just the happy path) — a wrong redirect on an edge case (e.g. a
+suspended practitioner, a role that changed mid-session) is the realistic
+failure mode here, not an outage; there's no nginx routing risk to verify
+in this version of the plan, since nothing about nginx changes.
 
 ## Explicit non-goals
 
@@ -504,7 +493,7 @@ the realistic failure mode of step 2-3 above, not a dramatic outage).
   everything else routes exactly where it does today.
 - **SSR for the SSE consult stream** — stays client-side, see
   [§Data layer](#data-layer-load-functions-against-the-unchanged-fastapi-api).
-- **A VPS resize decision** — flagged as a real, concrete recommendation
-  in [§Deployment](#deployment-adapter-node-alongside-the-existing-fastapi-process),
-  but the actual sizing/cost call belongs to whoever owns the
-  infrastructure budget, not this document.
+- **A VPS resize** — no longer needed. The earlier adapter-node version of
+  this document flagged one as a real recommendation; the static-adapter
+  target removes the reason for it entirely, see
+  [§Deployment](#deployment-static-adapter-fastapi-keeps-serving-it).

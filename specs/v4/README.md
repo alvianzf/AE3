@@ -19,9 +19,10 @@ holds exactly the two documents that are the actual proposal:
 - [**01 · Frontend rewrite: SvelteKit**](01-sveltekit-frontend.md) — the
   architecture: what's kept from the current visual identity vs. what's
   rebuilt, why Material Web is dropped in favor of Svelte-native
-  components, the file-based-routing IA mapping, the `load()`/cookie-
-  forwarding data layer, the adapter-node deployment topology and this
-  VPS's memory math, and a phased migration plan.
+  components, the file-based-routing IA mapping, the `load()` data layer,
+  the static-adapter deployment (prerendered public portal, client-side
+  everything else — no new server process, no VPS memory risk), and a
+  phased migration plan.
 - [**02 · Open questions and risk ledger**](02-open-questions.md) — the
   tradeoffs, unverified assumptions, and reversible-vs-expensive decisions
   a reviewer needs before saying go.

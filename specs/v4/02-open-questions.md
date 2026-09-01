@@ -5,13 +5,27 @@ calls a decision-maker needs before greenlighting this, gathered in one
 place instead of buried in prose. Nothing here blocks writing the spec;
 everything here blocks *building* it.
 
+**Revision note:** [01](01-sveltekit-frontend.md) originally specced
+adapter-node (SSR, a new Node process in production); revised to the
+static adapter with per-route prerendering after the memory math below
+made the tradeoff explicit. This file has been updated to match — the
+items below describe the *current* (static-adapter) plan's risks, not the
+adapter-node version's.
+
 ## Decisions this spec made that are reversible, cheaply, if wrong
 
-- **nginx edge-split vs. SvelteKit-internal API proxy** — [01 §Process
-  topology](01-sveltekit-frontend.md#process-topology) recommends the
-  former. If the internal-proxy approach turns out simpler to operate in
-  practice, switching is an nginx config + one `hooks.server.ts` change,
-  not a rearchitecture.
+- **Static adapter now, adapter-node later if a specific need justifies
+  it.** SvelteKit's adapter is a swappable build target, not a rewrite —
+  if a specific route later needs true SSR (better crawl freshness on the
+  public portal, say, if prerendered-at-build-time content turns out to go
+  stale in practice), switching that one route's adapter back is a
+  contained change, not a redo of [01](01-sveltekit-frontend.md)'s
+  component/IA work. This is the fallback direction if the static-adapter
+  bet turns out wrong, not a dead end.
+- **nginx edge-split vs. app-internal API proxy** — moot under the static
+  adapter (FastAPI serves everything, there's no second process to split
+  traffic between), but would resurface as a live decision if adapter-node
+  is ever adopted for a route per the point above.
 - **Drop `@material/web` entirely vs. keep it for 1-2 stubborn components**
   — [01 §Component strategy](01-sveltekit-frontend.md#component-strategy-drop-material-web-not-svelte-native)
   argues for a full drop. If a specific component (the datatable's sort
@@ -21,57 +35,46 @@ everything here blocks *building* it.
 
 ## Decisions this spec made that are expensive to reverse
 
-- **adapter-node over static-adapter.** This was given, not derived — the
-  user confirmed adapter-node specifically. Worth restating plainly since
-  it's the single most consequential technical choice in this document:
-  static-adapter would have meant *zero* production deployment risk (same
-  "sync files, FastAPI serves them" shape as today, per
-  [v3/11](../v3/11-operations.md#build-step)'s existing build step) at the
-  cost of losing SSR (auth-guard redirects happen client-side again, same
-  flash-then-redirect behavior as today; `load()` functions still work but
-  run in the browser, so the cookie-forwarding problem in
-  [01](01-sveltekit-frontend.md#data-layer-load-functions-against-the-unchanged-fastapi-api)
-  disappears entirely — the browser already attaches the cookie). **If the
-  VPS memory math in [01 §Deployment](01-sveltekit-frontend.md#what-the-vps-actually-has-today)
-  turns out tighter in practice than estimated, revisiting static-adapter
-  instead of resizing the VPS is the fallback**, not a dead end — worth
-  keeping in mind as a release valve, not raising it to relitigate a
-  decision already made.
+- **Prerendering the public portal at build time, not runtime.** If the
+  public portal's content (practitioner directory listings, specifically)
+  turns out to change often enough that a build-time snapshot goes visibly
+  stale between deploys, the fix isn't a config flip — it's either standing
+  up on-demand rendering for just those routes (functionally reintroducing
+  a server process, the exact thing this revision removed) or adding a
+  rebuild-and-redeploy trigger on practitioner-roster changes (new
+  operational machinery, [11 §Operations](../v3/11-operations.md) doesn't
+  have an equivalent today). Worth a real answer before building, not
+  discovering in production — see the unverified assumption below.
 
 ## Unverified assumptions, stated so they get checked before they get relied on
 
-1. **Node SvelteKit adapter-node memory footprint under this app's actual
-   `load()` fan-out is estimated (60-100MB idle, 150-300MB under load),
-   not measured.** A throwaway load test (a handful of concurrent
-   `load()`-driven page requests against a real deployment on a
-   memory-constrained box, or even just `docker run --memory=300m` locally
-   against a built adapter-node output) would replace this estimate with a
-   number before it's load-bearing for a production capacity decision.
-2. **The exact nginx `location` block precedence for a path-based
-   incremental cutover** (§Migration plan, step 2-3 in
-   [01](01-sveltekit-frontend.md#migrationcutover-plan)) needs to be
-   checked against the live `clinic-proxy.conf` snippet on the VPS, not
-   assumed from this document's example block — nginx `location` matching
-   has well-known surprises (regex vs. prefix precedence, `=` exact-match
-   ordering) that are easy to get subtly wrong in a way that silently
-   serves the wrong app for one path rather than erroring loudly.
-3. **Auth-guard SSR-redirect behavior against every one of `app/auth.py`'s
-   real role-check paths** (`require_admin`, `require_superadmin`,
-   `require_pro_practitioner`, the plain-authenticated-any-role check) —
+1. **How often the public portal's content actually changes** — directly
+   decides whether build-time prerendering is even the right call (see the
+   expensive-to-reverse item above). `specs/v3/04-admin-portal.md` and
+   `06-client-portal.md` describe practitioner approval/suspension and
+   profile edits as admin/practitioner-initiated, not high-frequency, but
+   this hasn't been checked against real usage patterns — "prerender the
+   public portal" assumes new-practitioner-goes-live and profile-edit
+   events are rare enough that a rebuild-per-deploy cadence keeps the
+   directory acceptably fresh, not stale.
+2. **Auth-guard client-side-redirect behavior against every one of
+   `app/auth.py`'s real role-check paths** (`require_admin`,
+   `require_superadmin`, `require_pro_practitioner`, the
+   plain-authenticated-any-role check) —
    [01](01-sveltekit-frontend.md#information-architecture-file-based-routing-over-the-existing-four-portals)
-   asserts this is "strictly better" than today's client-side check, which
-   is true in principle (SSR redirect vs. flash-then-redirect) but hasn't
-   been verified against every specific 401 vs. 403 vs. redirect-to-login
-   distinction those FastAPI dependencies actually make.
-4. **Whether Cloudflare's edge caching or any WAF rule interacts
-   differently with a Node-rendered HTML response than with FastAPI's
-   current static-file responses** — untested. `DEPLOY.md` already
-   documents one Cloudflare-specific gotcha this app hit before (the
-   browser-integrity check's error 1010 on an unrecognized User-Agent,
-   why `verify.py` sets one explicitly) — worth treating "Cloudflare might
-   have another opinion about this" as a category of risk to check for,
-   not assuming SvelteKit's default response headers are equivalent to
-   FastAPI's `StaticFiles` mount in Cloudflare's eyes.
+   describes the improvement this buys honestly (blocks render until the
+   check resolves, no flash of protected content) but hasn't verified the
+   redirect target/message is correct for every specific 401 vs. 403
+   distinction those FastAPI dependencies actually make, including a
+   suspended practitioner or a role that changed mid-session.
+3. **Whether Cloudflare's edge caching treats SvelteKit's prerendered
+   static HTML any differently than FastAPI's current `StaticFiles`
+   responses** — likely equivalent (both are plain HTTP responses with
+   standard headers) but untested. `DEPLOY.md` already documents one
+   Cloudflare-specific gotcha this app hit before (the browser-integrity
+   check's error 1010 on an unrecognized User-Agent, why `verify.py` sets
+   one explicitly) — worth treating "Cloudflare might have another
+   opinion" as a category to check, not assumed away.
 
 ## Cost/effort not estimated here, on purpose
 
