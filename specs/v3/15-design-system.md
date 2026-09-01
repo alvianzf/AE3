@@ -101,7 +101,12 @@ Its fill is the same frosted-glass mechanism as `.card-panel` (translucent
 of white, using the same light-on-dark token re-point `.ph` (the blood-red
 header band) already established — `--ink`/`--accent`/etc. flipped to
 near-white/light-tint values scoped to `.sidebar`, so nothing outside it is
-affected. Two spots needed a manual override rather than the re-point alone
+affected. The gradient runs high-opacity throughout (`.88`→`.94`), same
+"frosted, not tinted" reasoning as `--glass` itself — a lower top alpha
+(`.62`) was tried first and `blur(16px)` over the page's light background
+washed that stop out to near-white instead of a lighter red; `--blur`
+carries the glass feel here, not letting the backdrop's own color show
+through. Two spots needed a manual override rather than the re-point alone
 covering them (both documented inline in `style.css`): `.sidebar-link:hover`
 used the light-surface `--panel-2`/`--ink` pairing, which would have
 repeated the near-white-on-near-white bug `.btn`'s hover had before that

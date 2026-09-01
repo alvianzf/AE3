@@ -196,9 +196,13 @@ svg { flex: 0 0 auto; }
   color: var(--ink);
   margin: 1rem 0 1rem 1rem; border-radius: var(--r-lg);
   border: 1px solid rgba(255, 255, 255, .22);
-  /* Lighter at the top, darker at the bottom — translucent so --blur still
-     shows the botanical backdrop through it, tinted red rather than grey. */
-  background: linear-gradient(180deg, rgba(216, 62, 88, .62), rgba(78, 8, 20, .82));
+  /* Lighter at the top, darker at the bottom. High opacity throughout —
+     same "frosted, not tinted" reasoning as --glass itself: at the lower
+     alpha this started at (.62 top), blur(16px) over the page's light
+     background washed the top out to near-white instead of reading as a
+     lighter red; --blur is what carries the glass feel here, not
+     transparency low enough to let the backdrop's color through. */
+  background: linear-gradient(180deg, rgba(203, 44, 68, .88), rgba(64, 6, 16, .94));
   -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
   box-shadow: var(--shadow-lg);
   position: sticky; top: 1rem; align-self: flex-start;
