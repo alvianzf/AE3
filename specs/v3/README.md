@@ -69,3 +69,11 @@ copied byte-for-byte from v2; nothing in their content changed this version.
 [17 · Full-app redesign](17-full-app-redesign.md), [TODO.md](TODO.md).
 
 See [`CHANGELOG.md`](../CHANGELOG.md#v3) for the why behind each change.
+
+## Looking ahead
+
+[**v4** (proposed, not approved)](../v4/README.md) specs a full SvelteKit
+frontend rewrite, dropping Material Web and reversing
+[decision 5](01-overview.md#decisions)'s "no new framework" stance — this
+folder remains the actual current, deployed state of the product until
+that's built and formally cut.
