@@ -176,11 +176,33 @@ svg { flex: 0 0 auto; }
    breadcrumbs + the account/logout menu only. */
 .app-shell { display: flex; min-height: 100vh; align-items: stretch; }
 .sidebar {
+  /* Red glassy panel, detached from the viewport edge (floating, not flush)
+     — same re-pointed light-on-dark tokens as .ph (the blood-red header
+     band), since it's the same "text over a saturated red surface"
+     problem this codebase already has a tested answer for. */
+  --ink: #fdf1f2;
+  --ink-2: #f7dfe2;
+  --muted: #d9a2aa;
+  --accent: #ff8fa3;
+  --accent-ink: #ffc2cc;
+  --accent-soft: rgba(255, 255, 255, .16);
   width: 14.5rem; flex: 0 0 auto; display: flex; flex-direction: column;
-  gap: 1.2rem; padding: 1.1rem .9rem; border-right: 1px solid var(--glass-line);
-  background: rgba(255, 255, 255, .55);
+  gap: 1.2rem; padding: 1.1rem .9rem;
+  /* .brand-link/.brand b lean on `color: inherit` rather than reading
+     --ink directly (unlike .ph's descendants, which all reference the
+     token explicitly) — without this, they'd inherit the page's dark ink
+     straight through the redefinition above and go near-invisible on the
+     dark-red gradient below. */
+  color: var(--ink);
+  margin: 1rem 0 1rem 1rem; border-radius: var(--r-lg);
+  border: 1px solid rgba(255, 255, 255, .22);
+  /* Lighter at the top, darker at the bottom — translucent so --blur still
+     shows the botanical backdrop through it, tinted red rather than grey. */
+  background: linear-gradient(180deg, rgba(216, 62, 88, .62), rgba(78, 8, 20, .82));
   -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
-  position: sticky; top: 0; align-self: flex-start; height: 100vh; overflow-y: auto;
+  box-shadow: var(--shadow-lg);
+  position: sticky; top: 1rem; align-self: flex-start;
+  height: calc(100vh - 2rem); overflow-y: auto;
 }
 .sidebar .brand-link { padding: 0 .3rem; }
 .sidebar-nav { display: flex; flex-direction: column; gap: .15rem; }
@@ -194,7 +216,12 @@ svg { flex: 0 0 auto; }
    rule loads later) — setting `.hidden = true` on an Upgrade/etc. link
    silently did nothing without this. */
 .sidebar-link[hidden] { display: none; }
-.sidebar-link:hover { background: var(--panel-2); color: var(--ink); }
+/* Not --panel-2/--ink (the light-surface pairing) — .sidebar re-points
+   --ink to near-white for its own dark-red surface, same as .ph, so that
+   pairing would repeat the near-white-on-near-white bug .btn's hover had
+   before it was fixed. A translucent white overlay reads as "lighter red"
+   here instead. */
+.sidebar-link:hover { background: rgba(255, 255, 255, .1); color: var(--ink); }
 .sidebar-link.active { background: var(--accent-soft); color: var(--accent-ink); font-weight: 700; }
 .nav-badge {
   display: inline-flex; align-items: center; justify-content: center;
@@ -202,6 +229,13 @@ svg { flex: 0 0 auto; }
   border-radius: 99px; background: var(--accent); color: #fff;
   font-size: .68rem; font-weight: 700; line-height: 1;
 }
+/* .sidebar re-points --accent to a light pink tint for text/icon use
+   against its own dark-red surface (same reasoning as .ph) — but this
+   badge sets that same tint as its *background* with a white label,
+   which is a light-pink/white pairing, not the light-on-dark one that
+   repointing was meant for. Solid white pill with the sidebar's own base
+   red as the label reads clearly regardless of the surface it sits on. */
+.sidebar .nav-badge { background: #fff; color: #6a0814; }
 .app-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .app-topbar {
   display: flex; align-items: center; justify-content: space-between; gap: 1rem;

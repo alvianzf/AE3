@@ -93,6 +93,22 @@ component that matches this project's collapse behavior
 enough to be worth the rework; it stays hand-built CSS, now themed with MD3
 tokens for visual consistency with the components around it.
 
+`.sidebar` is a floating panel, not flush against the viewport edge: a 1rem
+margin on top/bottom/left, `border-radius: var(--r-lg)`, and `--shadow-lg`
+so it reads as a card resting over the page rather than part of the frame.
+Its fill is the same frosted-glass mechanism as `.card-panel` (translucent
++ `--blur`) but tinted red on a top-lighter/bottom-darker gradient instead
+of white, using the same light-on-dark token re-point `.ph` (the blood-red
+header band) already established — `--ink`/`--accent`/etc. flipped to
+near-white/light-tint values scoped to `.sidebar`, so nothing outside it is
+affected. Two spots needed a manual override rather than the re-point alone
+covering them (both documented inline in `style.css`): `.sidebar-link:hover`
+used the light-surface `--panel-2`/`--ink` pairing, which would have
+repeated the near-white-on-near-white bug `.btn`'s hover had before that
+was fixed; and `.brand-link`/`.brand b` read `color: inherit` rather than
+an explicit `var(--ink)`, so `.sidebar` itself now sets `color: var(--ink)`
+for them to inherit correctly.
+
 ## Live agent toast {#live-agent-toast}
 
 New this version. `consult.html`'s composer shows an `md-snackbar` (MD3's
