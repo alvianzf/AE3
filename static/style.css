@@ -241,11 +241,18 @@ svg { flex: 0 0 auto; }
    red as the label reads clearly regardless of the surface it sits on. */
 .sidebar .nav-badge { background: #fff; color: #6a0814; }
 .app-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+/* Floating like .sidebar (margin off the edge, sticky with the same 1rem
+   offset) but deliberately no fill or border — just the breadcrumbs and
+   account menu repositioned with breathing room, not a second panel next
+   to the sidebar's. No --blur either: without a background there's
+   nothing for it to frost, and blurring the page content scrolling
+   underneath with no surface to explain why would just look broken. */
 .app-topbar {
   display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-  padding: .6rem 1.25rem; border-bottom: 1px solid var(--glass-line);
-  position: sticky; top: 0; z-index: 40; background: rgba(255, 255, 255, .68);
-  -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
+  padding: .6rem 1.25rem;
+  margin: 1rem 1rem 0;
+  position: sticky; top: 1rem; z-index: 40;
+  background: none; border: none;
 }
 .app-topbar .breadcrumbs { padding: 0; }
 @media (max-width: 900px) {
@@ -327,7 +334,10 @@ svg { flex: 0 0 auto; }
   --accent-soft: rgba(255, 255, 255, .14);
   display: flex; align-items: center; gap: .5rem;
   padding: .8rem 1rem; border-bottom: 1px solid var(--line);
-  background: #6a0814;
+  /* Same lighter-top/darker-bottom red gradient as .sidebar, in place of
+     the old flat #6a0814 — one red-fill treatment across the app instead
+     of two. */
+  background: linear-gradient(180deg, #a4243f, #6a0814);
   /* Inset by the panel's 1px border so the band meets the rounded corners cleanly. */
   border-radius: calc(var(--r-lg) - 1px) calc(var(--r-lg) - 1px) 0 0;
 }

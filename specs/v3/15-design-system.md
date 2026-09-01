@@ -114,6 +114,20 @@ was fixed; and `.brand-link`/`.brand b` read `color: inherit` rather than
 an explicit `var(--ink)`, so `.sidebar` itself now sets `color: var(--ink)`
 for them to inherit correctly.
 
+The same lighter-top/darker-bottom red gradient replaces `.ph`'s old flat
+`#6a0814` fill (the blood-red header band inside `.card-panel`) — one red
+surface treatment across the app rather than two competing ones. Left
+alone on purpose: small controls that use `--accent` as a solid fill
+(`.btn`, chips, badges, the progress-bar mark) — those are UI elements
+reusing the accent color, not surfaces this gradient treatment was aimed
+at, and gradient-filling something that small would just look noisy.
+
+`.app-topbar` floats the same way as `.sidebar` — 1rem margin, `top: 1rem`
+sticky offset — but deliberately keeps **no fill and no border**: it's the
+breadcrumbs and account menu repositioned with room around them, not a
+second panel next to the sidebar's. `--blur` is dropped too, since
+there's no background left for it to frost.
+
 ## Live agent toast {#live-agent-toast}
 
 New this version. `consult.html`'s composer shows an `md-snackbar` (MD3's
