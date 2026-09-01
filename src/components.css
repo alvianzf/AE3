@@ -33,6 +33,23 @@ md-outlined-button, md-text-button {
   --md-text-button-hover-icon-color: var(--md-sys-color-on-primary);
 }
 
+/* MD3's default field density (16px content, 16px top/bottom padding,
+   210px min-width on select) reads oversized next to this app's own
+   15px body text and compact .btn/.data-table density — flagged directly
+   ("the inputs are too big compared to the rest of the elements"). Tuned
+   down globally rather than per-page. */
+md-outlined-text-field, md-outlined-select {
+  --md-outlined-field-top-space: 10px;
+  --md-outlined-field-bottom-space: 10px;
+  --md-outlined-field-content-size: .88rem;
+  --md-outlined-field-label-text-size: .88rem;
+  --md-outlined-field-label-text-populated-size: .72rem;
+  --md-outlined-select-text-field-input-text-size: .88rem;
+  --md-outlined-select-text-field-input-text-line-height: 1.2rem;
+  --md-outlined-select-text-field-label-text-size: .88rem;
+  --md-outlined-select-text-field-label-text-populated-size: .72rem;
+}
+
 /* Glass finish (specs/v3/15-design-system.md#glass-finish): the popover a
    menu-backed component opens (currently md-select's md-menu) should read
    as the same frosted-glass surface as .card-panel, not Material Web's flat

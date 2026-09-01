@@ -41,6 +41,27 @@ project did not previously have.
   replaces the hand-written `style.css` custom properties. Light/dark
   handled by MD3's built-in scheme switching, not a bespoke media-query set.
 
+## Field density
+
+MD3's default text-field/select sizing (16px content, 16px top/bottom
+padding) reads oversized next to this app's own 15px body text and
+compact `.btn`/`.data-table` density — flagged directly against the
+[16](16-users-page-redesign.md) redesign's Status/Plan filters. Tuned down
+globally in `components.css` (`--md-outlined-field-top-space`/
+`-bottom-space`/`-content-size`, plus `md-outlined-select`'s separate
+`--md-outlined-select-text-field-*` namespace for the same properties —
+select doesn't expose the field-level tokens directly) rather than
+per-page, since every migrated page uses the same fields.
+
+Same redesign surfaced a second, unrelated bug: `md-outlined-select`'s
+shadow-DOM host sets `min-width: 210px` unconditionally
+(`@material/web/select/internal/shared-styles.css`) — a `.filter-row`
+grid track narrower than that doesn't shrink it, so two adjacent selects
+overflow into each other instead of respecting the grid. Plain
+`<select>` never had this problem (`.filter-row select { min-width: 0 }`
+already existed); `.filter-row md-outlined-select { min-width: 0; width:
+100% }` gives it the same treatment.
+
 ## Glass finish
 
 The hand-built shell (`.card-panel`, `.topbar`) has always used a frosted-glass

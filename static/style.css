@@ -676,6 +676,13 @@ label.lbl:first-child { margin-top: 0; }
 .filter-row { display: grid; gap: .4rem; align-items: center;
               grid-template-columns: repeat(4, minmax(0, 1fr)) auto; }
 .filter-row select { min-width: 0; }
+/* md-outlined-select's shadow-DOM :host sets min-width: 210px unconditionally
+   (node_modules/@material/web/select/internal/shared-styles.css) — a grid
+   track narrower than that (e.g. admin/users.html's Status/Plan filters)
+   doesn't shrink it, so it overflows into the next column instead. Plain
+   <select> never had this problem; md-outlined-select needs the explicit
+   override plain selects get for free. */
+.filter-row md-outlined-select { min-width: 0; width: 100%; }
 @media (max-width: 760px) {
   .filter-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .filter-row .iconbtn { grid-column: 1 / -1; width: 100%; }
