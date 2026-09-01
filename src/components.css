@@ -32,3 +32,11 @@ md-outlined-button, md-text-button {
   --md-text-button-hover-label-text-color: var(--md-sys-color-on-primary);
   --md-text-button-hover-icon-color: var(--md-sys-color-on-primary);
 }
+
+/* Glass finish (specs/v3/15-design-system.md#glass-finish): the popover a
+   menu-backed component opens (currently md-select's md-menu) should read
+   as the same frosted-glass surface as .card-panel, not Material Web's flat
+   opaque default. No blur here — .items has no exposed ::part to hook it. */
+md-menu {
+  --md-menu-container-color: var(--glass);
+}

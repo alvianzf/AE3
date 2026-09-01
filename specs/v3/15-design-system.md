@@ -41,6 +41,40 @@ project did not previously have.
   replaces the hand-written `style.css` custom properties. Light/dark
   handled by MD3's built-in scheme switching, not a bespoke media-query set.
 
+## Glass finish
+
+The hand-built shell (`.card-panel`, `.topbar`) has always used a frosted-glass
+treatment — `--glass`/`--glass-2`/`--glass-line`/`--blur` in `style.css`,
+translucent surfaces over the botanical backdrop, kept high-opacity so
+clinical text stays legible. MD3 components didn't participate: any popover
+surface a component opens (currently just `md-menu`, backing
+`md-outlined-select` on `contacts.html`/`users.html`) fell back to Material
+Web's own flat, opaque `surface-container` color, which reads as a different
+product against the glass panel it opens from.
+
+`components.css` now points `md-menu`'s exposed container-color custom
+property at the same `--glass` token everything else already uses:
+
+```css
+md-menu {
+  --md-menu-container-color: var(--glass);
+}
+```
+
+**Known gap, not silently dropped**: `--blur`'s `backdrop-filter` can't be
+applied this way. Material Web's menu doesn't expose a `::part` for the
+element the container color lands on (`.items`, inside closed shadow DOM),
+so there's no outside hook to blur through. The popover is translucent and
+tinted to match, but not optically blurred like `.card-panel`. Revisit if a
+future Material Web release adds that `::part`, or if this is worth a
+`::part`-less workaround (e.g. wrapping the trigger in a blurred backdrop
+element) when more MD3 surface components (`md-dialog`, `md-elevated-card`,
+`md-snackbar`) are migrated in and hit the same gap.
+
+Buttons and outlined text fields are unaffected on purpose: filled buttons'
+solid container color is the accent, not a glass surface, and outlined text
+fields already have a transparent container by default — nothing to change.
+
 ## What's replaced, page by page
 
 Every existing custom component maps to a Material Web equivalent: buttons,
