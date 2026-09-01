@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Users · Clinic</title>
-  <link rel="stylesheet" href="/static/style.css?v=14">
+  <link rel="stylesheet" href="/static/style.css?v=15">
   <link rel="stylesheet" href="/static/dist/theme.css">
   <link rel="stylesheet" href="/static/dist/components.css">
   <link rel="stylesheet"
@@ -29,7 +29,7 @@
       <span class="brand">
         <b>Clinic</b>
         <span class="sub">users</span>
-        
+
       </span>
     </a>
     <nav class="sidebar-nav">
@@ -72,88 +72,109 @@
     </header>
 
 <main class="pane on" style="max-width:60rem;margin:0 auto">
-  <section class="card-panel" id="stats-panel">
-    <div class="ph botanic"><h2 style="flex:1">Site statistics</h2></div>
-    <div class="pb">
-      <table class="tbl" id="site-stats"><tbody></tbody></table>
-    </div>
-  </section>
+  <!-- specs/v3/16-users-page-redesign.md: tabs replace the old stacked
+       panels (site stats / practitioners / admins) — one audience's task
+       owns the page at a time. The Admins tab only unhides for a
+       superadmin session (see load(), below). -->
+  <div class="tab-bar" role="tablist" aria-label="Users">
+    <button class="tab-btn active" id="tab-practitioners" type="button" role="tab" aria-selected="true">Practitioners</button>
+    <button class="tab-btn" id="tab-admins" type="button" role="tab" aria-selected="false" hidden>Admins</button>
+  </div>
 
-  <section class="card-panel" id="practitioners-panel" style="margin-top:1rem">
+  <section class="card-panel" id="practitioners-panel">
     <div class="ph botanic">
       <h2 style="flex:1">Practitioners</h2>
       <span class="count" id="p-count"></span>
     </div>
     <div class="pb tight">
-      <div style="padding:.6rem">
-        <md-outlined-select id="p-filter" label="Filter by status">
+      <div class="filter-row" style="grid-template-columns:1fr 11rem auto;padding:.6rem">
+        <md-outlined-text-field id="p-search" label="Search name or email"></md-outlined-text-field>
+        <md-outlined-select id="p-filter" label="Status">
           <md-select-option value="" selected><div slot="headline">All statuses</div></md-select-option>
           <md-select-option value="pending"><div slot="headline">Pending</div></md-select-option>
           <md-select-option value="approved"><div slot="headline">Approved</div></md-select-option>
           <md-select-option value="rejected"><div slot="headline">Rejected</div></md-select-option>
           <md-select-option value="suspended"><div slot="headline">Suspended</div></md-select-option>
         </md-outlined-select>
+        <md-filled-button id="p-add-btn" type="button">+ Add practitioner</md-filled-button>
       </div>
       <div id="practitioners-list" class="scrollbox"></div>
-
-      <form id="practitioner-create-form" style="padding:.6rem;display:grid;gap:.4rem;margin-top:.4rem;border-top:1px solid var(--line)">
-        <p class="hint" style="margin:.4rem 0 0">Add a practitioner directly — they're
-          approved immediately, no review queue.</p>
-        <md-outlined-text-field id="np-name" label="Name" style="width:100%"></md-outlined-text-field>
-        <md-outlined-text-field id="np-email" type="email" label="Email" style="width:100%"></md-outlined-text-field>
-        <md-outlined-text-field id="np-password" type="password" label="Password" style="width:100%">
-          <md-icon-button toggle slot="trailing-icon" aria-label="Show password">
-            <md-icon>visibility</md-icon>
-            <md-icon slot="selected">visibility_off</md-icon>
-          </md-icon-button>
-        </md-outlined-text-field>
-        <md-outlined-text-field id="np-bio" type="textarea" rows="2" label="Bio (optional)"
-            style="width:100%"></md-outlined-text-field>
-        <div class="filter-row" style="grid-template-columns:1fr 1fr">
-          <md-outlined-text-field id="np-specialties" label="Specialties, comma separated"
-              style="width:100%"></md-outlined-text-field>
-          <md-outlined-text-field id="np-languages" label="Languages, comma separated"
-              style="width:100%"></md-outlined-text-field>
-        </div>
-        <div class="filter-row" style="grid-template-columns:1fr 1fr">
-          <md-outlined-text-field id="np-years" type="number" min="0" label="Years of experience"
-              style="width:100%"></md-outlined-text-field>
-          <md-outlined-text-field id="np-price" type="number" min="0" step="0.01"
-              label="Consultation price (USD)" style="width:100%"></md-outlined-text-field>
-        </div>
-        <md-filled-button id="np-create">Add practitioner</md-filled-button>
-      </form>
-      <div id="np-credentials-slot" style="padding:0 .6rem"></div>
     </div>
   </section>
 
-  <section class="card-panel" id="admins-panel" hidden style="margin-top:1rem">
+  <section class="card-panel" id="admins-panel" hidden>
     <div class="ph botanic">
       <h2 style="flex:1">Admins</h2>
     </div>
     <div class="pb tight">
       <p class="hint" style="padding:.6rem 0 0 .6rem">Superadmin only. At least one
         active superadmin always exists — the last one can't be demoted or suspended.</p>
+      <div style="padding:.6rem;display:flex;justify-content:flex-end">
+        <md-filled-button id="a-add-btn" type="button">+ Add admin</md-filled-button>
+      </div>
       <div id="admins-list" class="scrollbox"></div>
-      <form id="admin-create-form" style="padding:.6rem;display:grid;gap:.4rem;margin-top:.4rem;border-top:1px solid var(--line)">
-        <md-outlined-text-field id="na-name" label="Name" style="width:100%"></md-outlined-text-field>
-        <md-outlined-text-field id="na-email" type="email" label="Email" style="width:100%"></md-outlined-text-field>
-        <md-outlined-text-field id="na-password" type="password" label="Password" style="width:100%">
-          <md-icon-button toggle slot="trailing-icon" aria-label="Show password">
-            <md-icon>visibility</md-icon>
-            <md-icon slot="selected">visibility_off</md-icon>
-          </md-icon-button>
-        </md-outlined-text-field>
-        <md-outlined-select id="na-role" label="Role">
-          <md-select-option value="admin" selected><div slot="headline">admin</div></md-select-option>
-          <md-select-option value="superadmin"><div slot="headline">superadmin</div></md-select-option>
-        </md-outlined-select>
-        <md-filled-button id="na-create">Add admin</md-filled-button>
-      </form>
-      <div id="na-credentials-slot" style="padding:0 .6rem"></div>
     </div>
   </section>
 </main>
+
+<!-- specs/v3/16-users-page-redesign.md: creation moves from an
+     always-open inline form to a dialog opened by "+ Add ___", so
+     browsing the list and creating an account are no longer the same
+     view. -->
+<md-dialog id="np-dialog">
+  <div slot="headline">Add practitioner</div>
+  <div slot="content" style="display:grid;gap:.4rem">
+    <p class="hint" style="margin:0 0 .2rem">Added directly — approved immediately, no review queue.</p>
+    <md-outlined-text-field id="np-name" label="Name" style="width:100%"></md-outlined-text-field>
+    <md-outlined-text-field id="np-email" type="email" label="Email" style="width:100%"></md-outlined-text-field>
+    <md-outlined-text-field id="np-password" type="password" label="Password" style="width:100%">
+      <md-icon-button toggle slot="trailing-icon" aria-label="Show password">
+        <md-icon>visibility</md-icon>
+        <md-icon slot="selected">visibility_off</md-icon>
+      </md-icon-button>
+    </md-outlined-text-field>
+    <md-outlined-text-field id="np-bio" type="textarea" rows="2" label="Bio (optional)"
+        style="width:100%"></md-outlined-text-field>
+    <div class="filter-row" style="grid-template-columns:1fr 1fr">
+      <md-outlined-text-field id="np-specialties" label="Specialties, comma separated"
+          style="width:100%"></md-outlined-text-field>
+      <md-outlined-text-field id="np-languages" label="Languages, comma separated"
+          style="width:100%"></md-outlined-text-field>
+    </div>
+    <div class="filter-row" style="grid-template-columns:1fr 1fr">
+      <md-outlined-text-field id="np-years" type="number" min="0" label="Years of experience"
+          style="width:100%"></md-outlined-text-field>
+      <md-outlined-text-field id="np-price" type="number" min="0" step="0.01"
+          label="Consultation price (USD)" style="width:100%"></md-outlined-text-field>
+    </div>
+  </div>
+  <div slot="actions">
+    <md-text-button id="np-cancel" type="button">Cancel</md-text-button>
+    <md-filled-button id="np-create" type="button">Add practitioner</md-filled-button>
+  </div>
+</md-dialog>
+
+<md-dialog id="na-dialog">
+  <div slot="headline">Add admin</div>
+  <div slot="content" style="display:grid;gap:.4rem">
+    <md-outlined-text-field id="na-name" label="Name" style="width:100%"></md-outlined-text-field>
+    <md-outlined-text-field id="na-email" type="email" label="Email" style="width:100%"></md-outlined-text-field>
+    <md-outlined-text-field id="na-password" type="password" label="Password" style="width:100%">
+      <md-icon-button toggle slot="trailing-icon" aria-label="Show password">
+        <md-icon>visibility</md-icon>
+        <md-icon slot="selected">visibility_off</md-icon>
+      </md-icon-button>
+    </md-outlined-text-field>
+    <md-outlined-select id="na-role" label="Role">
+      <md-select-option value="admin" selected><div slot="headline">admin</div></md-select-option>
+      <md-select-option value="superadmin"><div slot="headline">superadmin</div></md-select-option>
+    </md-outlined-select>
+  </div>
+  <div slot="actions">
+    <md-text-button id="na-cancel" type="button">Cancel</md-text-button>
+    <md-filled-button id="na-create" type="button">Add admin</md-filled-button>
+  </div>
+</md-dialog>
 
 <div id="toasts" class="toasts" aria-live="polite"></div>
 <script src="/static/shared.js"></script>
@@ -165,12 +186,51 @@ const STATUS_ACTIONS = {
   suspended: [['approve', 'Reactivate']],
 };
 
-async function loadSiteStats() {
-  const s = await api('/admin/stats');
-  $('site-stats').querySelector('tbody').innerHTML =
-    `<tr><td>Directory / profile views</td><td>${s.total_views}</td></tr>
-     <tr><td>Contact form submissions</td><td>${s.total_contacts}</td></tr>`;
+/* ── Tabs ────────────────────────────────────────────────────────────── */
+function setTab(tab) {
+  const wantAdmins = tab === 'admins' && !$('tab-admins').hidden;
+  $('practitioners-panel').hidden = wantAdmins;
+  $('admins-panel').hidden = !wantAdmins;
+  $('tab-practitioners').classList.toggle('active', !wantAdmins);
+  $('tab-admins').classList.toggle('active', wantAdmins);
+  $('tab-practitioners').setAttribute('aria-selected', String(!wantAdmins));
+  $('tab-admins').setAttribute('aria-selected', String(wantAdmins));
 }
+$('tab-practitioners').onclick = () => setTab('practitioners');
+$('tab-admins').onclick = () => setTab('admins');
+
+/* One-time credentials reveal, inserted right after the row it's about
+   rather than in a fixed page-bottom slot (specs/v3/16). */
+function showCredentialsAfter(anchorLi, email, password) {
+  const div = document.createElement('div');
+  div.className = 'card-panel';
+  div.style.cssText = 'padding:.7rem;margin:.4rem 0;border-color:var(--accent)';
+  div.innerHTML = `<div style="display:flex;align-items:center;gap:.8rem;flex-wrap:wrap">
+    <div class="grow">
+      <b>Account created</b> — this password won't be shown again. Copy it now
+      and pass it to them directly.
+      <div class="muted small" style="margin-top:.3rem">
+        <span>${esc(email)}</span> · <code>${esc(password)}</code>
+      </div>
+    </div>
+    <button class="btn ghost sm" data-nc-copy type="button">Copy password</button>
+    <button class="btn ghost sm" data-nc-dismiss type="button">Dismiss</button>
+  </div>`;
+  anchorLi.after(div);
+  div.querySelector('[data-nc-copy]').onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(password);
+      toast('Password copied');
+    } catch {
+      toast('Could not copy — select and copy manually', 'bad');
+    }
+  };
+  div.querySelector('[data-nc-dismiss]').onclick = () => { div.remove(); };
+  div.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+/* ── Practitioners ───────────────────────────────────────────────────── */
+let allPractitioners = [];
 
 function practitionerRow(p) {
   const actions = (STATUS_ACTIONS[p.status] || [])
@@ -190,12 +250,19 @@ function practitionerRow(p) {
   </li>`;
 }
 
-async function loadPractitioners() {
-  const status = $('p-filter').value;
-  const list = await api('/admin/practitioners' + (status ? '?status=' + status : ''));
+function renderPractitioners() {
+  const q = $('p-search').value.trim().toLowerCase();
+  const list = q
+    ? allPractitioners.filter((p) => p.name.toLowerCase().includes(q) || p.email.toLowerCase().includes(q))
+    : allPractitioners;
   $('p-count').textContent = list.length || '';
-  $('practitioners-list').innerHTML = `<ul class="rows">${list.map(practitionerRow).join('')}</ul>`
-    || empty('No practitioners', 'None match this filter.');
+  // `<ul class="rows"></ul>` is always truthy even with zero rows, so the
+  // `||` fallback this originally used for the empty state never actually
+  // ran (pre-existing bug, hit far more now that search can legitimately
+  // return zero results) — check list.length instead.
+  $('practitioners-list').innerHTML = list.length
+    ? `<ul class="rows">${list.map(practitionerRow).join('')}</ul>`
+    : empty('No practitioners', q ? 'None match this search.' : 'None match this filter.');
   // Fan-out, one call per row — fine at 10-20 practitioner scale
   // (specs/v2/02-data-model.md already makes this call for client-count).
   list.forEach(async (p) => {
@@ -227,37 +294,21 @@ async function loadPractitioners() {
     };
   });
 }
-$('p-filter').onchange = loadPractitioners;
 
-// Anchored right after the form that created the account, not page-top —
-// showing it shouldn't reflow Site statistics or the Practitioners list
-// (specs/v2/14-ux-findings-v2.7.md A4).
-function showCredentials(slotId, email, password) {
-  const slot = $(slotId);
-  slot.innerHTML = `<div class="card-panel" style="padding:.7rem;margin-top:.6rem;border-color:var(--accent)">
-    <div style="display:flex;align-items:center;gap:.8rem;flex-wrap:wrap">
-      <div class="grow">
-        <b>Account created</b> — this password won't be shown again. Copy it now
-        and pass it to them directly.
-        <div class="muted small" style="margin-top:.3rem">
-          <span>${esc(email)}</span> · <code>${esc(password)}</code>
-        </div>
-      </div>
-      <button class="btn ghost sm" data-nc-copy type="button">Copy password</button>
-      <button class="btn ghost sm" data-nc-dismiss type="button">Dismiss</button>
-    </div>
-  </div>`;
-  slot.querySelector('[data-nc-copy]').onclick = async () => {
-    try {
-      await navigator.clipboard.writeText(password);
-      toast('Password copied');
-    } catch {
-      toast('Could not copy — select and copy manually', 'bad');
-    }
-  };
-  slot.querySelector('[data-nc-dismiss]').onclick = () => { slot.innerHTML = ''; };
-  slot.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+async function loadPractitioners() {
+  const status = $('p-filter').value;
+  allPractitioners = await api('/admin/practitioners' + (status ? '?status=' + status : ''));
+  renderPractitioners();
 }
+$('p-filter').onchange = loadPractitioners;
+$('p-search').oninput = renderPractitioners;
+
+function resetPractitionerForm() {
+  ['np-name','np-email','np-password','np-bio','np-specialties','np-languages','np-years','np-price']
+    .forEach((id) => { $(id).value = ''; });
+}
+$('p-add-btn').onclick = () => { resetPractitionerForm(); $('np-dialog').show(); };
+$('np-cancel').onclick = () => $('np-dialog').close();
 
 $('np-create').onclick = async () => {
   const name = $('np-name').value.trim();
@@ -267,18 +318,18 @@ $('np-create').onclick = async () => {
   const splitList = (v) => v.split(',').map((s) => s.trim()).filter(Boolean);
   const priceUsd = parseFloat($('np-price').value || '0');
   try {
-    await api('/admin/practitioners', json('POST', {
+    const created = await api('/admin/practitioners', json('POST', {
       name, email, password, bio: $('np-bio').value.trim(),
       specialties: splitList($('np-specialties').value),
       languages: splitList($('np-languages').value),
       years_experience: parseInt($('np-years').value || '0', 10),
       consultation_price_cents: Math.round(priceUsd * 100),
     }));
-    showCredentials('np-credentials-slot', email, password);
-    ['np-name','np-email','np-password','np-bio','np-specialties','np-languages','np-years','np-price']
-      .forEach((id) => { $(id).value = ''; });
+    $('np-dialog').close();
     toast('Practitioner added');
-    loadPractitioners();
+    await loadPractitioners();
+    const row = $('practitioners-list').querySelector(`[data-id="${created.id}"]`);
+    if (row) showCredentialsAfter(row, email, password);
   } catch (e) { toast(e.message, 'bad'); }
 };
 
@@ -327,6 +378,12 @@ async function loadAdmins(currentId) {
   });
 }
 
+$('a-add-btn').onclick = () => {
+  $('na-name').value = ''; $('na-email').value = ''; $('na-password').value = '';
+  $('na-dialog').show();
+};
+$('na-cancel').onclick = () => $('na-dialog').close();
+
 $('na-create').onclick = async () => {
   const name = $('na-name').value.trim();
   const email = $('na-email').value.trim();
@@ -334,12 +391,13 @@ $('na-create').onclick = async () => {
   const role = $('na-role').value;
   if (!name || !email || !password) { toast('Name, email and password are required', 'bad'); return; }
   try {
-    await api('/superadmin/admins', json('POST', { name, email, password, role }));
-    showCredentials('na-credentials-slot', email, password);
-    $('na-name').value = ''; $('na-email').value = ''; $('na-password').value = '';
+    const created = await api('/superadmin/admins', json('POST', { name, email, password, role }));
+    $('na-dialog').close();
     toast('Admin created');
     const session = await api('/auth/me');
-    loadAdmins(session.id);
+    await loadAdmins(session.id);
+    const row = $('admins-list').querySelector(`[data-id="${created.id}"]`);
+    if (row) showCredentialsAfter(row, email, password);
   } catch (e) { toast(e.message, 'bad'); }
 };
 
@@ -349,12 +407,17 @@ async function load() {
   const session = await requireRole('admin');
   loadAdminNotifications();
   if (!session) return;
-  loadSiteStats();
   loadPractitioners();
+
+  const params = new URLSearchParams(location.search);
+  const status = params.get('status');
+  if (status) $('p-filter').value = status;
+
   if (session.admin_role === 'superadmin') {
-    $('admins-panel').hidden = false;
+    $('tab-admins').hidden = false;
     loadAdmins(session.id);
   }
+  setTab(params.get('tab') || 'practitioners');
 }
 load().catch((e) => toast(e.message, 'bad'));
 </script>

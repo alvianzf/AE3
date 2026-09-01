@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dashboard · Clinic</title>
-  <link rel="stylesheet" href="/static/style.css?v=14">
+  <link rel="stylesheet" href="/static/style.css?v=15">
 </head>
 <body>
 
@@ -108,7 +108,7 @@ function pendingRow(p) {
   return `<li class="plain" style="display:block">
     <div style="display:flex;justify-content:space-between;gap:.5rem;align-items:baseline;flex-wrap:wrap">
       <span class="nm">${esc(p.name)} <span class="muted xs">${esc(p.email)}</span></span>
-      <a class="btn ghost sm" href="/admin/users">Review</a>
+      <a class="btn ghost sm" href="/admin/users?tab=practitioners&status=pending">Review</a>
     </div>
   </li>`;
 }

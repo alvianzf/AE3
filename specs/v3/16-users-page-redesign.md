@@ -2,9 +2,24 @@
 
 Requested directly ("the Users page is weird and stupid, go over it with a
 Product Manager and redesign the whole experience") — not part of the
-original v3 scope, added alongside it. Spec only: this document is the
-redesign proposal, not yet implemented. See [TODO.md](TODO.md) once work
-against it starts.
+original v3 scope, added alongside it.
+
+**Status: implemented.** `static/admin/users.html`, `src/pages/users.js`,
+`static/style.css` (`.tab-bar`/`.tab-btn`), and `static/admin/dashboard.html`
+(the "Review" link) all match the redesign below. Verified locally with a
+Playwright smoke pass: tab switching, client-side search (including the
+empty-state message), the practitioner/admin create dialogs, and the
+credentials panel landing under the new row.
+
+One bug found and fixed along the way, not part of the original audit:
+`renderPractitioners()`'s empty-state fallback
+(`` `<ul class="rows">...</ul>` || empty(...) ``) never actually ran —
+a `<ul>` wrapper is truthy even with zero rows inside it — so a
+no-results search or filter silently rendered an empty list instead of
+"None match this search/filter." Pre-existing (the status-filter version
+of this code had the same bug), but search made it far more likely to
+hit in practice, so it's fixed alongside this redesign rather than
+filed separately.
 
 Acting as PM, this is a walkthrough of `static/admin/users.html` and
 `static/admin/dashboard.html` as they actually ship, against

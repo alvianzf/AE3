@@ -171,6 +171,19 @@ svg { flex: 0 0 auto; }
 .breadcrumbs .sep { opacity: .5; }
 .breadcrumbs .here { color: var(--ink); font-weight: 600; }
 
+/* Tabs (specs/v3/16-users-page-redesign.md): switches which of two
+   audience-scoped panels owns the page, e.g. /admin/users' Practitioners
+   vs Admins. */
+.tab-bar { display: flex; gap: .3rem; margin-bottom: .8rem; border-bottom: 1px solid var(--line); }
+.tab-btn {
+  padding: .55rem 1rem; margin-bottom: -1px; border: none; border-bottom: 2px solid transparent;
+  background: none; cursor: pointer; font: inherit; font-size: .88rem; font-weight: 600;
+  color: var(--muted);
+}
+.tab-btn:hover { color: var(--ink); }
+.tab-btn.active { color: var(--accent-ink); border-bottom-color: var(--accent); }
+.tab-btn[hidden] { display: none; }
+
 /* ── App shell: sidebar nav ─────────────────────────────────────────────────
    Page navigation lives in a left aside; the topbar is reduced to
    breadcrumbs + the account/logout menu only. */
