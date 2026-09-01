@@ -58,6 +58,9 @@ coverage dashboard, graph statistics, audit trail. See
 [v1/01-overview.md](../v1/01-overview.md) and [v1/03-ai-team.md](../v1/03-ai-team.md)
 for the underlying pipeline — it is not being rebuilt, only continuing to
 serve every Pro practitioner's consultations instead of one shared portal's.
+See [18 · Document ingest upgrade](18-document-ingest-upgrade.md) for a
+proposed staged-upload/web-scraper extension to this flow (spec only, not
+yet implemented).
 
 The source requirement for this version says "all 4 LLM steps" — this is
 shorthand for the four roles named in the original product deck (**Reader,
