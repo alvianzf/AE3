@@ -65,6 +65,7 @@ copied byte-for-byte from v2; nothing in their content changed this version.
 ## New this version
 
 [15 · Design system](15-design-system.md),
-[16 · `/admin/users` redesign](16-users-page-redesign.md), [TODO.md](TODO.md).
+[16 · `/admin/users` redesign](16-users-page-redesign.md),
+[17 · Full-app redesign](17-full-app-redesign.md), [TODO.md](TODO.md).
 
 See [`CHANGELOG.md`](../CHANGELOG.md#v3) for the why behind each change.

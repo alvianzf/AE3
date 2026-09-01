@@ -1,5 +1,10 @@
 # 04 · Admin portal
 
+See also [17 · Full-app redesign](17-full-app-redesign.md) for a PM/UX
+walkthrough proposing a data-table treatment for the practitioner/admin
+lists and dashboard-to-users deep links (`/admin/users` itself, already
+redesigned in [16](16-users-page-redesign.md), is not re-litigated there).
+
 The operator's tool. **Revised 2026-08-13:** this originally shipped as one
 admin role with no sub-roles or permission tiers. A two-tier hierarchy
 replaced that after deploy — see [§0](#0-superadmin-vs-admin) — because

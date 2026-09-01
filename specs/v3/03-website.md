@@ -1,5 +1,9 @@
 # 03 · Website
 
+See also [17 · Full-app redesign](17-full-app-redesign.md) for a PM/UX
+walkthrough proposing fixes to the public site's shell inconsistency,
+directory search, and coach-detail CTA hierarchy.
+
 The public surface. No login required except to submit a practitioner
 signup or a client signup — browsing the directory and viewing a coach's
 profile is open to anyone.

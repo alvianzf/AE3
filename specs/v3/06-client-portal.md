@@ -1,5 +1,10 @@
 # 06 · Client portal
 
+See also [17 · Full-app redesign](17-full-app-redesign.md) for a PM/UX
+walkthrough flagging that `client/questionnaire.html` — this document's
+"first login" page — still uses the pre-redesign page shell, unlike its
+sibling client pages.
+
 Clinic speaks to a client directly for the first time in this version — v1
 was explicit that "Clinic never speaks to a patient." That constraint is
 gone here.

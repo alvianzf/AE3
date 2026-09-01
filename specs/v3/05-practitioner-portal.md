@@ -1,5 +1,9 @@
 # 05 · Practitioner portal
 
+See also [17 · Full-app redesign](17-full-app-redesign.md) for a PM/UX
+walkthrough proposing an `md-dialog` add-client flow, `md-tabs` on
+client-detail, and a first-run onboarding checklist.
+
 What a practitioner can do depends entirely on plan. There is no third tier.
 
 ## Basic plan
