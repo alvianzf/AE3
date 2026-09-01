@@ -26,6 +26,12 @@ holds exactly the two documents that are the actual proposal:
 - [**02 · Open questions and risk ledger**](02-open-questions.md) — the
   tradeoffs, unverified assumptions, and reversible-vs-expensive decisions
   a reviewer needs before saying go.
+- [**03 · Visual redesign**](03-visual-redesign.md) — the composition-level
+  redesign 01 doesn't attempt: a two-tier surface-weight system (one
+  full-treatment panel per screen, everything else quieter) that resolves
+  the "keep the gradient" vs. "less cramped" tension directly, applied
+  concretely per portal/screen, plus 01's spacing scale actually applied
+  to real values instead of just proposed.
 
 ## What this does not change
 

@@ -67,18 +67,22 @@ Everything this rewrite is presentation-layer only, same framing
   ([v3/08](../v3/08-api.md)), `app/auth.py`'s cookie-session mechanism,
   Neo4j/SQLite/vault architecture ([v3/02](../v3/02-data-model.md)). FastAPI
   stays the only thing that talks to Neo4j, SQLite, and Anthropic.
-- **The visual identity.** Explicitly kept per the request: the floating
-  red gradient sidebar (`.sidebar`, lighter top `rgba(203,44,68,.88)` to
-  darker bottom `rgba(64,6,16,.94)`, [v3/15 §Glass finish](../v3/15-design-system.md#glass-finish)),
-  the unfilled floating topbar, frosted-glass `.card-panel`s over the
-  botanical backdrop (`--glass`/`--blur` tokens, the drifting radial-gradient
-  wash, the leaf-pattern SVG), `.ph.botanic`'s red header bands, the `.step`
-  numbered markers, `.vine`/`.leaf` dividers, the `.leafmark` watermark, the
-  full motion layer (`liftIn`/`slideL`/`popIn`/`sway`/`breathe`, all
+- **The visual identity's tokens.** Explicitly kept per the request: the
+  floating red gradient sidebar (`.sidebar`, lighter top
+  `rgba(203,44,68,.88)` to darker bottom `rgba(64,6,16,.94)`,
+  [v3/15 §Glass finish](../v3/15-design-system.md#glass-finish)), the
+  unfilled floating topbar, the glass/blur mechanism, the botanical
+  backdrop, `.ph.botanic`'s red gradient, the `.step` numbered markers,
+  `.vine`/`.leaf` dividers, the `.leafmark` watermark, the full motion
+  layer (`liftIn`/`slideL`/`popIn`/`sway`/`breathe`, all
   `prefers-reduced-motion`-gated). These are re-implemented as Svelte
   components/CSS custom properties, not redesigned — see
-  [§Visual system](#visual-system-keeping-the-identity-fixing-the-density) for exactly what's kept
-  literally vs. what's restructured to fix "cramped."
+  [§Visual system](#visual-system-keeping-the-identity-fixing-the-density)
+  for exactly what's kept literally vs. what's restructured to fix
+  "cramped." **What's not kept literally: which panels on which screens
+  get this treatment, and at what visual weight** — see
+  [03 · Visual redesign](03-visual-redesign.md) for the composition-level
+  redesign this document doesn't attempt.
 
 ## What does change
 
@@ -484,10 +488,14 @@ in this version of the plan, since nothing about nginx changes.
   stands unchanged; this is a client-only rewrite.
 - **Product scope changes** — no booking/scheduling/telehealth/video,
   unchanged from [v3/01](../v3/01-overview.md#out-of-scope--deliberately).
-- **A visual redesign** — the gradient/glass/botanical identity is kept
-  literally, not reinterpreted; what changes is density (fixed structurally)
-  and what the identity is built out of (Svelte components + plain CSS
-  custom properties instead of MD3 web components).
+- **Reinterpreting the identity's tokens** — colors, the gradient formula,
+  `--glass`/`--blur` values, the botanical assets stay literal; what
+  changes is what the identity is built out of (Svelte components + plain
+  CSS custom properties instead of MD3 web components) and, per
+  [03 · Visual redesign](03-visual-redesign.md), *which panels get the
+  full treatment vs. a quieter one* — a composition-level redesign this
+  document doesn't attempt, no longer a non-goal of the overall `v4`
+  proposal.
 - **The four-portal IA** — one deliberate exception (`directory.html` as
   site root, [§Information architecture](#information-architecture-file-based-routing-over-the-existing-four-portals)),
   everything else routes exactly where it does today.
