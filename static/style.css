@@ -171,19 +171,6 @@ svg { flex: 0 0 auto; }
 .breadcrumbs .sep { opacity: .5; }
 .breadcrumbs .here { color: var(--ink); font-weight: 600; }
 
-/* Tabs (specs/v3/16-users-page-redesign.md): switches which of two
-   audience-scoped panels owns the page, e.g. /admin/users' Practitioners
-   vs Admins. */
-.tab-bar { display: flex; gap: .3rem; margin-bottom: .8rem; border-bottom: 1px solid var(--line); }
-.tab-btn {
-  padding: .55rem 1rem; margin-bottom: -1px; border: none; border-bottom: 2px solid transparent;
-  background: none; cursor: pointer; font: inherit; font-size: .88rem; font-weight: 600;
-  color: var(--muted);
-}
-.tab-btn:hover { color: var(--ink); }
-.tab-btn.active { color: var(--accent-ink); border-bottom-color: var(--accent); }
-.tab-btn[hidden] { display: none; }
-
 /* ── App shell: sidebar nav ─────────────────────────────────────────────────
    Page navigation lives in a left aside; the topbar is reduced to
    breadcrumbs + the account/logout menu only. */
@@ -728,6 +715,33 @@ label.lbl:first-child { margin-top: 0; }
 .tbl td:not(:first-child) { text-align: right; color: var(--muted);
                             font-variant-numeric: tabular-nums; }
 .tbl tr:last-child td { border-bottom: none; }
+.tbl a { color: var(--accent-ink); text-decoration: none; }
+.tbl a:hover { text-decoration: underline; }
+
+/* Real data tables (specs/v3/17-full-app-redesign.md X3) for collections
+   with fixed columns meant to be scanned/sorted/compared row-by-row —
+   .tbl above is for the two static two-column stat tables only, not
+   interactive rows with actions. No MD3 table component exists, so this
+   is a plain <table> styled against the same tokens as everything else,
+   evolved from .tbl rather than a new visual language. Wrap in
+   `.scroll-x` on narrow viewports (already used elsewhere for wide
+   content) rather than letting the page scroll horizontally. */
+.data-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+.data-table th {
+  text-align: left; padding: .5rem .6rem; font-size: .68rem; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--muted); font-weight: 700;
+  border-bottom: 1px solid var(--line-2); white-space: nowrap;
+}
+.data-table th.sortable { cursor: pointer; user-select: none; }
+.data-table th.sortable:hover { color: var(--ink); }
+.data-table th .sort-arrow { display: inline-block; margin-left: .25rem; opacity: .35; font-size: .8em; }
+.data-table th.sorted .sort-arrow { opacity: 1; color: var(--accent-ink); }
+.data-table td { padding: .55rem .6rem; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.data-table tbody tr:last-child td { border-bottom: none; }
+.data-table tbody tr:hover { background: var(--panel-2); }
+.data-table td.actions { text-align: right; white-space: nowrap; }
+.data-table td.num { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+
 .bar { height: 3px; background: var(--accent-soft); border-radius: 99px; }
 .bar i { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
 

@@ -8,6 +8,64 @@ const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const qs = (name) => new URLSearchParams(location.search).get(name);
 
+/* .data-table sorting (specs/v3/17-full-app-redesign.md X3) — client-side
+   only, over whatever array the caller already has in memory (same "fine
+   at this scale" reasoning already used for search/filtering elsewhere).
+   `state` is a plain {key, dir} object the caller owns and passes back in;
+   `onChange` re-renders using it. Shared across every .data-table instead
+   of copy-pasted per page. */
+function wireSortableHeaders(theadEl, state, onChange) {
+  theadEl.querySelectorAll('th.sortable').forEach((th) => {
+    th.onclick = () => {
+      const key = th.dataset.sort;
+      state.dir = state.key === key ? -state.dir : 1;
+      state.key = key;
+      theadEl.querySelectorAll('th.sortable').forEach((t) => {
+        t.classList.toggle('sorted', t === th);
+        const arrow = t.querySelector('.sort-arrow');
+        if (arrow) arrow.textContent = t === th && state.dir === -1 ? '▴' : '▾';
+      });
+      onChange();
+    };
+  });
+}
+
+// Count-up animation for dashboard stat numbers (specs/v3/17-full-app-
+// redesign.md X5) — every other part of the motion system animates things
+// appearing on the page; the numbers a user actually opens a dashboard to
+// check rendered instantly. Cubic ease-out, same restraint (short,
+// respects prefers-reduced-motion) as the rest of style.css's motion
+// layer. Call after setting innerHTML on a root containing
+// `<span data-count-to="N">0</span>` elements.
+function animateCounts(root) {
+  root.querySelectorAll('[data-count-to]').forEach((el) => {
+    const target = +el.dataset.countTo;
+    if (!target || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      el.textContent = target; return;
+    }
+    const start = performance.now();
+    const dur = 380;
+    function step(now) {
+      const t = Math.min(1, (now - start) / dur);
+      el.textContent = Math.round(target * (1 - Math.pow(1 - t, 3)));
+      if (t < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  });
+}
+
+function sortRows(list, state) {
+  if (!state.key) return list;
+  const copy = [...list];
+  copy.sort((a, b) => {
+    const av = a[state.key];
+    const bv = b[state.key];
+    if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * state.dir;
+    return String(av ?? '').localeCompare(String(bv ?? '')) * state.dir;
+  });
+  return copy;
+}
+
 async function api(path, opts = {}) {
   const res = await fetch('/api' + path, opts);
   if (!res.ok) {

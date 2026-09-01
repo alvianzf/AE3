@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>My clients · Clinic</title>
-  <link rel="stylesheet" href="/static/style.css?v=15">
+  <link rel="stylesheet" href="/static/style.css?v=16">
   <link rel="stylesheet" href="/static/dist/theme.css">
   <link rel="stylesheet" href="/static/dist/components.css">
   <script type="module" src="/static/dist/clients.js"></script>
@@ -86,33 +86,68 @@
       <span class="count" id="cl-count"></span>
     </div>
     <div class="pb">
-      <ul id="cl-list" class="rows"></ul>
-      <details class="disc" id="cl-add-details" style="margin-top:.6rem">
-        <summary>Add a client</summary>
-        <div>
-          <md-outlined-text-field id="cl-name" label="Full name" style="width:100%"></md-outlined-text-field>
-          <md-outlined-text-field id="cl-email" type="email" label="Email"
-              style="width:100%;margin-top:.4rem"></md-outlined-text-field>
-          <md-filled-button id="cl-create" style="width:100%;margin-top:.5rem">Add client</md-filled-button>
-        </div>
-      </details>
+      <div style="display:flex;justify-content:flex-end;padding:0 0 .6rem">
+        <md-filled-button id="cl-add-btn" type="button">+ Add a client</md-filled-button>
+      </div>
+      <div class="scroll-x">
+        <table class="data-table" id="cl-table">
+          <thead>
+            <tr>
+              <th class="sortable" data-sort="name">Name <span class="sort-arrow">▾</span></th>
+              <th class="sortable" data-sort="sessions">Sessions <span class="sort-arrow">▾</span></th>
+              <th class="sortable" data-sort="entries">Records <span class="sort-arrow">▾</span></th>
+              <th class="sortable" data-sort="created_at">Added <span class="sort-arrow">▾</span></th>
+            </tr>
+          </thead>
+          <tbody id="cl-list"></tbody>
+        </table>
+      </div>
     </div>
   </section>
 </main>
+
+<!-- specs/v3/17-full-app-redesign.md PRAC1: creation moves from an
+     always-open <details> disclosure to a dialog, same pattern
+     admin/users.html already uses (specs/v3/16) for the identical problem. -->
+<md-dialog id="cl-dialog">
+  <div slot="headline">Add a client</div>
+  <div slot="content" style="display:grid;gap:.4rem">
+    <md-outlined-text-field id="cl-name" label="Full name" style="width:100%"></md-outlined-text-field>
+    <md-outlined-text-field id="cl-email" type="email" label="Email" style="width:100%"></md-outlined-text-field>
+  </div>
+  <div slot="actions">
+    <md-text-button id="cl-cancel" type="button">Cancel</md-text-button>
+    <md-filled-button id="cl-create" type="button">Add client</md-filled-button>
+  </div>
+</md-dialog>
 
 <div id="toasts" class="toasts" aria-live="polite"></div>
 <script src="/static/shared.js"></script>
 <script>
 $('logout-btn').onclick = logout;
 
+let allClients = [];
+const clSortState = { key: null, dir: 1 };
+wireSortableHeaders($('cl-table').querySelector('thead'), clSortState, renderClients);
+
 function row(c) {
-  return `<li class="plain">
-    <a href="/practitioner/clients/${c.id}" style="display:flex;align-items:center;gap:.6rem;text-decoration:none;color:inherit;width:100%">
+  const added = c.created_at ? new Date(c.created_at).toLocaleDateString() : '';
+  return `<tr data-id="${c.id}">
+    <td><a href="/practitioner/clients/${c.id}" style="display:flex;align-items:center;gap:.6rem;text-decoration:none;color:inherit">
       <span class="av">${esc((c.name || '?').slice(0, 1).toUpperCase())}</span>
-      <span class="grow"><span class="nm">${esc(c.name)}</span>
-      <span class="sub2">${esc(c.email)}</span></span>
-    </a>
-  </li>`;
+      <span><span class="nm">${esc(c.name)}</span><br><span class="sub2">${esc(c.email)}</span></span>
+    </a></td>
+    <td class="num">${c.sessions ?? 0}</td>
+    <td class="num">${c.entries ?? 0}</td>
+    <td class="num">${added}</td>
+  </tr>`;
+}
+
+function renderClients() {
+  const list = sortRows(allClients, clSortState);
+  $('cl-count').textContent = list.length || '';
+  $('cl-list').innerHTML = list.length ? list.map(row).join('')
+    : `<tr><td colspan="4">${empty('No clients yet', 'Add one, or wait for a client to sign up and pick you.')}</td></tr>`;
 }
 
 async function load() {
@@ -124,15 +159,19 @@ async function load() {
   if (p.plan !== 'pro') { $('pro-gate').hidden = false; return; }
   $('clients-panel').hidden = false;
 
-  const list = await api('/me/clients');
-  $('cl-count').textContent = list.length || '';
-  $('cl-list').innerHTML = list.length ? list.map(row).join('')
-    : empty('No clients yet', 'Add one below, or wait for a client to sign up and pick you.');
+  allClients = await api('/me/clients');
+  renderClients();
   // Nothing else on this page for a brand-new practitioner to look at —
-  // don't make the single most useful action a collapsed disclosure they
-  // have to notice and open first (specs/v2/14-ux-findings-v2.7.md P9).
-  if (!list.length) $('cl-add-details').open = true;
+  // don't make the single most useful action easy to miss
+  // (specs/v2/14-ux-findings-v2.7.md P9).
+  if (!allClients.length) $('cl-dialog').show();
 }
+
+$('cl-add-btn').onclick = () => {
+  $('cl-name').value = ''; $('cl-email').value = '';
+  $('cl-dialog').show();
+};
+$('cl-cancel').onclick = () => $('cl-dialog').close();
 
 $('cl-create').onclick = async () => {
   const name = $('cl-name').value.trim();
@@ -140,7 +179,7 @@ $('cl-create').onclick = async () => {
   if (!name || !email) { toast('Name and email are required', 'bad'); return; }
   try {
     await api('/me/clients', json('POST', { name, email }));
-    $('cl-name').value = ''; $('cl-email').value = '';
+    $('cl-dialog').close();
     toast('Client added');
     load();
   } catch (e) { toast(e.message, 'bad'); }

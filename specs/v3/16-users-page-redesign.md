@@ -5,11 +5,24 @@ Product Manager and redesign the whole experience") — not part of the
 original v3 scope, added alongside it.
 
 **Status: implemented.** `static/admin/users.html`, `src/pages/users.js`,
-`static/style.css` (`.tab-bar`/`.tab-btn`), and `static/admin/dashboard.html`
-(the "Review" link) all match the redesign below. Verified locally with a
-Playwright smoke pass: tab switching, client-side search (including the
-empty-state message), the practitioner/admin create dialogs, and the
-credentials panel landing under the new row.
+`static/style.css` (originally `.tab-bar`/`.tab-btn`), and
+`static/admin/dashboard.html` (the "Review" link) all match the redesign
+below. Verified locally with a Playwright smoke pass: tab switching,
+client-side search (including the empty-state message), the
+practitioner/admin create dialogs, and the credentials panel landing
+under the new row.
+
+**Superseded in one respect by [17 · Full-app redesign](17-full-app-redesign.md):**
+the hand-rolled `.tab-bar`/`.tab-btn` this section originally shipped was
+later replaced with real `md-tabs`/`md-primary-tab` (17's X2), and the
+practitioner/admin lists moved from `<ul class="rows">` to a real
+`.data-table` (17's X3, with sorting). The tabs/search/dialog/deep-link
+*structure* described below is unchanged; only the tab component and the
+list's markup evolved further. 17 also fixed a real bug this version
+introduced: `load()` applied the `?status=`/`?plan=` deep-link params to
+the filter controls *after* the first `loadPractitioners()` call, which
+reads them — so the "Review" link's filter never actually applied on
+first load.
 
 One bug found and fixed along the way, not part of the original audit:
 `renderPractitioners()`'s empty-state fallback

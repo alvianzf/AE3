@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Log in · Clinic</title>
-  <link rel="stylesheet" href="/static/style.css?v=15">
+  <link rel="stylesheet" href="/static/style.css?v=16">
   <link rel="stylesheet" href="/static/dist/theme.css">
   <link rel="stylesheet" href="/static/dist/components.css">
   <link rel="stylesheet"
@@ -13,28 +13,34 @@
 </head>
 <body>
 
-<header class="topbar">
-  <div class="topbar-inner">
+<div class="app-shell">
+  <aside class="sidebar">
     <a href="/directory" class="brand-link">
       <span class="sprig" aria-hidden="true">
-      <svg viewBox="0 0 20 24" fill="none" stroke="currentColor" stroke-width="1.3"
-           stroke-linecap="round">
-        <path d="M10 23V7"/>
-        <path d="M10 13c0-3.6 2.4-6.4 6-7-.3 3.8-2.6 6.4-6 7z" fill="currentColor"
-              fill-opacity=".16"/>
-        <path d="M10 9.5C10 6 7.8 3.3 4.3 2.5 4.6 6.2 6.7 8.8 10 9.5z"
-              fill="currentColor" fill-opacity=".1"/>
-      </svg>
+        <svg viewBox="0 0 20 24" fill="none" stroke="currentColor" stroke-width="1.3"
+             stroke-linecap="round">
+          <path d="M10 23V7"/>
+          <path d="M10 13c0-3.6 2.4-6.4 6-7-.3 3.8-2.6 6.4-6 7z" fill="currentColor"
+                fill-opacity=".16"/>
+          <path d="M10 9.5C10 6 7.8 3.3 4.3 2.5 4.6 6.2 6.7 8.8 10 9.5z"
+                fill="currentColor" fill-opacity=".1"/>
+        </svg>
       </span>
-      <span class="brand"><b>Clinic</b><span class="sub">clinical knowledge assistant</span><span class="tag">Phase 2 POC</span></span>
+      <span class="brand">
+        <b>Clinic</b>
+        <span class="sub">clinical knowledge assistant</span>
+      </span>
     </a>
-    <nav style="margin-left:auto;display:flex;gap:.4rem;flex-wrap:wrap">
-      <a class="btn ghost sm" href="/about">About</a>
-      <a class="btn ghost sm" href="/directory">Find a practitioner</a>
-      <a class="btn ghost sm" href="/signup">Sign up</a>
+    <nav class="sidebar-nav">
+      <a class="sidebar-link" href="/about">About</a>
+      <a class="sidebar-link" href="/directory">Find a practitioner</a>
+      <a class="sidebar-link" href="/join">Join as a practitioner</a>
+      <a class="sidebar-link" href="/signup" data-auth-link="signup">Sign up</a>
+      <a class="sidebar-link active" href="/login" data-auth-link="login">Log in</a>
     </nav>
-  </div>
-</header>
+    <span class="tag sidebar-foot">Phase 2 POC</span>
+  </aside>
+  <div class="app-main">
 
 <main class="pane on centered" style="max-width:26rem;margin:0 auto">
   <section class="card-panel">
@@ -116,5 +122,7 @@ $('l-submit').onclick = async () => {
 };
 $('l-password').onkeydown = (ev) => { if (ev.key === 'Enter') $('l-submit').click(); };
 </script>
+</div>
+</div>
 </body>
 </html>

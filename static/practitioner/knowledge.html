@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Knowledge base · Clinic</title>
-  <link rel="stylesheet" href="/static/style.css?v=15">
+  <link rel="stylesheet" href="/static/style.css?v=16">
 </head>
 <body>
 
@@ -80,6 +80,7 @@
       <section class="card-panel" id="kb-panel" hidden>
         <div class="ph botanic">
           <h2 style="flex:1">Knowledge base</h2>
+          <span class="count muted xs" id="kb-personalized-count" style="margin-right:.5rem"></span>
           <span class="count" id="kb-count"></span>
         </div>
         <div class="pb">
@@ -124,6 +125,13 @@ function sourceRow(s) {
 async function loadKnowledge() {
   const list = await api('/me/knowledge');
   $('kb-count').textContent = list.length || '';
+  // specs/v3/17-full-app-redesign.md PRAC3: only a total was shown, so
+  // "what have I actually customized" meant scrolling and reading every
+  // row's chip. Computed client-side from the same response — no new
+  // endpoint.
+  const personalized = list.filter((s) => s.weight !== s.grade).length;
+  $('kb-personalized-count').textContent = personalized
+    ? `${personalized} personalized · ` : '';
   $('kb-list').innerHTML = list.length
     ? list.map(sourceRow).join('')
     : empty('No sources yet', 'Nothing has been added to the library yet.');

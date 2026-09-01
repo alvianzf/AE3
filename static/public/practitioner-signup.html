@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Join as a practitioner · Clinic</title>
-  <link rel="stylesheet" href="/static/style.css?v=15">
+  <link rel="stylesheet" href="/static/style.css?v=16">
   <link rel="stylesheet" href="/static/dist/theme.css">
   <link rel="stylesheet" href="/static/dist/components.css">
   <link rel="stylesheet"
@@ -13,30 +13,34 @@
 </head>
 <body>
 
-<header class="topbar">
-  <div class="topbar-inner">
+<div class="app-shell">
+  <aside class="sidebar">
     <a href="/directory" class="brand-link">
       <span class="sprig" aria-hidden="true">
-      <svg viewBox="0 0 20 24" fill="none" stroke="currentColor" stroke-width="1.3"
-           stroke-linecap="round">
-        <path d="M10 23V7"/>
-        <path d="M10 13c0-3.6 2.4-6.4 6-7-.3 3.8-2.6 6.4-6 7z" fill="currentColor"
-              fill-opacity=".16"/>
-        <path d="M10 9.5C10 6 7.8 3.3 4.3 2.5 4.6 6.2 6.7 8.8 10 9.5z"
-              fill="currentColor" fill-opacity=".1"/>
-      </svg>
+        <svg viewBox="0 0 20 24" fill="none" stroke="currentColor" stroke-width="1.3"
+             stroke-linecap="round">
+          <path d="M10 23V7"/>
+          <path d="M10 13c0-3.6 2.4-6.4 6-7-.3 3.8-2.6 6.4-6 7z" fill="currentColor"
+                fill-opacity=".16"/>
+          <path d="M10 9.5C10 6 7.8 3.3 4.3 2.5 4.6 6.2 6.7 8.8 10 9.5z"
+                fill="currentColor" fill-opacity=".1"/>
+        </svg>
       </span>
-      <span class="brand"><b>Clinic</b><span class="sub">clinical knowledge assistant</span><span class="tag">Phase 2 POC</span></span>
+      <span class="brand">
+        <b>Clinic</b>
+        <span class="sub">clinical knowledge assistant</span>
+      </span>
     </a>
-    <nav style="margin-left:auto;display:flex;gap:.4rem;flex-wrap:wrap">
-      <a class="btn ghost sm" href="/about">About</a>
-      <a class="btn ghost sm" href="/directory">Find a practitioner</a>
-      <a class="btn ghost sm" href="/join">Join as a practitioner</a>
-      <a class="btn ghost sm" href="/signup" data-auth-link="signup">Sign up</a>
-      <a class="btn sm" href="/login" data-auth-link="login">Log in</a>
+    <nav class="sidebar-nav">
+      <a class="sidebar-link" href="/about">About</a>
+      <a class="sidebar-link" href="/directory">Find a practitioner</a>
+      <a class="sidebar-link active" href="/join">Join as a practitioner</a>
+      <a class="sidebar-link" href="/signup" data-auth-link="signup">Sign up</a>
+      <a class="sidebar-link" href="/login" data-auth-link="login">Log in</a>
     </nav>
-  </div>
-</header>
+    <span class="tag sidebar-foot">Phase 2 POC</span>
+  </aside>
+  <div class="app-main">
 
 <main class="pane on centered" style="max-width:38rem;margin:0 auto">
   <section class="card-panel">
@@ -45,6 +49,9 @@
       <p class="hint">Submit your profile for review. You'll be listed in the directory once
         an admin approves it — every new practitioner starts on the Basic plan.</p>
 
+      <!-- specs/v3/17-full-app-redesign.md PUB4: two labeled sections instead
+           of one undifferentiated column of 9 fields. -->
+      <label class="lbl" style="margin-top:0">Account</label>
       <md-outlined-text-field id="s-name" label="Full name" style="width:100%"></md-outlined-text-field>
 
       <md-outlined-text-field id="s-email" type="email" label="Email"
@@ -57,6 +64,9 @@
           <md-icon slot="selected">visibility_off</md-icon>
         </md-icon-button>
       </md-outlined-text-field>
+
+      <div class="vine" aria-hidden="true"><span class="leaf soft"></span></div>
+      <label class="lbl" style="margin-top:0">Your public profile</label>
 
       <md-outlined-text-field id="s-bio" type="textarea" rows="4"
           label="Tell clients about your practice — this appears on your profile"
@@ -126,5 +136,7 @@ $('s-submit').onclick = async () => {
   $('s-submit').disabled = false;
 };
 </script>
+</div>
+</div>
 </body>
 </html>

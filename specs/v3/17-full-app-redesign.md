@@ -14,11 +14,40 @@ portal, plus a cross-cutting section. Findings are prefixed by portal
 (`PUB`/`PRAC`/`ADM`/`CLI`) to avoid collision with 14's `P`/`A`/`C`/`S`
 numbering, since both documents are read side by side.
 
-**Scope: this is a spec-only proposal.** No `static/*.html`, `static/*.css`,
-`static/*.js`, or `app/*.py` file was changed to produce it. Every finding
-was checked against the actual shipped markup/JS as of this session — not
-against [13](13-known-issues.md) or [14](14-ux-findings-v2.7.md)'s already-
-fixed items, which are not re-litigated here.
+**Status: implemented**, with three scope decisions made during the build
+that this document's original proposal didn't call out:
+
+- **PRAC2/X2** — `client-detail.html`'s tab toggle got the missing
+  `role="tab"`/`aria-selected`/`role="tabpanel"` wiring, but was **not**
+  migrated to `md-tabs`; that page has never had the MD3 build pipeline
+  (no `dist/` script, no `theme.css`/`components.css` links), and pulling
+  it in for one Low-severity consistency fix was judged disproportionate.
+  `admin/users.html`'s tabs *did* move to real `md-tabs`/`md-primary-tab`,
+  since that page already has the pipeline. One idiom reduced to two
+  cases instead of one — a partial win, not the full standardization
+  proposed.
+- **`practitioner/clients.html`'s datatable** uses Sessions/Records/Added
+  as its three data columns, not "Last session date" as this document's
+  X3 section suggested — `vault.list_clients()` returns session/entry
+  *counts*, not a last-session timestamp; adding that column would need a
+  backend query change, which wasn't in scope for this pass.
+- **A real bug, found and fixed along the way, not in the original
+  findings**: `admin/users.html`'s `load()` called `loadPractitioners()`
+  (which reads `$('p-filter').value` synchronously to build its query
+  string) *before* applying the `?status=`/`?plan=` deep-link params to
+  the filter controls — so the "Review"/stat-row links this document's
+  ADM2 and [16](16-users-page-redesign.md) both rely on never actually
+  filtered on first load. Fixed by reordering.
+
+`CLI2` (file delete) and the JS-grid-library alternative remain
+unimplemented, as originally flagged — both were marked out of scope in
+this document from the start, not skipped during the build.
+
+**Scope note (unchanged from the original spec-only version):** every
+finding below was checked against the shipped markup/JS as of the
+original audit session — not against [13](13-known-issues.md) or
+[14](14-ux-findings-v2.7.md)'s already-fixed items, which are not
+re-litigated here.
 
 **What was walked:** `static/public/*.html` (about, account, client-signup,
 coach, directory, login, practitioner-signup(-thanks)), `static/index.html`

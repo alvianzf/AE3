@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dashboard · Clinic</title>
-  <link rel="stylesheet" href="/static/style.css?v=15">
+  <link rel="stylesheet" href="/static/style.css?v=16">
 </head>
 <body>
 
@@ -74,13 +74,14 @@
 $('logout-btn').onclick = logout;
 
 function statCard(label, value, sub, href) {
+  const numeric = typeof value === 'number';
   return `<a class="card-panel" href="${href}" style="padding:.9rem 1.1rem;text-decoration:none;
       color:inherit;display:flex;align-items:center;justify-content:space-between;gap:1rem">
     <span>
       <span class="nm" style="display:block">${esc(label)}</span>
       <span class="muted xs">${esc(sub)}</span>
     </span>
-    <span style="font-size:1.3rem;font-weight:700;flex:0 0 auto">${esc(value)}</span>
+    <span style="font-size:1.3rem;font-weight:700;flex:0 0 auto" ${numeric ? `data-count-to="${value}"` : ''}>${numeric ? '0' : esc(value)}</span>
   </a>`;
 }
 
@@ -101,6 +102,7 @@ async function load() {
     statCard('Files', (files || []).length, 'Uploaded documents', '/client/files'),
     statCard('Wearables', connected, connected ? 'connected' : 'Connect a device', '/client/wearables'),
   ].join('');
+  animateCounts($('stat-cards'));
 }
 load().catch((e) => toast(e.message, 'bad'));
 </script>

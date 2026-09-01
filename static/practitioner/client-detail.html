@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Client · Clinic</title>
-  <link rel="stylesheet" href="/static/style.css?v=15">
+  <link rel="stylesheet" href="/static/style.css?v=16">
 </head>
 <body>
 
@@ -84,12 +84,14 @@
         </div>
       </section>
 
-      <div style="display:flex;gap:.4rem;margin:1rem 0" role="tablist">
-        <button class="btn ghost sm" id="tab-intake" type="button" data-tab="intake">Intake review</button>
-        <button class="btn ghost sm" id="tab-history" type="button" data-tab="history">Consultations &amp; reports</button>
+      <div style="display:flex;gap:.4rem;margin:1rem 0" role="tablist" aria-label="Client detail">
+        <button class="btn ghost sm" id="tab-intake" type="button" role="tab"
+                aria-selected="true" aria-controls="panel-intake">Intake review</button>
+        <button class="btn ghost sm" id="tab-history" type="button" role="tab"
+                aria-selected="false" aria-controls="panel-history">Consultations &amp; reports</button>
       </div>
 
-      <div id="panel-intake">
+      <div id="panel-intake" role="tabpanel" aria-labelledby="tab-intake">
         <section class="card-panel">
           <div class="ph botanic"><h2 style="flex:1">Intake review</h2></div>
           <div class="pb" id="intake-body">
@@ -98,7 +100,7 @@
         </section>
       </div>
 
-      <div id="panel-history" hidden class="split-rail">
+      <div id="panel-history" hidden role="tabpanel" aria-labelledby="tab-history" class="split-rail">
         <section class="card-panel">
           <div class="ph botanic">
             <h2 style="flex:1">Previous consultations</h2>
@@ -134,6 +136,12 @@ function showTab(name) {
   $('panel-history').hidden = name !== 'history';
   $('tab-intake').classList.toggle('on', name === 'intake');
   $('tab-history').classList.toggle('on', name === 'history');
+  // specs/v3/17-full-app-redesign.md PRAC2: this toggle had role="tablist"
+  // on the wrapper but no role="tab"/aria-selected on the buttons or
+  // role="tabpanel" on the panels — added above; aria-selected still
+  // needs updating here since it tracks state, not just markup.
+  $('tab-intake').setAttribute('aria-selected', String(name === 'intake'));
+  $('tab-history').setAttribute('aria-selected', String(name === 'history'));
 }
 $('tab-intake').onclick = () => showTab('intake');
 $('tab-history').onclick = () => showTab('history');

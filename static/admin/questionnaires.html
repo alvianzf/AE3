@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Questionnaires · Clinic</title>
-  <link rel="stylesheet" href="/static/style.css?v=15">
+  <link rel="stylesheet" href="/static/style.css?v=16">
   <link rel="stylesheet" href="/static/dist/theme.css">
   <link rel="stylesheet" href="/static/dist/components.css">
   <script type="module" src="/static/dist/questionnaires.js"></script>
@@ -193,17 +193,15 @@ async function editQuestionnaire(id) {
 }
 
 function questionnaireRow(q) {
-  return `<li data-id="${q.id}" class="plain" style="display:block">
-    <div style="display:flex;justify-content:space-between;gap:.5rem;align-items:baseline;flex-wrap:wrap">
-      <span class="nm">${esc(q.title)} <span class="muted xs">v${q.version}</span></span>
-    </div>
-    <div style="display:flex;gap:.4rem;margin-top:.3rem">
-      <button class="btn ghost sm" data-edit type="button">Edit (new version)</button>
-    </div>
-  </li>`;
+  return `<tr data-id="${q.id}">
+    <td>${esc(q.title)}</td>
+    <td class="num">v${q.version}</td>
+    <td class="actions"><button class="btn ghost sm" data-edit type="button">Edit (new version)</button></td>
+  </tr>`;
 }
 
 let activeQuestionnaireId = null;
+const qSortState = { key: null, dir: 1 };
 
 async function loadList() {
   const list = await api('/admin/questionnaires');
@@ -225,13 +223,23 @@ async function loadList() {
     btn.onclick = () => editQuestionnaire(btn.dataset.edit);
   });
 
-  const others = list.filter((q) => !q.is_active);
+  const others = sortRows(list.filter((q) => !q.is_active), qSortState);
   $('q-list').innerHTML = others.length
     ? `<p class="hint xs" style="padding:.4rem .6rem 0">Previous versions</p>
-       <ul class="rows">${others.map(questionnaireRow).join('')}</ul>`
+       <div class="scroll-x">
+         <table class="data-table" id="q-table">
+           <thead><tr>
+             <th class="sortable" data-sort="title">Title <span class="sort-arrow">▾</span></th>
+             <th class="sortable" data-sort="version">Version <span class="sort-arrow">▾</span></th>
+             <th>Actions</th>
+           </tr></thead>
+           <tbody>${others.map(questionnaireRow).join('')}</tbody>
+         </table>
+       </div>`
     : '';
+  if (others.length) wireSortableHeaders($('q-table').querySelector('thead'), qSortState, loadList);
   $('q-list').querySelectorAll('[data-edit]').forEach((btn) => {
-    btn.onclick = () => editQuestionnaire(btn.closest('li').dataset.id);
+    btn.onclick = () => editQuestionnaire(btn.closest('tr').dataset.id);
   });
 }
 

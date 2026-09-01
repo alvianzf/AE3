@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Users · Clinic</title>
-  <link rel="stylesheet" href="/static/style.css?v=15">
+  <link rel="stylesheet" href="/static/style.css?v=16">
   <link rel="stylesheet" href="/static/dist/theme.css">
   <link rel="stylesheet" href="/static/dist/components.css">
   <link rel="stylesheet"
@@ -75,11 +75,13 @@
   <!-- specs/v3/16-users-page-redesign.md: tabs replace the old stacked
        panels (site stats / practitioners / admins) — one audience's task
        owns the page at a time. The Admins tab only unhides for a
-       superadmin session (see load(), below). -->
-  <div class="tab-bar" role="tablist" aria-label="Users">
-    <button class="tab-btn active" id="tab-practitioners" type="button" role="tab" aria-selected="true">Practitioners</button>
-    <button class="tab-btn" id="tab-admins" type="button" role="tab" aria-selected="false" hidden>Admins</button>
-  </div>
+       superadmin session (see load(), below). md-tabs/md-primary-tab
+       (specs/v3/17 X2) instead of a hand-rolled .tab-bar, so this page and
+       client-detail.html's tabs share one component instead of two. -->
+  <md-tabs id="users-tabs" aria-label="Users">
+    <md-primary-tab id="tab-practitioners">Practitioners</md-primary-tab>
+    <md-primary-tab id="tab-admins" hidden>Admins</md-primary-tab>
+  </md-tabs>
 
   <section class="card-panel" id="practitioners-panel">
     <div class="ph botanic">
@@ -87,7 +89,7 @@
       <span class="count" id="p-count"></span>
     </div>
     <div class="pb tight">
-      <div class="filter-row" style="grid-template-columns:1fr 11rem auto;padding:.6rem">
+      <div class="filter-row" style="grid-template-columns:1fr 9rem 8rem auto;padding:.6rem">
         <md-outlined-text-field id="p-search" label="Search name or email"></md-outlined-text-field>
         <md-outlined-select id="p-filter" label="Status">
           <md-select-option value="" selected><div slot="headline">All statuses</div></md-select-option>
@@ -96,9 +98,32 @@
           <md-select-option value="rejected"><div slot="headline">Rejected</div></md-select-option>
           <md-select-option value="suspended"><div slot="headline">Suspended</div></md-select-option>
         </md-outlined-select>
+        <!-- specs/v3/17-full-app-redesign.md ADM2: lets dashboard.html's
+             "Pro plan" stat deep-link here instead of dead-ending on a
+             bare number. -->
+        <md-outlined-select id="p-plan-filter" label="Plan">
+          <md-select-option value="" selected><div slot="headline">All plans</div></md-select-option>
+          <md-select-option value="basic"><div slot="headline">Basic</div></md-select-option>
+          <md-select-option value="pro"><div slot="headline">Pro</div></md-select-option>
+        </md-outlined-select>
         <md-filled-button id="p-add-btn" type="button">+ Add practitioner</md-filled-button>
       </div>
-      <div id="practitioners-list" class="scrollbox"></div>
+      <div class="scroll-x scrollbox">
+        <table class="data-table" id="practitioners-table">
+          <thead>
+            <tr>
+              <th class="sortable" data-sort="name">Name <span class="sort-arrow">▾</span></th>
+              <th class="sortable" data-sort="status">Status <span class="sort-arrow">▾</span></th>
+              <th class="sortable" data-sort="plan">Plan <span class="sort-arrow">▾</span></th>
+              <th>Clients</th>
+              <th>Views</th>
+              <th>Contacts</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="practitioners-list"></tbody>
+        </table>
+      </div>
     </div>
   </section>
 
@@ -112,7 +137,19 @@
       <div style="padding:.6rem;display:flex;justify-content:flex-end">
         <md-filled-button id="a-add-btn" type="button">+ Add admin</md-filled-button>
       </div>
-      <div id="admins-list" class="scrollbox"></div>
+      <div class="scroll-x scrollbox">
+        <table class="data-table" id="admins-table">
+          <thead>
+            <tr>
+              <th class="sortable" data-sort="name">Name</th>
+              <th class="sortable" data-sort="role">Role</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="admins-list"></tbody>
+        </table>
+      </div>
     </div>
   </section>
 </main>
@@ -186,38 +223,38 @@ const STATUS_ACTIONS = {
   suspended: [['approve', 'Reactivate']],
 };
 
-/* ── Tabs ────────────────────────────────────────────────────────────── */
+/* ── Tabs (md-tabs) ─────────────────────────────────────────────────── */
 function setTab(tab) {
   const wantAdmins = tab === 'admins' && !$('tab-admins').hidden;
   $('practitioners-panel').hidden = wantAdmins;
   $('admins-panel').hidden = !wantAdmins;
-  $('tab-practitioners').classList.toggle('active', !wantAdmins);
-  $('tab-admins').classList.toggle('active', wantAdmins);
-  $('tab-practitioners').setAttribute('aria-selected', String(!wantAdmins));
-  $('tab-admins').setAttribute('aria-selected', String(wantAdmins));
+  $('users-tabs').activeTabIndex = wantAdmins ? 1 : 0;
 }
-$('tab-practitioners').onclick = () => setTab('practitioners');
-$('tab-admins').onclick = () => setTab('admins');
+$('users-tabs').addEventListener('change', () => {
+  setTab($('users-tabs').activeTabIndex === 1 ? 'admins' : 'practitioners');
+});
 
 /* One-time credentials reveal, inserted right after the row it's about
-   rather than in a fixed page-bottom slot (specs/v3/16). */
-function showCredentialsAfter(anchorLi, email, password) {
-  const div = document.createElement('div');
-  div.className = 'card-panel';
-  div.style.cssText = 'padding:.7rem;margin:.4rem 0;border-color:var(--accent)';
-  div.innerHTML = `<div style="display:flex;align-items:center;gap:.8rem;flex-wrap:wrap">
-    <div class="grow">
-      <b>Account created</b> — this password won't be shown again. Copy it now
-      and pass it to them directly.
-      <div class="muted small" style="margin-top:.3rem">
-        <span>${esc(email)}</span> · <code>${esc(password)}</code>
+   rather than in a fixed page-bottom slot (specs/v3/16). A <tr> with a
+   colspan'd <td> — anchorRow lives inside a <tbody>, so a bare <div>
+   sibling isn't valid table content (X3's move to a real table). */
+function showCredentialsAfter(anchorRow, email, password, colspan) {
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td colspan="${colspan}" style="background:var(--panel-2)">
+    <div style="display:flex;align-items:center;gap:.8rem;flex-wrap:wrap;padding:.3rem 0">
+      <div class="grow">
+        <b>Account created</b> — this password won't be shown again. Copy it now
+        and pass it to them directly.
+        <div class="muted small" style="margin-top:.3rem">
+          <span>${esc(email)}</span> · <code>${esc(password)}</code>
+        </div>
       </div>
+      <button class="btn ghost sm" data-nc-copy type="button">Copy password</button>
+      <button class="btn ghost sm" data-nc-dismiss type="button">Dismiss</button>
     </div>
-    <button class="btn ghost sm" data-nc-copy type="button">Copy password</button>
-    <button class="btn ghost sm" data-nc-dismiss type="button">Dismiss</button>
-  </div>`;
-  anchorLi.after(div);
-  div.querySelector('[data-nc-copy]').onclick = async () => {
+  </td>`;
+  anchorRow.after(tr);
+  tr.querySelector('[data-nc-copy]').onclick = async () => {
     try {
       await navigator.clipboard.writeText(password);
       toast('Password copied');
@@ -225,12 +262,14 @@ function showCredentialsAfter(anchorLi, email, password) {
       toast('Could not copy — select and copy manually', 'bad');
     }
   };
-  div.querySelector('[data-nc-dismiss]').onclick = () => { div.remove(); };
-  div.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  tr.querySelector('[data-nc-dismiss]').onclick = () => { tr.remove(); };
+  tr.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 /* ── Practitioners ───────────────────────────────────────────────────── */
 let allPractitioners = [];
+const pSortState = { key: null, dir: 1 };
+wireSortableHeaders($('practitioners-table').querySelector('thead'), pSortState, renderPractitioners);
 
 function practitionerRow(p) {
   const actions = (STATUS_ACTIONS[p.status] || [])
@@ -240,44 +279,46 @@ function practitionerRow(p) {
     ? `<button class="btn ghost sm" data-plan="${p.plan === 'pro' ? 'basic' : 'pro'}">
          ${p.plan === 'pro' ? 'Set Basic' : 'Set Pro'}</button>`
     : '';
-  return `<li data-id="${p.id}" class="plain" style="display:block">
-    <div style="display:flex;justify-content:space-between;gap:.5rem;align-items:baseline;flex-wrap:wrap">
-      <span class="nm">${esc(p.name)} <span class="muted xs">${esc(p.email)}</span></span>
-      <span class="chip">${esc(p.status)}</span> <span class="chip">${esc(p.plan)}</span>
-    </div>
-    <div class="muted xs" data-stats-for="${p.id}" style="margin-top:.2rem">loading stats…</div>
-    <div style="display:flex;gap:.4rem;margin-top:.3rem;flex-wrap:wrap">${actions}${planToggle}</div>
-  </li>`;
+  return `<tr data-id="${p.id}">
+    <td><span class="nm">${esc(p.name)}</span><br><span class="muted xs">${esc(p.email)}</span></td>
+    <td><span class="chip">${esc(p.status)}</span></td>
+    <td><span class="chip">${esc(p.plan)}</span></td>
+    <td class="num" data-stat="clients">…</td>
+    <td class="num" data-stat="views">…</td>
+    <td class="num" data-stat="contacts">…</td>
+    <td class="actions">${actions}${planToggle}</td>
+  </tr>`;
 }
 
 function renderPractitioners() {
   const q = $('p-search').value.trim().toLowerCase();
-  const list = q
+  const plan = $('p-plan-filter').value;
+  let filtered = q
     ? allPractitioners.filter((p) => p.name.toLowerCase().includes(q) || p.email.toLowerCase().includes(q))
     : allPractitioners;
+  if (plan) filtered = filtered.filter((p) => p.plan === plan);
+  const list = sortRows(filtered, pSortState);
   $('p-count').textContent = list.length || '';
-  // `<ul class="rows"></ul>` is always truthy even with zero rows, so the
-  // `||` fallback this originally used for the empty state never actually
-  // ran (pre-existing bug, hit far more now that search can legitimately
-  // return zero results) — check list.length instead.
   $('practitioners-list').innerHTML = list.length
-    ? `<ul class="rows">${list.map(practitionerRow).join('')}</ul>`
-    : empty('No practitioners', q ? 'None match this search.' : 'None match this filter.');
+    ? list.map(practitionerRow).join('')
+    : `<tr><td colspan="7">${empty('No practitioners', q ? 'None match this search.' : 'None match this filter.')}</td></tr>`;
   // Fan-out, one call per row — fine at 10-20 practitioner scale
   // (specs/v2/02-data-model.md already makes this call for client-count).
   list.forEach(async (p) => {
-    const el = $('practitioners-list').querySelector(`[data-stats-for="${p.id}"]`);
-    if (!el) return;
+    const row = $('practitioners-list').querySelector(`[data-id="${p.id}"]`);
+    if (!row) return;
     try {
       const s = await api(`/admin/practitioners/${p.id}/client-count`);
-      el.textContent = `${s.clients} client${s.clients === 1 ? '' : 's'} · `
-        + `${s.views} view${s.views === 1 ? '' : 's'} · `
-        + `${s.contacts} contact${s.contacts === 1 ? '' : 's'}`;
-    } catch { el.textContent = ''; }
+      row.querySelector('[data-stat="clients"]').textContent = s.clients;
+      row.querySelector('[data-stat="views"]').textContent = s.views;
+      row.querySelector('[data-stat="contacts"]').textContent = s.contacts;
+    } catch {
+      ['clients', 'views', 'contacts'].forEach((k) => { row.querySelector(`[data-stat="${k}"]`).textContent = '—'; });
+    }
   });
   $('practitioners-list').querySelectorAll('[data-action]').forEach((btn) => {
     btn.onclick = async () => {
-      const id = btn.closest('li').dataset.id;
+      const id = btn.closest('tr').dataset.id;
       try {
         await api(`/admin/practitioners/${id}/${btn.dataset.action}`, { method: 'POST' });
         toast('Updated'); loadPractitioners();
@@ -286,7 +327,7 @@ function renderPractitioners() {
   });
   $('practitioners-list').querySelectorAll('[data-plan]').forEach((btn) => {
     btn.onclick = async () => {
-      const id = btn.closest('li').dataset.id;
+      const id = btn.closest('tr').dataset.id;
       try {
         await api(`/admin/practitioners/${id}/plan`, json('PUT', { plan: btn.dataset.plan }));
         toast('Plan updated'); loadPractitioners();
@@ -302,6 +343,7 @@ async function loadPractitioners() {
 }
 $('p-filter').onchange = loadPractitioners;
 $('p-search').oninput = renderPractitioners;
+$('p-plan-filter').onchange = renderPractitioners;
 
 function resetPractitionerForm() {
   ['np-name','np-email','np-password','np-bio','np-specialties','np-languages','np-years','np-price']
@@ -329,53 +371,65 @@ $('np-create').onclick = async () => {
     toast('Practitioner added');
     await loadPractitioners();
     const row = $('practitioners-list').querySelector(`[data-id="${created.id}"]`);
-    if (row) showCredentialsAfter(row, email, password);
+    if (row) showCredentialsAfter(row, email, password, 7);
   } catch (e) { toast(e.message, 'bad'); }
 };
 
 /* ── Admins (superadmin only) ───────────────────────────────────────────── */
+const aSortState = { key: null, dir: 1 };
+wireSortableHeaders($('admins-table').querySelector('thead'), aSortState, () => renderAdmins());
+let allAdmins = [];
+let currentAdminId = null;
+
 function adminRow(a) {
   const you = a.you ? ' <span class="muted xs">(you)</span>' : '';
-  const chip = `<span class="chip">${esc(a.role)}</span>`
-    + (a.is_active ? '' : ' <span class="chip">suspended</span>');
-  return `<li data-id="${a.id}" class="plain" style="display:block">
-    <div style="display:flex;justify-content:space-between;gap:.5rem;align-items:baseline;flex-wrap:wrap">
-      <span class="nm">${esc(a.name)}${you} <span class="muted xs">${esc(a.email)}</span></span>
-      ${chip}
-    </div>
-    <div style="display:flex;gap:.4rem;margin-top:.3rem">
+  const chip = a.is_active ? '<span class="chip">active</span>' : '<span class="chip">suspended</span>';
+  return `<tr data-id="${a.id}">
+    <td><span class="nm">${esc(a.name)}${you}</span><br><span class="muted xs">${esc(a.email)}</span></td>
+    <td><span class="chip">${esc(a.role)}</span></td>
+    <td>${chip}</td>
+    <td class="actions">
       <button class="btn ghost sm" data-role="${a.role === 'superadmin' ? 'admin' : 'superadmin'}">
         ${a.role === 'superadmin' ? 'Demote to admin' : 'Promote to superadmin'}</button>
       <button class="btn ghost sm" data-toggle="${a.is_active ? '0' : '1'}">
         ${a.is_active ? 'Suspend' : 'Reactivate'}</button>
-    </div>
-  </li>`;
+    </td>
+  </tr>`;
 }
 
-async function loadAdmins(currentId) {
-  const list = await api('/superadmin/admins');
-  list.forEach((a) => { a.you = a.id === currentId; });
-  $('admins-list').innerHTML = `<ul class="rows">${list.map(adminRow).join('')}</ul>`;
+function renderAdmins() {
+  const list = sortRows(allAdmins, aSortState);
+  $('admins-list').innerHTML = list.length
+    ? list.map(adminRow).join('')
+    : `<tr><td colspan="4">${empty('No admins', '')}</td></tr>`;
   $('admins-list').querySelectorAll('[data-role]').forEach((btn) => {
     btn.onclick = async () => {
-      const id = btn.closest('li').dataset.id;
+      const id = btn.closest('tr').dataset.id;
       try {
         await api(`/superadmin/admins/${id}/role`, json('PUT', { role: btn.dataset.role }));
-        toast('Role updated'); loadAdmins(currentId);
+        toast('Role updated'); loadAdmins(currentAdminId);
       } catch (e) { toast(e.message, 'bad'); }
     };
   });
   $('admins-list').querySelectorAll('[data-toggle]').forEach((btn) => {
     btn.onclick = async () => {
-      const id = btn.closest('li').dataset.id;
+      const id = btn.closest('tr').dataset.id;
       const action = btn.dataset.toggle === '1' ? 'reactivate' : 'suspend';
       try {
         await api(`/superadmin/admins/${id}/${action}`, { method: 'POST' });
         toast(action === 'suspend' ? 'Admin suspended' : 'Admin reactivated');
-        loadAdmins(currentId);
+        loadAdmins(currentAdminId);
       } catch (e) { toast(e.message, 'bad'); }
     };
   });
+}
+
+async function loadAdmins(currentId) {
+  currentAdminId = currentId;
+  const list = await api('/superadmin/admins');
+  list.forEach((a) => { a.you = a.id === currentId; });
+  allAdmins = list;
+  renderAdmins();
 }
 
 $('a-add-btn').onclick = () => {
@@ -397,7 +451,7 @@ $('na-create').onclick = async () => {
     const session = await api('/auth/me');
     await loadAdmins(session.id);
     const row = $('admins-list').querySelector(`[data-id="${created.id}"]`);
-    if (row) showCredentialsAfter(row, email, password);
+    if (row) showCredentialsAfter(row, email, password, 4);
   } catch (e) { toast(e.message, 'bad'); }
 };
 
@@ -407,11 +461,18 @@ async function load() {
   const session = await requireRole('admin');
   loadAdminNotifications();
   if (!session) return;
-  loadPractitioners();
 
+  // Read deep-link params and apply them to the filter controls *before*
+  // the first loadPractitioners() call, which reads $('p-filter').value
+  // synchronously to build its query string — setting them after would
+  // mean the "Review"/stat-row deep links (specs/v3/16, ADM2) silently
+  // never actually filtered on first load.
   const params = new URLSearchParams(location.search);
   const status = params.get('status');
   if (status) $('p-filter').value = status;
+  const plan = params.get('plan');
+  if (plan) $('p-plan-filter').value = plan;
+  loadPractitioners();
 
   if (session.admin_role === 'superadmin') {
     $('tab-admins').hidden = false;

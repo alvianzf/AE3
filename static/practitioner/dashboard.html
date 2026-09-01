@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dashboard · Clinic</title>
-  <link rel="stylesheet" href="/static/style.css?v=15">
+  <link rel="stylesheet" href="/static/style.css?v=16">
 </head>
 <body>
 
@@ -83,6 +83,17 @@
         </div>
       </section>
 
+      <!-- specs/v3/17-full-app-redesign.md X4: a Pro practitioner's actual
+           first-run path spans three separate pages with nothing tying
+           them together — this names the three steps and links each to
+           where it happens, reusing static/index.html's numbered .step
+           marker. Hides itself once all three are done, same as
+           #nav-upgrade already hides itself once a practitioner is Pro. -->
+      <section class="card-panel" id="checklist-panel" hidden style="margin-top:1rem">
+        <div class="ph botanic"><h2 style="flex:1">Get started</h2></div>
+        <div class="pb tight" id="checklist-body"></div>
+      </section>
+
       <div class="layout practitioner" style="margin-top:1rem">
         <aside style="display:flex;flex-direction:column;gap:1rem">
           <div style="display:flex;flex-direction:column;gap:.7rem" id="stat-cards"></div>
@@ -113,10 +124,20 @@
 $('logout-btn').onclick = logout;
 
 function statCard(label, value, href) {
+  // Numeric values count up from 0 (specs/v3/17-full-app-redesign.md X5);
+  // the "→" upgrade-prompt card isn't a number, so it renders as-is.
+  const numeric = typeof value === 'number';
   return `<a class="card-panel" href="${href}" style="padding:.9rem 1.1rem;text-decoration:none;
       color:inherit;display:flex;align-items:center;justify-content:space-between;gap:1rem">
     <span class="muted xs">${esc(label)}</span>
-    <span style="font-size:1.4rem;font-weight:700">${value}</span>
+    <span style="font-size:1.4rem;font-weight:700" ${numeric ? `data-count-to="${value}"` : ''}>${numeric ? '0' : value}</span>
+  </a>`;
+}
+
+function checklistRow(n, done, label, href) {
+  return `<a href="${href}" class="plain" style="display:flex;align-items:center;gap:.6rem;padding:.4rem .2rem;text-decoration:none;color:inherit">
+    <span class="step"${done ? ' style="background:var(--ok-soft);color:var(--ok)"' : ''}>${done ? '✓' : n}</span>
+    <span${done ? ' style="color:var(--muted);text-decoration:line-through"' : ''}>${label}</span>
   </a>`;
 }
 
@@ -170,20 +191,34 @@ async function load() {
     const clients = await api('/me/clients');
     cards.push(statCard('Clients', clients.length, '/practitioner/consult'));
     $('history-panel').hidden = false;
+    let sessionCount = 0;
     api('/me/sessions/recent').then((sessions) => {
+      sessionCount = sessions.length;
       $('history-list').innerHTML = sessions.length
         ? `<ul class="rows">${sessions.map(historyRow).join('')}</ul>`
         : empty('No consultations yet', 'Start one from Consult.');
+      renderChecklist(p.has_anthropic_key, clients.length > 0, sessionCount > 0);
     }).catch((e) => { $('history-list').innerHTML = empty('Could not load', e.message); });
   } else {
     cards.push(statCard('Upgrade to Pro', '→', '/practitioner/upgrade'));
     $('history-panel').hidden = true;
   }
   $('stat-cards').innerHTML = cards.join('');
+  animateCounts($('stat-cards'));
 
   $('recent-contacts').innerHTML = newContacts.length
     ? `<ul class="rows">${newContacts.slice(0, 5).map(contactRow).join('')}</ul>`
     : empty('No new submissions', 'You\'re all caught up.');
+}
+
+function renderChecklist(hasKey, hasClient, hasSession) {
+  if (hasKey && hasClient && hasSession) { $('checklist-panel').hidden = true; return; }
+  $('checklist-panel').hidden = false;
+  $('checklist-body').innerHTML = [
+    checklistRow(1, hasKey, 'Set your API key', '/practitioner/profile'),
+    checklistRow(2, hasClient, 'Add a client', '/practitioner/clients'),
+    checklistRow(3, hasSession, 'Start a consultation', '/practitioner/consult'),
+  ].join('');
 }
 load().catch((e) => toast(e.message, 'bad'));
 </script>

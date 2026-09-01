@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dashboard · Clinic</title>
-  <link rel="stylesheet" href="/static/style.css?v=15">
+  <link rel="stylesheet" href="/static/style.css?v=16">
 </head>
 <body>
 
@@ -91,7 +91,14 @@
             <span class="count" id="pending-count"></span>
           </div>
           <div class="pb tight">
-            <div id="pending-list"></div>
+            <div class="scroll-x">
+              <table class="data-table" id="pending-table">
+                <thead>
+                  <tr><th>Name</th><th>Email</th><th>Action</th></tr>
+                </thead>
+                <tbody id="pending-list"></tbody>
+              </table>
+            </div>
           </div>
         </section>
       </div>
@@ -105,12 +112,11 @@
 $('logout-btn').onclick = logout;
 
 function pendingRow(p) {
-  return `<li class="plain" style="display:block">
-    <div style="display:flex;justify-content:space-between;gap:.5rem;align-items:baseline;flex-wrap:wrap">
-      <span class="nm">${esc(p.name)} <span class="muted xs">${esc(p.email)}</span></span>
-      <a class="btn ghost sm" href="/admin/users?tab=practitioners&status=pending">Review</a>
-    </div>
-  </li>`;
+  return `<tr>
+    <td>${esc(p.name)}</td>
+    <td class="muted xs">${esc(p.email)}</td>
+    <td class="actions"><a class="btn ghost sm" href="/admin/users?tab=practitioners&status=pending">Review</a></td>
+  </tr>`;
 }
 
 async function load() {
@@ -124,24 +130,31 @@ async function load() {
     api('/coverage'),
   ]);
 
+  const proCount = practitioners.filter((p) => p.plan === 'pro').length;
+  // specs/v3/17-full-app-redesign.md ADM2: a stat that prompts "which
+  // ones?" should be one click from the answer instead of dead-ending on
+  // a bare number.
   $('site-stats').querySelector('tbody').innerHTML =
-    `<tr><td>Directory / profile views</td><td>${stats.total_views}</td></tr>
-     <tr><td>Contact form submissions</td><td>${stats.total_contacts}</td></tr>
-     <tr><td>Total practitioners</td><td>${practitioners.length}</td></tr>
-     <tr><td>Pro plan</td><td>${practitioners.filter((p) => p.plan === 'pro').length}</td></tr>`;
+    `<tr><td>Directory / profile views</td><td data-count-to="${stats.total_views}">0</td></tr>
+     <tr><td>Contact form submissions</td><td data-count-to="${stats.total_contacts}">0</td></tr>
+     <tr><td><a href="/admin/users">Total practitioners</a></td><td data-count-to="${practitioners.length}">0</td></tr>
+     <tr><td><a href="/admin/users?tab=practitioners&plan=pro">Pro plan</a></td><td data-count-to="${proCount}">0</td></tr>`;
+  // specs/v3/17-full-app-redesign.md X5.
+  animateCounts($('site-stats'));
 
   const pending = practitioners.filter((p) => p.status === 'pending');
   $('pending-count').textContent = pending.length || '';
   $('pending-list').innerHTML = pending.length
-    ? `<ul class="rows">${pending.map(pendingRow).join('')}</ul>`
-    : empty('No pending applications', 'New practitioner sign-ups will show up here.');
+    ? pending.map(pendingRow).join('')
+    : `<tr><td colspan="3">${empty('No pending applications', 'New practitioner sign-ups will show up here.')}</td></tr>`;
 
   const sources = coverage.reduce((sum, t) => sum + t.sources, 0);
   const chunks = coverage.reduce((sum, t) => sum + t.chunks, 0);
   $('library-stats').querySelector('tbody').innerHTML =
-    `<tr><td>Topics covered</td><td>${coverage.length}</td></tr>
-     <tr><td>Source-topic tags</td><td>${sources}</td></tr>
-     <tr><td>Passages</td><td>${chunks}</td></tr>`;
+    `<tr><td>Topics covered</td><td data-count-to="${coverage.length}">0</td></tr>
+     <tr><td>Source-topic tags</td><td data-count-to="${sources}">0</td></tr>
+     <tr><td>Passages</td><td data-count-to="${chunks}">0</td></tr>`;
+  animateCounts($('library-stats'));
 }
 load().catch((e) => toast(e.message, 'bad'));
 </script>

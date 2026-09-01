@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Find a practitioner · Clinic</title>
-  <link rel="stylesheet" href="/static/style.css?v=15">
+  <link rel="stylesheet" href="/static/style.css?v=16">
   <style>
     /* Card grid — the only layout this directory needs beyond what
        style.css already defines for .src/.card-panel. */
@@ -53,7 +53,19 @@
       <span class="count" id="d-count"></span>
     </div>
     <div class="pb">
+      <!-- specs/v3/17-full-app-redesign.md PUB5: this page opened straight
+           into the filter row with no framing, unlike every other page's
+           .ph header + intro copy. -->
+      <p class="hint">Independent practitioners, vetted and approved by
+        Clinic — browse by specialty or language below, or search by name.</p>
       <div class="filters">
+        <!-- PUB3: name/bio search alongside the two filters, client-side
+             over the unfiltered `all` array this page already fetches to
+             build the dropdown option lists — no new endpoint, same
+             reasoning already used for admin/users.html's search
+             (specs/v3/16). -->
+        <input id="f-search" class="search" placeholder="Search by name…"
+               aria-label="Search practitioners by name">
         <div class="filter-row" style="grid-template-columns:1fr 1fr auto">
           <select id="f-specialty" aria-label="Filter by specialty">
             <option value="">All specialties</option>
@@ -69,6 +81,7 @@
           </button>
         </div>
       </div>
+      <div class="vine" aria-hidden="true"><span class="leaf soft"></span></div>
       <div id="coach-grid" class="coach-grid"></div>
     </div>
   </section>
@@ -125,6 +138,24 @@ function card(p) {
     + `</div></a>`;
 }
 
+let lastList = [];
+
+// Search is client-side over whatever the current specialty/language
+// server filter already returned — a separate render step from load()
+// below, so typing doesn't re-fetch from the server on every keystroke.
+function renderGrid() {
+  const q2 = $('f-search').value.trim().toLowerCase();
+  const shown = q2
+    ? lastList.filter((p) => (p.name || '').toLowerCase().includes(q2) || (p.bio || '').toLowerCase().includes(q2))
+    : lastList;
+  $('d-count').textContent = shown.length || '';
+  $('coach-grid').innerHTML = shown.length
+    ? shown.map(card).join('')
+    : empty('No practitioners match', 'Try clearing the filters or search.',
+            '<button class="btn ghost sm" id="empty-clear">Clear filters</button>');
+  if ($('empty-clear')) $('empty-clear').onclick = () => $('f-reset').click();
+}
+
 async function load() {
   const q = new URLSearchParams();
   if ($('f-specialty').value) q.set('specialty', $('f-specialty').value);
@@ -137,17 +168,14 @@ async function load() {
     all = unfiltered;
     fillOptions();
   }
-  $('d-count').textContent = list.length || '';
-  $('coach-grid').innerHTML = list.length
-    ? list.map(card).join('')
-    : empty('No practitioners match', 'Try clearing the filters.',
-            '<button class="btn ghost sm" id="empty-clear">Clear filters</button>');
-  if ($('empty-clear')) $('empty-clear').onclick = () => $('f-reset').click();
+  lastList = list;
+  renderGrid();
 }
 
 $('f-specialty').onchange = load;
 $('f-language').onchange = load;
-$('f-reset').onclick = () => { $('f-specialty').value = ''; $('f-language').value = ''; load(); };
+$('f-search').oninput = renderGrid;
+$('f-reset').onclick = () => { $('f-specialty').value = ''; $('f-language').value = ''; $('f-search').value = ''; load(); };
 
 load().catch((e) => toast(e.message, 'bad'));
 adaptPublicAuthLinks();
