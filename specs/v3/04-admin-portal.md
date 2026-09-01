@@ -31,7 +31,9 @@ superadmin, for the same reason.
 Lives at `/admin/users` — split into its own page from `/admin`'s
 knowledge-library dashboard ([08](08-api.md)), since the two have nothing
 to do with each other beyond both being admin-only. Available to both
-admin and superadmin.
+admin and superadmin. The table below is the action set, unchanged; see
+[16 · `/admin/users` redesign](16-users-page-redesign.md) for a proposed
+rework of the page's layout and navigation (not yet implemented).
 
 | Action | Effect |
 |---|---|
