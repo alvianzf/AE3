@@ -4,3 +4,8 @@ __pycache__/
 .env
 node_modules/
 static/dist/
+web-build/
+web/build/
+web/.svelte-kit/
+web/node_modules/
+.claude/worktrees/

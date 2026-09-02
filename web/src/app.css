@@ -1,0 +1,132 @@
+/* Clinic v4 — tokens carried forward from static/style.css (specs/v4/01),
+   composition redesigned (specs/v4/03 mechanism, genuinely new layouts
+   per the live-review directive: same gradient + logo, new everything else). */
+:root {
+  --bg: #f7f5f2;
+  --panel: #fff;
+  --panel-2: #fbfaf8;
+  --line: #e6e2dc;
+  --line-2: #d9d4cc;
+  --ink: #221f1b;
+  --ink-2: #4a453e;
+  --muted: #7d766c;
+
+  --accent: #9c3f5a;
+  --accent-ink: #7d2f47;
+  --accent-soft: #f7eaee;
+  --ok: #2f7a4f;
+  --ok-soft: #e8f4ec;
+  --warn: #a86a12;
+  --warn-soft: #fdf3e3;
+  --danger: #b13434;
+  --danger-soft: #fbe8e8;
+
+  --r: 8px;
+  --r-lg: 14px;
+  --r-xl: 20px;
+  --shadow: 0 1px 2px rgba(34, 31, 27, .03), 0 6px 22px rgba(34, 31, 27, .06);
+  --shadow-lg: 0 18px 50px rgba(34, 31, 27, .18);
+
+  --glass: rgba(255, 255, 255, .72);
+  --glass-2: rgba(255, 255, 255, .55);
+  --glass-line: rgba(255, 255, 255, .65);
+  --blur: saturate(1.15) blur(16px);
+  --ease: cubic-bezier(.22, .68, 0, 1);
+
+  /* sidebar gradient — kept literal per spec (rejected any reinterpretation) */
+  --rail-top: rgba(203, 44, 68, .88);
+  --rail-bottom: rgba(64, 6, 16, .94);
+
+  --space-1: .25rem; --space-2: .5rem; --space-3: .75rem;
+  --space-4: 1rem;   --space-5: 1.5rem; --space-6: 2rem; --space-7: 3rem;
+  --text-xs: .74rem; --text-sm: .84rem; --text-base: .95rem;
+  --text-lg: 1.1rem; --text-xl: 1.4rem; --text-2xl: 1.9rem; --text-3xl: 2.6rem;
+  --tap-min: 2.25rem;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+html { max-width: 100%; overflow-x: hidden; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: var(--text-base)/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  accent-color: var(--accent);
+  -webkit-font-smoothing: antialiased;
+  max-width: 100%; overflow-x: hidden; overflow-wrap: break-word;
+}
+.scroll-x { overflow-x: auto; }
+img, svg, video { max-width: 100%; height: auto; }
+a { color: var(--accent-ink); }
+h1, h2, h3, h4 { margin: 0; line-height: 1.2; letter-spacing: -.01em; }
+p { margin: 0; }
+
+body::before {
+  content: ''; position: fixed; inset: -20vmax; z-index: -2; pointer-events: none;
+  background:
+    radial-gradient(38vmax 30vmax at 12% 8%, rgba(156, 63, 90, .10), transparent 60%),
+    radial-gradient(34vmax 28vmax at 88% 14%, rgba(47, 122, 79, .09), transparent 60%),
+    radial-gradient(40vmax 32vmax at 70% 92%, rgba(168, 106, 18, .07), transparent 62%);
+  animation: drift 34s ease-in-out infinite alternate;
+}
+body::after {
+  content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: .5;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'><g fill='none' stroke='%239c3f5a' stroke-opacity='.07' stroke-width='1.1' stroke-linecap='round'><path d='M30 150V96'/><path d='M30 122c0-13 9-23 25-26-1 14-10 24-25 26z'/><path d='M30 110c0-13-9-23-25-26 1 14 10 24 25 26z'/><path d='M132 74V26'/><path d='M132 52c0-11 8-20 22-23-1 12-9 21-22 23z'/><path d='M132 42c0-11-8-20-22-23 1 12 9 21 22 23z'/></g></svg>");
+}
+@keyframes drift {
+  from { transform: translate3d(-2%, -1%, 0) scale(1); }
+  to   { transform: translate3d(2%, 2%, 0) scale(1.06); }
+}
+@keyframes liftIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes fadeIn  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes sway    { 0%,100% { transform: rotate(-1.5deg); } 50% { transform: rotate(1.5deg); } }
+@keyframes breathe { 0%,100% { opacity:.85; } 50% { opacity:1; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+}
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+svg { flex: 0 0 auto; }
+
+/* ── Two-tier surfaces ─────────────────────────────────────────────── */
+.card-panel {
+  background: var(--glass); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
+  border: 1px solid var(--glass-line); border-radius: var(--r-xl); box-shadow: var(--shadow);
+  animation: liftIn .5s var(--ease) both;
+}
+.panel {
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r-lg);
+  animation: fadeIn .4s var(--ease) both;
+}
+.ph {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+  padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--glass-line);
+}
+.ph h2, .ph h3 { font-size: var(--text-lg); }
+.ph.botanic {
+  background: linear-gradient(135deg, var(--rail-top), var(--rail-bottom));
+  color: #fdf1f2; border-radius: var(--r-xl) var(--r-xl) 0 0; border-bottom: none;
+}
+.panel > .ph { background: none; color: var(--ink-2); border-bottom: 1px solid var(--line); padding: var(--space-3) var(--space-4); }
+.pb { padding: var(--space-4) var(--space-5); }
+.pb.tight { padding: var(--space-3) var(--space-4); }
+
+/* ── Buttons/forms baseline (component-level detail lives in .svelte files) */
+button, input, select, textarea { font: inherit; color: inherit; }
+label { font-size: var(--text-sm); font-weight: 600; color: var(--ink-2); }
+
+/* ── Botanic brand mark ────────────────────────────────────────────── */
+.sprig { display: inline-flex; }
+.sprig svg { width: 20px; height: 24px; }
+
+.leafmark {
+  position: relative; overflow: hidden;
+}
+.leafmark::after {
+  content: ''; position: absolute; right: -2rem; bottom: -2rem; width: 10rem; height: 10rem;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 24'><path d='M10 23V7' fill='none' stroke='white' stroke-opacity='.14' stroke-width='1.3'/><path d='M10 13c0-3.6 2.4-6.4 6-7-.3 3.8-2.6 6.4-6 7z' fill='white' fill-opacity='.10'/></svg>");
+  background-repeat: no-repeat; pointer-events: none;
+}
+
+.container { max-width: 78rem; margin: 0 auto; padding: 0 var(--space-5); }
+.grid-auto { display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); }
+.hint { color: var(--muted); font-size: var(--text-sm); }
+.chip-row { display: flex; gap: var(--space-2); flex-wrap: wrap; }

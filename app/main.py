@@ -12,6 +12,11 @@ import io
 import json
 import logging
 import mimetypes
+import os
+import resource
+import shutil
+import sys
+import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -22,6 +27,7 @@ from cryptography.fernet import Fernet
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel
 
 from . import auth, billing, core_store, knowledge, llm, originals, vault, vault_files, wearables
@@ -29,6 +35,10 @@ from .config import get_config
 
 cfg = get_config()
 STATIC = Path(__file__).parent.parent / "static"
+# specs/v4: the SvelteKit rewrite's adapter-static build output — a sibling
+# directory to STATIC, kept separate so the old vanilla-JS app (STATIC)
+# stays on disk as the pre-cutover record rather than being overwritten.
+WEB_BUILD = Path(__file__).parent.parent / "web-build"
 Path(cfg.photos_path).mkdir(parents=True, exist_ok=True)
 
 # Encrypts/decrypts a practitioner's own Anthropic API key at rest. Falls
@@ -70,6 +80,12 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Clinic — Online Clinic Platform", lifespan=lifespan)
+# No response compression existed anywhere in the stack — every HTML/JS/CSS
+# response (now including the SvelteKit web-build's JS bundles, specs/v4)
+# shipped uncompressed. Real, measured cause of "web is too slow": curl
+# against production showed no Content-Encoding header at all.
+app.add_middleware(GZipMiddleware, minimum_size=500)
+_PROCESS_START = time.monotonic()
 auth.register(app)
 billing.register(app)
 wearables.register(app)
@@ -80,16 +96,37 @@ wearables.register(app)
 @app.get("/api/health")
 def health() -> dict:
     def probe(fn):
+        start = time.monotonic()
         try:
             fn()
-            return {"ok": True}
+            return {"ok": True, "ping_ms": round((time.monotonic() - start) * 1000, 1)}
         except Exception as exc:
-            return {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]}
+            return {"ok": False, "ping_ms": round((time.monotonic() - start) * 1000, 1),
+                     "error": f"{type(exc).__name__}: {exc}"[:200]}
 
-    return {
+    checks = {
         "neo4j": probe(knowledge.ping),
         "anthropic": probe(llm.ping),
         "core": probe(core_store.ping),
+    }
+
+    # ru_maxrss is KB on Linux (where this actually runs, per DEPLOY.md)
+    # but bytes on macOS/BSD — this project's dev machines are Mac, so
+    # normalize rather than publish a number that's off by 1024x locally.
+    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    memory_mb = round(rss / 1024 if sys.platform == "linux" else rss / (1024 * 1024), 1)
+    disk = shutil.disk_usage("/")
+
+    return {
+        "status": "ok" if all(c["ok"] for c in checks.values()) else "degraded",
+        "uptime_seconds": round(time.monotonic() - _PROCESS_START, 1),
+        "checks": checks,
+        "process": {"memory_rss_mb": memory_mb, "pid": os.getpid()},
+        "disk": {
+            "total_gb": round(disk.total / 1024 ** 3, 2),
+            "used_gb": round(disk.used / 1024 ** 3, 2),
+            "free_gb": round(disk.free / 1024 ** 3, 2),
+        },
         "stats": knowledge.stats(),
     }
 
@@ -1285,150 +1322,50 @@ def me_list_files(session: dict = Depends(auth.require_client)) -> list[dict]:
 
 # --- Frontend -----------------------------------------------------------------
 #
-# Clean top-level routes rather than exposing the static/public|practitioner|
-# client directory layout in the URL — /static/ is left mounted only for the
-# actual assets (css/js) these pages load, not as a way to reach the pages
-# themselves.
+# specs/v4: SvelteKit's adapter-static build (WEB_BUILD) replaces the old
+# hand-written static/public|practitioner|client|admin pages. adapter-static
+# writes a prerendered route "/a/b" as "a/b.html" (and "/" as "index.html");
+# the auth-gated portals (client/practitioner/admin) are ssr:false, so any
+# path under them isn't a file on disk at all — it falls through to
+# app.html, the SPA shell, whose client-side router (and its own auth
+# guards, specs/v4/01 §Information architecture) takes over from there.
+# STATIC/the old pages stay on disk, unmounted from any page route now —
+# the pre-cutover record, not a live fallback.
 
 app.mount("/photos", StaticFiles(directory=cfg.photos_path), name="photos")
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
+app.mount("/_app", StaticFiles(directory=WEB_BUILD / "_app"), name="web-assets")
 
-
-def _page(*parts: str) -> FileResponse:
-    return FileResponse(STATIC.joinpath(*parts))
-
-
-@app.get("/")
-def index() -> RedirectResponse:
-    return RedirectResponse("/login")
-
-
-@app.get("/admin/dashboard")
-def admin_dashboard_page() -> FileResponse:
-    return _page("admin", "dashboard.html")
-
-
-@app.get("/admin")
-def admin_page() -> FileResponse:
-    # The knowledge-library SPA carried over from v1 (unchanged, per
-    # specs/v2/04-admin-portal.md) — its own routes are gated by
-    # auth.require_admin, this just serves the shell.
-    return _page("index.html")
-
-
-@app.get("/admin/users")
-def admin_users_page() -> FileResponse:
-    # Practitioner + admin account management, split out of /admin's
-    # knowledge-library dashboard into its own page — see
-    # specs/v2/04-admin-portal.md §0.
-    return _page("admin", "users.html")
-
-
-@app.get("/admin/questionnaires")
-def admin_questionnaires_page() -> FileResponse:
-    return _page("admin", "questionnaires.html")
-
-
-@app.get("/about")
-def about_page() -> FileResponse:
-    return _page("public", "about.html")
+# Legacy URL, kept as a redirect — the directory is the site root now.
+_WEB_ROOT_FILES = {"robots.txt", "favicon.svg", "favicon.png", "favicon.ico"}
 
 
 @app.get("/directory")
-def directory_page() -> FileResponse:
-    return _page("public", "directory.html")
+def directory_redirect() -> RedirectResponse:
+    return RedirectResponse("/", status_code=301)
 
 
-@app.get("/coach/{practitioner_id}")
-def coach_page(practitioner_id: str) -> FileResponse:
-    # practitioner_id isn't used server-side — the page reads it from
-    # location.pathname and calls the API itself. The path param exists so
-    # this route matches /coach/<anything> rather than only /coach.
-    return _page("public", "coach.html")
+@app.get("/{full_path:path}")
+def web_app(full_path: str) -> FileResponse:
+    # Root-level files adapter-static writes alongside the page HTML
+    # (robots.txt, a favicon) — served as-is.
+    if full_path in _WEB_ROOT_FILES:
+        candidate = WEB_BUILD / full_path
+        if candidate.is_file():
+            return FileResponse(candidate)
 
+    clean = full_path.strip("/")
+    html_path = WEB_BUILD / (f"{clean}.html" if clean else "index.html")
+    if html_path.is_file():
+        return FileResponse(html_path)
 
-@app.get("/login")
-def login_page() -> FileResponse:
-    return _page("public", "login.html")
-
-
-@app.get("/account")
-def account_page() -> FileResponse:
-    return _page("public", "account.html")
-
-
-@app.get("/signup")
-def client_signup_page() -> FileResponse:
-    return _page("public", "client-signup.html")
-
-
-@app.get("/join")
-def practitioner_signup_page() -> FileResponse:
-    return _page("public", "practitioner-signup.html")
-
-
-@app.get("/join/submitted")
-def practitioner_signup_thanks_page() -> FileResponse:
-    return _page("public", "practitioner-signup-thanks.html")
-
-
-@app.get("/practitioner/profile")
-def practitioner_profile_page() -> FileResponse:
-    return _page("practitioner", "profile.html")
-
-
-@app.get("/practitioner/contacts")
-def practitioner_contacts_page() -> FileResponse:
-    return _page("practitioner", "contacts.html")
-
-
-@app.get("/practitioner/clients")
-def practitioner_clients_page() -> FileResponse:
-    return _page("practitioner", "clients.html")
-
-
-@app.get("/practitioner/dashboard")
-def practitioner_dashboard_page() -> FileResponse:
-    return _page("practitioner", "dashboard.html")
-
-
-@app.get("/practitioner/clients/{client_id}")
-def practitioner_client_detail_page(client_id: str) -> FileResponse:
-    # client_id isn't used server-side — read from location.pathname client-side,
-    # same convention as /coach/{practitioner_id}.
-    return _page("practitioner", "client-detail.html")
-
-
-@app.get("/practitioner/consult")
-def practitioner_consult_page() -> FileResponse:
-    return _page("practitioner", "consult.html")
-
-
-@app.get("/practitioner/upgrade")
-def practitioner_upgrade_page() -> FileResponse:
-    return _page("practitioner", "upgrade.html")
-
-
-@app.get("/practitioner/knowledge")
-def practitioner_knowledge_page() -> FileResponse:
-    return _page("practitioner", "knowledge.html")
-
-
-@app.get("/client/dashboard")
-def client_dashboard_page() -> FileResponse:
-    return _page("client", "dashboard.html")
-
-
-@app.get("/client/questionnaire")
-def client_questionnaire_page() -> FileResponse:
-    return _page("client", "questionnaire.html")
-
-
-@app.get("/client/files")
-def client_files_page() -> FileResponse:
-    return _page("client", "files.html")
-
-
-@app.get("/client/wearables")
-def client_wearables_page() -> FileResponse:
-    return _page("client", "wearables.html")
+    # Not a prerendered file — an auth-gated portal route, a coach/{id}
+    # approved after the last build, or anything else the SPA router owns.
+    # 200 with the app shell, not 404: an unmatched path here might still
+    # be a real client-side route, and a 404 on the shell itself would be
+    # wrong for those; SvelteKit's own router shows a real not-found state
+    # for paths that turn out not to exist.
+    shell = WEB_BUILD / "app.html"
+    if shell.is_file():
+        return FileResponse(shell)
+    raise HTTPException(404, "Not found")
