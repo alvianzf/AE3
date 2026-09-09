@@ -1,5 +1,68 @@
 # Specs changelog
 
+## v4 — 2026-09-09 (post-deploy fixes: PM/QA/Clinician review, 42 of 44 findings fixed)
+
+Same shape as [v2.1](#v2.1)'s precedent: corrections made after `v4` (the
+SvelteKit rewrite) went live (commit `5e0c14f`, 2026-09-02), tracked here
+rather than waiting for `v4/` to be formally cut as the current version per
+[specs/README.md](README.md)'s own versioning rule — that cut still hasn't
+happened; [`specs/v4/04-known-issues.md`](v4/04-known-issues.md) flags it
+explicitly as a separate, unresolved process gap.
+
+A PM/QA/Clinician-lens code review of the full deployed app (`app/` +
+all four SvelteKit portals) produced
+[`specs/v4/04-known-issues.md`](v4/04-known-issues.md) — 9 Critical, 12
+High, 18 Medium, 5 Low findings. 42 fixed same-session, each its own
+commit; M7 was retracted on closer check (it matches
+[specs/v2/03-website.md](v2/03-website.md)'s spec, not a bug); M18
+resolved as a side effect of C9's fix; M1 only partly fixed. Full detail,
+including exact file:line references and what each fix does, lives in the
+findings doc itself rather than duplicated here.
+
+**Critical (live security/access-control defects, or a flagship feature
+completely non-functional):** an unapproved/rejected practitioner could
+pay for and use Pro features before admin review; the anti-hallucination
+verdict badge always showed the wrong state; citations were captured by
+the backend but never rendered — the `[S1]`/`[S2]` markers were dead text;
+a flagged ("weak"-verdict) answer reached the permanent patient record
+with no trace it was flagged; a practitioner's personal source down-weight
+was bypassed during graph traversal; self-serve client signup always
+400'd — the site's primary conversion path could never complete;
+unauthenticated practitioner-signup photo upload had no validation
+(stored-XSS risk); switching clients mid-consult could attribute one
+patient's answer to another with no label; a demoted superadmin kept
+elevated access for up to 12h (stale session, not re-checked live).
+
+**High:** the admin library lost its delete/regrade UI in the rewrite;
+uploaded client files could never be opened again by anyone; Stripe
+redirects pointed at retired pre-rewrite pages; multi-turn consult history
+never actually carried forward (every question started a new session) and
+deep-linked past sessions weren't replayed; an unset
+`VAULT_ENCRYPTION_KEY` silently corrupted stored API keys across a restart
+with no fail-closed check; "save session summary" had no UI entry point;
+non-PDF/non-text uploads were silently ingested as garbled "sources"
+instead of rejected; long sources were graded from a truncated read with
+no indication; no password-strength check at any account-creation path;
+the librarian's reasoning was captured but never shown; no login rate
+limiting; a consult-stream failure only surfaced for one exception type.
+
+**Medium:** suspended/rejected practitioners' contact form and admin
+re-approval path; a failed consult left its progress UI stuck "running";
+no way to cancel a consult stream on navigate-away; questionnaire editing
+had no UI; wearable connections had no disconnect; client file-upload
+errors were swallowed to a generic message; unbounded `per_page`; a few
+unhandled-exception-to-500 gaps (profile field parsing, `_json_call`,
+blank consult questions billing the full pipeline); dashboard tiles using
+emoji icons / static copy instead of the shared `Icon` component and real
+status; Pro-gated nav items not marked as gated; a self-flagged filter
+bug in this same review's own admin-library redesign; a transient
+logged-out nav flash.
+
+**Low:** an inconsistent post-login redirect fallback; no email-format
+validation; an inconsistent destructive-action confirmation pattern
+(native `confirm()` vs. the app's `Dialog` vs. none); dead `type="submit"`
+markup; a questionnaire-submit page not refreshing its own persisted state.
+
 ## v3 — 2026-08-17 (bounded AI-answer revision, reachable Summariser, Material Design 3) {#v3}
 
 Prompted by "can we make the agents talk to each other?" A three-agent
