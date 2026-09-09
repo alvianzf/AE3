@@ -2,6 +2,7 @@
 	import { invalidateAll } from '$app/navigation';
 	import { PUBLIC_API_BASE } from '$env/static/public';
 	import { get, patch, del } from '$lib/api';
+	import { chunkedUpload } from '$lib/chunkedUpload';
 	import { toast } from '$lib/stores/toast';
 	import Spotlight from '$lib/components/Spotlight.svelte';
 	import Quiet from '$lib/components/Quiet.svelte';
@@ -15,6 +16,7 @@
 	let text = $state('');
 	let fileInput = $state<HTMLInputElement>();
 	let ingesting = $state(false);
+	let ingestProgress = $state<{ sent: number; total: number } | null>(null);
 
 	// Library browser: categories = topics (from /api/coverage, with counts),
 	// a kind filter alongside them, and a search box over both. Filtered
@@ -99,14 +101,24 @@
 		e.preventDefault();
 		if (!text.trim() && !fileInput?.files?.length) return;
 		ingesting = true;
-		const fd = new FormData();
-		if (fileInput?.files?.[0]) fd.set('file', fileInput.files[0]);
-		else fd.set('text', text);
+		ingestProgress = null;
 		try {
-			const res = await fetch(`${PUBLIC_API_BASE}/api/sources`, { method: 'POST', credentials: 'include', body: fd });
-			if (!res.ok) {
-				const body = await res.json().catch(() => ({}));
-				throw new Error(body?.detail?.message || body?.detail || 'Ingest failed.');
+			const file = fileInput?.files?.[0];
+			if (file) {
+				// Chunked regardless of size: one code path, always shows
+				// progress, and never risks a single >200MB-capable request
+				// hitting nginx's body-size limit (app/uploads.py, web/src/lib/
+				// chunkedUpload.ts).
+				await chunkedUpload('/sources', file, { kind: 'article', origin: 'unspecified' },
+					(p) => (ingestProgress = p));
+			} else {
+				const fd = new FormData();
+				fd.set('text', text);
+				const res = await fetch(`${PUBLIC_API_BASE}/api/sources`, { method: 'POST', credentials: 'include', body: fd });
+				if (!res.ok) {
+					const body = await res.json().catch(() => ({}));
+					throw new Error(body?.detail?.message || body?.detail || 'Ingest failed.');
+				}
 			}
 			toast('Source ingested.');
 			text = '';
@@ -121,6 +133,7 @@
 			toast(err.message, 'alert');
 		} finally {
 			ingesting = false;
+			ingestProgress = null;
 		}
 	}
 </script>
@@ -135,7 +148,14 @@
 		<div class="field">
 			<label for="file">Or upload a file</label>
 			<input id="file" type="file" bind:this={fileInput} />
+			<p class="hint">Up to 200 MB — sent in 8 MB pieces, so a large PDF doesn't need one giant request.</p>
 		</div>
+		{#if ingestProgress}
+			<div class="upload-progress">
+				<div class="bar" style="width: {Math.round((ingestProgress.sent / ingestProgress.total) * 100)}%"></div>
+				<span class="hint">{Math.round(ingestProgress.sent / 1024 / 1024)} / {Math.round(ingestProgress.total / 1024 / 1024)} MB</span>
+			</div>
+		{/if}
 		<Button type="submit" loading={ingesting}>Ingest</Button>
 	</form>
 </Quiet>
@@ -277,5 +297,11 @@
 	}
 	.doc-body { white-space: pre-wrap; font-size: var(--text-sm); line-height: 1.6; max-height: 60vh; overflow-y: auto; }
 	.field { display: flex; flex-direction: column; gap: .35rem; }
+	.upload-progress {
+		display: flex; align-items: center; gap: var(--space-3);
+		background: var(--panel-2); border-radius: 99px; padding: .35rem .35rem .35rem .1rem;
+	}
+	.upload-progress .bar { flex: 1 1 auto; height: 6px; border-radius: 99px; background: var(--accent); transition: width .2s var(--ease); margin-left: .25rem; }
+	.upload-progress .hint { flex: 0 0 auto; padding-right: .5rem; white-space: nowrap; }
 	.list { list-style: none; margin: 0; padding: 0; display: grid; gap: .35rem; font-size: var(--text-sm); color: var(--muted); }
 </style>

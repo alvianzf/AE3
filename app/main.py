@@ -30,7 +30,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel
 
-from . import auth, billing, core_store, knowledge, llm, originals, vault, vault_files, wearables
+from . import auth, billing, core_store, knowledge, llm, originals, uploads, vault, vault_files, wearables
 from .config import get_config
 
 cfg = get_config()
@@ -148,6 +148,11 @@ def health() -> dict:
 
 # --- Admin portal: the knowledge library --------------------------------------
 
+# Direct (non-chunked) upload cap for the legacy single-request paths —
+# small files, and API/script callers (verify.py, verify_v2.py) that post a
+# whole file in one request. Anything larger should go through the chunked
+# upload routes below, which accept up to cfg.max_upload_bytes (200 MB) by
+# streaming to disk instead of buffering the whole file in memory.
 _MAX_SOURCE_UPLOAD_BYTES = 20 * 1024 * 1024
 _MAX_CLIENT_FILE_BYTES = 20 * 1024 * 1024
 
@@ -181,6 +186,34 @@ def _extract_pages(filename: str, raw: bytes) -> list[tuple[int | None, str]]:
         ) from exc
 
 
+def _extract_pages_from_path(filename: str, path: Path) -> list[tuple[int | None, str]]:
+    """Same contract as _extract_pages(), for a file already on disk (the
+    chunked-upload staging path) instead of an in-memory `bytes` — used for
+    anything that went through the 200 MB chunked route, so a large PDF is
+    never also held as a second in-memory copy on top of what pypdf itself
+    buffers while parsing. A 200 MB plain-text source still has to become
+    one in-memory string eventually (chunk_pages/content_hash/the Reader
+    call all operate on a single `body` string) — not solved here, since
+    the realistic 200 MB case is a large PDF, whose *extracted* text is
+    far smaller than the file; a 200 MB source that's actually plain text
+    is an extreme edge case this app's pipeline isn't designed around."""
+    if filename.lower().endswith(".pdf"):
+        with path.open("rb") as f:
+            if f.read(4) != b"%PDF":
+                raise ValueError("This file is named .pdf but isn't a real PDF.")
+        from pypdf import PdfReader
+
+        return [(i + 1, page.extract_text() or "")
+                for i, page in enumerate(PdfReader(str(path)).pages)]
+    try:
+        return [(None, path.read_text(encoding="utf-8"))]
+    except UnicodeDecodeError as exc:
+        raise ValueError(
+            "This file doesn't look like plain text or a PDF — only those "
+            "two are supported."
+        ) from exc
+
+
 def _media_type(filename: str) -> str:
     """Fallback when the browser sent no content type on the upload."""
     return mimetypes.guess_type(filename)[0] or "application/octet-stream"
@@ -198,41 +231,20 @@ def _locator(p: dict) -> str:
     return f"passage {p['ordinal'] + 1}"
 
 
-@app.post("/api/sources")
-async def add_source(
-    kind: str = Form("article"),
-    origin: str = Form("unspecified"),
-    text: str = Form(""),
-    replaces: str = Form(""),
-    file: UploadFile | None = None,
-    _admin: dict = Depends(auth.require_admin),
+def _ingest_pages(
+    pages: list[tuple[int | None, str]], filename: str, kind: str, origin: str,
+    replaces: str, original: tuple[bytes | Path, str, str] | None,
 ) -> dict:
-    """Upload a source, or paste one. Read → tag → grade → split into passages.
+    """Read → tag → grade → split into passages → write. Shared by the
+    direct-upload route below and the chunked-upload complete step
+    (app/uploads.py) — everything from here on is identical either way,
+    the only difference is how `pages`/`original` were produced.
 
     An exact re-upload is refused with 409 rather than quietly creating a second
     copy — the Reader is generative, so duplicates get different titles, summaries
     and grades and are near-impossible to spot in the library. Pass `replaces`
     with the existing source's id to supersede it deliberately.
     """
-    original: tuple[bytes, str, str] | None = None
-    if file is not None and file.filename:
-        raw = await file.read()
-        if len(raw) > _MAX_SOURCE_UPLOAD_BYTES:
-            raise HTTPException(400, "File must be under 20 MB.")
-        filename = file.filename
-        try:
-            pages = _extract_pages(filename, raw)
-        except ValueError as exc:
-            raise HTTPException(400, str(exc)) from exc
-        # Keep the file itself as well as the passages: extraction drops tables,
-        # figures and layout, and a clinician checking a citation needs the
-        # document rather than our reading of it.
-        original = (raw, filename,
-                    file.content_type or _media_type(filename))
-    else:
-        filename = "pasted text"
-        pages = [(None, text)]
-
     page_count = sum(1 for n, _ in pages if n is not None)
     body = "\n\n".join(t.strip() for _, t in pages if t.strip()).strip()
     if not body:
@@ -291,6 +303,90 @@ async def add_source(
                        "Nothing was added.",
             "duplicate_of": None,
         })
+
+
+@app.post("/api/sources")
+async def add_source(
+    kind: str = Form("article"),
+    origin: str = Form("unspecified"),
+    text: str = Form(""),
+    replaces: str = Form(""),
+    file: UploadFile | None = None,
+    _admin: dict = Depends(auth.require_admin),
+) -> dict:
+    """Upload a source in one request, or paste one. For anything that
+    might exceed _MAX_SOURCE_UPLOAD_BYTES, use the chunked routes below
+    instead (POST /api/sources/upload/init, .../chunk, .../complete),
+    which accept up to cfg.max_upload_bytes (200 MB) without buffering the
+    whole file in memory."""
+    original: tuple[bytes, str, str] | None = None
+    if file is not None and file.filename:
+        raw = await file.read()
+        if len(raw) > _MAX_SOURCE_UPLOAD_BYTES:
+            raise HTTPException(
+                400,
+                f"File must be under {_MAX_SOURCE_UPLOAD_BYTES // (1024 * 1024)} MB "
+                "via direct upload — use the chunked upload for a larger file.")
+        filename = file.filename
+        try:
+            pages = _extract_pages(filename, raw)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        # Keep the file itself as well as the passages: extraction drops tables,
+        # figures and layout, and a clinician checking a citation needs the
+        # document rather than our reading of it.
+        original = (raw, filename,
+                    file.content_type or _media_type(filename))
+    else:
+        filename = "pasted text"
+        pages = [(None, text)]
+
+    return _ingest_pages(pages, filename, kind, origin, replaces, original)
+
+
+class SourceUploadInit(BaseModel):
+    filename: str
+    total_size: int
+    content_type: str = ""
+
+
+@app.post("/api/sources/upload/init")
+def source_upload_init(body: SourceUploadInit,
+                       _admin: dict = Depends(auth.require_admin)) -> dict:
+    return uploads.start(body.total_size, {
+        "filename": body.filename, "content_type": body.content_type,
+    })
+
+
+@app.post("/api/sources/upload/{upload_id}/chunk")
+async def source_upload_chunk(upload_id: str, chunk: UploadFile,
+                              _admin: dict = Depends(auth.require_admin)) -> dict:
+    return await uploads.append_chunk(upload_id, chunk)
+
+
+class SourceUploadComplete(BaseModel):
+    kind: str = "article"
+    origin: str = "unspecified"
+    replaces: str = ""
+
+
+@app.post("/api/sources/upload/{upload_id}/complete")
+def source_upload_complete(upload_id: str, body: SourceUploadComplete,
+                           _admin: dict = Depends(auth.require_admin)) -> dict:
+    path, meta = uploads.finish(upload_id)
+    filename = meta["filename"]
+    try:
+        try:
+            pages = _extract_pages_from_path(filename, path)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        original = (path, filename, meta["content_type"] or _media_type(filename))
+        return _ingest_pages(pages, filename, body.kind, body.origin, body.replaces, original)
+    finally:
+        # _ingest_pages() archives the file (originals.save_from_path, a
+        # copy) before we get here, so the staging copy is always safe to
+        # drop now — success or failure.
+        uploads.cleanup(upload_id)
 
 
 @app.get("/api/sources")
@@ -1412,23 +1508,76 @@ def me_submit_questionnaire(
     )
 
 
+def _save_uploaded_file(
+    practitioner_id: str, client_id: str, filename: str, content_type: str,
+    content: bytes | Path,
+) -> dict:
+    """Shared by the direct-upload route and the chunked-upload complete
+    step below — everything past receiving the bytes is identical."""
+    file_id = str(uuid.uuid4())
+    if isinstance(content, Path):
+        saved = vault_files.save_from_path(practitioner_id, file_id, content, filename)
+    else:
+        saved = vault_files.save(practitioner_id, file_id, content, filename)
+    if not saved:
+        raise HTTPException(500, "could not store the uploaded file")
+    return vault.save_uploaded_file(
+        practitioner_id, client_id, filename,
+        content_type or _media_type(filename),
+        str(vault_files.path(practitioner_id, file_id, filename)),
+    )
+
+
 @app.post("/api/me/files")
 async def me_upload_file(
     file: UploadFile, session: dict = Depends(auth.require_client),
 ) -> dict:
-    practitioner_id, client_id = session["practitioner_id"], session["id"]
+    """Upload a client file in one request. For anything that might exceed
+    _MAX_CLIENT_FILE_BYTES, use the chunked routes below instead (POST
+    /api/me/files/upload/init, .../chunk, .../complete), which accept up
+    to cfg.max_upload_bytes (200 MB) without buffering the whole file in
+    memory."""
     raw = await file.read()
     if len(raw) > _MAX_CLIENT_FILE_BYTES:
-        raise HTTPException(400, "File must be under 20 MB.")
-    file_id = str(uuid.uuid4())
+        raise HTTPException(
+            400,
+            f"File must be under {_MAX_CLIENT_FILE_BYTES // (1024 * 1024)} MB "
+            "via direct upload — use the chunked upload for a larger file.")
     filename = file.filename or "upload"
-    if not vault_files.save(practitioner_id, file_id, raw, filename):
-        raise HTTPException(500, "could not store the uploaded file")
-    return vault.save_uploaded_file(
-        practitioner_id, client_id, filename,
-        file.content_type or _media_type(filename),
-        str(vault_files.path(practitioner_id, file_id, filename)),
-    )
+    return _save_uploaded_file(
+        session["practitioner_id"], session["id"], filename, file.content_type or "", raw)
+
+
+class ClientFileUploadInit(BaseModel):
+    filename: str
+    total_size: int
+    content_type: str = ""
+
+
+@app.post("/api/me/files/upload/init")
+def me_file_upload_init(body: ClientFileUploadInit,
+                        session: dict = Depends(auth.require_client)) -> dict:
+    return uploads.start(body.total_size, {
+        "filename": body.filename, "content_type": body.content_type,
+    })
+
+
+@app.post("/api/me/files/upload/{upload_id}/chunk")
+async def me_file_upload_chunk(upload_id: str, chunk: UploadFile,
+                               session: dict = Depends(auth.require_client)) -> dict:
+    return await uploads.append_chunk(upload_id, chunk)
+
+
+@app.post("/api/me/files/upload/{upload_id}/complete")
+def me_file_upload_complete(upload_id: str,
+                            session: dict = Depends(auth.require_client)) -> dict:
+    path, meta = uploads.finish(upload_id)
+    try:
+        return _save_uploaded_file(
+            session["practitioner_id"], session["id"],
+            meta["filename"], meta["content_type"], path)
+    finally:
+        uploads.cleanup(upload_id)
 
 
 @app.get("/api/me/questionnaire/response")
