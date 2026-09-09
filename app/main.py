@@ -597,6 +597,7 @@ async def practitioner_signup(
 ) -> dict:
     if core_store.get_practitioner_by_email(email) is not None:
         raise HTTPException(409, "An account with that email already exists.")
+    auth.check_password_strength(password)
     practitioner = core_store.create_practitioner_pending(
         email=email, password_hash=auth.hash_password(password), name=name,
         bio=bio, specialties=json.loads(specialties or "[]"),
@@ -635,6 +636,7 @@ class ClientSignup(BaseModel):
 
 @app.post("/api/clients")
 def client_signup(body: ClientSignup) -> dict:
+    auth.check_password_strength(body.password)
     password_hash = auth.hash_password(body.password)
     existing = core_store.get_client_directory_entry(body.email)
     if existing is not None:
@@ -686,6 +688,7 @@ def superadmin_create_admin(body: AdminCreate,
         raise HTTPException(400, f"unknown admin role: {body.role}")
     if core_store.get_admin_by_email(body.email) is not None:
         raise HTTPException(409, "An admin with that email already exists.")
+    auth.check_password_strength(body.password)
     return _public(core_store.create_admin(
         body.email, auth.hash_password(body.password), body.name, body.role))
 
@@ -773,6 +776,7 @@ def admin_create_practitioner(body: AdminPractitionerCreate,
     # immediately rather than landing in the pending review queue.
     if core_store.get_practitioner_by_email(body.email) is not None:
         raise HTTPException(409, "A practitioner with that email already exists.")
+    auth.check_password_strength(body.password)
     practitioner = core_store.create_practitioner_pending(
         email=body.email, password_hash=auth.hash_password(body.password),
         name=body.name, bio=body.bio, specialties=body.specialties,

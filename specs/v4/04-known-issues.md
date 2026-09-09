@@ -378,7 +378,7 @@ chip on any source where it's true. The truncation limit itself is
 unchanged — this makes an existing tradeoff visible, not a bigger-context
 change.
 
-### H9 — No password length/strength check at account creation, inconsistent with change-password
+### H9 — No password length/strength check at account creation, inconsistent with change-password — FIXED
 
 `change_password` enforces `len(new_password) >= 8` (`app/auth.py:179-182`),
 but `practitioner_signup` (`app/main.py:515`), `client_signup`
@@ -387,6 +387,14 @@ accept any password, including empty or one character. The "At least 8
 characters" hint shown on signup/join forms
 (`signup/+page.svelte:37`, `join/+page.svelte:57`) is purely cosmetic —
 nothing server-side enforces it at registration time.
+
+**Fixed:** a new `auth.check_password_strength()` (same 8-character rule)
+is now called from `practitioner_signup`, `client_signup`,
+`admin_create_practitioner` (found while fixing this — a fourth,
+admin-direct-create path with the identical gap), and
+`superadmin_create_admin`. `change_password`'s own existing check is
+untouched, left as its own inline check rather than refactored to share
+this helper, since it wasn't broken.
 
 ### H10 — "How the librarian chose" reasoning is captured by the backend but never shown — FIXED
 

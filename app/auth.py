@@ -25,6 +25,17 @@ _MAX_AGE = 60 * 60 * 12
 _serializer = URLSafeTimedSerializer(cfg.session_secret, salt=_SALT)
 
 
+def check_password_strength(password: str) -> None:
+    """Raises 400 if too weak. Previously only change_password enforced this
+    — every account-creation path (practitioner/client/admin signup) hashed
+    and stored whatever was given, including empty or 1-character passwords,
+    while the 'At least 8 characters' hint on those forms was purely
+    cosmetic (specs/v4/04-known-issues.md#h9)."""
+    if len(password) < 8:
+        raise HTTPException(
+            status_code=400, detail="Password must be at least 8 characters.")
+
+
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
