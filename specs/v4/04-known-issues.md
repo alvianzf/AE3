@@ -212,7 +212,7 @@ request, not after their cookie expires.
 Major promised features that are either half-built with no UI, or built and
 then regressed from a previous version.
 
-### H1 — The admin library has no delete or regrade UI — a regression
+### H1 — The admin library has no delete or regrade UI — a regression — FIXED
 
 `PATCH /api/sources/{id}` (regrade) and `DELETE /api/sources/{id}`
 (`app/main.py:411`, `422`) both still exist, and the pre-rewrite admin page
@@ -223,6 +223,13 @@ recent library redesign) has neither: once ingested, a source's grade can
 never be changed and it can never be removed, through any UI. README.md's
 "What it demonstrates" table lists "A source can be corrected or removed"
 as a core, demoed capability.
+
+**Fixed:** the library table's grade column is now an editable number input
+(1-10, `PATCH`es on change), and each row gets a "Remove" action that opens
+a confirmation dialog naming the source and its passage count — same
+copy/two-step shape as the pre-rewrite page — before calling `DELETE`.
+Added a `patch()` helper to `lib/api.ts` alongside the existing get/post/
+put/del, since none existed.
 
 ### H2 — Uploaded files can never be opened again, by anyone
 

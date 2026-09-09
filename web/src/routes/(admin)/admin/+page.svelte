@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
 	import { PUBLIC_API_BASE } from '$env/static/public';
-	import { get } from '$lib/api';
+	import { get, patch, del } from '$lib/api';
 	import { toast } from '$lib/stores/toast';
 	import Spotlight from '$lib/components/Spotlight.svelte';
 	import Quiet from '$lib/components/Quiet.svelte';
@@ -56,6 +56,42 @@
 			viewing = false;
 		} finally {
 			viewLoading = false;
+		}
+	}
+
+	// Regrade/delete: PATCH and DELETE /api/sources/{id} always existed on the
+	// backend (the pre-rewrite admin page used both, static/app.js) but had no
+	// UI in this rewrite — README.md's "a source can be corrected or removed"
+	// had no way to do either (specs/v4/04-known-issues.md#h1).
+	async function regrade(s: any, grade: number) {
+		if (grade === s.grade) return;
+		try {
+			await patch(fetch, `/sources/${s.id}`, { grade });
+			toast(`"${s.title.slice(0, 40)}" set to grade ${grade}.`);
+			await invalidateAll();
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		}
+	}
+
+	let deleting = $state<any>(null);
+	let confirmingDelete = $state(false);
+
+	function askDelete(s: any) {
+		deleting = s;
+		confirmingDelete = true;
+	}
+
+	async function confirmDelete() {
+		if (!deleting) return;
+		const s = deleting;
+		confirmingDelete = false;
+		try {
+			await del(fetch, `/sources/${s.id}`);
+			toast('Source removed from the library.');
+			await invalidateAll();
+		} catch (err: any) {
+			toast(err.message, 'alert');
 		}
 	}
 
@@ -132,7 +168,7 @@
 	</div>
 
 	<DataTable
-		columns={[{ key: 'title', label: 'Title', sortable: true }, { key: 'kind', label: 'Kind' }, { key: 'grade', label: 'Grade', sortable: true }, { key: 'created_at', label: 'Ingested' }, { key: 'view', label: '' }]}
+		columns={[{ key: 'title', label: 'Title', sortable: true }, { key: 'kind', label: 'Kind' }, { key: 'grade', label: 'Grade', sortable: true }, { key: 'created_at', label: 'Ingested' }, { key: 'actions', label: '' }]}
 		rows={filtered}
 		empty={data.sources.length ? 'Nothing matches those filters.' : 'Nothing ingested yet.'}
 	>
@@ -142,12 +178,31 @@
 				{#if s.topics?.length}<div class="topics">{s.topics.join(' · ')}</div>{/if}
 			</td>
 			<td><Chip tone="neutral">{s.kind}</Chip></td>
-			<td>{s.grade}</td>
+			<td>
+				<input
+					class="grade"
+					type="number" min="1" max="10" value={s.grade}
+					onchange={(e) => regrade(s, Number((e.target as HTMLInputElement).value))}
+				/>
+			</td>
 			<td>{(s.created_at ?? '').slice(0, 10)}</td>
-			<td><button class="view" onclick={() => viewDoc(s)}>View</button></td>
+			<td class="actions">
+				<button class="view" onclick={() => viewDoc(s)}>View</button>
+				<button class="view danger" onclick={() => askDelete(s)}>Remove</button>
+			</td>
 		{/snippet}
 	</DataTable>
 </Spotlight>
+
+<Dialog bind:open={confirmingDelete} title="Remove source">
+	{#if deleting}
+		<p>Remove "{deleting.title}" and its {deleting.chunks ?? 0} passage(s)? Answers will stop citing it.</p>
+	{/if}
+	{#snippet footer()}
+		<button class="view" onclick={() => (confirmingDelete = false)}>Keep</button>
+		<button class="view danger" onclick={confirmDelete}>Remove</button>
+	{/snippet}
+</Dialog>
 
 <Dialog bind:open={viewing} title={viewTitle}>
 	{#if viewLoading}
@@ -207,6 +262,13 @@
 		border-radius: var(--r); padding: .3rem .7rem;
 	}
 	.view:hover { border-color: var(--accent); background: var(--accent-soft); }
+	.view.danger { color: var(--danger); }
+	.view.danger:hover { border-color: var(--danger); background: var(--danger-soft); }
+	td.actions { display: flex; gap: .4rem; }
+	input.grade {
+		width: 3.5rem; border: 1px solid var(--line-2); border-radius: var(--r);
+		padding: .3rem .4rem; font: inherit; color: var(--ink); background: var(--panel);
+	}
 	.doc-body { white-space: pre-wrap; font-size: var(--text-sm); line-height: 1.6; max-height: 60vh; overflow-y: auto; }
 	.field { display: flex; flex-direction: column; gap: .35rem; }
 	.list { list-style: none; margin: 0; padding: 0; display: grid; gap: .35rem; font-size: var(--text-sm); color: var(--muted); }

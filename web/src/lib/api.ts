@@ -63,4 +63,6 @@ export const post = (fetchFn: typeof fetch, path: string, body?: unknown) =>
 	api(fetchFn, path, body !== undefined ? json('POST', body) : { method: 'POST' });
 export const put = (fetchFn: typeof fetch, path: string, body?: unknown) =>
 	api(fetchFn, path, json('PUT', body));
+export const patch = (fetchFn: typeof fetch, path: string, body?: unknown) =>
+	api(fetchFn, path, json('PATCH', body));
 export const del = (fetchFn: typeof fetch, path: string) => api(fetchFn, path, { method: 'DELETE' });
