@@ -4,9 +4,10 @@
 	let {
 		open = $bindable(false),
 		title,
+		wide = false,
 		children,
 		footer
-	}: { open?: boolean; title: string; children: Snippet; footer?: Snippet } = $props();
+	}: { open?: boolean; title: string; wide?: boolean; children: Snippet; footer?: Snippet } = $props();
 
 	let dialogEl: HTMLDialogElement;
 
@@ -21,7 +22,7 @@
 	}
 </script>
 
-<dialog bind:this={dialogEl} onclose={onClose} onclick={(e) => { if (e.target === dialogEl) dialogEl.close(); }}>
+<dialog bind:this={dialogEl} class:wide onclose={onClose} onclick={(e) => { if (e.target === dialogEl) dialogEl.close(); }}>
 	<div class="dh">
 		<h3>{title}</h3>
 		<button class="x" onclick={() => dialogEl.close()} aria-label="Close">&times;</button>
@@ -36,6 +37,7 @@
 		box-shadow: var(--shadow-lg); background: var(--panel);
 		animation: liftIn .2s var(--ease) both;
 	}
+	dialog.wide { width: min(46rem, 94vw); }
 	dialog::backdrop { background: rgba(34, 31, 27, .45); backdrop-filter: blur(2px); }
 	.dh { display: flex; align-items: center; justify-content: space-between; padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--line); }
 	.dh h3 { font-size: var(--text-lg); }

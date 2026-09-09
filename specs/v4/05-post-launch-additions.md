@@ -185,8 +185,10 @@ a materially heavier dependency; not added.
 
 ### Frontend
 
-The admin Knowledge page's "1 · Teach Clinic" panel is now three tabs
-(`Tabs.svelte`) instead of one form:
+The admin Knowledge page's ingest form is three tabs (`Tabs.svelte`)
+instead of one — originally a permanent "1 · Teach Clinic" rail panel,
+later moved into a modal (see "Library browse and the ingest modal"
+below):
 
 - **Upload a document** — a real drag-and-drop zone (click to browse
   still works), not a bare `<input type="file">`. Once a file is chosen,
@@ -228,6 +230,63 @@ and the practitioner client-detail page. Deliberately left alone:
 Profile (two similarly-narrow forms — a wide second column would just be
 empty space), `/account` (a deliberately narrow single-purpose page), and
 every page that only has one panel to begin with.
+
+## Library browse and the ingest modal
+
+Two changes to the admin Knowledge page's layout, from the same request
+(a DMOZ-style directory browse for the library, referencing
+https://dmoz-odp.com/, plus moving the upload/paste/scrape tabs behind a
+button instead of sitting in the rail).
+
+### Ingest moved from a rail panel into a modal
+
+The "1 · Teach Clinic" panel (Tabs + dropzone/textarea/URL form) is gone
+from the rail entirely. In its place: a **"+ Add resources"** button in
+the library's header (`Spotlight`'s `actions` slot) that opens the same
+three tabs inside a `Dialog`. Staging successfully (file, text, or
+scrape) closes the modal automatically so the admin lands back on the
+page with the staged list already updated.
+
+**Why this also fixes a recurring confusion, not just a cosmetic move**:
+this page was reported twice as confusing because of two visually
+adjacent action lists — Ingest/Discard on staged items just above
+Regrade/Remove on library items — with no explanation of why there were
+two. Pulling the upload *form* out into a modal leaves the rail with one
+list only ("2 · Staged for review"): the staged checklist and its
+Ingest/Discard actions, now clearly the thing to check after adding
+something. Regrade/Remove stays where it always made sense, on the
+library table itself.
+
+`Dialog.svelte` gained an optional `wide` prop (`min(46rem, 94vw)` vs.
+the default `min(32rem, 92vw)`) since the ingest tabs — especially the
+dropzone with its PDF preview — need more room than a confirm dialog.
+Existing call sites are unaffected; none pass `wide`.
+
+### Library: directory-style categories instead of a flat facet row
+
+Reused rather than rebuilt: the library still has no true category
+hierarchy in Neo4j — `Topic` nodes are flat, same limitation noted the
+first time a DMOZ-style browse was requested. What changed is the
+*presentation*, not the data model:
+
+- **No query yet** (search empty, no category picked): the library shows
+  a grid of category tiles — one per `Topic`, from `/api/coverage`, each
+  showing its document count — instead of the old inline chip row. This
+  is the directory "front page," matching dmoz-odp.com's shape at that
+  level.
+- **A category picked, or a search typed**: the tile grid is replaced by
+  a breadcrumb ("All categories › {topic}" and/or the search term), a
+  **Kind** facet row (`Chip`-styled buttons, unchanged from before —
+  standing in for "subcategory," since Kind is the only other facet the
+  data actually has), and the results table.
+- The search box sits above both states, enlarged, with a clear (×)
+  button — typing a query skips straight to the results view over every
+  category, the way a directory's search bar does.
+
+Same honest caveat as the first DMOZ pass: "subcategory" here is a
+one-level facet (Kind), not a second real hierarchy tier. A true
+nested-subcategory model would need Neo4j schema work (e.g. a
+`Topic`-of-`Topic` relationship) that wasn't part of this request.
 
 ## Bug fix: "What Clinic knows" always showed 0
 

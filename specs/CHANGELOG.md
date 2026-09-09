@@ -1,5 +1,28 @@
 # Specs changelog
 
+## v4.2 — 2026-09-09 (library directory browse; ingest moved into a modal)
+
+Same day as `v4.1` below, later still — a follow-up to the DMOZ-style
+library request from earlier the same day, detailed in
+[`specs/v4/05-post-launch-additions.md`](v4/05-post-launch-additions.md#library-browse-and-the-ingest-modal):
+
+- **Ingest is now a modal**, not a permanent rail panel: a "+ Add
+  resources" button on the library opens the upload/paste/scrape tabs in
+  a `Dialog` (which gained an optional `wide` variant), closing itself
+  automatically once staging succeeds. The rail now shows one list —
+  "Staged for review" — instead of the upload form sitting directly
+  above it, addressing a recurring "what are these two lists" report
+  about the page.
+- **Library browse redesigned as a directory**: with no search and no
+  category picked, the library shows a grid of category tiles (one per
+  `Topic`, with a document count) instead of an inline chip row —
+  matching the https://dmoz-odp.com/ shape referenced in the request.
+  Picking a tile (or typing a search) swaps to a breadcrumb, a Kind
+  facet row standing in for "subcategory," and the results table. Same
+  caveat as the original DMOZ pass: Neo4j has no real category hierarchy,
+  so this is a presentation change over the existing flat `Topic`/`Kind`
+  facets, not a new data model.
+
 ## v4.1 — 2026-09-09 (CI/CD, chunked uploads, staged-source review queue, layout fixes)
 
 Same day as the `v4` entry below, later in the day — three unrelated
