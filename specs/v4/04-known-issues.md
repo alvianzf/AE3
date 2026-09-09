@@ -149,7 +149,7 @@ clients, same rule `coach/[id]`'s contact flow already respects), and
 requires a selection before submit is enabled. An explicit empty state
 covers the case where no Pro practitioner exists yet.
 
-### C7 — Unauthenticated photo upload has no validation and is served without XSS hardening
+### C7 — Unauthenticated photo upload has no validation and is served without XSS hardening — FIXED
 
 `practitioner_signup` (`app/main.py:515-536`, no auth required) accepts any
 `photo` file; `_save_photo` (`app/main.py:470-474`) writes the raw bytes
@@ -161,6 +161,13 @@ unlike `/api/sources/{id}/original`, which explicitly restricts inline
 rendering to pdf/text and sets `nosniff` for exactly this reason
 (`app/main.py:393-403`). An `.svg` or `.html` "photo" is a stored-XSS
 vector on the public, pre-auth signup path.
+
+**Fixed:** `_save_photo` now sniffs real magic bytes (JPEG/PNG/GIF/WebP
+only, no PIL dependency needed) and saves under the *detected* extension,
+not whatever the client claims — an `.svg`/`.html` upload 400s outright
+regardless of its filename or declared content-type. Added a 5 MB cap. A
+new middleware sets `X-Content-Type-Options: nosniff` on every `/photos/*`
+response, same as `/original` already does.
 
 ### C8 — Switching clients mid-consult can attribute one patient's AI answer to another, with no label showing whose answer it is
 

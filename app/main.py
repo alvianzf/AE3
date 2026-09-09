@@ -85,6 +85,21 @@ app = FastAPI(title="Clinic — Online Clinic Platform", lifespan=lifespan)
 # shipped uncompressed. Real, measured cause of "web is too slow": curl
 # against production showed no Content-Encoding header at all.
 app.add_middleware(GZipMiddleware, minimum_size=500)
+
+
+@app.middleware("http")
+async def _nosniff_photos(request: Request, call_next):
+    """/photos is a raw StaticFiles mount of unauthenticated, user-supplied
+    uploads (practitioner_signup has no auth) — nosniff stops a browser from
+    second-guessing the sniffed extension _save_photo already enforces at
+    upload time (specs/v4/04-known-issues.md#c7), matching the same header
+    /api/sources/{id}/original already sets for the same reason."""
+    response = await call_next(request)
+    if request.url.path.startswith("/photos/"):
+        response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
 _PROCESS_START = time.monotonic()
 auth.register(app)
 billing.register(app)
@@ -467,9 +482,33 @@ def _practitioner_public(p: dict) -> dict:
     return {**_public(p), "has_anthropic_key": bool(p.get("anthropic_api_key_encrypted"))}
 
 
+_MAX_PHOTO_BYTES = 5 * 1024 * 1024
+
+
+def _sniff_image_ext(raw: bytes) -> str | None:
+    """Real file-format sniffing (magic bytes), not the client-supplied
+    filename's extension or content-type — practitioner_signup is
+    unauthenticated, so an .svg or .html "photo" saved under a trusted
+    extension and served back inline from the /photos static mount was a
+    stored-XSS vector (specs/v4/04-known-issues.md#c7)."""
+    if raw.startswith(b"\xff\xd8\xff"):
+        return ".jpg"
+    if raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        return ".png"
+    if raw.startswith(b"GIF87a") or raw.startswith(b"GIF89a"):
+        return ".gif"
+    if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        return ".webp"
+    return None
+
+
 def _save_photo(practitioner_id: str, file: UploadFile, raw: bytes) -> str:
-    suffix = Path(file.filename or "").suffix or ".jpg"
-    dest = Path(cfg.photos_path) / f"{practitioner_id}{suffix}"
+    if len(raw) > _MAX_PHOTO_BYTES:
+        raise HTTPException(400, "Photo must be under 5 MB.")
+    ext = _sniff_image_ext(raw)
+    if ext is None:
+        raise HTTPException(400, "Photo must be a JPEG, PNG, GIF, or WebP image.")
+    dest = Path(cfg.photos_path) / f"{practitioner_id}{ext}"
     dest.write_bytes(raw)
     return f"/photos/{dest.name}"
 
