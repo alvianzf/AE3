@@ -81,7 +81,14 @@ def require_practitioner(request: Request) -> dict:
 
 def require_pro_practitioner(session: dict = Depends(require_practitioner)) -> dict:
     practitioner = core_store.get_practitioner(session["id"])
-    if practitioner is None or practitioner["plan"] != "pro" or \
+    # status must be 'approved' too, not just not-suspended: require_practitioner
+    # deliberately still lets 'pending'/'rejected' log in (to see their own
+    # status), but Pro features — real clients, real consults — must wait for
+    # admin review. Found missing: a pending or rejected applicant who reached
+    # 'pro' via checkout (billing.upgrade also guards this now) could otherwise
+    # use the full consult pipeline before ever being approved.
+    if practitioner is None or practitioner["status"] != "approved" or \
+            practitioner["plan"] != "pro" or \
             practitioner.get("stripe_status") in ("past_due", "blocked"):
         raise HTTPException(status_code=403, detail="A Pro plan in good standing is required.")
     return session

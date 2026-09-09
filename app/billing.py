@@ -80,6 +80,13 @@ def register(app: FastAPI) -> None:
         practitioner = core_store.get_practitioner(session["id"])
         if practitioner is None:
             raise HTTPException(status_code=404, detail="Practitioner not found.")
+        # A pending or rejected applicant can still log in (to see their own
+        # status), but must not be able to pay for Pro before admin review —
+        # that would grant real consult/client access ahead of approval.
+        if practitioner["status"] != "approved":
+            raise HTTPException(
+                status_code=403,
+                detail="Your application must be approved before upgrading to Pro.")
         url = create_checkout_session(practitioner["id"], practitioner["email"])
         return {"url": url}
 
