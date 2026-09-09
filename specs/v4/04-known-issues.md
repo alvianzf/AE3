@@ -564,11 +564,14 @@ validation failure (bad file type, size limit) gets no useful reason why.
 `res.json()`'s `detail`/`detail.message` before falling back to the generic
 string.
 
-### M9 — `GET /api/sources` has no upper bound on `per_page`
+### M9 — `GET /api/sources` has no upper bound on `per_page` — FIXED
 
 `list_sources` (called from `app/main.py:256-265`) clamps `page = max(1,
 page)` but never clamps `per_page` — a caller can request an arbitrarily
 large page in one query.
+
+**Fixed:** `per_page` is now clamped to `[1, 500]` — comfortably above the
+admin library's own `per_page=200` request.
 
 ### M10 — Unhandled type-conversion crash updating a practitioner's profile numbers
 

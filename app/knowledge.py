@@ -426,6 +426,10 @@ def list_sources(search: str = "", topic: str = "", kind: str = "",
     where = " AND ".join(filters)
     order = SORTS.get(sort, SORTS["newest"])
     page = max(1, page)
+    # Unbounded before this — a caller could request an arbitrarily large
+    # page in one query (specs/v4/04-known-issues.md#m9). 500 comfortably
+    # covers the admin library's own per_page=200 request.
+    per_page = max(1, min(500, per_page))
     params |= {"skip": (page - 1) * per_page, "limit": per_page}
 
     with _session() as s:
