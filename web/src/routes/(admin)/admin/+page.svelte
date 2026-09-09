@@ -5,7 +5,6 @@
 	import { chunkedUpload } from '$lib/chunkedUpload';
 	import { toast } from '$lib/stores/toast';
 	import Spotlight from '$lib/components/Spotlight.svelte';
-	import Quiet from '$lib/components/Quiet.svelte';
 	import Tabs from '$lib/components/Tabs.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import Chip from '$lib/components/Chip.svelte';
@@ -275,27 +274,12 @@
 
 <svelte:head><title>Knowledge — Admin portal</title></svelte:head>
 
-<!-- specs/v4/03: library list stays Tier 1 (the actual work surface); the
-     staged-review queue and the audit/graph rail demoted to Tier 2 (used far
-     less often) — that's visual *weight* (Quiet vs Spotlight), a separate
-     question from spatial layout. Teaching Clinic (upload/paste/scrape) is
-     now an on-demand modal reached via the library's "+ Add resources"
-     action rather than a permanent rail panel — it's a write action, not
-     something to browse, and pulling it out of the rail leaves one clear
-     list there ("staged for review") instead of the upload form and the
-     review queue competing for the same space (source of the "what are
-     these two lists" confusion this page kept getting reported for). -->
-<div class="rail-layout">
-<div class="rail">
-<Quiet title="2 · What Clinic knows">
-	{#if data.graph}
-		<p class="hint">{data.graph.concepts ?? 0} concepts · {data.graph.mentions ?? 0} links · {(data.graph.unlinked ?? []).length} unlinked sources</p>
-	{/if}
-	<a class="crumb" href="/admin/audit">View audit history →</a>
-</Quiet>
-</div>
-
-<Spotlight title="1 · Knowledge library" actions={libraryActions}>
+<!-- specs/v4/03: library list stays Tier 1 (the actual work surface).
+     Teaching Clinic (upload/paste/scrape) is an on-demand modal reached via
+     the library's "+ Add resources" action; audit history and graph stats
+     each moved to their own page (removed from here outright, not just
+     de-weighted) rather than sitting in a rail panel next to the library. -->
+<Spotlight title="Knowledge library" actions={libraryActions}>
 	<Tabs
 		bind:active={mainTab}
 		tabs={[
@@ -318,6 +302,10 @@
 				<button class="search-clear" onclick={() => (q = '')} aria-label="Clear search">&times;</button>
 			{/if}
 		</div>
+
+		{#if data.graph}
+			<p class="hint graph-stats">{data.graph.concepts ?? 0} concepts · {data.graph.mentions ?? 0} links · {(data.graph.unlinked ?? []).length} unlinked sources</p>
+		{/if}
 
 		{#if !q && !activeTopic}
 			<!-- DMOZ-style directory front page: categories only, no document
@@ -429,7 +417,6 @@
 	{/if}
 	</div>
 </Spotlight>
-</div>
 
 {#snippet libraryActions()}
 	<Button onclick={() => (ingestOpen = true)}>+ Add resources</Button>
@@ -544,6 +531,7 @@
 		.scrape-progress .bar { animation: none; width: 100%; }
 	}
 	.search-bar { position: relative; margin-bottom: var(--space-4); }
+	.graph-stats { margin: 0 0 var(--space-4); }
 	.search {
 		width: 100%; font-size: var(--text-lg); padding: var(--space-4) var(--space-5) var(--space-4) var(--space-4);
 		border: 1px solid var(--line-2); border-radius: var(--r-lg); background: var(--panel);

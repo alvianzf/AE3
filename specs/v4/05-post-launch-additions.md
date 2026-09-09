@@ -347,10 +347,21 @@ no backend change, `knowledge.audit()` already returns up to 100 events.
 A `DataTable` (Who/Action/Detail/When, sortable on the first two) shows
 every one of them instead of the old hardcoded first 6.
 `data.audit` was dropped from the Knowledge page's own loader
-(`+page.ts`) entirely, replaced with a plain link over to the new page —
-it no longer needs that fetch on every load. The still-fixed bug above
-(the `created_at` → `ts` mismatch) is fixed here too, since it's the
-same rendering code moved wholesale.
+(`+page.ts`) entirely — it no longer needs that fetch on every load. The
+still-fixed bug above (the `created_at` → `ts` mismatch) is fixed here
+too, since it's the same rendering code moved wholesale.
+
+**Update, same day**: the "2 · What Clinic knows" rail panel (a "View
+audit history →" link to the new page, plus the concepts/links/unlinked
+line) was removed outright, not just trimmed — reported as clutter once
+audit history had its own real page to link from the sidebar nav
+instead. The concepts/links/unlinked stat line moved into the Library
+tab, right under the search bar, rather than being dropped entirely; the
+sidebar's own "Audit history" nav item is enough to reach the new page,
+so the extra in-page link wasn't needed. With nothing left in it, the
+rail column (`.rail-layout`/`.rail`) came out of this page too — the
+Knowledge page is a single full-width `Spotlight` now, not a
+rail-plus-main split.
 
 ## Admin layout: full content width, not a fixed 78rem column
 
