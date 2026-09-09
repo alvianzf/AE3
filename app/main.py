@@ -1223,6 +1223,14 @@ def me_summarize_session(client_id: str, session_id: str,
         raise HTTPException(
             502, "The AI service is temporarily unavailable. Try again shortly."
         ) from exc
+    # Deterministic, not left to the Summariser's discretion: if any turn's
+    # Checker verdict wasn't a clean 'pass', say so explicitly rather than
+    # relying on the model to have carried it through from the transcript flag.
+    if vault.session_has_flagged_turn(practitioner_id, session_id):
+        summary += ("\n\n⚠ At least one answer in this consultation was flagged "
+                    "by the internal accuracy check as not fully verified "
+                    "against its sources. Review the consultation before "
+                    "relying on this summary.")
     vault.add_entry(practitioner_id, client_id, "session_summary", summary)
     return {"summary": summary}
 

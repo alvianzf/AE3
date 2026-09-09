@@ -453,9 +453,45 @@ def session_history(practitioner_id: str, session_id: str) -> list[dict]:
 
 
 def session_transcript(practitioner_id: str, session_id: str) -> str:
-    turns = session_history(practitioner_id, session_id)
-    return "\n\n".join(
-        f"Question: {t['question']}\n\nAnswer:\n{t['answer']}" for t in turns)
+    """The Summariser's input. Includes each turn's Checker verdict when it
+    wasn't a clean 'pass' — previously dropped entirely (only question/answer
+    were read), so a session summary written into the permanent patient
+    record carried no trace that an answer had been flagged as containing an
+    unsupported claim."""
+    with _connect(practitioner_id) as conn:
+        rows = conn.execute(
+            "SELECT question, answer, payload FROM session_turns "
+            "WHERE session_id = ? ORDER BY ordinal", (session_id,)).fetchall()
+    parts = []
+    for r in rows:
+        payload = json.loads(r["payload"]) if r["payload"] else {}
+        check = payload.get("check") or {}
+        verdict = check.get("verdict")
+        flag = ""
+        if verdict and verdict != "pass":
+            unsupported = check.get("unsupported") or []
+            flag = f"\n\n[Internal accuracy check flagged this answer as '{verdict}'"
+            if unsupported:
+                flag += ": " + "; ".join(unsupported)
+            flag += "]"
+        parts.append(f"Question: {r['question']}\n\nAnswer:\n{r['answer']}{flag}")
+    return "\n\n".join(parts)
+
+
+def session_has_flagged_turn(practitioner_id: str, session_id: str) -> bool:
+    """True if any turn's Checker verdict wasn't a clean 'pass' — used to
+    append a deterministic note to a session summary rather than relying on
+    the Summariser to choose to mention it."""
+    with _connect(practitioner_id) as conn:
+        rows = conn.execute(
+            "SELECT payload FROM session_turns WHERE session_id = ?",
+            (session_id,)).fetchall()
+    for r in rows:
+        payload = json.loads(r["payload"]) if r["payload"] else {}
+        verdict = (payload.get("check") or {}).get("verdict")
+        if verdict and verdict != "pass":
+            return True
+    return False
 
 
 def log(practitioner_id: str, actor: str, action: str, detail: str,

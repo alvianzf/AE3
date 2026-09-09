@@ -91,7 +91,7 @@ scrolls to that source's card. A new sources panel renders every source's
 label, title, locator, and snippet. [H10](#h10) (librarian reasoning, the
 other half of this transparency gap) is fixed in the same change.
 
-### C4 — A "weak"-verdict answer is summarized into the permanent patient record with no trace it was flagged
+### C4 — A "weak"-verdict answer is summarized into the permanent patient record with no trace it was flagged — FIXED
 
 `POST /api/me/clients/{id}/sessions/{id}/summary`
 (`app/main.py:1207-1227`) builds the Summariser's input from
@@ -102,6 +102,13 @@ unsupported-claims list live in the same row's `payload` column
 answer the system itself flagged as containing an unsupported clinical
 claim gets written into the patient's permanent record indistinguishably
 from a fully-verified one.
+
+**Fixed:** `session_transcript()` now reads each turn's stored `payload`
+and inlines a `[Internal accuracy check flagged this answer as '<verdict>':
+...]` note next to any turn that wasn't a clean `pass`, so the Summariser
+sees it. A new `session_has_flagged_turn()` also appends a deterministic
+warning line to the stored summary itself whenever any turn was flagged —
+not left to the Summariser's discretion to mention it.
 
 ### C5 — A practitioner's own down-weighted source can still reach the answer
 
