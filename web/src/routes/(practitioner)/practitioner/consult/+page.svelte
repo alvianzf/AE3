@@ -1,5 +1,7 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { page } from '$app/state';
+	import { get } from '$lib/api';
 	import { streamConsult } from '$lib/consultStream';
 	import { toast } from '$lib/stores/toast';
 	import Spotlight from '$lib/components/Spotlight.svelte';
@@ -11,22 +13,52 @@
 
 	let { data } = $props();
 	let clientId = $state('');
-	$effect(() => {
-		if (!clientId) clientId = page.url.searchParams.get('client') ?? data.clients[0]?.id ?? '';
+	// The session this conversation continues — kept so a second "Ask"
+	// actually carries the first question's context forward instead of
+	// silently starting a brand-new session every time (specs/v4/04-known-
+	// issues.md#h4). Cleared whenever the practitioner switches clients.
+	let sessionId = $state('');
+	let turns = $state<any[]>([]);
+	let loadingHistory = $state(false);
+
+	onMount(async () => {
+		const qClient = page.url.searchParams.get('client');
+		const qSession = page.url.searchParams.get('session');
+		clientId = qClient ?? data.clients[0]?.id ?? '';
+		if (qSession && qClient) {
+			loadingHistory = true;
+			try {
+				const s = await get(fetch, `/me/clients/${qClient}/sessions/${qSession}`);
+				sessionId = s.id;
+				turns = s.turns ?? [];
+			} catch {
+				/* the linked session no longer exists or isn't this practitioner's — start fresh */
+			} finally {
+				loadingHistory = false;
+			}
+		}
 	});
+
+	// A client switch (button or the Select) always starts a new
+	// conversation — carrying the old session forward into a different
+	// client's context would be a real safety issue, not a nicety. Compares
+	// against the *previous* value rather than an "initialized" flag so this
+	// can't race onMount's async deep-link history fetch above (whichever
+	// finishes first, the very first observed clientId never counts as a
+	// "switch").
+	let lastClientId = '';
+	$effect(() => {
+		const id = clientId;
+		if (lastClientId && id !== lastClientId) {
+			sessionId = '';
+			turns = [];
+		}
+		lastClientId = id;
+	});
+
 	let question = $state('');
 	let asking = $state(false);
 	let steps = $state<{ agent: string; status: 'running' | 'done'; input_tokens?: number; output_tokens?: number }[]>([]);
-	let result = $state<any>(null);
-	// Which client the shown result actually belongs to — captured at the
-	// moment "Ask" was pressed, not read live from `clientId`, so a result
-	// that finishes after the practitioner has already switched clients still
-	// shows (and is guarded by) the client it was really asked about, not
-	// whoever happens to be selected when it arrives.
-	let resultClientId = $state('');
-	const resultClientName = $derived(
-		data.clients.find((c: any) => c.id === resultClientId)?.name ?? ''
-	);
 
 	const AGENT_LABELS: Record<string, string> = {
 		librarian: 'Librarian', specialist: 'Specialist', checker: 'Checker'
@@ -59,12 +91,15 @@
 	async function ask(e: Event) {
 		e.preventDefault();
 		if (!clientId || !question.trim() || asking) return;
-		const askedClientId = clientId;
+		const askedQuestion = question;
 		asking = true;
 		steps = [];
-		result = null;
 		try {
-			for await (const ev of streamConsult(askedClientId, question)) {
+			// Client switching is disabled while `asking` (see the disabled
+			// bindings below), so clientId/sessionId can't change out from
+			// under this request — no separate "which client was this for"
+			// tracking needed the way a mid-flight switch would otherwise require.
+			for await (const ev of streamConsult(clientId, askedQuestion, sessionId)) {
 				if (ev.event === 'agent_start') {
 					steps = [...steps, { agent: ev.agent, status: 'running' }];
 				} else if (ev.event === 'agent_done') {
@@ -74,8 +109,9 @@
 							: s
 					);
 				} else if (ev.event === 'result') {
-					result = ev;
-					resultClientId = askedClientId;
+					sessionId = ev.session_id;
+					turns = [...turns, { question: askedQuestion, ...ev }];
+					question = '';
 				} else if (ev.event === 'error') {
 					toast(ev.message, 'alert');
 				}
@@ -103,6 +139,53 @@
 		</ul>
 	</Quiet>
 
+	{#snippet turnView(t: any)}
+		<div class="rh">
+			{#if t.check?.verdict}
+				<Chip tone={t.check.verdict === 'pass' ? 'ok' : 'warn'}>{t.check.verdict}</Chip>
+			{:else}
+				<Chip tone="neutral">not independently checked</Chip>
+			{/if}
+			{#if t.revised}<Chip tone="accent">revised</Chip>{/if}
+		</div>
+		<p>
+			{#each citationParts(t.answer, t.sources) as part}
+				{#if part.cite}<button type="button" class="cite" onclick={() => jumpToSource(part.cite as string)}>[{part.cite}]</button>{:else}{part.text}{/if}
+			{/each}
+		</p>
+
+		{#if t.check?.unsupported?.length}
+			<div class="unsupported">
+				<strong>Claims the check could not verify:</strong>
+				<ul>{#each t.check.unsupported as u}<li>{u}</li>{/each}</ul>
+			</div>
+		{/if}
+
+		{#if t.librarian}
+			<details class="librarian">
+				<summary>How the librarian chose — considered {t.librarian.considered}, opened {t.librarian.opened?.length ?? 0}{#if t.librarian.truncated}, {t.librarian.truncated} truncated{/if}</summary>
+				{#if t.librarian.reasoning}<p class="hint">{t.librarian.reasoning}</p>{/if}
+				{#if t.librarian.opened?.length}
+					<ul class="list">
+						{#each t.librarian.opened as o}<li>{o.title} <Chip tone="neutral">grade {o.grade}</Chip></li>{/each}
+					</ul>
+				{/if}
+			</details>
+		{/if}
+
+		{#if t.sources?.length}
+			<div class="sources">
+				<strong>Sources</strong>
+				{#each t.sources as s (s.label)}
+					<div class="source" id="source-{s.label}">
+						<div class="sh"><Chip tone="accent">{s.label}</Chip> {s.title} <span class="hint">{s.locator}</span></div>
+						<p class="snippet">{s.snippet}</p>
+					</div>
+				{/each}
+			</div>
+		{/if}
+	{/snippet}
+
 	<!-- Tier 1 + leafmark: the ask panel is the reason this page exists (specs/v4/03, kept from v3) -->
 	<Spotlight title="Ask about this client" leaf>
 		<form onsubmit={ask}>
@@ -110,6 +193,10 @@
 			<TextField label="Question" type="textarea" bind:value={question} required placeholder="What would you like to know?" />
 			<Button type="submit" loading={asking}>Ask</Button>
 		</form>
+
+		{#if loadingHistory}
+			<p class="hint" style="margin-top: var(--space-4)">Loading this consultation…</p>
+		{/if}
 
 		{#if steps.length}
 			<div class="progress">
@@ -127,53 +214,14 @@
 			</div>
 		{/if}
 
-		{#if result}
-			<div class="result">
-				{#if resultClientName}<p class="for-client">For <strong>{resultClientName}</strong></p>{/if}
-				<div class="rh">
-					{#if result.check?.verdict}
-						<Chip tone={result.check.verdict === 'pass' ? 'ok' : 'warn'}>{result.check.verdict}</Chip>
-					{:else}
-						<Chip tone="neutral">not independently checked</Chip>
-					{/if}
-					{#if result.revised}<Chip tone="accent">revised</Chip>{/if}
-				</div>
-				<p>
-					{#each citationParts(result.answer, result.sources) as part}
-						{#if part.cite}<button type="button" class="cite" onclick={() => jumpToSource(part.cite as string)}>[{part.cite}]</button>{:else}{part.text}{/if}
-					{/each}
-				</p>
-
-				{#if result.check?.unsupported?.length}
-					<div class="unsupported">
-						<strong>Claims the check could not verify:</strong>
-						<ul>{#each result.check.unsupported as u}<li>{u}</li>{/each}</ul>
+		{#if turns.length}
+			<div class="thread">
+				{#each turns as t, i (t.session_id ? `${t.session_id}-${i}` : i)}
+					<div class="turn">
+						<p class="question">{t.question}</p>
+						{@render turnView(t)}
 					</div>
-				{/if}
-
-				{#if result.librarian}
-					<details class="librarian">
-						<summary>How the librarian chose — considered {result.librarian.considered}, opened {result.librarian.opened?.length ?? 0}{#if result.librarian.truncated}, {result.librarian.truncated} truncated{/if}</summary>
-						{#if result.librarian.reasoning}<p class="hint">{result.librarian.reasoning}</p>{/if}
-						{#if result.librarian.opened?.length}
-							<ul class="list">
-								{#each result.librarian.opened as o}<li>{o.title} <Chip tone="neutral">grade {o.grade}</Chip></li>{/each}
-							</ul>
-						{/if}
-					</details>
-				{/if}
-
-				{#if result.sources?.length}
-					<div class="sources">
-						<strong>Sources</strong>
-						{#each result.sources as s (s.label)}
-							<div class="source" id="source-{s.label}">
-								<div class="sh"><Chip tone="accent">{s.label}</Chip> {s.title} <span class="hint">{s.locator}</span></div>
-								<p class="snippet">{s.snippet}</p>
-							</div>
-						{/each}
-					</div>
-				{/if}
+				{/each}
 			</div>
 		{/if}
 	</Spotlight>
@@ -193,8 +241,9 @@
 	.step { display: flex; align-items: center; gap: .5rem; font-size: var(--text-sm); }
 	.step .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); animation: breathe 1s ease-in-out infinite; }
 	.step.done .dot { background: var(--ok); animation: none; }
-	.result { margin-top: var(--space-5); padding-top: var(--space-4); border-top: 1px solid var(--glass-line); }
-	.for-client { font-size: var(--text-sm); color: var(--muted); margin: 0 0 var(--space-2); }
+	.thread { display: grid; gap: var(--space-5); margin-top: var(--space-5); }
+	.turn { padding-top: var(--space-4); border-top: 1px solid var(--glass-line); }
+	.question { font-weight: 650; margin: 0 0 var(--space-2); }
 	.rh { display: flex; gap: .5rem; margin-bottom: var(--space-2); }
 	.cite {
 		font: inherit; font-weight: 650; color: var(--accent-ink); background: var(--accent-soft);

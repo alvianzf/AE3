@@ -8,11 +8,12 @@ export type ConsultEvent =
 	| { event: 'agent_done'; agent: string; input_tokens: number; output_tokens: number }
 	| {
 			event: 'result';
+			session_id: string;
 			answer: string;
-			verdict: string;
+			check: { verdict: string; unsupported?: string[] } | null;
 			revised: boolean;
 			sources: unknown[];
-			reasoning: string;
+			librarian: { reasoning: string; considered: number; opened: unknown[]; truncated: number };
 			total_input_tokens: number;
 			total_output_tokens: number;
 	  }
@@ -20,13 +21,14 @@ export type ConsultEvent =
 
 export async function* streamConsult(
 	clientId: string,
-	question: string
+	question: string,
+	sessionId?: string
 ): AsyncGenerator<ConsultEvent> {
 	const res = await fetch(`${PUBLIC_API_BASE}/api/me/consult`, {
 		method: 'POST',
 		credentials: 'include',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ client_id: clientId, question })
+		body: JSON.stringify({ client_id: clientId, question, session_id: sessionId || undefined })
 	});
 	if (!res.ok || !res.body) {
 		const body = await res.json().catch(() => ({}));

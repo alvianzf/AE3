@@ -182,10 +182,11 @@ a clinical tool, an answer silently rendered against the wrong patient
 context is a safety issue, not a cosmetic one.
 
 **Fixed:** `Select` gained a `disabled` prop; both the client list buttons
-and the Select are disabled while `asking`. `ask()` now captures the
-client id at submit time (not read live from `clientId`) and the result
-panel shows "For **&lt;name&gt;**" above the answer, so even a result that
-finishes after navigation can't be mistaken for a different client's.
+and the Select are disabled while `asking`, so `clientId` structurally
+cannot change during a request — no separate "which client was this
+answer for" tracking needed. Superseded by [H4](#h4)'s conversation-thread
+rewrite: switching clients now always clears the whole thread and starts a
+new session, rather than a single result being at risk of mislabeling.
 
 ### C9 — A demoted superadmin keeps superadmin power for up to 12 hours — FIXED
 
@@ -279,7 +280,7 @@ retired UI instead of the live app.
 
 **Fixed:** all three URLs now point at `/practitioner/profile`.
 
-### H4 — Multi-turn consult history never actually carries forward
+### H4 — Multi-turn consult history never actually carries forward — FIXED
 
 `streamConsult(clientId, question)` (`consultStream.ts:21-30`) never sends
 `session_id`. The backend creates a brand-new session whenever one isn't
@@ -291,6 +292,20 @@ the "Continue in Consult" deep link from a client's session list
 `consult/+page.svelte`'s `$effect` (lines 14-16) only reads the `client`
 param, never `session` — so clicking a past consultation lands on a blank
 form and, per this same bug, starts yet another disconnected session.
+
+**Fixed:** `streamConsult` now takes an optional `sessionId` and sends it as
+`session_id`; the page keeps a `sessionId` state, set from the first
+answer's `result.session_id` and reused for every subsequent question, so
+follow-ups actually continue the same session. The page now also reads the
+`session` query param on load and, when present, fetches
+`GET /me/clients/{id}/sessions/{id}` to replay the full prior conversation
+(each past turn rendered with the same citations/verdict/librarian view as
+a live one — a `turnView` snippet shared between history and the live
+result, also folding in [C2](#c2)/[C3](#c3)/[H10](#h10)'s rendering).
+Switching clients always starts a fresh session (compared against the
+*previous* `clientId`, not an "initialized" flag, so it can't race the
+async history fetch above). Answers now render as a running thread of
+turns rather than a single replaced block.
 
 ### H5 — An unset `VAULT_ENCRYPTION_KEY` silently corrupts stored API keys, then crashes consults with a raw exception
 
