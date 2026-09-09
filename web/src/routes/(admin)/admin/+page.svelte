@@ -6,7 +6,6 @@
 	import { toast } from '$lib/stores/toast';
 	import Spotlight from '$lib/components/Spotlight.svelte';
 	import Tabs from '$lib/components/Tabs.svelte';
-	import DataTable from '$lib/components/DataTable.svelte';
 	import Chip from '$lib/components/Chip.svelte';
 	import TextField from '$lib/components/TextField.svelte';
 	import Button from '$lib/components/Button.svelte';
@@ -314,69 +313,71 @@
 			<p class="hint graph-stats">{data.graph.concepts ?? 0} concepts · {data.graph.mentions ?? 0} links · {(data.graph.unlinked ?? []).length} unlinked sources</p>
 		{/if}
 
-		{#if !q && !activeTopic}
-			<!-- DMOZ-style directory front page: categories only, no document
-			     list yet — https://dmoz-odp.com/ shows the same shape. Topic is
-			     the only hierarchy the graph actually has (Neo4j has no
-			     subcategory nodes), so "subcategory" below is Kind, a facet
-			     applied once a category is opened rather than a second real
-			     tier — an honest read of a flat data model, not a fake nesting. -->
-			<div class="directory-grid">
-				{#each data.coverage as c (c.topic)}
-					<button class="dir-tile" onclick={() => (activeTopic = c.topic)}>
-						<span class="dir-name">{c.topic}</span>
-						<span class="dir-count">{c.sources} document{c.sources === 1 ? '' : 's'}</span>
-					</button>
-				{/each}
-			</div>
-			{#if !data.coverage.length}
-				<p class="hint">Nothing ingested yet — use "+ Add resources" to start teaching Clinic.</p>
-			{/if}
-		{:else}
-			<div class="breadcrumb">
-				<button class="crumb" onclick={() => { activeTopic = ''; activeKind = ''; }}>All categories</button>
-				{#if activeTopic}<span class="sep">›</span><span class="crumb current">{activeTopic}</span>{/if}
-				{#if q}<span class="sep">›</span><span class="crumb current">Search: "{q}"</span>{/if}
-			</div>
+		<!-- DMOZ-style categories: one scrollable row, always visible above the
+		     documents — https://dmoz-odp.com/'s shape, but a single x-scroll
+		     strip instead of a wrapping grid so a tile stays short (a
+		     name-and-count pill) no matter how many categories there are.
+		     Topic is the only hierarchy the graph actually has (Neo4j has no
+		     subcategory nodes), so Kind below is a facet, not a second real
+		     tier — an honest read of a flat data model, not a fake nesting. -->
+		<div class="directory-row">
+			<button class="dir-tile" class:active={!activeTopic} onclick={() => (activeTopic = '')}>
+				<span class="dir-name">All</span>
+				<span class="dir-count">{data.sources.length}</span>
+			</button>
+			{#each data.coverage as c (c.topic)}
+				<button class="dir-tile" class:active={activeTopic === c.topic} onclick={() => (activeTopic = activeTopic === c.topic ? '' : c.topic)}>
+					<span class="dir-name">{c.topic}</span>
+					<span class="dir-count">{c.sources}</span>
+				</button>
+			{/each}
+		</div>
+		{#if !data.coverage.length}
+			<p class="hint">Nothing ingested yet — use "+ Add resources" to start teaching Clinic.</p>
+		{/if}
 
-			{#if data.kinds.length}
-				<div class="facets">
-					<div class="facet-row">
-						<span class="facet-label">Kind</span>
-						<button class="fchip" class:active={!activeKind} onclick={() => (activeKind = '')}>All</button>
-						{#each data.kinds as k (k)}
-							<button class="fchip" class:active={activeKind === k} onclick={() => (activeKind = activeKind === k ? '' : k)}>{k}</button>
-						{/each}
+		{#if data.kinds.length}
+			<div class="facets">
+				<div class="facet-row">
+					<span class="facet-label">Kind</span>
+					<button class="fchip" class:active={!activeKind} onclick={() => (activeKind = '')}>All</button>
+					{#each data.kinds as k (k)}
+						<button class="fchip" class:active={activeKind === k} onclick={() => (activeKind = activeKind === k ? '' : k)}>{k}</button>
+					{/each}
+				</div>
+			</div>
+		{/if}
+
+		<!-- Documents as cards, not a table — sits directly below the
+		     categories/Kind facets rather than behind a drill-down click. -->
+		<div class="doc-grid">
+			{#each filtered as s (s.id)}
+				<div class="doc-card">
+					<div class="doc-card-head">
+						<button class="title-link" onclick={() => viewDoc(s)}>{s.title}</button>
+						<div class="doc-card-actions">
+							<button class="icon-btn" onclick={() => viewDoc(s)} title="View document" aria-label="View {s.title}"><Icon name="eye" /></button>
+							<button class="icon-btn danger" onclick={() => askDelete(s)} title="Remove from library" aria-label="Remove {s.title}"><Icon name="trash" /></button>
+						</div>
+					</div>
+					{#if s.topics?.length}<div class="topics">{s.topics.join(' · ')}</div>{/if}
+					<div class="doc-card-foot">
+						<Chip tone="neutral">{s.kind}</Chip>
+						<label class="grade-label">
+							Grade
+							<input
+								class="grade"
+								type="number" min="1" max="10" value={s.grade}
+								onchange={(e) => regrade(s, Number((e.target as HTMLInputElement).value))}
+							/>
+						</label>
+						<span class="hint">{(s.created_at ?? '').slice(0, 10)}</span>
 					</div>
 				</div>
-			{/if}
-
-			<DataTable
-				columns={[{ key: 'title', label: 'Title', sortable: true }, { key: 'kind', label: 'Kind' }, { key: 'grade', label: 'Grade', sortable: true }, { key: 'created_at', label: 'Ingested' }, { key: 'actions', label: '' }]}
-				rows={filtered}
-				empty={data.sources.length ? 'Nothing matches those filters.' : 'Nothing ingested yet.'}
-			>
-				{#snippet row(s: any)}
-					<td>
-						<button class="title-link" onclick={() => viewDoc(s)}>{s.title}</button>
-						{#if s.topics?.length}<div class="topics">{s.topics.join(' · ')}</div>{/if}
-					</td>
-					<td><Chip tone="neutral">{s.kind}</Chip></td>
-					<td>
-						<input
-							class="grade"
-							type="number" min="1" max="10" value={s.grade}
-							onchange={(e) => regrade(s, Number((e.target as HTMLInputElement).value))}
-						/>
-					</td>
-					<td>{(s.created_at ?? '').slice(0, 10)}</td>
-					<td class="actions">
-						<button class="icon-btn" onclick={() => viewDoc(s)} title="View document" aria-label="View {s.title}"><Icon name="eye" /></button>
-						<button class="icon-btn danger" onclick={() => askDelete(s)} title="Remove from library" aria-label="Remove {s.title}"><Icon name="trash" /></button>
-					</td>
-				{/snippet}
-			</DataTable>
-		{/if}
+			{:else}
+				<p class="hint">{data.sources.length ? 'Nothing matches those filters.' : 'Nothing ingested yet.'}</p>
+			{/each}
+		</div>
 	{:else}
 		{#if data.staged?.length}
 			<div class="staged">
@@ -556,26 +557,38 @@
 		color: var(--muted); padding: .2rem .4rem;
 	}
 	.search-clear:hover { color: var(--ink); }
-	.directory-grid {
-		display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: var(--space-3);
+	/* One short row, scrolling on the x axis rather than wrapping — a tile
+	   stays a compact name+count pill no matter how many categories exist. */
+	.directory-row {
+		display: flex; gap: var(--space-2); overflow-x: auto; overflow-y: hidden;
+		padding-bottom: var(--space-2); margin-bottom: var(--space-4);
 	}
 	.dir-tile {
-		display: flex; flex-direction: column; gap: .3rem; text-align: left; cursor: pointer;
-		font: inherit; border: 1px solid var(--line); background: var(--panel-2); color: var(--ink);
-		border-radius: var(--r-lg); padding: var(--space-4);
-		transition: border-color .15s var(--ease), background .15s var(--ease), transform .15s var(--ease);
+		flex: 0 0 auto; display: inline-flex; align-items: center; gap: .5rem; white-space: nowrap;
+		text-align: left; cursor: pointer; font: inherit;
+		border: 1px solid var(--line); background: var(--panel-2); color: var(--ink);
+		border-radius: 99px; padding: .55rem 1rem;
+		transition: border-color .15s var(--ease), background .15s var(--ease), color .15s var(--ease);
 	}
-	.dir-tile:hover { border-color: var(--accent); background: var(--accent-soft); transform: translateY(-1px); }
+	.dir-tile:hover { border-color: var(--accent); background: var(--accent-soft); }
+	.dir-tile.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
 	.dir-name { font-weight: 650; }
-	.dir-count { font-size: var(--text-sm); color: var(--muted); }
-	.breadcrumb { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; margin-bottom: var(--space-3); font-size: var(--text-sm); }
-	.crumb {
-		font: inherit; cursor: pointer; border: none; background: none; padding: 0;
-		color: var(--accent-ink); text-decoration: underline; text-underline-offset: .15em;
+	.dir-count {
+		font-size: var(--text-xs); color: var(--muted); background: var(--panel);
+		border-radius: 99px; padding: .1rem .45rem;
 	}
-	.crumb.current { color: var(--muted); text-decoration: none; cursor: default; font-weight: 650; }
-	.breadcrumb .sep { color: var(--muted); }
+	.dir-tile.active .dir-count { color: inherit; background: rgba(255, 255, 255, .35); }
 	.facets { display: grid; gap: var(--space-2); margin-bottom: var(--space-4); }
+	.doc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: var(--space-3); }
+	.doc-card {
+		display: flex; flex-direction: column; gap: .5rem; padding: var(--space-4);
+		border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--panel-2);
+	}
+	.doc-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-2); }
+	.doc-card-head .title-link { font-weight: 650; }
+	.doc-card-actions { display: flex; gap: .3rem; flex: 0 0 auto; }
+	.doc-card-foot { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin-top: auto; padding-top: .3rem; }
+	.grade-label { display: flex; align-items: center; gap: .35rem; font-size: var(--text-xs); color: var(--muted); }
 	.facet-row { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
 	.facet-label {
 		font-size: var(--text-xs); font-weight: 650; text-transform: uppercase; letter-spacing: .04em;
@@ -598,7 +611,6 @@
 	.view:hover { border-color: var(--accent); background: var(--accent-soft); }
 	.view.danger { color: var(--danger); }
 	.view.danger:hover { border-color: var(--danger); background: var(--danger-soft); }
-	td.actions { display: flex; gap: .4rem; }
 	.icon-btn {
 		display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
 		border: 1px solid var(--line); background: var(--panel); color: var(--accent-ink);
