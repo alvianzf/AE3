@@ -11,6 +11,7 @@
 	import TextField from '$lib/components/TextField.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import Dialog from '$lib/components/Dialog.svelte';
+	import Icon from '$lib/components/Icon.svelte';
 
 	let { data } = $props();
 	let ingestOpen = $state(false);
@@ -38,7 +39,8 @@
 	}
 
 	function stagedFileUrl(item: any) {
-		return `${PUBLIC_API_BASE}/api/staged/${item.id}/file`;
+		// #toolbar=0&navpanes=0: no PDF-viewer chrome/sidebar on this preview either.
+		return `${PUBLIC_API_BASE}/api/staged/${item.id}/file#toolbar=0&navpanes=0&scrollbar=0`;
 	}
 
 	// Library browser: categories = topics (from /api/coverage, with counts),
@@ -64,16 +66,21 @@
 	let viewTitle = $state('');
 	let viewLoading = $state(false);
 	let viewBody = $state<{ body: string; body_reconstructed?: boolean } | null>(null);
+	let viewOriginalUrl = $state<string | null>(null);
 
 	async function viewDoc(s: any) {
-		if (s.original_name) {
-			window.open(`${PUBLIC_API_BASE}/api/sources/${s.id}/original`, '_blank', 'noopener');
-			return;
-		}
 		viewTitle = s.title;
 		viewBody = null;
-		viewLoading = true;
+		viewOriginalUrl = null;
 		viewing = true;
+		if (s.original_name) {
+			// #toolbar=0&navpanes=0 hides the browser's own PDF-viewer chrome
+			// (toolbar + the file/outline sidebar) inside the frame — this is
+			// a document preview, not a full PDF reader.
+			viewOriginalUrl = `${PUBLIC_API_BASE}/api/sources/${s.id}/original#toolbar=0&navpanes=0&scrollbar=0`;
+			return;
+		}
+		viewLoading = true;
 		try {
 			viewBody = await get(fetch, `/sources/${s.id}/text`);
 		} catch (err: any) {
@@ -351,7 +358,7 @@
 			>
 				{#snippet row(s: any)}
 					<td>
-						{s.title}
+						<button class="title-link" onclick={() => viewDoc(s)}>{s.title}</button>
 						{#if s.topics?.length}<div class="topics">{s.topics.join(' · ')}</div>{/if}
 					</td>
 					<td><Chip tone="neutral">{s.kind}</Chip></td>
@@ -364,8 +371,8 @@
 					</td>
 					<td>{(s.created_at ?? '').slice(0, 10)}</td>
 					<td class="actions">
-						<button class="view" onclick={() => viewDoc(s)}>View</button>
-						<button class="view danger" onclick={() => askDelete(s)}>Remove</button>
+						<button class="icon-btn" onclick={() => viewDoc(s)} title="View document" aria-label="View {s.title}"><Icon name="eye" /></button>
+						<button class="icon-btn danger" onclick={() => askDelete(s)} title="Remove from library" aria-label="Remove {s.title}"><Icon name="trash" /></button>
 					</td>
 				{/snippet}
 			</DataTable>
@@ -444,7 +451,7 @@
 					<p class="dz-title">Drag a file here, or click to browse</p>
 					<p class="hint">Up to 200 MB.</p>
 				{:else if previewUrl && selectedFile.type === 'application/pdf'}
-					<embed src={previewUrl} type="application/pdf" class="pdf-preview" aria-label="{selectedFile.name} preview" />
+					<embed src="{previewUrl}#toolbar=0&navpanes=0&scrollbar=0" type="application/pdf" class="pdf-preview" aria-label="{selectedFile.name} preview" />
 					<p class="dz-filename">{selectedFile.name}</p>
 				{:else}
 					<p class="dz-title">{selectedFile.name}</p>
@@ -490,8 +497,10 @@
 	{/snippet}
 </Dialog>
 
-<Dialog bind:open={viewing} title={viewTitle}>
-	{#if viewLoading}
+<Dialog bind:open={viewing} title={viewTitle} wide>
+	{#if viewOriginalUrl}
+		<iframe class="doc-frame" src={viewOriginalUrl} title={viewTitle}></iframe>
+	{:else if viewLoading}
 		<p class="hint">Loading…</p>
 	{:else if viewBody}
 		{#if viewBody.body_reconstructed}
@@ -590,11 +599,27 @@
 	.view.danger { color: var(--danger); }
 	.view.danger:hover { border-color: var(--danger); background: var(--danger-soft); }
 	td.actions { display: flex; gap: .4rem; }
+	.icon-btn {
+		display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+		border: 1px solid var(--line); background: var(--panel); color: var(--accent-ink);
+		border-radius: var(--r); width: 2rem; height: 2rem; padding: 0;
+		transition: background .15s var(--ease), border-color .15s var(--ease);
+	}
+	.icon-btn:hover { border-color: var(--accent); background: var(--accent-soft); }
+	.icon-btn.danger { color: var(--danger); }
+	.icon-btn.danger:hover { border-color: var(--danger); background: var(--danger-soft); }
+	.title-link {
+		font: inherit; text-align: left; cursor: pointer; border: none; background: none;
+		padding: 0; color: var(--ink); text-decoration: underline; text-decoration-color: transparent;
+		transition: text-decoration-color .15s var(--ease);
+	}
+	.title-link:hover, .title-link:focus-visible { text-decoration-color: currentColor; }
 	input.grade {
 		width: 3.5rem; border: 1px solid var(--line-2); border-radius: var(--r);
 		padding: .3rem .4rem; font: inherit; color: var(--ink); background: var(--panel);
 	}
 	.doc-body { white-space: pre-wrap; font-size: var(--text-sm); line-height: 1.6; max-height: 60vh; overflow-y: auto; }
+	.doc-frame { width: 100%; height: 75vh; border: none; border-radius: var(--r); }
 	.staged { display: grid; gap: var(--space-3); }
 	.staged-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
 	.staged-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
