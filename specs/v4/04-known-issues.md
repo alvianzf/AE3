@@ -327,7 +327,7 @@ your API key" message.
 mismatched key) and raises a clean 400 telling the practitioner to
 re-enter their key, instead of an unhandled 500.
 
-### H6 — "Save session summary" has no UI entry point anywhere
+### H6 — "Save session summary" has no UI entry point anywhere — FIXED
 
 The route exists and works
 (`POST /api/me/clients/{id}/sessions/{id}/summary`, `app/main.py:1207`,
@@ -335,6 +335,13 @@ writing a `session_summary` vault entry) but no file under
 `web/src/routes/(practitioner)/**` calls it — not on Consult, not on the
 client detail page. README.md's "It remembers" claim has a fully working
 backend and zero reachable frontend.
+
+**Fixed:** a "Summarize" button on each session row in the client-detail
+page's Sessions list calls the route and shows the saved summary inline.
+Also fixed in the same file: each session row linked with `s.question`,
+a field that doesn't exist on the real row (`list_sessions()` returns
+`title`/`last_question`, never `question`) — every session in the list was
+silently showing its raw UUID instead of a readable label.
 
 ### H7 — Non-PDF or non-text uploads are silently garbled and ingested as real, graded sources
 
