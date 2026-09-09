@@ -129,7 +129,7 @@ one exists, else the source's shared grade) against `min_grade` after all
 four hops run, not just at the Cypher-query level. `me_consult` now passes
 the same `weights` dict it already computed for the catalogue.
 
-### C6 — Self-serve client signup always fails — the site's primary conversion path cannot be completed
+### C6 — Self-serve client signup always fails — the site's primary conversion path cannot be completed — FIXED
 
 `web/src/routes/(public)/signup/+page.svelte:19` posts
 `{name, email, password}` with no `practitioner_id`.
@@ -140,6 +140,14 @@ started" and fills the signup form gets a confusing, unfixable 400. Same
 class of bug as [v2/13 H1](../v2/13-known-issues.md#h1), which was fixed
 once already (a practitioner-picker was added to `/signup`) — that fix
 did not carry forward into the rewrite.
+
+**Fixed:** `/signup` now fetches `GET /api/practitioners` client-side on
+mount (not at prerender time, so the list can't go stale the way a
+build-time snapshot could — see [02](02-open-questions.md)'s prerendering
+risk), filters to `plan === 'pro'` (only Pro practitioners can accept
+clients, same rule `coach/[id]`'s contact flow already respects), and
+requires a selection before submit is enabled. An explicit empty state
+covers the case where no Pro practitioner exists yet.
 
 ### C7 — Unauthenticated photo upload has no validation and is served without XSS hardening
 
