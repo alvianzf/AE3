@@ -564,10 +564,10 @@
 		padding-bottom: var(--space-2); margin-bottom: var(--space-4);
 	}
 	.dir-tile {
-		flex: 0 0 auto; display: inline-flex; align-items: center; gap: .5rem; white-space: nowrap;
-		text-align: left; cursor: pointer; font: inherit;
+		flex: 0 0 auto; display: inline-flex; align-items: center; gap: .4rem; white-space: nowrap;
+		text-align: left; cursor: pointer; font: inherit; font-size: var(--text-sm);
 		border: 1px solid var(--line); background: var(--panel-2); color: var(--ink);
-		border-radius: 99px; padding: .55rem 1rem;
+		border-radius: 99px; padding: .45rem .85rem;
 		transition: border-color .15s var(--ease), background .15s var(--ease), color .15s var(--ease);
 	}
 	.dir-tile:hover { border-color: var(--accent); background: var(--accent-soft); }
