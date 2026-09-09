@@ -148,18 +148,37 @@ def health() -> dict:
 
 # --- Admin portal: the knowledge library --------------------------------------
 
+_MAX_SOURCE_UPLOAD_BYTES = 20 * 1024 * 1024
+_MAX_CLIENT_FILE_BYTES = 20 * 1024 * 1024
+
+
 def _extract_pages(filename: str, raw: bytes) -> list[tuple[int | None, str]]:
     """Return [(page_number, text), ...].
 
     PDFs are read page by page so a citation can name the page it came from.
     Plain text has no pagination, so its page number is None.
+
+    Anything that isn't a real PDF or real text — a .docx, a .png, any other
+    binary — used to fall through to `raw.decode("utf-8", errors="replace")`
+    and get ingested as a real, graded source full of corrupted garbage
+    instead of being rejected the way a scanned (image-only) PDF deliberately
+    is (specs/v4/04-known-issues.md#h7). Raises ValueError instead, which the
+    route below turns into a clean 400.
     """
     if filename.lower().endswith(".pdf"):
+        if not raw.startswith(b"%PDF"):
+            raise ValueError("This file is named .pdf but isn't a real PDF.")
         from pypdf import PdfReader
 
         return [(i + 1, page.extract_text() or "")
                 for i, page in enumerate(PdfReader(io.BytesIO(raw)).pages)]
-    return [(None, raw.decode("utf-8", errors="replace"))]
+    try:
+        return [(None, raw.decode("utf-8"))]
+    except UnicodeDecodeError as exc:
+        raise ValueError(
+            "This file doesn't look like plain text or a PDF — only those "
+            "two are supported."
+        ) from exc
 
 
 def _media_type(filename: str) -> str:
@@ -198,8 +217,13 @@ async def add_source(
     original: tuple[bytes, str, str] | None = None
     if file is not None and file.filename:
         raw = await file.read()
+        if len(raw) > _MAX_SOURCE_UPLOAD_BYTES:
+            raise HTTPException(400, "File must be under 20 MB.")
         filename = file.filename
-        pages = _extract_pages(filename, raw)
+        try:
+            pages = _extract_pages(filename, raw)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
         # Keep the file itself as well as the passages: extraction drops tables,
         # figures and layout, and a clinician checking a citation needs the
         # document rather than our reading of it.
@@ -1357,6 +1381,8 @@ async def me_upload_file(
 ) -> dict:
     practitioner_id, client_id = session["practitioner_id"], session["id"]
     raw = await file.read()
+    if len(raw) > _MAX_CLIENT_FILE_BYTES:
+        raise HTTPException(400, "File must be under 20 MB.")
     file_id = str(uuid.uuid4())
     filename = file.filename or "upload"
     if not vault_files.save(practitioner_id, file_id, raw, filename):

@@ -343,7 +343,7 @@ a field that doesn't exist on the real row (`list_sessions()` returns
 `title`/`last_question`, never `question`) — every session in the list was
 silently showing its raw UUID instead of a readable label.
 
-### H7 — Non-PDF or non-text uploads are silently garbled and ingested as real, graded sources
+### H7 — Non-PDF or non-text uploads are silently garbled and ingested as real, graded sources — FIXED
 
 `_extract_pages` (`app/main.py:136-147`) special-cases only `.pdf`;
 anything else is `raw.decode("utf-8", errors="replace")`. Uploading a
@@ -354,6 +354,13 @@ graded library, unlike the deliberate, documented rejection for scanned
 PDFs. No file-size or file-type cap exists on any upload path in the app
 (admin ingest, public photo signup, or client file upload — grepped, none
 found).
+
+**Fixed:** a `.pdf`-named upload must now actually start with the `%PDF`
+magic bytes; anything else is decoded as strict UTF-8 (not
+`errors="replace"`) and rejected with a clear 400 if that fails — a
+`.docx`/`.png`/other binary no longer gets ingested as corrupted "text."
+Also added a 20 MB cap on both the admin source-ingest upload and the
+client file upload (photo upload was already capped in [C7](#c7)).
 
 ### H8 — Reader grading is based on only the first ~20,000 characters of a source, with no warning
 
