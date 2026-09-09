@@ -1,0 +1,111 @@
+name: Deploy to production
+
+# Pushing to main deploys automatically. `check` must pass before `deploy`
+# runs at all, so a broken push doesn't go live — see DEPLOY.md for what
+# this replaces (previously a manual `scp`/`ssh systemctl restart` per
+# DEPLOY.md's "Updating" sections).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Python syntax check
+        run: python -m py_compile app/*.py
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Svelte type-check
+        working-directory: web
+        run: |
+          npm ci
+          npm run check
+
+  deploy:
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build SvelteKit frontend
+        working-directory: web
+        env:
+          # Empty in production: FastAPI serves the build from the same
+          # origin, so a relative /api/... path is correct at runtime.
+          PUBLIC_API_BASE: ''
+          # Only used during this build step, for prerendering dynamic
+          # coach/[id] entries against the real, currently-live backend
+          # (web/.env.example's own documented reasoning).
+          PUBLIC_API_BASE_BUILD: https://telehealth.devshorepartners.id
+        run: |
+          npm ci
+          npm run build
+
+      - name: Configure deploy key
+        run: |
+          install -m 700 -d ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Sync app code and web build
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          SSH_OPTS="-i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes"
+          # --delete on both: these are wholly generated/deployed directories
+          # on the server (never hand-edited there), so a removed file
+          # locally should disappear on the server too — same as a fresh
+          # scp per DEPLOY.md, not a hand-maintained tree. Neither touches
+          # .env, data/, .venv, or node_modules, which live outside these
+          # two directories.
+          rsync -az --delete -e "ssh $SSH_OPTS" \
+            --exclude='__pycache__' --exclude='*.pyc' \
+            app/ "$USER@$HOST:/opt/clinic/app/"
+          rsync -az --delete -e "ssh $SSH_OPTS" \
+            web/build/ "$USER@$HOST:/opt/clinic/web-build/"
+          rsync -az -e "ssh $SSH_OPTS" \
+            requirements.txt "$USER@$HOST:/opt/clinic/requirements.txt"
+
+      - name: Install deps and restart the service
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes "$USER@$HOST" '
+            set -e
+            chown -R clinic:clinic /opt/clinic/app /opt/clinic/web-build /opt/clinic/requirements.txt
+            sudo -u clinic /opt/clinic/.venv/bin/pip install -q -r /opt/clinic/requirements.txt
+            systemctl restart clinic
+            sleep 3
+            systemctl is-active --quiet clinic
+          '
+
+      - name: Health check
+        run: |
+          sleep 5
+          curl -sf https://telehealth.devshorepartners.id/api/health

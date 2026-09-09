@@ -1,7 +1,22 @@
 # Clinic — deployment
 
-**Live at https://telehealth.devshorepartners.id**, origin `43.156.136.92`,
-behind Cloudflare.
+**Live at https://telehealth.devshorepartners.id**, origin `179.198.198.186`,
+behind Cloudflare. (This doc previously said `43.156.136.92` — stale; the
+origin moved at some point without this file being updated. Verified
+against the live server, 2026-09-09.)
+
+## Automatic deploy (current)
+
+**Pushing to `main` deploys automatically** via
+[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) — GitHub
+Actions builds the SvelteKit frontend, `rsync`s `app/` and the build output
+to the server, reinstalls Python deps, and restarts `clinic.service`, gated
+behind a `check` job (Python syntax check + `npm run check`) that must pass
+first. Auth is a dedicated ed25519 deploy key (repo secret
+`DEPLOY_SSH_KEY`, restricted to no-pty/no-forwarding), not a password.
+Everything below this section describes what that workflow automates —
+kept for manual/emergency use and for understanding what's actually
+happening on the server, not the normal path anymore.
 
 ## How TLS ended up arranged
 
@@ -89,6 +104,13 @@ large concurrent load — if the box starts swapping, the first thing to check i
 Neo4j's heap.
 
 ## Updating (v1, still applies to the library pipeline)
+
+**Historical record of the v1→v2 cutover — the connection details below
+(`ubuntu@43.156.136.92`) are stale, same as this doc's old origin IP
+above. Pushing to `main` deploys automatically now; use these manually
+only if that pipeline is down, and connect with the current host/user
+(`root@179.198.198.186`, or better, the `DEPLOY_SSH_KEY` deploy key) —
+not what's written here.**
 
 ```bash
 # from the project root

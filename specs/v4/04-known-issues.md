@@ -13,8 +13,21 @@ but a small number could differ from true runtime behavior in ways static
 reading can't catch. Treat this as a strong starting punch list, worth a
 live-environment spot-check before triage, not as already-verified.
 
-**Status: reporting only. Nothing below has been fixed in this pass** — the
-instruction for this review was to find and record, not to build fixes.
+**Status: fix pass complete and deployed.** Of 44 findings, 42 are fixed,
+one (M7) was retracted on closer check (it matches
+`specs/v2/03-website.md`'s spec, not a bug), and one (M18) resolved as a
+side effect of C9's fix. M1 is only partly fixed — see its entry. Every
+fix is a separate, focused commit (`git log`). `npm run check` (0 errors)
+and `python -m py_compile` were run after every change during development;
+the whole batch was then deployed to production (manually, ahead of the
+new `.github/workflows/deploy.yml` CI pipeline landing) and confirmed live
+— `/api/health` green, login/home pages 200, `journalctl -u clinic` clean
+on restart. That confirms the app *boots and serves* with all 42 fixes
+applied, not that each individual fix behaves correctly under real use —
+nothing here was clicked through end-to-end (no real practitioner/client
+accounts or live consult were exercised), so the security-sensitive
+Critical-tier fixes (C1, C5, C7, C9) and anything touching the consult
+pipeline (C2-C4, C8, H4-H5, H12) still deserve a real walkthrough.
 
 **One process note before the findings:** this document lives in `v4/`
 because `v4/` — the SvelteKit rewrite — is what's actually deployed
