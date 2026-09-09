@@ -220,8 +220,8 @@
      panels side by side, not stacked — a narrow side column for the two
      Tier-2 panels alongside the library keeps that spatial shape without
      reverting the weight fix. -->
-<div class="layout">
-<div class="side">
+<div class="rail-layout">
+<div class="rail">
 <Quiet title="1 · Teach Clinic">
 	<form onsubmit={stageItem} class="ingest">
 		<TextField label="Paste text" type="textarea" bind:value={text} placeholder="Paste an article, note, or transcript…" />
@@ -377,9 +377,6 @@
 </Dialog>
 
 <style>
-	.layout { display: grid; grid-template-columns: 22rem 1fr; gap: var(--space-5); align-items: start; }
-	.side { display: grid; gap: var(--space-5); }
-	@media (max-width: 960px) { .layout { grid-template-columns: 1fr; } }
 	.ingest { display: grid; gap: var(--space-3); }
 	.search {
 		width: 100%; font-size: var(--text-lg); padding: var(--space-4);

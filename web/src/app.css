@@ -128,5 +128,13 @@ label { font-size: var(--text-sm); font-weight: 600; color: var(--ink-2); }
 
 .container { max-width: 78rem; margin: 0 auto; padding: 0 var(--space-5); }
 .grid-auto { display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); }
+/* A narrow rail + a wide main column — several portal screens (admin
+   Knowledge, practitioner Dashboard/Consult/client-detail) stack a
+   secondary panel above/below the main work surface by default, which
+   reads as cramped on anything wider than a phone. Shared here instead of
+   redefined per page. */
+.rail-layout { display: grid; grid-template-columns: 22rem 1fr; gap: var(--space-5); align-items: start; }
+.rail-layout > .rail { display: grid; gap: var(--space-5); align-content: start; }
+@media (max-width: 960px) { .rail-layout { grid-template-columns: 1fr; } }
 .hint { color: var(--muted); font-size: var(--text-sm); }
 .chip-row { display: flex; gap: var(--space-2); flex-wrap: wrap; }
