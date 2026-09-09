@@ -22,13 +22,22 @@ export type ConsultEvent =
 export async function* streamConsult(
 	clientId: string,
 	question: string,
-	sessionId?: string
+	sessionId?: string,
+	signal?: AbortSignal
 ): AsyncGenerator<ConsultEvent> {
+	// `signal` lets the caller stop reading (e.g. on navigating away) so the
+	// browser closes the connection — the backend's StreamingResponse then
+	// stops being advanced past its next yield, so no *further* Anthropic
+	// calls in the pipeline start. Whichever single call was already in
+	// flight at that moment still finishes server-side; a generator can't be
+	// interrupted mid-await. Previously there was no way to stop this at all
+	// (specs/v4/04-known-issues.md#m4).
 	const res = await fetch(`${PUBLIC_API_BASE}/api/me/consult`, {
 		method: 'POST',
 		credentials: 'include',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ client_id: clientId, question, session_id: sessionId || undefined })
+		body: JSON.stringify({ client_id: clientId, question, session_id: sessionId || undefined }),
+		signal
 	});
 	if (!res.ok || !res.body) {
 		const body = await res.json().catch(() => ({}));

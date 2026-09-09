@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { page } from '$app/state';
 	import { get } from '$lib/api';
 	import { streamConsult } from '$lib/consultStream';
@@ -58,7 +58,12 @@
 
 	let question = $state('');
 	let asking = $state(false);
-	let steps = $state<{ agent: string; status: 'running' | 'done'; input_tokens?: number; output_tokens?: number }[]>([]);
+	let steps = $state<{ agent: string; status: 'running' | 'done' | 'error'; input_tokens?: number; output_tokens?: number }[]>([]);
+	// Aborts the in-flight fetch if the practitioner navigates away mid-consult
+	// — see the note in consultStream.ts on what this does and doesn't stop
+	// server-side (specs/v4/04-known-issues.md#m4).
+	let abortController: AbortController | null = null;
+	onDestroy(() => abortController?.abort());
 
 	const AGENT_LABELS: Record<string, string> = {
 		librarian: 'Librarian', specialist: 'Specialist', checker: 'Checker'
@@ -88,18 +93,27 @@
 		document.getElementById(`source-${label}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 	}
 
+	function failRunningSteps() {
+		// Previously an error left any still-"running" step pulsing forever —
+		// nothing ever marked it failed, so the UI looked like it was still
+		// working on a request that had actually died (specs/v4/04-known-
+		// issues.md#m3).
+		steps = steps.map((s) => (s.status === 'running' ? { ...s, status: 'error' } : s));
+	}
+
 	async function ask(e: Event) {
 		e.preventDefault();
 		if (!clientId || !question.trim() || asking) return;
 		const askedQuestion = question;
 		asking = true;
 		steps = [];
+		abortController = new AbortController();
 		try {
 			// Client switching is disabled while `asking` (see the disabled
 			// bindings below), so clientId/sessionId can't change out from
 			// under this request — no separate "which client was this for"
 			// tracking needed the way a mid-flight switch would otherwise require.
-			for await (const ev of streamConsult(clientId, askedQuestion, sessionId)) {
+			for await (const ev of streamConsult(clientId, askedQuestion, sessionId, abortController.signal)) {
 				if (ev.event === 'agent_start') {
 					steps = [...steps, { agent: ev.agent, status: 'running' }];
 				} else if (ev.event === 'agent_done') {
@@ -113,13 +127,16 @@
 					turns = [...turns, { question: askedQuestion, ...ev }];
 					question = '';
 				} else if (ev.event === 'error') {
+					failRunningSteps();
 					toast(ev.message, 'alert');
 				}
 			}
 		} catch (err: any) {
-			toast(err.message, 'alert');
+			failRunningSteps();
+			if (err?.name !== 'AbortError') toast(err.message, 'alert');
 		} finally {
 			asking = false;
+			abortController = null;
 		}
 	}
 </script>
@@ -201,11 +218,13 @@
 		{#if steps.length}
 			<div class="progress">
 				{#each steps as s (s.agent)}
-					<div class="step" class:done={s.status === 'done'}>
+					<div class="step" class:done={s.status === 'done'} class:error={s.status === 'error'}>
 						<span class="dot" aria-hidden="true"></span>
 						{AGENT_LABELS[s.agent] ?? s.agent}
 						{#if s.status === 'done'}
 							<Chip tone="neutral">{s.input_tokens}→{s.output_tokens} tok</Chip>
+						{:else if s.status === 'error'}
+							<span class="hint">failed</span>
 						{:else}
 							<span class="hint">running…</span>
 						{/if}
@@ -241,6 +260,8 @@
 	.step { display: flex; align-items: center; gap: .5rem; font-size: var(--text-sm); }
 	.step .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); animation: breathe 1s ease-in-out infinite; }
 	.step.done .dot { background: var(--ok); animation: none; }
+	.step.error .dot { background: var(--danger); animation: none; }
+	.step.error .hint { color: var(--danger); }
 	.thread { display: grid; gap: var(--space-5); margin-top: var(--space-5); }
 	.turn { padding-top: var(--space-4); border-top: 1px solid var(--glass-line); }
 	.question { font-weight: 650; margin: 0 0 var(--space-2); }

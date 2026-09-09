@@ -470,7 +470,7 @@ perspective.
 **Fixed:** an `{:else}` branch (covering both `suspended` and `rejected`)
 now shows a "Re-approve" button, reusing the existing `approve()` call.
 
-### M3 — A failed consult leaves the progress UI stuck "running" forever
+### M3 — A failed consult leaves the progress UI stuck "running" forever — FIXED
 
 On `{event: 'error'}` (`consult/+page.svelte:44-46`), only a transient
 toast fires — nothing marks the in-flight `steps` entries as failed, and
@@ -478,7 +478,11 @@ the pulsing `.dot` animation only stops via `class:done`, which never gets
 set on error. After the toast disappears, the UI still visually looks like
 a request that's in progress, indefinitely.
 
-### M4 — No cancellation on a consult stream, and no guard against overlapping requests
+**Fixed:** a new `failRunningSteps()` marks every still-`running` step
+`error` (a red, non-pulsing dot, labelled "failed") whenever an `error` SSE
+event arrives or the request throws.
+
+### M4 — No cancellation on a consult stream, and no guard against overlapping requests — FIXED
 
 `streamConsult` (`consultStream.ts:21`) opens a plain `fetch` with no
 `AbortController`. Navigating away mid-consult doesn't stop the backend
@@ -486,6 +490,18 @@ from finishing (and billing) the Anthropic calls. The Ask button itself is
 guarded by `loading`, but the client-switching paths from C8 aren't, so two
 overlapping streams writing into the same page-level state remains
 possible.
+
+**Fixed:** `streamConsult` now takes an optional `AbortSignal`; the page
+creates an `AbortController` per request and aborts it in `onDestroy`
+(leaving the page mid-consult). This stops the browser connection and
+whatever Anthropic call in the pipeline *hasn't started yet* — the one
+already in flight at that moment still finishes server-side, since a
+generator can't be interrupted mid-`await`; documented honestly in
+`consultStream.ts` rather than claimed as a full stop. The overlap half of
+this finding is already closed as a side effect of [C8](#c8)'s fix
+(disabling client switching during `asking` also means `clientId`/
+`sessionId` can't change mid-request) plus the pre-existing `asking` guard
+at the top of `ask()`.
 
 ### M5 — Questionnaire editing is backend-only
 
