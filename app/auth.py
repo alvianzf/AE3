@@ -8,6 +8,9 @@ contact) must stay reachable without a cookie at all.
 """
 from __future__ import annotations
 
+import time
+from collections import defaultdict
+
 import bcrypt
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -139,6 +142,36 @@ def ensure_bootstrap_admin() -> None:
     )
 
 
+# In-memory login lockout — no persistence needed across a restart (a
+# restart is itself a rare, high-friction event an attacker can't trigger),
+# and this app runs as a single process (specs/v3/11-operations.md), so a
+# module-level dict is sufficient without adding a dependency for something
+# this small. Previously there was no rate limiting or lockout at all
+# (specs/v4/04-known-issues.md#h11) — bcrypt slows brute force somewhat but
+# doesn't stop it.
+_MAX_LOGIN_ATTEMPTS = 5
+_LOGIN_LOCKOUT_SECONDS = 15 * 60
+_failed_logins: dict[str, list[float]] = defaultdict(list)
+
+
+def _check_login_lockout(email: str) -> None:
+    now = time.monotonic()
+    attempts = [t for t in _failed_logins[email] if now - t < _LOGIN_LOCKOUT_SECONDS]
+    _failed_logins[email] = attempts
+    if len(attempts) >= _MAX_LOGIN_ATTEMPTS:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many failed login attempts. Try again in 15 minutes.")
+
+
+def _record_login_failure(email: str) -> None:
+    _failed_logins[email].append(time.monotonic())
+
+
+def _clear_login_failures(email: str) -> None:
+    _failed_logins.pop(email, None)
+
+
 def _set_session_cookie(response, role: str, account_id: str, **extra) -> None:
     token = _serializer.dumps({"role": role, "id": account_id, **extra})
     response.set_cookie(
@@ -154,9 +187,12 @@ def register(app: FastAPI) -> None:
         email = str(body.get("email", "")).strip().lower()
         password = str(body.get("password", ""))
 
+        _check_login_lockout(email)
+
         admin = core_store.get_admin_by_email(email)
         if admin is not None and admin["is_active"] and \
                 verify_password(password, admin["password_hash"]):
+            _clear_login_failures(email)
             response = JSONResponse(
                 {"role": "admin", "id": admin["id"], "admin_role": admin["role"]})
             _set_session_cookie(response, "admin", admin["id"],
@@ -166,6 +202,7 @@ def register(app: FastAPI) -> None:
         practitioner = core_store.get_practitioner_by_email(email)
         if practitioner is not None and practitioner["status"] != "suspended" and \
                 verify_password(password, practitioner["password_hash"]):
+            _clear_login_failures(email)
             response = JSONResponse({"role": "practitioner", "id": practitioner["id"]})
             _set_session_cookie(response, "practitioner", practitioner["id"])
             return response
@@ -183,6 +220,7 @@ def register(app: FastAPI) -> None:
                 # and id — every client-scoped route needs it to know which
                 # vault file to open.
                 practitioner_id = directory_entry["practitioner_id"]
+                _clear_login_failures(email)
                 response = JSONResponse(
                     {"role": "client", "id": client["id"],
                      "practitioner_id": practitioner_id})
@@ -190,6 +228,7 @@ def register(app: FastAPI) -> None:
                                     practitioner_id=practitioner_id)
                 return response
 
+        _record_login_failure(email)
         raise HTTPException(status_code=401, detail="Incorrect email or password.")
 
     @app.post("/api/auth/change-password")

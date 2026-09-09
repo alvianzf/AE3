@@ -410,10 +410,18 @@ demo capabilities with no working UI.
 librarian chose" panel now renders `reasoning`, the considered/opened/
 truncated counts, and the list of opened sources with their grades.
 
-### H11 — No rate limiting or lockout on login
+### H11 — No rate limiting or lockout on login — FIXED
 
 `app/auth.py:127-169` — bcrypt slows brute force somewhat, but there is no
 attempt counter, backoff, or lockout of any kind on `/api/auth/login`.
+
+**Fixed:** an in-memory per-email counter (no new dependency, single-process
+deployment per specs/v3/11) locks an email out for 15 minutes after 5 failed
+attempts within that window, checked before any password verification runs
+and cleared on a successful login. Not persisted across a restart — a
+restart is itself a rare, high-friction event, and a real deployment
+wanting attacker-triggered-restart resistance would need this in a shared
+store (Redis or the DB) instead, out of scope for this PoC's scale.
 
 ### H12 — A failed consult stream is only reported for one specific exception type
 
