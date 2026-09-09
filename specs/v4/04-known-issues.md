@@ -538,12 +538,19 @@ provider account has no way to undo it.
 fixture data points, not just the connection row) plus a "Disconnect"
 button next to the Connected chip.
 
-### M7 — Directory search inflates a practitioner's profile-view count on every listing, not just opens
+### M7 — Directory search inflates a practitioner's profile-view count on every listing, not just opens — NOT A BUG, RETRACTED
 
 `list_practitioners_public` (`app/main.py:479-490`) calls
 `core_store.log_profile_view(p["id"])` for every card in a filtered result
 list — every visit to the public directory search inflates every matching
 practitioner's view count, not just genuine profile opens.
+
+**Retracted on closer check:** [specs/v2/03-website.md §Analytics](../v2/03-website.md#analytics)
+explicitly specs this: *"Every directory listing render and every
+coach-detail-page render logs a `profile_view_events` row."* This is
+impression tracking working as designed, not a bug — flagged here rather
+than silently dropped so the original (mistaken) finding is on record, per
+this document's own standard of recording what was checked.
 
 ### M8 — Client file-upload errors are swallowed to a generic message — FIXED
 
