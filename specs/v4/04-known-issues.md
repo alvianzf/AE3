@@ -37,6 +37,12 @@ built and deployed" and v4 is "proposed, not approved" — that's stale as of
 the same commit and is itself worth fixing (formally cutting `v4/` per
 `specs/README.md`'s own versioning rule), separately from anything below.
 
+**Update, same day:** both status pointers now correctly identify `v4/`
+as current — but the actual mechanical cut this note describes (copying
+forward every unchanged `v3/` doc, freezing `v3/` as superseded) still
+hasn't happened; see [`specs/README.md`](../README.md)'s table note and
+[`v4/README.md`](README.md) for the current, honest state of that gap.
+
 ---
 
 ## Critical

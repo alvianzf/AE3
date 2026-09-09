@@ -1,20 +1,25 @@
-# v4 — SvelteKit frontend rewrite (proposed, not approved)
+# v4 — SvelteKit frontend rewrite
 
-**Status: proposal.** Unlike `v1`/`v2`/`v3`, this folder is not yet a frozen
-record of something built — it's the spec for something requested but not
-yet greenlit. [`specs/README.md`](../README.md)'s versioning rule is what
-put this in its own folder rather than a new numbered doc inside `v3/`:
-*"a new version is cut when there's a change worth auditing: new scope, a
-reversed decision"* — SvelteKit reverses
-[`v3/01-overview.md`'s decision 5](../v3/01-overview.md#decisions), which
-explicitly kept this project framework-free through v1-v3. That's a
-version boundary, not an addendum.
+**Status: built and deployed** (commit `5e0c14f`, 2026-09-02), with two
+rounds of post-launch work since — a PM/QA/Clinician review with 42 of 44
+findings fixed ([04](04-known-issues.md)), and CI/CD + chunked uploads +
+a staged-source review queue + assorted fixes ([05](05-post-launch-additions.md)).
+**The formal version cut `specs/README.md` describes — copying forward
+every unchanged `v3/` doc, freezing `v3/` as superseded, updating that
+file's status table — has not happened.** This folder is the real,
+current state of the product; `specs/README.md`'s table and the framing
+below (written when this was still a proposal) are stale on that one
+point until someone does the mechanical cut. Noted, not silently glossed
+over — first flagged in [04](04-known-issues.md)'s process note.
 
-Once (if) this direction is approved and actually built, formally cutting
-this version the way `specs/README.md` describes — copying forward every
-`v3/` doc that doesn't change, freezing `v3/` as superseded — is a
-mechanical step to do at that point, not before. Right now this folder
-holds exactly the two documents that are the actual proposal:
+This was originally proposed as a presentation-layer rewrite — SvelteKit
+reverses [`v3/01-overview.md`'s decision 5](../v3/01-overview.md#decisions),
+which explicitly kept this project framework-free through v1-v3, which is
+why it's its own version folder rather than a new doc inside `v3/`, per
+`specs/README.md`'s own versioning rule (*"a new version is cut when
+there's a change worth auditing: new scope, a reversed decision"*). What
+actually shipped went further than presentation-only — see "What this
+does not change" below for what's still true and what isn't.
 
 - [**01 · Frontend rewrite: SvelteKit**](01-sveltekit-frontend.md) — the
   architecture: what's kept from the current visual identity vs. what's
@@ -32,17 +37,28 @@ holds exactly the two documents that are the actual proposal:
   the "keep the gradient" vs. "less cramped" tension directly, applied
   concretely per portal/screen, plus 01's spacing scale actually applied
   to real values instead of just proposed.
+- [**04 · Known issues**](04-known-issues.md) — a PM/QA/Clinician-lens
+  review of the deployed build: 9 Critical, 12 High, 18 Medium, 5 Low
+  findings, 42 fixed same-session.
+- [**05 · Post-launch additions**](05-post-launch-additions.md) —
+  automatic CI/CD deploy, chunked uploads up to 200 MB, a staged-source
+  review queue (upload/paste several sources, ingest all or one at a
+  time — builds [`v3/18`](../v3/18-document-ingest-upgrade.md)'s
+  never-implemented spec), a multi-panel layout fix, and a display-bug
+  fix.
 
-## What this does not change
+## What this does not change (mostly)
 
-Product scope, information architecture (with one named exception), the
-backend, the data model, and the API contract all carry forward from `v3`
-unchanged — see [01's "What doesn't change"](01-sveltekit-frontend.md#what-doesnt-change).
-This is a presentation-layer rewrite, same framing `v3` itself used for
-adopting Material Web.
+Product scope, information architecture, and the auth model carry forward
+from `v3` unchanged — see
+[01's "What doesn't change"](01-sveltekit-frontend.md#what-doesnt-change).
+**The backend and data model are no longer fully unchanged**: 05 added a
+`staged_sources` table and a chunked-upload staging mechanism — real new
+backend surface, not just new frontend calling existing routes. Everything
+else about 01's original "presentation-layer rewrite" framing still holds.
 
 ## Everything else
 
-Not copied into this folder yet, per the "proposal, not a cut version"
-status above — read the current, real state of the product at
+For anything not covered by 01-05, the current, real state of the product
+not superseded by a v4 doc is still accurately described in
 [`v3/README.md`](../v3/README.md).
