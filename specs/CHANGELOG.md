@@ -34,6 +34,20 @@ DMOZ-style library request from earlier the same day, detailed in
   text exceeds the Reader model's context window now fails ingest
   outright instead of silently grading a partial read; not yet hit in
   practice.
+- **Bug fix**: the audit-log preview on the Knowledge page read
+  `a.created_at`, a field `AuditEvent` nodes never had (the real one is
+  `a.ts`) — every row rendered as `"{action} — "` with nothing after the
+  dash.
+- **Audit history moved to its own page** (`/admin/audit`, new AppRail
+  nav item), showing every returned event (Who/Action/Detail/When) in a
+  real table instead of a hardcoded 6-row preview wedged into the
+  Knowledge page's rail. Fixes the bug above in the same pass, since the
+  rendering code moved wholesale.
+- **Admin layout now uses the full content width**: dropped the shared
+  `.container` (`max-width: 78rem`, tuned for the public site's prose
+  pages) from the admin shell only, after it left growing empty gutters
+  on the Knowledge page's directory grid and tables on anything wider
+  than a laptop.
 
 ## v4.1 — 2026-09-09 (CI/CD, chunked uploads, staged-source review queue, layout fixes)
 
