@@ -389,13 +389,28 @@ grade, summary, and topic tags can all be decided without the model reading
 past roughly the first 20k characters, and nothing in the admin UI
 indicates a source was truncated for grading purposes.
 
-**Fixed:** `read_source()` now returns whether the input exceeded 20k
-characters; `ingest_source()` stores it as `Source.reader_truncated`
-(defaulting to `false` via `coalesce` for sources ingested before this
-existed), and the admin library shows a "graded from a partial read"
-chip on any source where it's true. The truncation limit itself is
-unchanged — this makes an existing tradeoff visible, not a bigger-context
-change.
+**Fixed (original fix, 2026-09-09):** `read_source()` now returns whether
+the input exceeded 20k characters; `ingest_source()` stores it as
+`Source.reader_truncated` (defaulting to `false` via `coalesce` for
+sources ingested before this existed), and the admin library shows a
+"graded from a partial read" chip on any source where it's true. The
+truncation limit itself is unchanged — this makes an existing tradeoff
+visible, not a bigger-context change.
+
+**Update, same day:** the truncation cap itself was removed at the
+user's explicit direction ("read them all, no partials") —
+`read_source()` now sends the full source text to the Reader model with
+no `[:20000]` slice. `truncated`/`reader_truncated` no longer exists
+anywhere (`llm.py`, `knowledge.ingest_source()`'s Cypher write and
+`_CARD` read projection, `main.py`, and the admin library's chip were
+all removed together, not just disabled) since the condition it flagged
+can no longer occur. Traded deliberately: a source whose extracted text
+exceeds the reader model's context window now fails the ingest outright
+(an uncaught `anthropic.APIError` surfaces as a 500) rather than silently
+grading it from a partial read — judged the more honest failure mode,
+though it means a genuinely huge text-heavy document may need to be
+split before it can be ingested at all. Not yet hit in practice; no
+document ingested so far has come close to Haiku's 200k-token window.
 
 ### H9 — No password length/strength check at account creation, inconsistent with change-password — FIXED
 

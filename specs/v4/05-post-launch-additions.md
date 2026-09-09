@@ -185,8 +185,10 @@ a materially heavier dependency; not added.
 
 ### Frontend
 
-The admin Knowledge page's "1 · Teach Clinic" panel is now three tabs
-(`Tabs.svelte`) instead of one form:
+The admin Knowledge page's ingest form is three tabs (`Tabs.svelte`)
+instead of one — originally a permanent "1 · Teach Clinic" rail panel,
+later moved into a modal (see "Library browse and the ingest modal"
+below):
 
 - **Upload a document** — a real drag-and-drop zone (click to browse
   still works), not a bare `<input type="file">`. Once a file is chosen,
@@ -228,6 +230,98 @@ and the practitioner client-detail page. Deliberately left alone:
 Profile (two similarly-narrow forms — a wide second column would just be
 empty space), `/account` (a deliberately narrow single-purpose page), and
 every page that only has one panel to begin with.
+
+## Library browse, the ingest modal, and a Library/Staged tab switch
+
+Three changes to the admin Knowledge page's layout, done in sequence the
+same day from related requests (a DMOZ-style directory browse for the
+library, referencing https://dmoz-odp.com/; moving the upload/paste/
+scrape tabs behind a button instead of sitting in the rail; then
+tabbing the library and the staged-review queue together instead of
+splitting them across the rail and the main column).
+
+### Ingest moved from a rail panel into a modal
+
+The "1 · Teach Clinic" panel (Tabs + dropzone/textarea/URL form) is gone
+from the rail entirely. In its place: a **"+ Add resources"** button in
+the library's header (`Spotlight`'s `actions` slot) that opens the same
+three tabs inside a `Dialog`. Staging successfully (file, text, or
+scrape) closes the modal automatically so the admin lands back on the
+page with the staged list already updated.
+
+`Dialog.svelte` gained an optional `wide` prop (`min(46rem, 94vw)` vs.
+the default `min(32rem, 92vw)`) since the ingest tabs — especially the
+dropzone with its PDF preview — need more room than a confirm dialog.
+Existing call sites are unaffected; none pass `wide`.
+
+### Library and Staged as tabs in one panel, not split across rail/main
+
+First cut of this (see git history) put the staged-review checklist in
+the rail, next to "What Clinic knows," while the library sat in the main
+`Spotlight` column — better than the original single-column stack, but
+still two separate panels for what's really one workflow (add something
+→ check the staged queue → ingest it → see it in the library). Final
+shape: one `Spotlight` ("1 · Knowledge library") with a `Tabs` switcher
+— **Library** and **Staged for review** (the tab label carries a live
+count, e.g. "Staged for review (3)," so there's a visible cue when
+something needs attention without leaving the Library tab). The rail
+now holds only "2 · What Clinic knows" — genuinely secondary,
+glance-and-forget stats.
+
+**Why this also fixes a recurring confusion, not just a cosmetic move**:
+this page was reported twice as confusing because of two visually
+adjacent action lists — Ingest/Discard on staged items right next to
+Regrade/Remove on library items — with no explanation of why there were
+two. They're now two different tabs of the same panel instead of two
+lists sharing a screen: Ingest/Discard lives entirely under "Staged for
+review," Regrade/Remove entirely under "Library."
+
+### Library: directory-style categories instead of a flat facet row
+
+Reused rather than rebuilt: the library still has no true category
+hierarchy in Neo4j — `Topic` nodes are flat, same limitation noted the
+first time a DMOZ-style browse was requested. What changed is the
+*presentation*, not the data model:
+
+- **No query yet** (search empty, no category picked): the library shows
+  a grid of category tiles — one per `Topic`, from `/api/coverage`, each
+  showing its document count — instead of the old inline chip row. This
+  is the directory "front page," matching dmoz-odp.com's shape at that
+  level.
+- **A category picked, or a search typed**: the tile grid is replaced by
+  a breadcrumb ("All categories › {topic}" and/or the search term), a
+  **Kind** facet row (`Chip`-styled buttons, unchanged from before —
+  standing in for "subcategory," since Kind is the only other facet the
+  data actually has), and the results table.
+- The search box sits above both states, enlarged, with a clear (×)
+  button — typing a query skips straight to the results view over every
+  category, the way a directory's search bar does.
+
+Same honest caveat as the first DMOZ pass: "subcategory" here is a
+one-level facet (Kind), not a second real hierarchy tier. A true
+nested-subcategory model would need Neo4j schema work (e.g. a
+`Topic`-of-`Topic` relationship) that wasn't part of this request.
+
+## Reader grading: full document, no truncation
+
+[04's H8](04-known-issues.md#h8) had fixed the *symptom* — an admin
+couldn't tell a source was graded from a partial read — without changing
+the underlying `text[:20000]` cap itself. Told directly to fix the cap,
+not just flag it ("read them all, no partials"): `llm.read_source()` now
+sends the full extracted text to the Reader model, with no slice.
+
+Since the condition it flagged can no longer happen, `truncated`/
+`reader_truncated` was removed end to end rather than left in place
+always `false` — `llm.py`'s truncation check, `knowledge.ingest_source()`'s
+Cypher write and `_CARD` read projection, `main.py`'s call site, and the
+admin library's "graded from a partial read" chip are all gone together.
+
+**Tradeoff, stated plainly**: a source whose full text exceeds the
+Reader model's context window (Haiku 4.5, 200k tokens — roughly
+700-800k characters) now fails the ingest outright, an uncaught
+`anthropic.APIError` surfacing as a 500, rather than silently grading it
+from a partial read. Judged the more honest failure mode. Not yet hit in
+practice — no document ingested so far has come close.
 
 ## Bug fix: "What Clinic knows" always showed 0
 

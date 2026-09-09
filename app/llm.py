@@ -136,17 +136,13 @@ def read_source(text: str, filename: str, kind: str, origin: str,
         f"Topics already used in this library (reuse where one fits):\n"
         f"{', '.join(sorted(shelves)) or '(the library is empty)'}\n\n"
         f"Filename: {filename}\nKind: {kind}\nStated origin: {origin}\n\n"
-        f"Source text:\n---\n{text[:20000]}\n---"
+        f"Source text:\n---\n{text}\n---"
     )
     card = _json_call(cfg.reader_model, READER_SYSTEM, prompt, READER_SCHEMA)
     card["suggested_grade"] = max(1, min(10, int(card["suggested_grade"])))
     card["topics"] = [t.strip().lower() for t in card["topics"] if t.strip()][:4]
     for field in ("author", "published", "reference"):
         card[field] = card.get(field, "").strip()
-    # The grade/summary/topics above are decided from at most the first 20k
-    # characters — surfaced so an admin grading a long document knows the
-    # Reader didn't see all of it (specs/v4/04-known-issues.md#h8).
-    card["truncated"] = len(text) > 20000
     return card
 
 

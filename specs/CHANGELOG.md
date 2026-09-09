@@ -1,5 +1,40 @@
 # Specs changelog
 
+## v4.2 — 2026-09-09 (library directory browse; ingest modal; Library/Staged tabs; full-document grading)
+
+Same day as `v4.1` below, later still — a run of follow-ups to the
+DMOZ-style library request from earlier the same day, detailed in
+[`specs/v4/05-post-launch-additions.md`](v4/05-post-launch-additions.md#library-browse-the-ingest-modal-and-a-librarystaged-tab-switch):
+
+- **Ingest is now a modal**, not a permanent rail panel: a "+ Add
+  resources" button on the library opens the upload/paste/scrape tabs in
+  a `Dialog` (which gained an optional `wide` variant), closing itself
+  automatically once staging succeeds.
+- **Library browse redesigned as a directory**: with no search and no
+  category picked, the library shows a grid of category tiles (one per
+  `Topic`, with a document count) instead of an inline chip row —
+  matching the https://dmoz-odp.com/ shape referenced in the request.
+  Picking a tile (or typing a search) swaps to a breadcrumb, a Kind
+  facet row standing in for "subcategory," and the results table. Same
+  caveat as the original DMOZ pass: Neo4j has no real category hierarchy,
+  so this is a presentation change over the existing flat `Topic`/`Kind`
+  facets, not a new data model.
+- **Library and Staged are now tabs of one panel** (with a live count on
+  the Staged tab), replacing an intermediate cut that had split them
+  across the rail and the main column. Fully separates the two action
+  lists — Ingest/Discard (staged) vs. Regrade/Remove (library) — that
+  this page kept getting reported as confusing when they sat next to
+  each other.
+- **Reader grading now reads the whole document**: the `text[:20000]`
+  cap that H8 (see `v4` entry below) had only made *visible* is now
+  removed outright, at explicit request ("read them all, no partials").
+  `truncated`/`reader_truncated` is gone end to end — `llm.py`,
+  `knowledge.py`'s write/read, `main.py`, and the admin chip — since the
+  condition it flagged can't happen anymore. Tradeoff: a source whose
+  text exceeds the Reader model's context window now fails ingest
+  outright instead of silently grading a partial read; not yet hit in
+  practice.
+
 ## v4.1 — 2026-09-09 (CI/CD, chunked uploads, staged-source review queue, layout fixes)
 
 Same day as the `v4` entry below, later in the day — three unrelated
