@@ -7,6 +7,7 @@ subdirectory rather than one shared store.
 from __future__ import annotations
 
 import logging
+import shutil
 from pathlib import Path
 
 from .config import get_config
@@ -24,6 +25,20 @@ def save(practitioner_id: str, file_id: str, raw: bytes, filename: str) -> bool:
     """Archive the uploaded bytes. Returns False if it could not be written."""
     try:
         (_dir(practitioner_id) / f"{file_id}{Path(filename).suffix}").write_bytes(raw)
+        return True
+    except OSError as exc:
+        logging.warning(
+            "could not archive vault file for %s/%s: %s",
+            practitioner_id, file_id, exc)
+        return False
+
+
+def save_from_path(practitioner_id: str, file_id: str, src: Path, filename: str) -> bool:
+    """Same as save(), for a file already on disk (the chunked-upload
+    staging path, app/uploads.py) — a streaming copy, so a large client
+    file is never also held as a second in-memory `bytes` copy."""
+    try:
+        shutil.copyfile(src, _dir(practitioner_id) / f"{file_id}{Path(filename).suffix}")
         return True
     except OSError as exc:
         logging.warning(

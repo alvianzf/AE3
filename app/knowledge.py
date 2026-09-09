@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 import neo4j
 
@@ -221,7 +222,8 @@ def ingest_source(
     *, title: str, filename: str, kind: str, origin: str, grade: int,
     summary: str, topics: list[str], passages: list[dict], digest: str,
     body: str, author: str = "", published: str = "", reference: str = "",
-    page_count: int = 0, original: tuple[bytes, str, str] | None = None,
+    page_count: int = 0,
+    original: tuple[bytes | Path, str, str] | None = None,
     reader_truncated: bool = False,
 ) -> dict:
     """Write a read-and-graded source plus its passages.
@@ -230,9 +232,12 @@ def ingest_source(
     "the original stays readable in the Library" — and because concatenating
     passages back together would double the overlap regions.
 
-    `original` is `(raw_bytes, filename, media_type)` for an uploaded file, or
-    None for pasted text. The bytes are archived *after* the Cypher write commits,
-    so a duplicate rejected by the source_hash constraint leaves no orphan file.
+    `original` is `(raw_bytes_or_path, filename, media_type)` for an uploaded
+    file, or None for pasted text. A `Path` (the chunked-upload staging file,
+    app/uploads.py) is streamed to its final home rather than read into memory
+    first — that's the whole point of chunked upload for a 200 MB source. The
+    file is archived *after* the Cypher write commits, so a duplicate rejected
+    by the source_hash constraint leaves no orphan file.
 
     Raises neo4j.exceptions.ConstraintError if `digest` is already in the library.
     """
@@ -293,7 +298,17 @@ def ingest_source(
         # Archive the uploaded file last: if the CREATE above hit the uniqueness
         # constraint we never get here, so the store gains no orphan. The node is
         # only told about the file once the bytes are actually on disk.
-        if original and originals.save(source_id, original[0], original[1]):
+        if original:
+            content, name, media_type = original
+            if isinstance(content, Path):
+                size = content.stat().st_size
+                saved = originals.save_from_path(source_id, content, name)
+            else:
+                size = len(content)
+                saved = originals.save(source_id, content, name)
+        else:
+            saved = False
+        if saved:
             s.run(
                 """
                 MATCH (src:Source {id: $id})
@@ -302,7 +317,7 @@ def ingest_source(
                     src.original_bytes = $size
                 """,
                 id=source_id, name=original[1], media_type=original[2],
-                size=len(original[0]),
+                size=size,
             )
     log("admin", "ingest",
         f"{title} — {total} passages, {page_count or 0} pages, grade {grade}")
