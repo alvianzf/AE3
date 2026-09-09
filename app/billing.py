@@ -25,8 +25,8 @@ def create_checkout_session(practitioner_id: str, email: str) -> str:
         client_reference_id=practitioner_id,
         metadata={"practitioner_id": practitioner_id},
         subscription_data={"metadata": {"practitioner_id": practitioner_id}},
-        success_url=f"{cfg.public_base_url}/static/practitioner/profile.html?upgraded=1",
-        cancel_url=f"{cfg.public_base_url}/static/practitioner/profile.html",
+        success_url=f"{cfg.public_base_url}/practitioner/profile?upgraded=1",
+        cancel_url=f"{cfg.public_base_url}/practitioner/profile",
     )
     return session.url
 
@@ -69,7 +69,7 @@ def handle_webhook(payload: bytes, sig_header: str) -> dict:
 def billing_portal_url(customer_id: str) -> str:
     session = stripe.billing_portal.Session.create(
         customer=customer_id,
-        return_url=f"{cfg.public_base_url}/static/practitioner/profile.html",
+        return_url=f"{cfg.public_base_url}/practitioner/profile",
     )
     return session.url
 

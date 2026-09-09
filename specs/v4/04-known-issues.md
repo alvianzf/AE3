@@ -267,7 +267,7 @@ same pass: the client Files table's columns referenced `f.filename`/
 silently blank; and [M8](#m8) (upload errors swallowed to a generic
 message) in the same file, while already there.
 
-### H3 — Stripe checkout/portal redirects point at retired pre-rewrite pages
+### H3 — Stripe checkout/portal redirects point at retired pre-rewrite pages — FIXED
 
 `app/billing.py:28-29,72` — `success_url`/`cancel_url`/the billing-portal
 `return_url` — all point at `{public_base_url}/static/practitioner/profile.html`.
@@ -276,6 +276,8 @@ The live route is `/practitioner/profile`
 `billing.py` wasn't updated when the frontend was cut over: a practitioner
 finishing checkout or leaving the Stripe billing portal lands on the old,
 retired UI instead of the live app.
+
+**Fixed:** all three URLs now point at `/practitioner/profile`.
 
 ### H4 — Multi-turn consult history never actually carries forward
 
