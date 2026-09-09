@@ -457,7 +457,7 @@ staying visible/browsable until the next rebuild is unchanged — that's the
 prerendering tradeoff [02](02-open-questions.md) already tracks, not a
 one-route fix.
 
-### M2 — Suspended/rejected practitioners have no way back, in the admin UI
+### M2 — Suspended/rejected practitioners have no way back, in the admin UI — FIXED
 
 `web/src/routes/(admin)/admin/users/+page.svelte:82-88` only renders
 Approve/Reject buttons for `status === 'pending'` and Suspend for
@@ -466,6 +466,9 @@ The backend has no such restriction (`admin_approve`,
 `app/main.py:710`, applies unconditionally) — this is a pure UI gap, but it
 leaves a suspended practitioner permanently stuck from the admin's
 perspective.
+
+**Fixed:** an `{:else}` branch (covering both `suspended` and `rejected`)
+now shows a "Re-approve" button, reusing the existing `approve()` call.
 
 ### M3 — A failed consult leaves the progress UI stuck "running" forever
 

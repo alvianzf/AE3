@@ -85,6 +85,8 @@
 						<Button variant="text" onclick={() => reject(p.id as string)}>Reject</Button>
 					{:else if p.status === 'approved'}
 						<Button variant="text" onclick={() => suspend(p.id as string)}>Suspend</Button>
+					{:else}
+						<Button variant="text" onclick={() => approve(p.id as string)}>Re-approve</Button>
 					{/if}
 				</td>
 			{/snippet}
