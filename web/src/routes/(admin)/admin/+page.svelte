@@ -293,8 +293,8 @@
 	{/if}
 	{#if data.audit?.length}
 		<ul class="list">
-			{#each data.audit.slice(0, 6) as a (a.id ?? a.created_at)}
-				<li>{a.action ?? a.event} — {(a.created_at ?? '').slice(0, 16).replace('T', ' ')}</li>
+			{#each data.audit.slice(0, 6) as a (a.id)}
+				<li>{a.action} — {(a.ts ?? '').slice(0, 16).replace('T', ' ')}{#if a.detail}<span class="hint"> · {a.detail}</span>{/if}</li>
 			{/each}
 		</ul>
 	{/if}
