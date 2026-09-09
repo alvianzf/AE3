@@ -282,7 +282,7 @@
 
 <Quiet title="3 · What Clinic knows">
 	{#if data.graph}
-		<p class="hint">{data.graph.node_count ?? 0} concepts · {data.graph.edge_count ?? 0} links · {(data.graph.unlinked ?? []).length} unlinked sources</p>
+		<p class="hint">{data.graph.concepts ?? 0} concepts · {data.graph.mentions ?? 0} links · {(data.graph.unlinked ?? []).length} unlinked sources</p>
 	{/if}
 	{#if data.audit?.length}
 		<ul class="list">
