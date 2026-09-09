@@ -323,6 +323,51 @@ Reader model's context window (Haiku 4.5, 200k tokens — roughly
 from a partial read. Judged the more honest failure mode. Not yet hit in
 practice — no document ingested so far has come close.
 
+## Bug fix: the audit list read a field that never existed
+
+`AuditEvent` nodes (`knowledge.log()`/`knowledge.audit()`) only ever set
+`id`/`ts`/`actor`/`action`/`detail` — there is no `created_at`. The
+Knowledge page's "2 · What Clinic knows" panel read `a.created_at`
+anyway, so every row rendered as `"{action} — "` with nothing after the
+dash: reported as visual noise ("ingest —", "delete —", "regrade —",
+repeated). Same field-name-mismatch class as the earlier
+`node_count`/`edge_count` and `filename`/`content_type` bugs
+([04](04-known-issues.md)), missed in this spot at the time.
+
+## Audit history moved to its own page
+
+Told directly to stop cramming it into the Knowledge page's rail (a
+6-row preview, cut off, right below the graph-stats line) and give it a
+real screen with who/what/when. New `/admin/audit`
+(`web/src/routes/(admin)/admin/audit/`), a new AppRail nav item ("Audit
+history," a new `history` icon added to `Icon.svelte` — Feather-style
+clock face, matching the existing stroke-icon set), and its own tiny
+loader hitting the same `GET /api/audit` the old inline preview used —
+no backend change, `knowledge.audit()` already returns up to 100 events.
+A `DataTable` (Who/Action/Detail/When, sortable on the first two) shows
+every one of them instead of the old hardcoded first 6.
+`data.audit` was dropped from the Knowledge page's own loader
+(`+page.ts`) entirely, replaced with a plain link over to the new page —
+it no longer needs that fetch on every load. The still-fixed bug above
+(the `created_at` → `ts` mismatch) is fixed here too, since it's the
+same rendering code moved wholesale.
+
+## Admin layout: full content width, not a fixed 78rem column
+
+The shared `.container` utility (`max-width: 78rem`, centred) is tuned
+for the public site's prose-width pages. Every admin screen was using it
+too via `(admin)/admin/+layout.svelte`'s `<main class="container">` —
+harmless on pages that were mostly a form or a short table, but on the
+Knowledge page's directory-tile grid and data table it meant a fixed
+1248px content column with growing empty gutters on anything wider than
+a laptop, reported directly ("wide gap horizontally on either end...
+fill it to the edges"). Dropped the class for the admin layout only
+(public/practitioner/client layouts are untouched, still using
+`.container` as designed) — `<main>` now just fills the flex row next to
+the icon-only `AppRail` with `min-width: 0` (so the library's
+`.scroll-x`-wrapped table can still shrink/scroll instead of forcing
+page-level horizontal overflow) and the same padding as before.
+
 ## Bug fix: "What Clinic knows" always showed 0
 
 `data.graph.node_count`/`data.graph.edge_count` — read by the admin

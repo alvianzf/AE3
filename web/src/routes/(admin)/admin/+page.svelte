@@ -291,13 +291,7 @@
 	{#if data.graph}
 		<p class="hint">{data.graph.concepts ?? 0} concepts · {data.graph.mentions ?? 0} links · {(data.graph.unlinked ?? []).length} unlinked sources</p>
 	{/if}
-	{#if data.audit?.length}
-		<ul class="list">
-			{#each data.audit.slice(0, 6) as a (a.id)}
-				<li>{a.action} — {(a.ts ?? '').slice(0, 16).replace('T', ' ')}{#if a.detail}<span class="hint"> · {a.detail}</span>{/if}</li>
-			{/each}
-		</ul>
-	{/if}
+	<a class="crumb" href="/admin/audit">View audit history →</a>
 </Quiet>
 </div>
 
@@ -629,5 +623,4 @@
 	}
 	.upload-progress .bar { flex: 1 1 auto; height: 6px; border-radius: 99px; background: var(--accent); transition: width .2s var(--ease); margin-left: .25rem; }
 	.upload-progress .hint { flex: 0 0 auto; padding-right: .5rem; white-space: nowrap; }
-	.list { list-style: none; margin: 0; padding: 0; display: grid; gap: .35rem; font-size: var(--text-sm); color: var(--muted); }
 </style>
