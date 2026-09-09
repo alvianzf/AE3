@@ -1,4 +1,6 @@
 <script lang="ts">
+	import Icon from './Icon.svelte';
+
 	let {
 		label,
 		value,
@@ -10,7 +12,7 @@
 </script>
 
 <svelte:element this={Tag} href={href} class="tile">
-	{#if icon}<span class="ico" aria-hidden="true">{icon}</span>{/if}
+	{#if icon}<span class="ico"><Icon name={icon} size={20} /></span>{/if}
 	<div>
 		<div class="val">{value}</div>
 		<div class="lbl">{label}</div>
@@ -25,7 +27,7 @@
 		transition: border-color .15s var(--ease), transform .15s var(--ease);
 	}
 	a.tile:hover { border-color: var(--accent); transform: translateY(-2px); }
-	.ico { font-size: 1.4rem; }
+	.ico { display: inline-flex; color: var(--accent-ink); flex: 0 0 auto; }
 	.val { font-size: var(--text-xl); font-weight: 700; letter-spacing: -.02em; }
 	.lbl { font-size: var(--text-xs); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
 </style>

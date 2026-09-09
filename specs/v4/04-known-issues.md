@@ -604,7 +604,7 @@ lookup or AI-team call — the same "checked up front, not buried inside the
 stream" pattern this route's own docstring already establishes for its
 other pre-checks.
 
-### M13 — Client dashboard tiles use emoji icons — the same problem already fixed once
+### M13 — Client dashboard tiles use emoji icons — the same problem already fixed once — FIXED
 
 `web/src/routes/(client)/client/dashboard/+page.svelte:11-13` uses raw
 emoji (📋📁⌚). Commit `5e0c14f` explicitly replaced the practitioner
@@ -612,13 +612,25 @@ sidebar's mixed emoji/unicode icons with the stroke-based `Icon` component
 for exactly this reason ("not 'professional single-color'") — that fix was
 never applied to the client dashboard.
 
-### M14 — Client dashboard tiles show static copy, not real status
+**Fixed:** `StatTile` now renders its `icon` prop through the shared `Icon`
+component (`clipboard`/`folder`/`watch` — all three already existed in
+`Icon.svelte`'s path set) instead of a raw emoji string. Also fixed the
+same bug in the **practitioner** dashboard's `StatTile` row (✉📋💬,
+found while fixing this — not in the original review, same root cause),
+now `mail`/`clipboard`/`message`.
+
+### M14 — Client dashboard tiles show static copy, not real status — FIXED
 
 Same file: "Fill in" / "Upload" / "Connect" never change even though
 `data.response`, `data.files`, `data.connections` are all available
 elsewhere in the same portal — a client who already submitted the
 questionnaire or connected a wearable sees the identical call-to-action as
 one who hasn't.
+
+**Fixed:** the dashboard route had no loader at all — added
+`+page.ts` (fetching `/me/questionnaire/response`, `/me/files`,
+`/me/wearables`, the same endpoints their own pages already use) and the
+tiles now show "Submitted" / "N uploaded" / "N connected" once true.
 
 ### M15 — Pro-gated practitioner nav items aren't marked as gated
 

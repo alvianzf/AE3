@@ -37,9 +37,9 @@
 {/if}
 
 <div class="grid-auto tiles">
-	<StatTile label="New contacts" value={data.notifications.new_contacts ?? 0} icon="✉" href="/practitioner/contacts" />
-	<StatTile label="Unviewed intake" value={data.notifications.unviewed_intake ?? 0} icon="📋" href="/practitioner/clients" />
-	<StatTile label="Consults logged" value={data.recentSessions?.length ?? 0} icon="💬" href="/practitioner/consult" />
+	<StatTile label="New contacts" value={data.notifications.new_contacts ?? 0} icon="mail" href="/practitioner/contacts" />
+	<StatTile label="Unviewed intake" value={data.notifications.unviewed_intake ?? 0} icon="clipboard" href="/practitioner/clients" />
+	<StatTile label="Consults logged" value={data.recentSessions?.length ?? 0} icon="message" href="/practitioner/consult" />
 </div>
 
 <!-- specs/v4/03: history (actual work) promoted to Tier 1; recent contacts demoted to Tier 2 -->
