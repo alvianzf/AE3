@@ -585,10 +585,13 @@ a clean 400 naming the field. Also covers `json.loads()` on malformed
 `specialties`/`languages`, the same class of unhandled-crash bug in the
 same loop.
 
-### M11 — `_json_call` throws an unhandled `StopIteration` if a model response has no text block
+### M11 — `_json_call` throws an unhandled `StopIteration` if a model response has no text block — FIXED
 
 `app/llm.py:44`: `next(b.text for b in response.content if b.type ==
 "text")` has no default/guard for the case where the response has none.
+
+**Fixed:** `next(..., None)` plus a clear `ValueError` naming the model,
+instead of a bare `StopIteration` propagating to the caller.
 
 ### M12 — Blank consult questions still run (and bill) the full pipeline
 

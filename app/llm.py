@@ -41,7 +41,12 @@ def _json_call(model: str, system: str, prompt: str, schema: dict,
         messages=[{"role": "user", "content": prompt}],
         output_config={"format": {"type": "json_schema", "schema": schema}},
     )
-    text = next(b.text for b in response.content if b.type == "text")
+    # next() with no default raised a bare, confusing StopIteration if the
+    # model's response somehow had no text block at all (specs/v4/04-known-
+    # issues.md#m11) — a clear domain error instead.
+    text = next((b.text for b in response.content if b.type == "text"), None)
+    if text is None:
+        raise ValueError(f"{model} returned no text content block")
     result = json.loads(text)
     return (result, _usage_of(response)) if return_usage else result
 
