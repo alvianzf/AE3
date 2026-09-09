@@ -6,6 +6,7 @@
 	import { toast } from '$lib/stores/toast';
 	import Spotlight from '$lib/components/Spotlight.svelte';
 	import Quiet from '$lib/components/Quiet.svelte';
+	import Tabs from '$lib/components/Tabs.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import Chip from '$lib/components/Chip.svelte';
 	import TextField from '$lib/components/TextField.svelte';
@@ -13,6 +14,7 @@
 	import Dialog from '$lib/components/Dialog.svelte';
 
 	let { data } = $props();
+	let ingestTab = $state('upload');
 	let text = $state('');
 	let fileInput = $state<HTMLInputElement>();
 	let staging = $state(false);
@@ -117,31 +119,42 @@
 		}
 	}
 
-	async function stageItem(e: Event) {
+	// --- Upload tab: drag-and-drop with a preview (native <embed> for a
+	// PDF — same "browsers already render this, no PDF.js dependency
+	// needed" approach specs/v3/18 used for the pre-rewrite dropzone) ---
+	let dragOver = $state(false);
+	let selectedFile = $state<File | null>(null);
+	let previewUrl = $state<string | null>(null);
+
+	function pickFile(file: File | null) {
+		if (previewUrl) URL.revokeObjectURL(previewUrl);
+		selectedFile = file;
+		previewUrl = file ? URL.createObjectURL(file) : null;
+	}
+
+	function onDrop(e: DragEvent) {
 		e.preventDefault();
-		if (!text.trim() && !fileInput?.files?.length) return;
+		dragOver = false;
+		pickFile(e.dataTransfer?.files?.[0] ?? null);
+	}
+
+	function onFileInputChange(e: Event) {
+		pickFile((e.target as HTMLInputElement).files?.[0] ?? null);
+	}
+
+	async function stageFile() {
+		if (!selectedFile) return;
 		staging = true;
 		stageProgress = null;
 		try {
-			const file = fileInput?.files?.[0];
-			if (file) {
-				// Chunked regardless of size: one code path, always shows
-				// progress, and never risks a single >200MB-capable request
-				// hitting nginx's body-size limit (app/uploads.py, web/src/lib/
-				// chunkedUpload.ts). 'stage' instead of 'complete' — lands in
-				// the staged list below, not ingested yet.
-				await chunkedUpload('/sources', file, {}, (p) => (stageProgress = p), 'stage');
-			} else {
-				const fd = new FormData();
-				fd.set('text', text);
-				const res = await fetch(`${PUBLIC_API_BASE}/api/staged`, { method: 'POST', credentials: 'include', body: fd });
-				if (!res.ok) {
-					const body = await res.json().catch(() => ({}));
-					throw new Error(body?.detail?.message || body?.detail || 'Staging failed.');
-				}
-			}
+			// Chunked regardless of size: one code path, always shows
+			// progress, and never risks a single >200MB-capable request
+			// hitting nginx's body-size limit (app/uploads.py, web/src/lib/
+			// chunkedUpload.ts). 'stage' instead of 'complete' — lands in
+			// the staged list below, not ingested yet.
+			await chunkedUpload('/sources', selectedFile, {}, (p) => (stageProgress = p), 'stage');
 			toast('Added to the staged list.');
-			text = '';
+			pickFile(null);
 			if (fileInput) fileInput.value = '';
 			await invalidateAll();
 		} catch (err: any) {
@@ -149,6 +162,50 @@
 		} finally {
 			staging = false;
 			stageProgress = null;
+		}
+	}
+
+	// --- Paste-text tab ---
+	async function stageText(e: Event) {
+		e.preventDefault();
+		if (!text.trim()) return;
+		staging = true;
+		try {
+			const fd = new FormData();
+			fd.set('text', text);
+			const res = await fetch(`${PUBLIC_API_BASE}/api/staged`, { method: 'POST', credentials: 'include', body: fd });
+			if (!res.ok) {
+				const body = await res.json().catch(() => ({}));
+				throw new Error(body?.detail?.message || body?.detail || 'Staging failed.');
+			}
+			toast('Added to the staged list.');
+			text = '';
+			await invalidateAll();
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		} finally {
+			staging = false;
+		}
+	}
+
+	// --- Enter-URL tab: fetch, strip, extract via Haiku (app/scraper.py +
+	// llm.extract_article()) — content only, no chrome, never summarized ---
+	let url = $state('');
+	let scraping = $state(false);
+
+	async function scrapeUrl(e: Event) {
+		e.preventDefault();
+		if (!url.trim()) return;
+		scraping = true;
+		try {
+			await post(fetch, '/scrape', { url: url.trim() });
+			toast('Scraped and added to the staged list.');
+			url = '';
+			await invalidateAll();
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		} finally {
+			scraping = false;
 		}
 	}
 
@@ -223,21 +280,61 @@
 <div class="rail-layout">
 <div class="rail">
 <Quiet title="1 · Teach Clinic">
-	<form onsubmit={stageItem} class="ingest">
-		<TextField label="Paste text" type="textarea" bind:value={text} placeholder="Paste an article, note, or transcript…" />
-		<div class="field">
-			<label for="file">Or upload a file</label>
-			<input id="file" type="file" bind:this={fileInput} />
-			<p class="hint">Up to 200 MB — sent in pieces, so a large PDF doesn't need one giant request.</p>
-		</div>
-		{#if stageProgress}
-			<div class="upload-progress">
-				<div class="bar" style="width: {Math.round((stageProgress.sent / stageProgress.total) * 100)}%"></div>
-				<span class="hint">{Math.round(stageProgress.sent / 1024 / 1024)} / {Math.round(stageProgress.total / 1024 / 1024)} MB</span>
+	<Tabs bind:active={ingestTab} tabs={[{ id: 'upload', label: 'Upload a document' }, { id: 'text', label: 'Paste text' }, { id: 'url', label: 'Enter URL' }]} />
+
+	<div class="ingest-panel">
+		{#if ingestTab === 'upload'}
+			<input id="file" type="file" bind:this={fileInput} onchange={onFileInputChange} hidden />
+			<div
+				class="dropzone"
+				class:dragover={dragOver}
+				class:has-file={!!selectedFile}
+				role="button"
+				tabindex="0"
+				ondragover={(e) => { e.preventDefault(); dragOver = true; }}
+				ondragleave={() => (dragOver = false)}
+				ondrop={onDrop}
+				onclick={() => fileInput?.click()}
+				onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput?.click(); } }}
+			>
+				{#if !selectedFile}
+					<p class="dz-title">Drag a file here, or click to browse</p>
+					<p class="hint">Up to 200 MB.</p>
+				{:else if previewUrl && selectedFile.type === 'application/pdf'}
+					<embed src={previewUrl} type="application/pdf" class="pdf-preview" aria-label="{selectedFile.name} preview" />
+					<p class="dz-filename">{selectedFile.name}</p>
+				{:else}
+					<p class="dz-title">{selectedFile.name}</p>
+					<p class="hint">{Math.round(selectedFile.size / 1024)} KB</p>
+				{/if}
 			</div>
+			{#if stageProgress}
+				<div class="upload-progress">
+					<div class="bar" style="width: {Math.round((stageProgress.sent / stageProgress.total) * 100)}%"></div>
+					<span class="hint">{Math.round(stageProgress.sent / 1024 / 1024)} / {Math.round(stageProgress.total / 1024 / 1024)} MB</span>
+				</div>
+			{/if}
+			<div class="dz-actions">
+				{#if selectedFile}<Button variant="ghost" onclick={() => pickFile(null)}>Clear</Button>{/if}
+				<Button onclick={stageFile} loading={staging} disabled={!selectedFile}>Add to staged list</Button>
+			</div>
+		{:else if ingestTab === 'text'}
+			<form onsubmit={stageText} class="ingest">
+				<TextField label="Paste text" type="textarea" bind:value={text} placeholder="Paste an article, note, or transcript…" />
+				<Button type="submit" loading={staging}>Add to staged list</Button>
+			</form>
+		{:else if ingestTab === 'url'}
+			<form onsubmit={scrapeUrl} class="ingest">
+				<TextField label="Page URL" bind:value={url} placeholder="https://…" required />
+				<p class="hint">Fetches the page and extracts its content only — no navigation, headers, footers, or ads — via a bounded AI pass. Nothing is summarized or rephrased.</p>
+				{#if scraping}
+					<div class="scrape-progress" aria-hidden="true"><div class="bar"></div></div>
+					<p class="hint">Fetching and extracting…</p>
+				{/if}
+				<Button type="submit" loading={scraping}>Scrape and add to staged list</Button>
+			</form>
 		{/if}
-		<Button type="submit" loading={staging}>Add to staged list</Button>
-	</form>
+	</div>
 
 	{#if data.staged?.length}
 		<div class="staged">
@@ -258,8 +355,8 @@
 						/>
 						<div class="staged-body">
 							<div class="staged-title">
-								{item.filename ?? 'Pasted text'}
-								<Chip tone="neutral">{item.kind}</Chip>
+								{item.filename ?? item.source_url ?? 'Pasted text'}
+								<Chip tone="neutral">{item.kind === 'scraped_url' ? 'scraped' : item.kind}</Chip>
 								{#if item.page_count}<span class="hint">{item.page_count} page(s)</span>{/if}
 							</div>
 							<p class="staged-preview">{item.preview}{item.preview?.length >= 280 ? '…' : ''}</p>
@@ -267,6 +364,8 @@
 						<div class="staged-actions">
 							{#if item.kind === 'file'}
 								<a class="view" href={stagedFileUrl(item)} target="_blank" rel="noopener">View</a>
+							{:else if item.kind === 'scraped_url'}
+								<a class="view" href={item.source_url} target="_blank" rel="noopener">Source</a>
 							{/if}
 							<button class="view" onclick={() => ingestOne(item.id)} disabled={promotingId === item.id}>
 								{promotingId === item.id ? 'Ingesting…' : 'Ingest'}
@@ -378,6 +477,32 @@
 
 <style>
 	.ingest { display: grid; gap: var(--space-3); }
+	.ingest-panel { margin-top: var(--space-4); display: grid; gap: var(--space-3); }
+	.dropzone {
+		display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .3rem;
+		min-height: 8rem; padding: var(--space-4); text-align: center; cursor: pointer;
+		border: 2px dashed var(--line-2); border-radius: var(--r-lg); background: var(--panel-2);
+		transition: border-color .15s var(--ease), background .15s var(--ease);
+	}
+	.dropzone:hover, .dropzone:focus-visible { border-color: var(--accent); outline: none; }
+	.dropzone.dragover { border-color: var(--accent); background: var(--accent-soft); }
+	.dropzone.has-file { cursor: default; padding: var(--space-3); }
+	.dz-title { font-weight: 650; }
+	.dz-filename { font-weight: 650; font-size: var(--text-sm); margin-top: .3rem; }
+	.dz-actions { display: flex; justify-content: flex-end; gap: var(--space-2); }
+	.pdf-preview { width: 100%; height: 20rem; border: none; border-radius: var(--r); }
+	.scrape-progress { height: 4px; border-radius: 99px; background: var(--panel-2); overflow: hidden; }
+	.scrape-progress .bar {
+		height: 100%; width: 40%; background: var(--accent); border-radius: 99px;
+		animation: scrape-indeterminate 1.2s ease-in-out infinite;
+	}
+	@keyframes scrape-indeterminate {
+		0% { transform: translateX(-120%); }
+		100% { transform: translateX(280%); }
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.scrape-progress .bar { animation: none; width: 100%; }
+	}
 	.search {
 		width: 100%; font-size: var(--text-lg); padding: var(--space-4);
 		border: 1px solid var(--line-2); border-radius: var(--r-lg); background: var(--panel);
@@ -418,7 +543,6 @@
 		padding: .3rem .4rem; font: inherit; color: var(--ink); background: var(--panel);
 	}
 	.doc-body { white-space: pre-wrap; font-size: var(--text-sm); line-height: 1.6; max-height: 60vh; overflow-y: auto; }
-	.field { display: flex; flex-direction: column; gap: .35rem; }
 	.staged { margin-top: var(--space-5); padding-top: var(--space-4); border-top: 1px solid var(--glass-line); display: grid; gap: var(--space-3); }
 	.staged-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
 	.staged-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
