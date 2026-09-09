@@ -106,4 +106,12 @@ def get_config() -> Config:
             raise RuntimeError(
                 "NEO4J_PASSWORD must be set to a real value when ENV=production"
             )
+        if not cfg.vault_encryption_key:
+            # Unset previously meant a fresh random key every process start,
+            # silently undecryptable across restarts — found in review
+            # (specs/v4/04-known-issues.md#h5), same "fails open by default"
+            # shape as the two checks above, just missed originally.
+            raise RuntimeError(
+                "VAULT_ENCRYPTION_KEY must be set to a real value when ENV=production"
+            )
     return cfg

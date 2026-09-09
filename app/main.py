@@ -23,7 +23,7 @@ from pathlib import Path
 
 import anthropic
 import neo4j.exceptions
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -458,7 +458,19 @@ def get_audit(_admin: dict = Depends(auth.require_admin)) -> list[dict]:
 
 
 def _decrypt_api_key(encrypted: str) -> str:
-    return _fernet.decrypt(encrypted.encode()).decode()
+    # InvalidToken means the key on file was encrypted under a different
+    # Fernet key than this process is running with — e.g. VAULT_ENCRYPTION_KEY
+    # was unset and a fresh random key got generated on this boot (config.py
+    # now fails closed against that in production, but a value that's simply
+    # wrong/rotated hits this same path). A clean, actionable 400 instead of
+    # an unhandled 500 (specs/v4/04-known-issues.md#h5).
+    try:
+        return _fernet.decrypt(encrypted.encode()).decode()
+    except InvalidToken as exc:
+        raise HTTPException(
+            400, "Your stored Anthropic API key could not be read — please "
+                 "re-enter it in your profile."
+        ) from exc
 
 
 def _public(d: dict) -> dict:

@@ -307,7 +307,7 @@ Switching clients always starts a fresh session (compared against the
 async history fetch above). Answers now render as a running thread of
 turns rather than a single replaced block.
 
-### H5 — An unset `VAULT_ENCRYPTION_KEY` silently corrupts stored API keys, then crashes consults with a raw exception
+### H5 — An unset `VAULT_ENCRYPTION_KEY` silently corrupts stored API keys, then crashes consults with a raw exception — FIXED
 
 `app/main.py:49-50`: an empty `VAULT_ENCRYPTION_KEY` generates a random
 Fernet key per-process instead of failing at startup.
@@ -319,6 +319,13 @@ is never wrapped in try/except, and no global exception handler exists —
 so the first consult or session-summary attempt after a restart throws an
 unhandled `cryptography.fernet.InvalidToken` instead of a clear "re-enter
 your API key" message.
+
+**Fixed:** `get_config()` now fails closed on an unset
+`VAULT_ENCRYPTION_KEY` in production, same pattern as `session_secret`/
+`neo4j_password`. `_decrypt_api_key()` also now catches `InvalidToken`
+(covers the same scenario if it ever recurs, and any other cause of a
+mismatched key) and raises a clean 400 telling the practitioner to
+re-enter their key, instead of an unhandled 500.
 
 ### H6 — "Save session summary" has no UI entry point anywhere
 
