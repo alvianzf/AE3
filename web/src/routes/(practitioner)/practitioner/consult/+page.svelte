@@ -18,6 +18,15 @@
 	let asking = $state(false);
 	let steps = $state<{ agent: string; status: 'running' | 'done'; input_tokens?: number; output_tokens?: number }[]>([]);
 	let result = $state<any>(null);
+	// Which client the shown result actually belongs to — captured at the
+	// moment "Ask" was pressed, not read live from `clientId`, so a result
+	// that finishes after the practitioner has already switched clients still
+	// shows (and is guarded by) the client it was really asked about, not
+	// whoever happens to be selected when it arrives.
+	let resultClientId = $state('');
+	const resultClientName = $derived(
+		data.clients.find((c: any) => c.id === resultClientId)?.name ?? ''
+	);
 
 	const AGENT_LABELS: Record<string, string> = {
 		librarian: 'Librarian', specialist: 'Specialist', checker: 'Checker'
@@ -49,12 +58,13 @@
 
 	async function ask(e: Event) {
 		e.preventDefault();
-		if (!clientId || !question.trim()) return;
+		if (!clientId || !question.trim() || asking) return;
+		const askedClientId = clientId;
 		asking = true;
 		steps = [];
 		result = null;
 		try {
-			for await (const ev of streamConsult(clientId, question)) {
+			for await (const ev of streamConsult(askedClientId, question)) {
 				if (ev.event === 'agent_start') {
 					steps = [...steps, { agent: ev.agent, status: 'running' }];
 				} else if (ev.event === 'agent_done') {
@@ -65,6 +75,7 @@
 					);
 				} else if (ev.event === 'result') {
 					result = ev;
+					resultClientId = askedClientId;
 				} else if (ev.event === 'error') {
 					toast(ev.message, 'alert');
 				}
@@ -84,7 +95,7 @@
 		<ul class="clientlist">
 			{#each data.clients as c (c.id)}
 				<li>
-					<button class:on={clientId === c.id} onclick={() => (clientId = c.id)}>{c.name}</button>
+					<button class:on={clientId === c.id} disabled={asking} onclick={() => (clientId = c.id)}>{c.name}</button>
 				</li>
 			{:else}
 				<li class="hint">No clients yet.</li>
@@ -95,7 +106,7 @@
 	<!-- Tier 1 + leafmark: the ask panel is the reason this page exists (specs/v4/03, kept from v3) -->
 	<Spotlight title="Ask about this client" leaf>
 		<form onsubmit={ask}>
-			<Select label="Client" bind:value={clientId} options={data.clients.map((c: any) => ({ value: c.id, label: c.name }))} />
+			<Select label="Client" bind:value={clientId} disabled={asking} options={data.clients.map((c: any) => ({ value: c.id, label: c.name }))} />
 			<TextField label="Question" type="textarea" bind:value={question} required placeholder="What would you like to know?" />
 			<Button type="submit" loading={asking}>Ask</Button>
 		</form>
@@ -118,6 +129,7 @@
 
 		{#if result}
 			<div class="result">
+				{#if resultClientName}<p class="for-client">For <strong>{resultClientName}</strong></p>{/if}
 				<div class="rh">
 					{#if result.check?.verdict}
 						<Chip tone={result.check.verdict === 'pass' ? 'ok' : 'warn'}>{result.check.verdict}</Chip>
@@ -175,12 +187,14 @@
 		border-radius: var(--r); cursor: pointer; font: inherit;
 	}
 	.clientlist button.on { background: var(--accent-soft); color: var(--accent-ink); font-weight: 650; }
+	.clientlist button:disabled { opacity: .5; cursor: not-allowed; }
 	form { display: grid; gap: var(--space-3); }
 	.progress { margin-top: var(--space-4); display: grid; gap: .4rem; }
 	.step { display: flex; align-items: center; gap: .5rem; font-size: var(--text-sm); }
 	.step .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); animation: breathe 1s ease-in-out infinite; }
 	.step.done .dot { background: var(--ok); animation: none; }
 	.result { margin-top: var(--space-5); padding-top: var(--space-4); border-top: 1px solid var(--glass-line); }
+	.for-client { font-size: var(--text-sm); color: var(--muted); margin: 0 0 var(--space-2); }
 	.rh { display: flex; gap: .5rem; margin-bottom: var(--space-2); }
 	.cite {
 		font: inherit; font-weight: 650; color: var(--accent-ink); background: var(--accent-soft);

@@ -4,19 +4,21 @@
 		value = $bindable(''),
 		options,
 		required = false,
+		disabled = false,
 		id = `sel-${Math.random().toString(36).slice(2)}`
 	}: {
 		label: string;
 		value?: string;
 		options: { value: string; label: string }[];
 		required?: boolean;
+		disabled?: boolean;
 		id?: string;
 	} = $props();
 </script>
 
 <div class="field">
 	<label for={id}>{label}</label>
-	<select {id} bind:value {required}>
+	<select {id} bind:value {required} {disabled}>
 		{#each options as opt (opt.value)}
 			<option value={opt.value}>{opt.label}</option>
 		{/each}
@@ -31,4 +33,5 @@
 		min-height: var(--tap-min);
 	}
 	select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+	select:disabled { background: var(--panel-2); color: var(--muted); cursor: not-allowed; }
 </style>

@@ -169,7 +169,7 @@ regardless of its filename or declared content-type. Added a 5 MB cap. A
 new middleware sets `X-Content-Type-Options: nosniff` on every `/photos/*`
 response, same as `/original` already does.
 
-### C8 — Switching clients mid-consult can attribute one patient's AI answer to another, with no label showing whose answer it is
+### C8 — Switching clients mid-consult can attribute one patient's AI answer to another, with no label showing whose answer it is — FIXED
 
 During `asking = true`, neither the client-list buttons
 (`consult/+page.svelte:63`) nor the client `Select` (line 74 —
@@ -180,6 +180,12 @@ result block (`consult/+page.svelte:95-103`) never displays which client
 the shown answer is for, so the mix-up is invisible to the practitioner. In
 a clinical tool, an answer silently rendered against the wrong patient
 context is a safety issue, not a cosmetic one.
+
+**Fixed:** `Select` gained a `disabled` prop; both the client list buttons
+and the Select are disabled while `asking`. `ask()` now captures the
+client id at submit time (not read live from `clientId`) and the result
+panel shows "For **&lt;name&gt;**" above the answer, so even a result that
+finishes after navigation can't be mistaken for a different client's.
 
 ### C9 — A demoted superadmin keeps superadmin power for up to 12 hours
 
