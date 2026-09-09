@@ -15,7 +15,16 @@
 	// valid the whole time — `/api/auth/me` returns 200 — the nav just
 	// never checked). Read as "why do I need to log in again."
 	let session = $state<{ role: string } | null>(null);
-	onMount(async () => { session = await currentSession(); });
+	// `checked` gates rendering either CTA state until the session check
+	// resolves — without it, an already-logged-in visitor still saw (and
+	// could click) "Log in" for one round trip on every load, a narrower
+	// version of the same bug the fix above already covers for the
+	// *permanent* case (specs/v4/04-known-issues.md#m17).
+	let checked = $state(false);
+	onMount(async () => {
+		session = await currentSession();
+		checked = true;
+	});
 </script>
 
 <header class="topbar">
@@ -31,11 +40,13 @@
 			{/each}
 		</nav>
 		<div class="cta">
-			{#if session}
-				<a href={LANDING[session.role] ?? '/account'} class="btn filled">Dashboard</a>
-			{:else}
-				<a href="/login" class="ghostlink">Log in</a>
-				<a href="/signup" class="btn filled">Get started</a>
+			{#if checked}
+				{#if session}
+					<a href={LANDING[session.role] ?? '/account'} class="btn filled">Dashboard</a>
+				{:else}
+					<a href="/login" class="ghostlink">Log in</a>
+					<a href="/signup" class="btn filled">Get started</a>
+				{/if}
 			{/if}
 		</div>
 	</div>
@@ -56,7 +67,7 @@
 	nav { display: flex; gap: var(--space-5); margin-right: auto; }
 	nav a { color: var(--ink-2); text-decoration: none; font-size: var(--text-sm); font-weight: 600; }
 	nav a.on { color: var(--accent-ink); }
-	.cta { display: flex; align-items: center; gap: var(--space-4); }
+	.cta { display: flex; align-items: center; gap: var(--space-4); min-height: 2.2rem; }
 	.ghostlink { color: var(--ink-2); text-decoration: none; font-size: var(--text-sm); font-weight: 600; }
 	.btn.filled {
 		background: var(--accent); color: #fff; padding: .5rem 1rem; border-radius: 99px;

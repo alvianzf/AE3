@@ -660,7 +660,7 @@ ingested," with nothing indicating the new source is filtered out of view.
 so the freshly ingested source is always visible ("All" + no search) right
 after it lands.
 
-### M17 — Stale, transient flash of logged-out nav state on every load
+### M17 — Stale, transient flash of logged-out nav state on every load — FIXED
 
 `PublicNav.svelte:18` fetches session state in `onMount`, so on every page
 load `session` starts `null` and the nav renders "Log in / Get started"
@@ -669,6 +669,12 @@ first, then flips to "Dashboard" a round trip later. The recent fix
 wrong-state bug but not this transient one — an already-logged-in visitor
 still sees, and could click, the logged-out CTA for one round trip on
 every navigation.
+
+**Fixed:** a `checked` flag gates rendering either CTA state until the
+session check resolves — the nav shows neither "Log in" nor "Dashboard"
+for that one round trip, instead of the wrong one. `.cta` got a
+`min-height` to keep the layout from visibly collapsing/popping in during
+that gap.
 
 ### M18 — Superadmin/admin-role staleness has one more instance than C9 — RESOLVED (via C9)
 
