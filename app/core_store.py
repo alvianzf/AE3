@@ -154,8 +154,9 @@ def ensure_schema() -> None:
             -- passage-number-only.
             CREATE TABLE IF NOT EXISTS staged_sources (
                 id TEXT PRIMARY KEY,
-                kind TEXT NOT NULL,               -- 'file' | 'text'
+                kind TEXT NOT NULL,               -- 'file' | 'text' | 'scraped_url'
                 filename TEXT,
+                source_url TEXT,                  -- set only for kind='scraped_url'
                 media_type TEXT,
                 pages_json TEXT NOT NULL,
                 char_count INTEGER NOT NULL,
@@ -180,6 +181,11 @@ def ensure_schema() -> None:
         if "theme" not in q_cols:
             conn.execute(
                 "ALTER TABLE questionnaire_questions ADD COLUMN theme TEXT NOT NULL DEFAULT 'General'")
+        # Added when the web scraper (specs/v3/18 Component 2) landed —
+        # staged_sources already existed in production without it.
+        staged_cols = {row[1] for row in conn.execute("PRAGMA table_info(staged_sources)")}
+        if "source_url" not in staged_cols:
+            conn.execute("ALTER TABLE staged_sources ADD COLUMN source_url TEXT")
         # Every deployment needs at least one superadmin able to manage other
         # admins. If none exists (a fresh install before the first admin is
         # created, or an existing deployment migrating through this schema
@@ -746,22 +752,23 @@ def _decode_staged(row: sqlite3.Row) -> dict:
 def create_staged_source(
     kind: str, filename: str | None, media_type: str | None,
     pages: list[tuple[int | None, str]], created_by: str,
+    source_url: str | None = None,
 ) -> dict:
-    if kind not in ("file", "text"):
+    if kind not in ("file", "text", "scraped_url"):
         raise ValueError(f"unknown staged source kind: {kind}")
     staged_id = str(uuid.uuid4())
     char_count = sum(len(t) for _, t in pages)
     page_count = sum(1 for n, _ in pages if n is not None)
     row = {
-        "id": staged_id, "kind": kind, "filename": filename, "media_type": media_type,
-        "pages_json": json.dumps(pages), "char_count": char_count,
+        "id": staged_id, "kind": kind, "filename": filename, "source_url": source_url,
+        "media_type": media_type, "pages_json": json.dumps(pages), "char_count": char_count,
         "page_count": page_count, "created_at": _now(), "created_by": created_by,
     }
     with _connect() as conn:
         conn.execute(
-            "INSERT INTO staged_sources (id, kind, filename, media_type, pages_json, "
-            "char_count, page_count, created_at, created_by) VALUES "
-            "(:id, :kind, :filename, :media_type, :pages_json, :char_count, "
+            "INSERT INTO staged_sources (id, kind, filename, source_url, media_type, "
+            "pages_json, char_count, page_count, created_at, created_by) VALUES "
+            "(:id, :kind, :filename, :source_url, :media_type, :pages_json, :char_count, "
             ":page_count, :created_at, :created_by)",
             row,
         )

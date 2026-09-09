@@ -576,3 +576,35 @@ def summarize_session(transcript: str, client: anthropic.Anthropic | None = None
         messages=[{"role": "user", "content": transcript}],
     )
     return "".join(b.text for b in response.content if b.type == "text").strip()
+
+
+# --- Web-page extraction (specs/v3/18-document-ingest-upgrade.md Component 2) -
+
+EXTRACT_ARTICLE_SYSTEM = (
+    "You are given the text content of a web page, already stripped of "
+    "script/style tags. Extract only the main article/content text — the "
+    "words a human reader came to this page to read. Discard navigation "
+    "menus, headers, footers, cookie banners, ads, related-article lists, "
+    "comment sections, and site chrome.\n\n"
+    "Do not summarize, rephrase, shorten, or otherwise alter the content "
+    "you keep. Reproduce it verbatim, word for word, exactly as it appears "
+    "in the source. Your only job is deciding what is content and what is "
+    "chrome — never editing the content itself."
+)
+
+
+def extract_article(stripped_text: str, url: str,
+                    client: anthropic.Anthropic | None = None) -> str:
+    """Plain-text output, not a JSON-schema call like every other role in
+    this file — the output *is* the document body, closer in shape to
+    answer()'s free-text output than read_source()'s structured card.
+    cfg.reader_model (Haiku by default) — a bounded extraction task, not
+    one that needs a stronger model."""
+    response = (client or _client).messages.create(
+        model=cfg.reader_model,
+        max_tokens=8000,
+        system=EXTRACT_ARTICLE_SYSTEM,
+        messages=[{"role": "user",
+                   "content": f"URL: {url}\n\nPage text:\n---\n{stripped_text[:40000]}\n---"}],
+    )
+    return "".join(b.text for b in response.content if b.type == "text").strip()

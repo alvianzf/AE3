@@ -30,7 +30,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel
 
-from . import auth, billing, core_store, knowledge, llm, originals, uploads, vault, vault_files, wearables
+from . import auth, billing, core_store, knowledge, llm, originals, scraper, uploads, vault, vault_files, wearables
 from .config import get_config
 
 cfg = get_config()
@@ -405,7 +405,7 @@ def _promote_staged(staged_id: str, kind: str, origin: str) -> dict:
     if staged is None:
         raise HTTPException(404, f"no such staged item: {staged_id}")
     pages = core_store.get_staged_pages(staged_id)
-    filename = staged["filename"] or "pasted text"
+    filename = staged["filename"] or staged.get("source_url") or "pasted text"
     original = None
     if staged["kind"] == "file" and staged["filename"]:
         path = originals.path(staged_id, staged["filename"])
@@ -482,6 +482,33 @@ def source_upload_stage(upload_id: str, _admin: dict = Depends(auth.require_admi
         return staged
     finally:
         uploads.cleanup(upload_id)
+
+
+class ScrapeBody(BaseModel):
+    url: str
+
+
+@app.post("/api/scrape")
+def scrape_url(body: ScrapeBody, _admin: dict = Depends(auth.require_admin)) -> dict:
+    """Fetch a URL, strip it to text (app/scraper.py), then run a bounded
+    LLM extraction pass (Haiku by default, cfg.reader_model) whose only
+    job is discarding chrome — navigation, headers, footers, ads — never
+    summarizing or rephrasing the content it keeps
+    (specs/v3/18-document-ingest-upgrade.md Component 2). Lands in the
+    staged list like any other staged item, not ingested immediately."""
+    stripped = scraper.fetch_and_strip(body.url)
+    try:
+        extracted = llm.extract_article(stripped, body.url)
+    except anthropic.APIError as exc:
+        raise HTTPException(
+            502, "The AI service is temporarily unavailable. Try again shortly."
+        ) from exc
+    if not extracted.strip():
+        raise HTTPException(400, "Nothing extractable was found on that page.")
+    return core_store.create_staged_source(
+        "scraped_url", None, "text/plain", [(None, extracted)], _admin["id"],
+        source_url=body.url,
+    )
 
 
 @app.get("/api/staged")
