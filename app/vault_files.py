@@ -7,6 +7,7 @@ subdirectory rather than one shared store.
 from __future__ import annotations
 
 import logging
+import shutil
 from pathlib import Path
 
 from .config import get_config
@@ -32,21 +33,21 @@ def save(practitioner_id: str, file_id: str, raw: bytes, filename: str) -> bool:
         return False
 
 
+def save_from_path(practitioner_id: str, file_id: str, src: Path, filename: str) -> bool:
+    """Same as save(), for a file already on disk (the chunked-upload
+    staging path, app/uploads.py) — a streaming copy, so a large client
+    file is never also held as a second in-memory `bytes` copy."""
+    try:
+        shutil.copyfile(src, _dir(practitioner_id) / f"{file_id}{Path(filename).suffix}")
+        return True
+    except OSError as exc:
+        logging.warning(
+            "could not archive vault file for %s/%s: %s",
+            practitioner_id, file_id, exc)
+        return False
+
+
 def path(practitioner_id: str, file_id: str, filename: str) -> Path | None:
     """The stored file, or None if it is not there."""
     p = Path(cfg.vault_files_path) / practitioner_id / f"{file_id}{Path(filename).suffix}"
     return p if p.is_file() else None
-
-
-def delete(practitioner_id: str, file_id: str) -> None:
-    """Best-effort removal, so a file cannot outlive its record.
-
-    Globbed rather than reconstructed: the record — which carries the
-    extension — may already be gone by the time we are called. Ids are
-    UUIDs, so the prefix cannot match another file's.
-    """
-    for p in _dir(practitioner_id).glob(f"{file_id}*"):
-        try:
-            p.unlink()
-        except OSError as exc:
-            logging.warning("could not remove vault file %s: %s", p, exc)

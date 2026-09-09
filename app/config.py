@@ -35,6 +35,14 @@ class Config:
     # Practitioner profile photos — public, served directly (unlike the
     # private originals/vault-files stores above).
     photos_path = os.getenv("PHOTOS_PATH", "data/photos")
+    # Staging area for chunked uploads (app/uploads.py) — a large file is
+    # written here piece by piece as its chunks arrive, so the process
+    # never holds more than one chunk in memory at once. Swept for
+    # abandoned uploads older than a day.
+    upload_staging_path = os.getenv("UPLOAD_STAGING_PATH", "data/upload-staging")
+    # 200 MB: the largest source document or client file this app accepts.
+    # Enforced at chunked-upload init, before any bytes are received.
+    max_upload_bytes = int(os.getenv("MAX_UPLOAD_BYTES", str(200 * 1024 * 1024)))
 
     # The AI team (one model per role)
     reader_model = os.getenv("READER_MODEL", "claude-haiku-4-5")

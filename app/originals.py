@@ -12,6 +12,7 @@ a path.
 from __future__ import annotations
 
 import logging
+import shutil
 from pathlib import Path
 
 from .config import get_config
@@ -34,6 +35,19 @@ def save(source_id: str, raw: bytes, filename: str) -> bool:
     """
     try:
         (_dir() / f"{source_id}{Path(filename).suffix}").write_bytes(raw)
+        return True
+    except OSError as exc:
+        logging.warning("could not archive original for %s: %s", source_id, exc)
+        return False
+
+
+def save_from_path(source_id: str, src: Path, filename: str) -> bool:
+    """Same as save(), for a file already on disk (the chunked-upload
+    staging path, app/uploads.py) — a streaming copy, so a 200 MB source
+    is never also held as a second in-memory `bytes` copy on top of the
+    one the chunked upload already avoided buffering."""
+    try:
+        shutil.copyfile(src, _dir() / f"{source_id}{Path(filename).suffix}")
         return True
     except OSError as exc:
         logging.warning("could not archive original for %s: %s", source_id, exc)

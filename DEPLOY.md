@@ -88,13 +88,20 @@ All three services are `enabled`, so they come back after a reboot. Verified: th
 app waits for Neo4j's bolt port on cold boot instead of crash-looping, and is
 healthy roughly 95 seconds after `reboot` (most of that is the JVM starting).
 
-### Two NGINX settings this app depends on
+### Three NGINX settings this app depends on
 
-Both are easy to lose in a rewrite and each breaks a core feature silently:
+Easy to lose in a rewrite and each breaks a core feature silently:
 
 - `client_max_body_size 25m` — the 1 MB default rejects real PDF sources.
+  Uploads up to 200 MB are supported without raising this: `app/uploads.py`
+  + `web/src/lib/chunkedUpload.ts` split a large file into 4 MiB chunks, so
+  no single request needs a body anywhere near 25m.
 - `proxy_read_timeout 300s` — a consult runs Sonnet, then Opus, then Haiku; the
   60 second default cuts it off mid-answer.
+- `client_body_timeout` (nginx default: 60s) — chunk size (4 MiB) was picked
+  to stay well under this even on a slow connection; if `CHUNK_BYTES` in
+  `chunkedUpload.ts` is ever raised, raise this alongside it or a chunk
+  upload from a slow connection will time out server-side.
 
 ## Memory
 
