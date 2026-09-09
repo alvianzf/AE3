@@ -389,6 +389,166 @@ def source_upload_complete(upload_id: str, body: SourceUploadComplete,
         uploads.cleanup(upload_id)
 
 
+# --- Staged sources: upload/paste now, review, ingest all or one at a time ----
+#
+# specs/v3/18-document-ingest-upgrade.md's "staged uploads" — specced, never
+# built until now. Everything above this point (add_source, the chunked
+# upload/complete routes) still ingests in one atomic step, unchanged, for
+# API/script callers (verify.py, verify_v2.py) that expect exactly that. The
+# routes below are the new, separate path the admin UI actually uses now:
+# stage first (no Reader call, no Neo4j write yet), let several items pile
+# up, then promote a chosen subset — the "stack the resources... ingest all
+# to the KB, or one at a time" flow.
+
+def _promote_staged(staged_id: str, kind: str, origin: str) -> dict:
+    staged = core_store.get_staged_source(staged_id)
+    if staged is None:
+        raise HTTPException(404, f"no such staged item: {staged_id}")
+    pages = core_store.get_staged_pages(staged_id)
+    filename = staged["filename"] or "pasted text"
+    original = None
+    if staged["kind"] == "file" and staged["filename"]:
+        path = originals.path(staged_id, staged["filename"])
+        if path is not None:
+            original = (path, staged["filename"],
+                        staged["media_type"] or _media_type(staged["filename"]))
+    # _ingest_pages() archives its own copy of the file under the *new*
+    # source's id (originals.save_from_path) — the staged copy under the
+    # staged id is redundant the moment that succeeds, dropped below.
+    result = _ingest_pages(pages, filename, kind, origin, "", original)
+    core_store.delete_staged_source(staged_id)
+    if staged["kind"] == "file":
+        originals.delete(staged_id)
+    return result
+
+
+@app.post("/api/staged")
+async def stage_source(
+    file: UploadFile | None = None,
+    text: str = Form(""),
+    _admin: dict = Depends(auth.require_admin),
+) -> dict:
+    """Stage a small file or pasted text — no Reader call, no Neo4j write
+    yet. For anything that might exceed _MAX_SOURCE_UPLOAD_BYTES, use the
+    chunked routes (POST /api/sources/upload/init, .../chunk, then
+    .../stage instead of .../complete)."""
+    if file is not None and file.filename:
+        raw = await file.read()
+        if len(raw) > _MAX_SOURCE_UPLOAD_BYTES:
+            raise HTTPException(
+                400,
+                f"File must be under {_MAX_SOURCE_UPLOAD_BYTES // (1024 * 1024)} MB "
+                "via direct upload — use the chunked upload for a larger file.")
+        filename = file.filename
+        try:
+            pages = _extract_pages(filename, raw)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        media_type = file.content_type or _media_type(filename)
+        if not any(t.strip() for _, t in pages):
+            raise HTTPException(
+                400,
+                "No text could be read from this source. If it is a scanned PDF, "
+                "the pages are images and would need OCR before it can be staged.")
+        staged = core_store.create_staged_source("file", filename, media_type, pages, _admin["id"])
+        originals.save(staged["id"], raw, filename)
+        return staged
+    if text.strip():
+        staged = core_store.create_staged_source("text", None, None, [(None, text)], _admin["id"])
+        return staged
+    raise HTTPException(400, "Provide a file or text.")
+
+
+@app.post("/api/sources/upload/{upload_id}/stage")
+def source_upload_stage(upload_id: str, _admin: dict = Depends(auth.require_admin)) -> dict:
+    """Chunked-upload counterpart to POST /api/staged's file branch — the
+    complete step for a large file that should sit reviewable instead of
+    ingesting immediately."""
+    path, meta = uploads.finish(upload_id)
+    filename = meta["filename"]
+    try:
+        try:
+            pages = _extract_pages_from_path(filename, path)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        if not any(t.strip() for _, t in pages):
+            raise HTTPException(
+                400,
+                "No text could be read from this source. If it is a scanned PDF, "
+                "the pages are images and would need OCR before it can be staged.")
+        media_type = meta["content_type"] or _media_type(filename)
+        staged = core_store.create_staged_source("file", filename, media_type, pages, _admin["id"])
+        originals.save_from_path(staged["id"], path, filename)
+        return staged
+    finally:
+        uploads.cleanup(upload_id)
+
+
+@app.get("/api/staged")
+def list_staged(_admin: dict = Depends(auth.require_admin)) -> list[dict]:
+    return core_store.list_staged_sources()
+
+
+@app.get("/api/staged/{staged_id}/file")
+def staged_file(staged_id: str, _admin: dict = Depends(auth.require_admin)) -> FileResponse:
+    staged = core_store.get_staged_source(staged_id)
+    if staged is None or staged["kind"] != "file" or not staged["filename"]:
+        raise HTTPException(404, "no such staged file")
+    path = originals.path(staged_id, staged["filename"])
+    if path is None:
+        raise HTTPException(404, "the file is no longer on disk")
+    # Same inline-preview/nosniff reasoning as GET /api/sources/{id}/original.
+    safe = "".join(c for c in Path(staged["filename"]).name if c.isprintable() and c != '"')
+    media_type = staged["media_type"] or _media_type(staged["filename"])
+    disposition = ("inline" if media_type in ("application/pdf", "text/plain")
+                   else "attachment")
+    return FileResponse(
+        path, media_type=media_type,
+        headers={"Content-Disposition": f'{disposition}; filename="{safe}"',
+                 "X-Content-Type-Options": "nosniff"},
+    )
+
+
+@app.delete("/api/staged/{staged_id}")
+def discard_staged(staged_id: str, _admin: dict = Depends(auth.require_admin)) -> dict:
+    staged = core_store.get_staged_source(staged_id)
+    if staged is None:
+        raise HTTPException(404, "no such staged item")
+    core_store.delete_staged_source(staged_id)
+    if staged["kind"] == "file":
+        originals.delete(staged_id)
+    return {"deleted": staged_id}
+
+
+class StagedIngestBody(BaseModel):
+    kind: str = "article"
+    origin: str = "unspecified"
+
+
+@app.post("/api/staged/{staged_id}/ingest")
+def promote_staged(staged_id: str, body: StagedIngestBody,
+                   _admin: dict = Depends(auth.require_admin)) -> dict:
+    return _promote_staged(staged_id, body.kind, body.origin)
+
+
+class StagedBatchIngestBody(BaseModel):
+    ids: list[str]
+    kind: str = "article"
+    origin: str = "unspecified"
+
+
+@app.post("/api/staged/ingest")
+def promote_staged_batch(body: StagedBatchIngestBody,
+                         _admin: dict = Depends(auth.require_admin)) -> dict:
+    done, failed = [], []
+    for staged_id in body.ids:
+        try:
+            done.append(_promote_staged(staged_id, body.kind, body.origin))
+        except HTTPException as exc:
+            failed.append({"id": staged_id, "error": exc.detail})
+    return {"ingested": done, "failed": failed}
+
+
 @app.get("/api/sources")
 def get_sources(
     search: str = "", topic: str = "", kind: str = "",

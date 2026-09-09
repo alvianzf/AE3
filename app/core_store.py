@@ -141,6 +141,30 @@ def ensure_schema() -> None:
                 detail TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS core_audit_by_ts ON audit_events(ts);
+
+            -- An uploaded/pasted item sitting reviewable before an admin
+            -- explicitly promotes it into the real knowledge graph
+            -- (specs/v3/18-document-ingest-upgrade.md's "staged uploads" —
+            -- specced, never built until now). `pages_json` — a JSON list
+            -- of [page_number|null, text] pairs, the same shape
+            -- _extract_pages()/_extract_pages_from_path() already return —
+            -- not the flat string that spec proposed: keeping page
+            -- boundaries means a PDF staged now and promoted later still
+            -- gets real "page 4" citations instead of falling back to
+            -- passage-number-only.
+            CREATE TABLE IF NOT EXISTS staged_sources (
+                id TEXT PRIMARY KEY,
+                kind TEXT NOT NULL,               -- 'file' | 'text'
+                filename TEXT,
+                media_type TEXT,
+                pages_json TEXT NOT NULL,
+                char_count INTEGER NOT NULL,
+                page_count INTEGER,
+                created_at TEXT NOT NULL,
+                created_by TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS staged_sources_by_created
+                ON staged_sources(created_at);
             """
         )
         # Migration for deployments whose admins table predates the
@@ -703,3 +727,76 @@ def get_client_directory_entry(email: str) -> dict | None:
             "SELECT * FROM client_directory WHERE email = ?", (email,)
         ).fetchone()
     return dict(row) if row else None
+
+
+# --- Staged sources (uploaded/pasted, not yet promoted into the graph) --------
+
+def _decode_staged(row: sqlite3.Row) -> dict:
+    """Drops the full page text from what's returned — a staged list can
+    hold many large documents, and the checklist UI only needs a short
+    preview, not the whole body. get_staged_pages() below is the one call
+    site that needs the real text, for promotion."""
+    d = dict(row)
+    pages = json.loads(d.pop("pages_json"))
+    text = " ".join(t for _, t in pages if t).strip()
+    d["preview"] = text[:280]
+    return d
+
+
+def create_staged_source(
+    kind: str, filename: str | None, media_type: str | None,
+    pages: list[tuple[int | None, str]], created_by: str,
+) -> dict:
+    if kind not in ("file", "text"):
+        raise ValueError(f"unknown staged source kind: {kind}")
+    staged_id = str(uuid.uuid4())
+    char_count = sum(len(t) for _, t in pages)
+    page_count = sum(1 for n, _ in pages if n is not None)
+    row = {
+        "id": staged_id, "kind": kind, "filename": filename, "media_type": media_type,
+        "pages_json": json.dumps(pages), "char_count": char_count,
+        "page_count": page_count, "created_at": _now(), "created_by": created_by,
+    }
+    with _connect() as conn:
+        conn.execute(
+            "INSERT INTO staged_sources (id, kind, filename, media_type, pages_json, "
+            "char_count, page_count, created_at, created_by) VALUES "
+            "(:id, :kind, :filename, :media_type, :pages_json, :char_count, "
+            ":page_count, :created_at, :created_by)",
+            row,
+        )
+    return get_staged_source(staged_id)
+
+
+def list_staged_sources() -> list[dict]:
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM staged_sources ORDER BY created_at DESC"
+        ).fetchall()
+    return [_decode_staged(r) for r in rows]
+
+
+def get_staged_source(staged_id: str) -> dict | None:
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM staged_sources WHERE id = ?", (staged_id,)
+        ).fetchone()
+    return _decode_staged(row) if row else None
+
+
+def get_staged_pages(staged_id: str) -> list[list] | None:
+    """The real page text, for promotion (main.py's _promote_staged) —
+    kept separate from get_staged_source()/list_staged_sources() so an
+    admin's checklist view never has to pull every staged document's full
+    body over the wire just to render a list."""
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT pages_json FROM staged_sources WHERE id = ?", (staged_id,)
+        ).fetchone()
+    return json.loads(row["pages_json"]) if row else None
+
+
+def delete_staged_source(staged_id: str) -> bool:
+    with _connect() as conn:
+        cur = conn.execute("DELETE FROM staged_sources WHERE id = ?", (staged_id,))
+    return cur.rowcount > 0

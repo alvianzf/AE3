@@ -50,16 +50,19 @@ async function uploadOneChunk(
 }
 
 /**
- * Uploads `file` in CHUNK_BYTES pieces to `${basePath}/upload/{init,chunk,complete}`
- * (either `/sources` or `/me/files` — see app/main.py). `completeBody` is
- * merged into the POST body of the final .../complete call (e.g. kind/
- * origin/replaces for a source). Returns whatever .../complete returns.
+ * Uploads `file` in CHUNK_BYTES pieces to `${basePath}/upload/{init,chunk,X}`
+ * where X is `finishAction` (either `/sources` or `/me/files` — see
+ * app/main.py). `completeBody` is merged into the POST body of the final
+ * call (e.g. kind/origin/replaces for a source) — ignored when
+ * `finishAction` is `'stage'`, which takes no body (app/main.py's
+ * source_upload_stage). Returns whatever that final call returns.
  */
 export async function chunkedUpload(
 	basePath: string,
 	file: File,
 	completeBody: Record<string, unknown> = {},
-	onProgress?: (p: ChunkedUploadProgress) => void
+	onProgress?: (p: ChunkedUploadProgress) => void,
+	finishAction: 'complete' | 'stage' = 'complete'
 ): Promise<any> {
 	const { upload_id } = await apiCall(`${basePath}/upload/init`, {
 		method: 'POST',
@@ -79,9 +82,9 @@ export async function chunkedUpload(
 		onProgress?.({ sent, total: file.size });
 	}
 
-	return apiCall(`${basePath}/upload/${upload_id}/complete`, {
+	return apiCall(`${basePath}/upload/${upload_id}/${finishAction}`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify(completeBody)
+		body: finishAction === 'stage' ? undefined : JSON.stringify(completeBody)
 	});
 }
