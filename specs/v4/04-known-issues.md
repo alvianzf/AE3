@@ -573,12 +573,17 @@ large page in one query.
 **Fixed:** `per_page` is now clamped to `[1, 500]` — comfortably above the
 admin library's own `per_page=200` request.
 
-### M10 — Unhandled type-conversion crash updating a practitioner's profile numbers
+### M10 — Unhandled type-conversion crash updating a practitioner's profile numbers — FIXED
 
 `app/main.py:827-828`: `int(value)` on `years_experience`/
 `consultation_price_cents` from a multipart form has no try/except — a
 non-numeric value throws an unhandled exception (raw 500) instead of a
 clean 400.
+
+**Fixed:** wrapped in try/except covering `ValueError`/`TypeError`, raising
+a clean 400 naming the field. Also covers `json.loads()` on malformed
+`specialties`/`languages`, the same class of unhandled-crash bug in the
+same loop.
 
 ### M11 — `_json_call` throws an unhandled `StopIteration` if a model response has no text block
 

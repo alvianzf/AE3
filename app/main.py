@@ -908,12 +908,19 @@ async def me_update_profile(request: Request,
             if key not in form:
                 continue
             value = form[key]
-            if key in ("specialties", "languages"):
-                fields[key] = json.loads(value or "[]")
-            elif key == "years_experience" or key == "consultation_price_cents":
-                fields[key] = int(value)
-            else:
-                fields[key] = str(value)
+            try:
+                if key in ("specialties", "languages"):
+                    fields[key] = json.loads(value or "[]")
+                elif key == "years_experience" or key == "consultation_price_cents":
+                    fields[key] = int(value)
+                else:
+                    fields[key] = str(value)
+            except (ValueError, TypeError) as exc:
+                # A non-numeric years_experience/consultation_price_cents, or
+                # malformed specialties/languages JSON, previously threw an
+                # unhandled exception (raw 500) instead of a clean 400
+                # (specs/v4/04-known-issues.md#m10).
+                raise HTTPException(400, f"Invalid value for {key}.") from exc
         photo = form.get("photo")
         if photo is not None and getattr(photo, "filename", ""):
             raw = await photo.read()
