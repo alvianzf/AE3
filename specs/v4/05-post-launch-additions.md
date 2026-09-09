@@ -393,3 +393,40 @@ found instead when a user asked "why is this still empty" and it turned
 out not to be: the real graph, checked directly against the live server,
 had 70 concepts, 70 mentions, and 7 cross-source-linked pairs at the
 time. Fixed by reading the real field names.
+
+## Library table: icon actions, click-title-to-view, and in-modal document preview
+
+Three related changes to the Library tab's `DataTable`, from one request:
+
+- **Icon buttons with a tooltip** replace the "View"/"Remove" text
+  buttons in the actions column — a new `eye`/`trash` pair added to
+  `Icon.svelte`'s stroke-icon set, each button carrying a `title` (native
+  tooltip) and an `aria-label` naming the source.
+- **The title itself is clickable** — it's a `<button class="title-link">`
+  now, not plain text, calling the same view action as the eye icon. Two
+  entry points to the same action, both explicit (an icon-only button
+  needs the redundancy for discoverability).
+- **Viewing a document now always opens the existing preview `Dialog`**,
+  never a new tab. Previously a source with an archived original file
+  (`s.original_name` set — most uploads) did `window.open(.../original,
+  '_blank')`, while a pasted-text/scraped source (no original) opened the
+  same in-page `Dialog` showing extracted text — two different
+  experiences for "view a source" depending on how it was ingested, with
+  no reason a user would expect that split. Now both go through one
+  `Dialog` (widened via the `wide` prop): a source with an original
+  renders it in an `<iframe src=".../original#toolbar=0&navpanes=0">`
+  (`.doc-frame`, `75vh` tall); a source without one still shows the
+  extracted text exactly as before. No backend change — `GET
+  /api/sources/{id}/original` already served inline for PDF/text.
+
+**Sidebar removed from every PDF preview** (the actual request behind
+the `#toolbar=0&navpanes=0` fragment above): a bare `<embed>`/`<iframe>`
+pointed at a PDF renders the browser's *entire* built-in PDF-viewer UI —
+toolbar, zoom controls, and a file/outline sidebar meant for a full
+reader, not a document preview one document at a time. The fragment is
+a standard param the Chromium/Firefox PDF viewer honors regardless of
+the underlying URL scheme (http, or a local `blob:` URL). Applied
+everywhere a PDF gets embedded, not just the new view modal: the ingest
+modal's own upload-preview `<embed>` (Upload tab, before a file is even
+staged) and the staged-item file-preview link both got the same
+fragment (`#toolbar=0&navpanes=0&scrollbar=0`) appended to their URLs.
