@@ -1,5 +1,41 @@
 # Specs changelog
 
+## v4.1 — 2026-09-09 (CI/CD, chunked uploads, staged-source review queue, layout fixes)
+
+Same day as the `v4` entry below, later in the day — three unrelated
+pieces of post-launch work, detailed in
+[`specs/v4/05-post-launch-additions.md`](v4/05-post-launch-additions.md):
+
+- **Automatic deploy**: pushing to `main` now builds, syncs, and restarts
+  the service automatically (`.github/workflows/deploy.yml`), gated by a
+  Python-syntax + `npm run check` job. A PR into `main` runs that same
+  check for review signal, but the deploy step itself only ever runs on
+  an actual push to `main`.
+- **Chunked upload, up to 200 MB**: `app/uploads.py` streams a large file
+  to disk in pieces instead of buffering the whole thing in memory —
+  `clinic.service` caps the process at 500 MB, and Neo4j's JVM already
+  takes most of what's free. Used by both admin source ingest and client
+  file upload; the existing 20 MB single-request routes are unchanged,
+  kept for small files and API/script callers.
+- **Staged-source review queue**: builds
+  [`specs/v3/18-document-ingest-upgrade.md`](v3/18-document-ingest-upgrade.md)'s
+  "staged uploads" — written, never implemented until now. Upload or
+  paste several sources, they land in a reviewable staged list (no
+  Reader call, no Neo4j write yet), then ingest all selected at once or
+  one at a time. Stores page-structured text (not the flat text column
+  the original spec proposed), so a staged PDF keeps real per-page
+  citations after promotion. The web-scraper half of that spec is still
+  not built — out of scope this round.
+- **Layout**: a shared rail-plus-main-column CSS utility, fixing
+  single-column stacking on the admin Knowledge page (flagged directly
+  as "annoying to look at"), the practitioner Dashboard, and the
+  practitioner client-detail page.
+- **Bug fix**: the admin Knowledge page's graph-stats line
+  (`data.graph.node_count`/`edge_count`) read field names that don't
+  exist on `GET /api/graph`'s real response — always showed 0 regardless
+  of the graph's actual state. Fixed to read the real fields
+  (`concepts`/`mentions`).
+
 ## v4 — 2026-09-09 (post-deploy fixes: PM/QA/Clinician review, 42 of 44 findings fixed)
 
 Same shape as [v2.1](#v2.1)'s precedent: corrections made after `v4` (the

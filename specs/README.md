@@ -7,10 +7,19 @@ edited after the fact; a change becomes a new version.
 
 | Version | Status | Covers |
 |---|---|---|
-| [v4](v4/README.md) | proposed, not approved | A SvelteKit frontend rewrite — spec only, `v3` is still what's actually built and deployed |
-| [v3](v3/README.md) | **current** | v2 plus bounded AI-answer revision, a reachable Summariser, and Material Design 3 |
+| [v4](v4/README.md) | **deployed — actually current** | A SvelteKit frontend rewrite, plus post-launch work: a PM/QA/Clinician review (42/44 fixed), CI/CD, chunked uploads, a staged-source review queue |
+| [v3](v3/README.md) | superseded in practice, not yet formally cut | v2 plus bounded AI-answer revision, a reachable Summariser, and Material Design 3 |
 | [v2](v2/README.md) | superseded | Full product: public website, admin portal, practitioner portal, client portal |
 | [v1](v1/README.md) | superseded | Phase 1 PoC: single-passphrase access, one practitioner portal, RAG over a graded library |
+
+**This table is honest about a real gap, not just stale**: `v4` has been
+deployed to production since commit `5e0c14f` (2026-09-02), but the formal
+cut this doc's own convention below describes — copying forward every
+unchanged `v3/` doc, freezing `v3/` — has never been done. Until it is,
+[`v4/README.md`](v4/README.md) is the accurate index of what's real;
+`v3/`'s docs are still individually correct wherever `v4/` doesn't
+explicitly supersede them, per `v4/README.md`'s own "Everything else"
+section.
 
 See [`CHANGELOG.md`](CHANGELOG.md) for what changed between versions and why.
 
