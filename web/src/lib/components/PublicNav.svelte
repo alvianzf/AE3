@@ -32,7 +32,6 @@
 		<a href="/" class="brand">
 			<Sprig size={22} />
 			<span class="wordmark">Clinic</span>
-			<span class="poc-tag">Phase 4 POC</span>
 		</a>
 		<nav aria-label="Main">
 			{#each links as l (l.href)}
@@ -60,10 +59,6 @@
 	}
 	.inner { display: flex; align-items: center; gap: var(--space-6); padding: var(--space-3) var(--space-5); }
 	.brand { display: flex; align-items: center; gap: .5rem; color: var(--ink); text-decoration: none; font-weight: 700; font-size: var(--text-lg); }
-	.poc-tag {
-		font-size: .62rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
-		background: var(--accent-soft); color: var(--accent-ink); padding: .15rem .45rem; border-radius: 99px;
-	}
 	nav { display: flex; gap: var(--space-5); margin-right: auto; }
 	nav a { color: var(--ink-2); text-decoration: none; font-size: var(--text-sm); font-weight: 600; }
 	nav a.on { color: var(--accent-ink); }

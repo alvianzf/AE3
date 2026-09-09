@@ -27,7 +27,6 @@
 		{/each}
 	</ul>
 	<div class="foot">
-		<span class="poc-tag" title="Phase 4 POC">P4</span>
 		{#if userLabel}<span class="who">{userLabel}</span>{/if}
 		<form method="post" action="/api/auth/logout" onsubmit={(e) => e.preventDefault()}>
 			<a href="/login" class="logout" title="Sign out">⏻</a>
@@ -70,10 +69,6 @@
 	}
 	.foot { margin-top: auto; display: flex; flex-direction: column; align-items: center; gap: .5rem; width: 100%; }
 	.who { font-size: var(--text-xs); color: #d9a2aa; writing-mode: vertical-rl; text-orientation: mixed; max-height: 6rem; overflow: hidden; }
-	.poc-tag {
-		font-size: .55rem; font-weight: 700; letter-spacing: .04em;
-		background: rgba(255, 255, 255, .14); color: #fff; padding: .15rem .4rem; border-radius: 99px;
-	}
 	.logout { color: #f7dfe2; text-decoration: none; font-size: 1.1rem; }
 	@media (max-width: 720px) {
 		.rail { position: fixed; bottom: 0; top: auto; width: 100%; height: auto; flex-direction: row; padding: .5rem; }
