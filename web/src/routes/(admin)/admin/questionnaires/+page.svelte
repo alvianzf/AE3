@@ -98,7 +98,7 @@
 	</form>
 	{#snippet footer()}
 		<Button variant="ghost" onclick={() => (open = false)}>Cancel</Button>
-		<Button type="submit" onclick={save} loading={submitting}>{editingId ? 'Save new version' : 'Create'}</Button>
+		<Button onclick={save} loading={submitting}>{editingId ? 'Save new version' : 'Create'}</Button>
 	{/snippet}
 </Dialog>
 

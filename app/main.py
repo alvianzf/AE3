@@ -595,6 +595,7 @@ async def practitioner_signup(
     years_experience: int = Form(0), consultation_price_cents: int = Form(0),
     photo: UploadFile | None = None,
 ) -> dict:
+    auth.check_email_format(email)
     if core_store.get_practitioner_by_email(email) is not None:
         raise HTTPException(409, "An account with that email already exists.")
     auth.check_password_strength(password)
@@ -642,6 +643,7 @@ class ClientSignup(BaseModel):
 
 @app.post("/api/clients")
 def client_signup(body: ClientSignup) -> dict:
+    auth.check_email_format(body.email)
     auth.check_password_strength(body.password)
     password_hash = auth.hash_password(body.password)
     existing = core_store.get_client_directory_entry(body.email)
@@ -692,6 +694,7 @@ def superadmin_create_admin(body: AdminCreate,
                             _: dict = Depends(auth.require_superadmin)) -> dict:
     if body.role not in core_store.ADMIN_ROLES:
         raise HTTPException(400, f"unknown admin role: {body.role}")
+    auth.check_email_format(body.email)
     if core_store.get_admin_by_email(body.email) is not None:
         raise HTTPException(409, "An admin with that email already exists.")
     auth.check_password_strength(body.password)
@@ -780,6 +783,7 @@ def admin_create_practitioner(body: AdminPractitionerCreate,
     # Unlike public signup (POST /api/practitioners), an admin creating a
     # practitioner directly is already vouching for them — approved
     # immediately rather than landing in the pending review queue.
+    auth.check_email_format(body.email)
     if core_store.get_practitioner_by_email(body.email) is not None:
         raise HTTPException(409, "A practitioner with that email already exists.")
     auth.check_password_strength(body.password)

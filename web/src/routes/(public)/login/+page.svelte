@@ -17,7 +17,13 @@
 		error = '';
 		try {
 			const session = await post(fetch, '/auth/login', { email, password });
-			goto(LANDING[session?.role] || '/admin');
+			// Same fallback PublicNav.svelte uses for the identical lookup —
+			// previously this one fell back to an admin-only route, which
+			// would 401 any non-admin role that ever reached it
+			// (specs/v4/04-known-issues.md#l1). Dead code today (the backend
+			// only ever returns a role present in LANDING) but inconsistent
+			// and would misbehave the moment that stops being true.
+			goto(LANDING[session?.role] || '/account');
 		} catch (err: any) {
 			error = err.status === 401 ? 'Incorrect email or password.' : err.message;
 		} finally {

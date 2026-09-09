@@ -23,14 +23,31 @@
 		try { await post(fetch, `/admin/practitioners/${id}/approve`); await invalidateAll(); }
 		catch (err: any) { toast(err.message, 'alert'); }
 	}
-	async function reject(id: string) {
-		try { await post(fetch, `/admin/practitioners/${id}/reject`); await invalidateAll(); }
-		catch (err: any) { toast(err.message, 'alert'); }
+
+	// Suspend and Reject are equally consequential (both block a
+	// practitioner's access), but previously used two different
+	// confirmation patterns — a native confirm() for Suspend, none at all
+	// for Reject (specs/v4/04-known-issues.md#l3). One shared dialog now
+	// covers both, using the app's own Dialog like everywhere else already
+	// does.
+	let confirming = $state<{ id: string; name: string; kind: 'suspend' | 'reject' } | null>(null);
+	let confirmOpen = $state(false);
+
+	function askConfirm(id: string, name: string, kind: 'suspend' | 'reject') {
+		confirming = { id, name, kind };
+		confirmOpen = true;
 	}
-	async function suspend(id: string) {
-		if (!confirm('Suspend this practitioner?')) return;
-		try { await post(fetch, `/admin/practitioners/${id}/suspend`); await invalidateAll(); }
-		catch (err: any) { toast(err.message, 'alert'); }
+
+	async function runConfirmed() {
+		if (!confirming) return;
+		const { id, kind } = confirming;
+		confirmOpen = false;
+		try {
+			await post(fetch, `/admin/practitioners/${id}/${kind}`);
+			await invalidateAll();
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		}
 	}
 	async function setPlan(id: string, plan: string) {
 		try { await put(fetch, `/admin/practitioners/${id}/plan`, { plan }); toast('Plan updated.'); await invalidateAll(); }
@@ -82,9 +99,9 @@
 				<td class="actions">
 					{#if p.status === 'pending'}
 						<Button variant="text" onclick={() => approve(p.id as string)}>Approve</Button>
-						<Button variant="text" onclick={() => reject(p.id as string)}>Reject</Button>
+						<Button variant="text" onclick={() => askConfirm(p.id as string, p.name as string, 'reject')}>Reject</Button>
 					{:else if p.status === 'approved'}
-						<Button variant="text" onclick={() => suspend(p.id as string)}>Suspend</Button>
+						<Button variant="text" onclick={() => askConfirm(p.id as string, p.name as string, 'suspend')}>Suspend</Button>
 					{:else}
 						<Button variant="text" onclick={() => approve(p.id as string)}>Re-approve</Button>
 					{/if}
@@ -114,7 +131,21 @@
 	</form>
 	{#snippet footer()}
 		<Button variant="ghost" onclick={() => (openNew = false)}>Cancel</Button>
-		<Button type="submit" onclick={createPractitioner} loading={submitting}>Create</Button>
+		<Button onclick={createPractitioner} loading={submitting}>Create</Button>
+	{/snippet}
+</Dialog>
+
+<Dialog bind:open={confirmOpen} title={confirming?.kind === 'suspend' ? 'Suspend practitioner' : 'Reject application'}>
+	{#if confirming}
+		<p>
+			{confirming.kind === 'suspend'
+				? `Suspend "${confirming.name}"? They will immediately lose portal access.`
+				: `Reject "${confirming.name}"'s application?`}
+		</p>
+	{/if}
+	{#snippet footer()}
+		<Button variant="ghost" onclick={() => (confirmOpen = false)}>Cancel</Button>
+		<Button variant="danger" onclick={runConfirmed}>{confirming?.kind === 'suspend' ? 'Suspend' : 'Reject'}</Button>
 	{/snippet}
 </Dialog>
 

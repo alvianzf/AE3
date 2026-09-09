@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { invalidateAll } from '$app/navigation';
 	import { post } from '$lib/api';
 	import { toast } from '$lib/stores/toast';
 	import Spotlight from '$lib/components/Spotlight.svelte';
@@ -25,6 +26,10 @@
 				answers
 			});
 			toast('Questionnaire submitted.');
+			// Previously data.response stayed stale until a full reload, so
+			// revisiting this page after submitting showed no "already
+			// submitted" state (specs/v4/04-known-issues.md#l5).
+			await invalidateAll();
 		} catch (err: any) {
 			toast(err.message, 'alert');
 		} finally {

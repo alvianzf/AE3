@@ -8,6 +8,7 @@ contact) must stay reachable without a cookie at all.
 """
 from __future__ import annotations
 
+import re
 import time
 from collections import defaultdict
 
@@ -26,6 +27,18 @@ _SALT = "clinic-session"
 _MAX_AGE = 60 * 60 * 12
 
 _serializer = URLSafeTimedSerializer(cfg.session_secret, salt=_SALT)
+
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def check_email_format(email: str) -> None:
+    """Raises 400 on an obviously-invalid email. Loose on purpose (no RFC
+    5322 pedantry) — this only catches "clearly not an email," the same bar
+    the login/signup forms' `type="email"` hint implies but never enforced
+    server-side (specs/v4/04-known-issues.md#l2)."""
+    if not _EMAIL_RE.match(email):
+        raise HTTPException(status_code=400, detail="Enter a valid email address.")
 
 
 def check_password_strength(password: str) -> None:

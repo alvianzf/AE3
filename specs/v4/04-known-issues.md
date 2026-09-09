@@ -693,7 +693,7 @@ separate change needed.
 
 ## Low
 
-### L1 — Inconsistent post-login redirect fallback
+### L1 — Inconsistent post-login redirect fallback — FIXED
 
 `login/+page.svelte:20` falls back to `/admin` when a role isn't in the
 `LANDING` map; `PublicNav.svelte:35` falls back to `/account` for the
@@ -702,21 +702,33 @@ identical lookup. Currently dead code (the backend only ever returns
 fallbacks disagree, and one of them routes an unrecognized role to an
 admin-only page.
 
-### L2 — No email-format validation, client or server side
+**Fixed:** both now fall back to `/account`, the more sensible generic
+target (reachable by any role, unlike `/admin`).
+
+### L2 — No email-format validation, client or server side — FIXED
 
 `email: str` fields on signup/login accept any string;
 `type="email"` on the shared `TextField` gives only HTML5's easily-bypassed
 built-in check, and nothing server-side re-validates format before
 persisting it as the account's login identifier.
 
-### L3 — Inconsistent confirmation pattern on destructive admin actions
+**Fixed:** a new `auth.check_email_format()` (a loose `x@y.z`-shape check,
+not RFC 5322 pedantry — just enough to catch "clearly not an email") is
+now called from the same four account-creation paths [H9](#h9) already
+covers.
+
+### L3 — Inconsistent confirmation pattern on destructive admin actions — FIXED
 
 `web/src/routes/(admin)/admin/users/+page.svelte:31` uses a native
 `confirm()` for Suspend — the app's own `Dialog` component is used
 everywhere else — while Reject (lines 26-29), similarly consequential, has
 no confirmation at all.
 
-### L4 — Dead `type="submit"` on two dialog footer buttons
+**Fixed:** one shared confirmation `Dialog` now covers both Suspend and
+Reject, naming the practitioner and, for Suspend, noting they'll
+immediately lose access.
+
+### L4 — Dead `type="submit"` on two dialog footer buttons — FIXED
 
 In both `users/+page.svelte:115` and `questionnaires/+page.svelte:65`, the
 "Create" button sits in the `Dialog`'s `footer` snippet, which renders as a
@@ -724,11 +736,16 @@ sibling of the `<form>`, not inside it (`Dialog.svelte:29-30`) — so
 `type="submit"` does nothing there; only the explicit `onclick` handler
 actually submits. Harmless today, misleading markup, repeated twice.
 
-### L5 — Questionnaire submission doesn't refresh persisted state
+**Fixed:** dropped `type="submit"` from both — `Button`'s own default
+(`type="button"`) already matches what actually happens.
+
+### L5 — Questionnaire submission doesn't refresh persisted state — FIXED
 
 `client/questionnaire/+page.svelte:26-32` shows a success toast on submit
 but never re-fetches `data.response` — revisiting the page later without a
 full reload won't show the "already submitted" state.
+
+**Fixed:** calls `invalidateAll()` after a successful submit.
 
 ---
 
