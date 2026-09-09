@@ -19,13 +19,16 @@ pieces of post-launch work, detailed in
   kept for small files and API/script callers.
 - **Staged-source review queue**: builds
   [`specs/v3/18-document-ingest-upgrade.md`](v3/18-document-ingest-upgrade.md)'s
-  "staged uploads" — written, never implemented until now. Upload or
-  paste several sources, they land in a reviewable staged list (no
-  Reader call, no Neo4j write yet), then ingest all selected at once or
-  one at a time. Stores page-structured text (not the flat text column
-  the original spec proposed), so a staged PDF keeps real per-page
-  citations after promotion. The web-scraper half of that spec is still
-  not built — out of scope this round.
+  "staged uploads" in full — written, never implemented until now.
+  Upload (drag-and-drop, with a live PDF preview), paste text, or enter a
+  URL to scrape; each lands in a reviewable staged list (no Reader call,
+  no Neo4j write yet), then ingest all selected at once or one at a time.
+  Stores page-structured text (not the flat text column the original
+  spec proposed), so a staged PDF keeps real per-page citations after
+  promotion. The scrape path fetches the page, strips markup, then runs
+  a bounded Haiku extraction pass whose only job is discarding chrome —
+  navigation, headers, footers, ads — never summarizing or rephrasing
+  the content it keeps.
 - **Layout**: a shared rail-plus-main-column CSS utility, fixing
   single-column stacking on the admin Knowledge page (flagged directly
   as "annoying to look at"), the practitioner Dashboard, and the

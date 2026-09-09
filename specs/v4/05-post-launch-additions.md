@@ -83,11 +83,11 @@ variant applies.
 
 This is [`specs/v3/18-document-ingest-upgrade.md`](../v3/18-document-ingest-upgrade.md)'s
 "staged uploads" component — specced back in v3, marked "spec only, not
-implemented," and left that way until now. **Built here: staging, the
-checklist, and batch/individual promotion (v3/18's Components 1 and 3,
-partially — see "What's still not built" below). Not built: the web
-scraper (v3/18's Component 2) — nobody asked for it in this round, and
-it's independent enough to stay a separate future addition.**
+implemented," and left that way until now. **All three of v3/18's
+components are built, in two rounds the same day: staging + the checklist
++ batch/individual promotion first, then drag-and-drop with a preview and
+the web scraper added right after** (see "What's still not built" below
+for the one thing genuinely deferred, from Component 1).
 
 ### Why this needed a real change, not just a UI tweak
 
@@ -105,8 +105,9 @@ New `staged_sources` table in `core.db` (`app/core_store.py`):
 ```sql
 staged_sources (
   id TEXT PRIMARY KEY,
-  kind TEXT NOT NULL,          -- 'file' | 'text'
+  kind TEXT NOT NULL,          -- 'file' | 'text' | 'scraped_url'
   filename TEXT,
+  source_url TEXT,             -- set only for kind='scraped_url'
   media_type TEXT,
   pages_json TEXT NOT NULL,    -- [[page_number|null, text], ...]
   char_count INTEGER NOT NULL,
@@ -115,6 +116,10 @@ staged_sources (
   created_by TEXT NOT NULL
 )
 ```
+
+`source_url` was added in the second round (migrated — `staged_sources`
+already existed in production without it, same `ALTER TABLE` pattern this
+file already uses elsewhere).
 
 **One deliberate deviation from v3/18's proposed schema**: that spec's
 `staged_sources` had a flat `extracted_text TEXT NOT NULL` column. This
@@ -135,6 +140,7 @@ function cares what kind of id it's given.
 |---|---|
 | `POST /api/staged` | Stage a small file (multipart) or pasted text — no Reader call, no Neo4j write |
 | `POST /api/sources/upload/{id}/stage` | Same, for a file that came in over chunked upload |
+| `POST /api/scrape` | Fetch a URL, strip it, extract via Haiku, stage the result (`kind='scraped_url'`) |
 | `GET /api/staged` | List staged items (title/kind/page-count/short preview — not the full text, so the checklist doesn't pull every staged document's body over the wire) |
 | `GET /api/staged/{id}/file` | Inline preview for a staged file — same `inline`-for-pdf/text, `nosniff` logic `/api/sources/{id}/original` already uses |
 | `DELETE /api/staged/{id}` | Discard without ingesting |
@@ -146,28 +152,69 @@ uses — Reader, chunking, concept extraction, the Neo4j write — reading
 `pages_json` back out instead of re-extracting anything. The staged row
 and its archived file are deleted once promotion succeeds.
 
+### The web scraper (v3/18 Component 2)
+
+**New `app/scraper.py`** — `fetch_and_strip(url)`: a blocking `urllib.request`
+GET (stdlib only, no new dependency — same "blocking call in a plain
+`def` route, FastAPI's threadpool handles it" convention this app already
+uses for PDF extraction), then an `html.parser.HTMLParser` subclass that
+drops `<script>`/`<style>`/`<nav>`/`<header>`/`<footer>` tags and their
+contents. This step exists purely to cut token cost and obvious noise
+before the real extraction runs — it does **not** attempt the actual
+"discard chrome, keep content" judgment call (a `<div
+class="sidebar-links">` styled to look like navigation still reaches the
+next step), because a tag-based selector can't make that call correctly;
+that's what the LLM step is for.
+
+**New `llm.extract_article(stripped_text, url)`** — a plain-text
+completion (not a JSON-schema call like every other role in `app/llm.py`;
+closer in shape to `answer()`'s free-text output than `read_source()`'s
+structured card, since the output *is* the document body). Uses
+`cfg.reader_model` — Haiku by default, a bounded extraction task that
+doesn't need a stronger model. System prompt is explicit, matching what
+was asked for word for word: extract only the content a human reader came
+for, discard navigation/headers/footers/ads/chrome, and — stated twice,
+deliberately — never summarize, rephrase, shorten, or otherwise alter the
+content kept. Reproduce it verbatim.
+
+**Known, stated gap**: a JavaScript-rendered page (a React/Vue SPA with no
+server-rendered content) has no text for `urllib.request` to see at all —
+`fetch_and_strip()` 400s with a message saying so rather than silently
+returning nothing useful. A headless-browser fetch would fix this but is
+a materially heavier dependency; not added.
+
 ### Frontend
 
-The admin Knowledge page's "1 · Teach Clinic" panel: the submit action is
-now "Add to staged list" instead of "Ingest." Staged items render as a
-checklist below the form — checkbox, filename/kind/page-count, a short
-text preview, a **View** link for files, and per-row **Ingest**/
-**Discard** actions — plus an **Ingest selected** button for promoting a
-checked batch at once.
+The admin Knowledge page's "1 · Teach Clinic" panel is now three tabs
+(`Tabs.svelte`) instead of one form:
 
-### What's still not built (from v3/18, deliberately out of scope this round)
+- **Upload a document** — a real drag-and-drop zone (click to browse
+  still works), not a bare `<input type="file">`. Once a file is chosen,
+  a PDF gets a live native `<embed type="application/pdf">` preview
+  before it's even staged — browsers already render PDFs, so this needed
+  no new dependency, same reasoning v3/18 gave for the pre-rewrite
+  dropzone's preview.
+- **Paste text** — unchanged from the single-tab version.
+- **Enter URL** — a URL field and a "Scrape and add to staged list"
+  button; an indeterminate progress bar plays while the fetch+strip+
+  extract round trip is in flight (there's no byte-level progress to
+  report for a single request the way chunked upload has).
 
-- **The web scraper** (v3/18 Component 2: fetch a URL, strip chrome via
-  an LLM call, stage the result as `kind='scraped_url'`). Nobody asked
-  for this yet; the `staged_sources.kind` column only supports `'file'`/
-  `'text'` today, not the scraper's third kind — adding it later is a
-  contained addition (a new kind value, a new route, a new `app/llm.py`
-  extraction function), not a redesign.
-- **A PDF thumbnail in the checklist row.** v3/18 explicitly recommended
-  against N simultaneous native `<embed>` previews for N staged rows;
-  the current checklist uses a filename + kind chip + page count instead,
-  with the real preview available on demand via the View link — matches
-  what v3/18 actually recommended, not a shortcut taken here.
+Staged items render as a checklist below the tabs either way — checkbox,
+filename/URL/kind/page-count, a short text preview, a **View**/**Source**
+link (file preview or the original URL, depending on kind), and per-row
+**Ingest**/**Discard** actions — plus an **Ingest selected** button for
+promoting a checked batch at once.
+
+### What's still not built (from v3/18, deliberately out of scope)
+
+- **A PDF thumbnail in the checklist row itself.** v3/18 explicitly
+  recommended against N simultaneous native `<embed>` previews for N
+  staged rows; the checklist still uses a filename + kind chip + page
+  count for already-staged items, with the real preview only shown for
+  the *currently selected, not-yet-staged* file in the Upload tab (one
+  embed at a time, never N) — matches what v3/18 actually recommended,
+  not a shortcut taken here.
 
 ## Layout: fixed single-column stacking on multi-panel screens
 
