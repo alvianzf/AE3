@@ -110,7 +110,7 @@ sees it. A new `session_has_flagged_turn()` also appends a deterministic
 warning line to the stored summary itself whenever any turn was flagged —
 not left to the Summariser's discretion to mention it.
 
-### C5 — A practitioner's own down-weighted source can still reach the answer
+### C5 — A practitioner's own down-weighted source can still reach the answer — FIXED
 
 `me_consult` (`app/main.py:996-1003`) applies a practitioner's personal
 source weight override before filtering the Librarian's catalogue, but
@@ -122,6 +122,12 @@ still surface in an answer if it's linked by shared concepts to a source
 that was opened — silently breaking README.md's "you control the
 knowledge" promise for exactly the traversal machinery it's meant to
 govern.
+
+**Fixed:** `traverse()` now takes an optional `weights` map and re-checks
+every gathered passage's *effective* grade (the practitioner's override if
+one exists, else the source's shared grade) against `min_grade` after all
+four hops run, not just at the Cypher-query level. `me_consult` now passes
+the same `weights` dict it already computed for the catalogue.
 
 ### C6 — Self-serve client signup always fails — the site's primary conversion path cannot be completed
 

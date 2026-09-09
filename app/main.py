@@ -1023,7 +1023,8 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
 
             focus = llm.question_concepts(body.question, client_file, history,
                                           client=client_llm) if chosen else []
-            passages, hops = knowledge.traverse(chosen, body.min_grade, focus)
+            passages, hops = knowledge.traverse(chosen, body.min_grade, focus,
+                                                weights=weights)
             available = hops["available"]
 
             matched = bool(passages)

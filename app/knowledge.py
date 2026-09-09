@@ -549,7 +549,8 @@ _PASSAGE_FIELDS = """
 
 def traverse(seed_source_ids: list[str], min_grade: int,
              focus: list[str] | None = None,
-             limit: int | None = None) -> tuple[list[dict], dict]:
+             limit: int | None = None,
+             weights: dict[str, int] | None = None) -> tuple[list[dict], dict]:
     """Walk the corpus outward from the sources the Librarian opened.
 
     The naive version — take every passage of the opened sources in reading order,
@@ -569,9 +570,16 @@ def traverse(seed_source_ids: list[str], min_grade: int,
 
     Every passage is labelled with how it was reached, so the context behind an
     answer is auditable. `min_grade` is enforced at every hop: traversal can never
-    smuggle in a source the practitioner excluded.
+    smuggle in a source the practitioner excluded. `weights` is a practitioner's
+    personal per-source grade override (never the shared admin grade) — when
+    given, it's applied as the effective grade for the min_grade check on every
+    hop, not just the raw `src.grade` a `linked`/`adjacent` hop would otherwise
+    use straight from Neo4j. Without it, a source a practitioner explicitly
+    down-weighted below their own threshold could still reach the answer by
+    being linked to a source that was opened.
     """
     limit = limit or cfg.max_passages
+    weights = weights or {}
     blank = {"match": 0, "adjacent": 0, "linked": 0, "opened": 0,
              "available": 0, "focus": focus or []}
     if not seed_source_ids:
@@ -642,6 +650,15 @@ def traverse(seed_source_ids: list[str], min_grade: int,
             RETURN {_PASSAGE_FIELDS}, [] AS shared
             ORDER BY src.grade DESC, src.title, c.ordinal
             """, ids=seed_source_ids), "opened")
+
+    # Re-check every passage against the practitioner's own weight override,
+    # not just Neo4j's raw src.grade — the `adjacent`/`linked` hops above
+    # query src.grade directly, which is the shared admin grade, not what a
+    # practitioner may have personally down-weighted a source to.
+    picked = {
+        pid: row for pid, row in picked.items()
+        if weights.get(row["source_id"], row["grade"]) >= min_grade
+    }
 
     rank = {"match": 0, "adjacent": 1, "linked": 2, "opened": 3}
     ordered = sorted(
