@@ -34,6 +34,14 @@ jobs:
 
       - name: Svelte type-check
         working-directory: web
+        env:
+          # svelte-check resolves $env/static/public at check time (not
+          # just build time) — without these, every file importing
+          # PUBLIC_API_BASE/PUBLIC_API_BASE_BUILD fails with "no exported
+          # member", since there's no web/.env in this repo (gitignored,
+          # dev-local only per web/.env.example).
+          PUBLIC_API_BASE: ''
+          PUBLIC_API_BASE_BUILD: https://telehealth.devshorepartners.id
         run: |
           npm ci
           npm run check
