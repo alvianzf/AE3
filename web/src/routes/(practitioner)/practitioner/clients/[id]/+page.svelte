@@ -38,45 +38,49 @@
 	<p class="hint">{data.client.country ?? 'Country not set'} · DOB {data.client.dob ?? 'not set'}</p>
 </Quiet>
 
-<Spotlight title="Sessions">
-	{#if !data.sessions?.length}
-		<p class="hint">No consultation sessions yet.</p>
-	{:else}
-		<ul class="list">
-			{#each data.sessions as s (s.id)}
-				<li class="session">
-					<div class="sr">
-						<a href="/practitioner/consult?client={data.client.id}&session={s.id}">{s.title ?? s.last_question ?? s.id}</a>
-						<Button variant="outlined" onclick={() => summarize(s.id)} loading={summarizing === s.id}>Summarize</Button>
-					</div>
-					{#if summaries[s.id]}<p class="summary">{summaries[s.id]}</p>{/if}
-				</li>
-			{/each}
-		</ul>
-	{/if}
-</Spotlight>
+<div class="rail-layout">
+	<div class="rail">
+		<Quiet title="Files">
+			{#if !data.files?.length}
+				<p class="hint">No files uploaded yet.</p>
+			{:else}
+				<ul class="list">
+					{#each data.files as f (f.id)}
+						<li><a href={fileUrl(f)} target="_blank" rel="noopener">{f.original_name}</a> <span class="hint">{f.uploaded_at ?? ''}</span></li>
+					{/each}
+				</ul>
+			{/if}
+		</Quiet>
 
-<Quiet title="Files">
-	{#if !data.files?.length}
-		<p class="hint">No files uploaded yet.</p>
-	{:else}
-		<ul class="list">
-			{#each data.files as f (f.id)}
-				<li><a href={fileUrl(f)} target="_blank" rel="noopener">{f.original_name}</a> <span class="hint">{f.uploaded_at ?? ''}</span></li>
-			{/each}
-		</ul>
-	{/if}
-</Quiet>
+		<Quiet title="Documents">
+			{#if !data.documents?.length}
+				<p class="hint">No documents yet.</p>
+			{:else}
+				<ul class="list">
+					{#each data.documents as d (d.id)}<li>{d.filename ?? d.kind}</li>{/each}
+				</ul>
+			{/if}
+		</Quiet>
+	</div>
 
-<Quiet title="Documents">
-	{#if !data.documents?.length}
-		<p class="hint">No documents yet.</p>
-	{:else}
-		<ul class="list">
-			{#each data.documents as d (d.id)}<li>{d.filename ?? d.kind}</li>{/each}
-		</ul>
-	{/if}
-</Quiet>
+	<Spotlight title="Sessions">
+		{#if !data.sessions?.length}
+			<p class="hint">No consultation sessions yet.</p>
+		{:else}
+			<ul class="list">
+				{#each data.sessions as s (s.id)}
+					<li class="session">
+						<div class="sr">
+							<a href="/practitioner/consult?client={data.client.id}&session={s.id}">{s.title ?? s.last_question ?? s.id}</a>
+							<Button variant="outlined" onclick={() => summarize(s.id)} loading={summarizing === s.id}>Summarize</Button>
+						</div>
+						{#if summaries[s.id]}<p class="summary">{summaries[s.id]}</p>{/if}
+					</li>
+				{/each}
+			</ul>
+		{/if}
+	</Spotlight>
+</div>
 
 <style>
 	.list { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }

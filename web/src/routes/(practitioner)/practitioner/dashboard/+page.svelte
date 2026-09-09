@@ -42,33 +42,40 @@
 	<StatTile label="Consults logged" value={data.recentSessions?.length ?? 0} icon="message" href="/practitioner/consult" />
 </div>
 
-<!-- specs/v4/03: history (actual work) promoted to Tier 1; recent contacts demoted to Tier 2 -->
-<Spotlight title="Recent consultation history">
-	{#if !data.recentSessions?.length}
-		<p class="hint">No consultations yet — head to <a href="/practitioner/consult">Consult</a> to ask your first question.</p>
-	{:else}
-		<ul class="list">
-			{#each data.recentSessions as s (s.id)}
-				<li>
-					<span>{s.question ?? s.summary ?? 'Session ' + s.id}</span>
-					<Chip tone="neutral">{s.created_at ?? ''}</Chip>
-				</li>
-			{/each}
-		</ul>
-	{/if}
-</Spotlight>
+<!-- specs/v4/03: history (actual work) promoted to Tier 1; recent contacts
+     demoted to Tier 2 — visual weight, not spatial stacking. Side by side
+     (rail-layout, app.css) instead of two full-width blocks in a row, same
+     fix applied to /admin's Knowledge page. -->
+<div class="rail-layout">
+	<div class="rail">
+		<Quiet title="Recent contact submissions">
+			{#if !data.contacts?.length}
+				<p class="hint">No new contact submissions.</p>
+			{:else}
+				<ul class="list">
+					{#each data.contacts as c (c.id)}
+						<li><span>{c.name} — {c.email}</span></li>
+					{/each}
+				</ul>
+			{/if}
+		</Quiet>
+	</div>
 
-<Quiet title="Recent contact submissions">
-	{#if !data.contacts?.length}
-		<p class="hint">No new contact submissions.</p>
-	{:else}
-		<ul class="list">
-			{#each data.contacts as c (c.id)}
-				<li><span>{c.name} — {c.email}</span></li>
-			{/each}
-		</ul>
-	{/if}
-</Quiet>
+	<Spotlight title="Recent consultation history">
+		{#if !data.recentSessions?.length}
+			<p class="hint">No consultations yet — head to <a href="/practitioner/consult">Consult</a> to ask your first question.</p>
+		{:else}
+			<ul class="list">
+				{#each data.recentSessions as s (s.id)}
+					<li>
+						<span>{s.question ?? s.summary ?? 'Session ' + s.id}</span>
+						<Chip tone="neutral">{s.created_at ?? ''}</Chip>
+					</li>
+				{/each}
+			</ul>
+		{/if}
+	</Spotlight>
+</div>
 
 <style>
 	.checklist { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
