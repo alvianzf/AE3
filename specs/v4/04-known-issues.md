@@ -593,11 +593,16 @@ same loop.
 **Fixed:** `next(..., None)` plus a clear `ValueError` naming the model,
 instead of a bare `StopIteration` propagating to the caller.
 
-### M12 — Blank consult questions still run (and bill) the full pipeline
+### M12 — Blank consult questions still run (and bill) the full pipeline — FIXED
 
 `MeConsult.question: str` (`app/main.py:961`) has no `min_length` or
 `.strip()` check — an empty submission still runs the full, billed
 Librarian → Specialist → Checker sequence.
+
+**Fixed:** a blank/whitespace-only question now 400s before any API key
+lookup or AI-team call — the same "checked up front, not buried inside the
+stream" pattern this route's own docstring already establishes for its
+other pre-checks.
 
 ### M13 — Client dashboard tiles use emoji icons — the same problem already fixed once
 

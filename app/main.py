@@ -1067,6 +1067,12 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
     any AI-team call runs (missing key, unknown client/session) is checked
     up front and raised as a normal HTTPException, so those keep their 400/404
     status codes instead of being buried inside the stream."""
+    if not body.question.strip():
+        # Previously ran (and billed) the full Librarian -> Specialist ->
+        # Checker pipeline on a blank submission (specs/v4/04-known-
+        # issues.md#m12).
+        raise HTTPException(400, "Question cannot be empty.")
+
     practitioner_id = session["id"]
     practitioner = core_store.get_practitioner(practitioner_id)
     if not practitioner.get("anthropic_api_key_encrypted"):
