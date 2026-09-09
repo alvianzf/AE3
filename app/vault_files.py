@@ -36,17 +36,3 @@ def path(practitioner_id: str, file_id: str, filename: str) -> Path | None:
     """The stored file, or None if it is not there."""
     p = Path(cfg.vault_files_path) / practitioner_id / f"{file_id}{Path(filename).suffix}"
     return p if p.is_file() else None
-
-
-def delete(practitioner_id: str, file_id: str) -> None:
-    """Best-effort removal, so a file cannot outlive its record.
-
-    Globbed rather than reconstructed: the record — which carries the
-    extension — may already be gone by the time we are called. Ids are
-    UUIDs, so the prefix cannot match another file's.
-    """
-    for p in _dir(practitioner_id).glob(f"{file_id}*"):
-        try:
-            p.unlink()
-        except OSError as exc:
-            logging.warning("could not remove vault file %s: %s", p, exc)

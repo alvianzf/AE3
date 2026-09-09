@@ -770,40 +770,6 @@ def graph_stats() -> dict:
         return dict(rec)
 
 
-def passages_for(source_ids: list[str], limit: int | None = None) -> tuple[list[dict], int]:
-    """Every passage of the chosen sources, in reading order.
-
-    Returns (passages, total_available) so a caller can tell the practitioner
-    when the limit truncated the material rather than silently dropping it.
-    """
-    limit = limit or cfg.max_passages
-    if not source_ids:
-        return [], 0
-    with _session() as s:
-        total = s.run(
-            "MATCH (src:Source)-[:HAS_CHUNK]->(c:Chunk) WHERE src.id IN $ids "
-            "RETURN count(c) AS n",
-            ids=source_ids,
-        ).single()["n"]
-        recs = s.run(
-            """
-            MATCH (src:Source)-[:HAS_CHUNK]->(c:Chunk)
-            WHERE src.id IN $ids
-            RETURN c.id AS id, c.text AS text, c.ordinal AS ordinal,
-                   c.page_start AS page_start, c.page_end AS page_end,
-                   src.id AS source_id, src.title AS title, src.grade AS grade,
-                   src.origin AS origin, src.kind AS kind, src.author AS author,
-                   src.published AS published, src.reference AS reference,
-                   src.filename AS filename, src.page_count AS page_count,
-                   src.passage_count AS passage_count
-            ORDER BY src.grade DESC, src.title, c.ordinal
-            LIMIT $limit
-            """,
-            ids=source_ids, limit=limit,
-        )
-        return [dict(r) for r in recs], total
-
-
 # --- Coverage & audit ---------------------------------------------------------
 
 def coverage() -> list[dict]:
