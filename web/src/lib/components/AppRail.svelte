@@ -3,7 +3,7 @@
 	import Sprig from './Sprig.svelte';
 	import Icon from './Icon.svelte';
 
-	interface NavItem { href: string; label: string; icon: string }
+	interface NavItem { href: string; label: string; icon: string; locked?: boolean }
 	let { items, portalLabel, userLabel }: { items: NavItem[]; portalLabel: string; userLabel?: string } = $props();
 </script>
 
@@ -16,9 +16,12 @@
 	<ul>
 		{#each items as it (it.href)}
 			<li>
-				<a href={it.href} class:on={page.url.pathname === it.href || page.url.pathname.startsWith(it.href + '/')} title={it.label}>
-					<span class="ic"><Icon name={it.icon} /></span>
-					<span class="lbl">{it.label}</span>
+				<a href={it.href} class:on={page.url.pathname === it.href || page.url.pathname.startsWith(it.href + '/')} title={it.locked ? `${it.label} (Pro)` : it.label}>
+					<span class="ic">
+						<Icon name={it.icon} />
+						{#if it.locked}<span class="lock" aria-hidden="true">★</span>{/if}
+					</span>
+					<span class="lbl">{it.label}{#if it.locked} <span class="pro">Pro</span>{/if}</span>
 				</a>
 			</li>
 		{/each}
@@ -45,7 +48,15 @@
 		display: flex; align-items: center; gap: .6rem; color: #f7dfe2; text-decoration: none;
 		padding: .6rem 0; justify-content: center; position: relative; font-size: var(--text-sm);
 	}
-	.ic { display: flex; }
+	.ic { display: flex; position: relative; }
+	.lock {
+		position: absolute; top: -.35rem; right: -.5rem; font-size: .55rem; line-height: 1;
+		color: #ffd76b;
+	}
+	.pro {
+		font-size: .65rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+		opacity: .8;
+	}
 	.lbl {
 		position: absolute; left: 100%; margin-left: .5rem; background: var(--ink); color: #fff;
 		padding: .3rem .6rem; border-radius: var(--r); white-space: nowrap; font-size: var(--text-xs);

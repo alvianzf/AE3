@@ -632,13 +632,20 @@ one who hasn't.
 `/me/wearables`, the same endpoints their own pages already use) and the
 tiles now show "Submitted" / "N uploaded" / "N connected" once true.
 
-### M15 — Pro-gated practitioner nav items aren't marked as gated
+### M15 — Pro-gated practitioner nav items aren't marked as gated — FIXED
 
 `web/src/routes/(practitioner)/practitioner/+layout.svelte:6-14` shows
 Consult/Clients/Knowledge identically for Basic and Pro plans (the layout
 guard at `+layout.ts:16` checks only role, not plan). A Basic practitioner
 only discovers the paywall after clicking in and getting a 403 toast,
 rather than seeing a lock or "Pro" badge up front.
+
+**Fixed:** `AppRail`'s `NavItem` gained an optional `locked` flag —
+a small badge on the icon plus a "(Pro)" tag in the hover tooltip. The
+layout marks Clients/Consult/Knowledge `locked` when
+`data.profile?.plan !== 'pro'` (confirmed against the actual backend gate,
+`require_pro_practitioner` on `/api/me/knowledge` and the client/consult
+routes — not guessed).
 
 ### M16 — Self-flagged: an active library filter can silently hide a source right after ingesting it
 
