@@ -282,6 +282,7 @@ async def add_source(
             digest=digest, body=body, author=card["author"],
             published=card["published"], reference=card["reference"],
             page_count=page_count, original=original,
+            reader_truncated=card.get("truncated", False),
         )
     except neo4j.exceptions.ConstraintError:
         # Another upload of the same body landed between our check and our write.

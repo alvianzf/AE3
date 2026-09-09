@@ -175,6 +175,7 @@
 		{#snippet row(s: any)}
 			<td>
 				{s.title}
+				{#if s.reader_truncated}<Chip tone="warn">graded from a partial read</Chip>{/if}
 				{#if s.topics?.length}<div class="topics">{s.topics.join(' · ')}</div>{/if}
 			</td>
 			<td><Chip tone="neutral">{s.kind}</Chip></td>

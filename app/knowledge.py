@@ -222,6 +222,7 @@ def ingest_source(
     summary: str, topics: list[str], passages: list[dict], digest: str,
     body: str, author: str = "", published: str = "", reference: str = "",
     page_count: int = 0, original: tuple[bytes, str, str] | None = None,
+    reader_truncated: bool = False,
 ) -> dict:
     """Write a read-and-graded source plus its passages.
 
@@ -252,7 +253,8 @@ def ingest_source(
                                 content_hash: $digest, body: $body,
                                 author: $author, published: $published,
                                 reference: $reference, page_count: $page_count,
-                                char_count: $char_count, passage_count: $total})
+                                char_count: $char_count, passage_count: $total,
+                                reader_truncated: $reader_truncated})
             // FOREACH, not UNWIND: UNWIND over an empty list yields zero rows and
             // silently discards the rest of the pipeline, so an untagged source
             // would be written with no passages at all.
@@ -274,6 +276,7 @@ def ingest_source(
             topics=topics, rows=rows, digest=digest, body=body,
             author=author, published=published, reference=reference,
             page_count=page_count, char_count=len(body), total=total,
+            reader_truncated=reader_truncated,
         )
         # Reading-order edges, so a claim split across a boundary can be rejoined.
         s.run(
@@ -361,7 +364,8 @@ _CARD = """
     src.char_count AS char_count, src.content_hash AS content_hash,
     src.original_name AS original_name,
     src.original_media_type AS original_media_type,
-    src.original_bytes AS original_bytes
+    src.original_bytes AS original_bytes,
+    coalesce(src.reader_truncated, false) AS reader_truncated
 """
 
 

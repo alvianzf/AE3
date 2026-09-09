@@ -362,13 +362,21 @@ magic bytes; anything else is decoded as strict UTF-8 (not
 Also added a 20 MB cap on both the admin source-ingest upload and the
 client file upload (photo upload was already capped in [C7](#c7)).
 
-### H8 — Reader grading is based on only the first ~20,000 characters of a source, with no warning
+### H8 — Reader grading is based on only the first ~20,000 characters of a source, with no warning — FIXED
 
 `llm.read_source()` (`app/llm.py:130-135`) truncates to `text[:20000]`
 before the model ever sees it. A long clinical guideline's reliability
 grade, summary, and topic tags can all be decided without the model reading
 past roughly the first 20k characters, and nothing in the admin UI
 indicates a source was truncated for grading purposes.
+
+**Fixed:** `read_source()` now returns whether the input exceeded 20k
+characters; `ingest_source()` stores it as `Source.reader_truncated`
+(defaulting to `false` via `coalesce` for sources ingested before this
+existed), and the admin library shows a "graded from a partial read"
+chip on any source where it's true. The truncation limit itself is
+unchanged — this makes an existing tradeoff visible, not a bigger-context
+change.
 
 ### H9 — No password length/strength check at account creation, inconsistent with change-password
 

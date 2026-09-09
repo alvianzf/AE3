@@ -138,6 +138,10 @@ def read_source(text: str, filename: str, kind: str, origin: str,
     card["topics"] = [t.strip().lower() for t in card["topics"] if t.strip()][:4]
     for field in ("author", "published", "reference"):
         card[field] = card.get(field, "").strip()
+    # The grade/summary/topics above are decided from at most the first 20k
+    # characters — surfaced so an admin grading a long document knows the
+    # Reader didn't see all of it (specs/v4/04-known-issues.md#h8).
+    card["truncated"] = len(text) > 20000
     return card
 
 
