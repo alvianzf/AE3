@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
 	import { PUBLIC_API_BASE } from '$env/static/public';
-	import { get, patch, del } from '$lib/api';
+	import { get, post, patch, del } from '$lib/api';
 	import { chunkedUpload } from '$lib/chunkedUpload';
 	import { toast } from '$lib/stores/toast';
 	import Spotlight from '$lib/components/Spotlight.svelte';
@@ -15,8 +15,28 @@
 	let { data } = $props();
 	let text = $state('');
 	let fileInput = $state<HTMLInputElement>();
-	let ingesting = $state(false);
-	let ingestProgress = $state<{ sent: number; total: number } | null>(null);
+	let staging = $state(false);
+	let stageProgress = $state<{ sent: number; total: number } | null>(null);
+
+	// Staged items — uploaded/pasted but not yet promoted into the graph
+	// (app/main.py's /api/staged*, specs/v3/18-document-ingest-upgrade.md).
+	// "Ingest" below always meant "stage" too until now: every add
+	// immediately ran the full Reader/chunk/write pipeline, one at a time,
+	// with no way to pile several up first and review before committing.
+	let selected = $state<Set<string>>(new Set());
+	let promotingId = $state<string | null>(null);
+	let promotingBatch = $state(false);
+
+	function toggleSelected(id: string) {
+		const next = new Set(selected);
+		if (next.has(id)) next.delete(id);
+		else next.add(id);
+		selected = next;
+	}
+
+	function stagedFileUrl(item: any) {
+		return `${PUBLIC_API_BASE}/api/staged/${item.id}/file`;
+	}
 
 	// Library browser: categories = topics (from /api/coverage, with counts),
 	// a kind filter alongside them, and a search box over both. Filtered
@@ -97,43 +117,96 @@
 		}
 	}
 
-	async function ingest(e: Event) {
+	async function stageItem(e: Event) {
 		e.preventDefault();
 		if (!text.trim() && !fileInput?.files?.length) return;
-		ingesting = true;
-		ingestProgress = null;
+		staging = true;
+		stageProgress = null;
 		try {
 			const file = fileInput?.files?.[0];
 			if (file) {
 				// Chunked regardless of size: one code path, always shows
 				// progress, and never risks a single >200MB-capable request
 				// hitting nginx's body-size limit (app/uploads.py, web/src/lib/
-				// chunkedUpload.ts).
-				await chunkedUpload('/sources', file, { kind: 'article', origin: 'unspecified' },
-					(p) => (ingestProgress = p));
+				// chunkedUpload.ts). 'stage' instead of 'complete' — lands in
+				// the staged list below, not ingested yet.
+				await chunkedUpload('/sources', file, {}, (p) => (stageProgress = p), 'stage');
 			} else {
 				const fd = new FormData();
 				fd.set('text', text);
-				const res = await fetch(`${PUBLIC_API_BASE}/api/sources`, { method: 'POST', credentials: 'include', body: fd });
+				const res = await fetch(`${PUBLIC_API_BASE}/api/staged`, { method: 'POST', credentials: 'include', body: fd });
 				if (!res.ok) {
 					const body = await res.json().catch(() => ({}));
-					throw new Error(body?.detail?.message || body?.detail || 'Ingest failed.');
+					throw new Error(body?.detail?.message || body?.detail || 'Staging failed.');
 				}
 			}
-			toast('Source ingested.');
+			toast('Added to the staged list.');
 			text = '';
 			if (fileInput) fileInput.value = '';
-			// An active category/kind filter could otherwise hide the source
-			// that was just ingested, with nothing telling the admin why it
-			// isn't in the list (specs/v4/04-known-issues.md#m16, found in
-			// this page's own initial review).
-			q = activeTopic = activeKind = '';
 			await invalidateAll();
 		} catch (err: any) {
 			toast(err.message, 'alert');
 		} finally {
-			ingesting = false;
-			ingestProgress = null;
+			staging = false;
+			stageProgress = null;
+		}
+	}
+
+	function clearFiltersAfterIngest() {
+		// An active category/kind filter could otherwise hide a source
+		// that was just ingested, with nothing telling the admin why it
+		// isn't in the list (specs/v4/04-known-issues.md#m16, found in
+		// this page's own initial review).
+		q = activeTopic = activeKind = '';
+	}
+
+	async function ingestOne(id: string) {
+		promotingId = id;
+		try {
+			await post(fetch, `/staged/${id}/ingest`, {});
+			toast('Ingested into the library.');
+			clearFiltersAfterIngest();
+			await invalidateAll();
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		} finally {
+			promotingId = null;
+		}
+	}
+
+	async function ingestSelected() {
+		if (!selected.size) return;
+		promotingBatch = true;
+		try {
+			const res = await post(fetch, '/staged/ingest', { ids: [...selected] });
+			toast(
+				res.failed?.length
+					? `${res.ingested.length} ingested, ${res.failed.length} failed.`
+					: `${res.ingested.length} source(s) ingested.`,
+				res.failed?.length ? 'alert' : undefined
+			);
+			selected = new Set();
+			clearFiltersAfterIngest();
+			await invalidateAll();
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		} finally {
+			promotingBatch = false;
+		}
+	}
+
+	async function discardStaged(id: string) {
+		try {
+			await del(fetch, `/staged/${id}`);
+			toast('Discarded.');
+			if (selected.has(id)) {
+				const next = new Set(selected);
+				next.delete(id);
+				selected = next;
+			}
+			await invalidateAll();
+		} catch (err: any) {
+			toast(err.message, 'alert');
 		}
 	}
 </script>
@@ -141,24 +214,85 @@
 <svelte:head><title>Knowledge — Admin portal</title></svelte:head>
 
 <!-- specs/v4/03: library list stays Tier 1 (the actual work surface); ingest
-     and the audit/graph rail demoted to Tier 2 (used far less often). -->
+     and the audit/graph rail demoted to Tier 2 (used far less often) — that's
+     visual *weight* (Quiet vs Spotlight), a separate question from spatial
+     layout. The spec's own diagnosis of the old static/index.html was three
+     panels side by side, not stacked — a narrow side column for the two
+     Tier-2 panels alongside the library keeps that spatial shape without
+     reverting the weight fix. -->
+<div class="layout">
+<div class="side">
 <Quiet title="1 · Teach Clinic">
-	<form onsubmit={ingest} class="ingest">
+	<form onsubmit={stageItem} class="ingest">
 		<TextField label="Paste text" type="textarea" bind:value={text} placeholder="Paste an article, note, or transcript…" />
 		<div class="field">
 			<label for="file">Or upload a file</label>
 			<input id="file" type="file" bind:this={fileInput} />
-			<p class="hint">Up to 200 MB — sent in 8 MB pieces, so a large PDF doesn't need one giant request.</p>
+			<p class="hint">Up to 200 MB — sent in pieces, so a large PDF doesn't need one giant request.</p>
 		</div>
-		{#if ingestProgress}
+		{#if stageProgress}
 			<div class="upload-progress">
-				<div class="bar" style="width: {Math.round((ingestProgress.sent / ingestProgress.total) * 100)}%"></div>
-				<span class="hint">{Math.round(ingestProgress.sent / 1024 / 1024)} / {Math.round(ingestProgress.total / 1024 / 1024)} MB</span>
+				<div class="bar" style="width: {Math.round((stageProgress.sent / stageProgress.total) * 100)}%"></div>
+				<span class="hint">{Math.round(stageProgress.sent / 1024 / 1024)} / {Math.round(stageProgress.total / 1024 / 1024)} MB</span>
 			</div>
 		{/if}
-		<Button type="submit" loading={ingesting}>Ingest</Button>
+		<Button type="submit" loading={staging}>Add to staged list</Button>
 	</form>
+
+	{#if data.staged?.length}
+		<div class="staged">
+			<div class="staged-head">
+				<strong>Staged — not yet in the library ({data.staged.length})</strong>
+				<Button variant="outlined" onclick={ingestSelected} loading={promotingBatch} disabled={!selected.size}>
+					Ingest selected ({selected.size})
+				</Button>
+			</div>
+			<ul class="staged-list">
+				{#each data.staged as item (item.id)}
+					<li class="staged-item">
+						<input
+							type="checkbox"
+							checked={selected.has(item.id)}
+							onchange={() => toggleSelected(item.id)}
+							aria-label="Select {item.filename ?? 'pasted text'}"
+						/>
+						<div class="staged-body">
+							<div class="staged-title">
+								{item.filename ?? 'Pasted text'}
+								<Chip tone="neutral">{item.kind}</Chip>
+								{#if item.page_count}<span class="hint">{item.page_count} page(s)</span>{/if}
+							</div>
+							<p class="staged-preview">{item.preview}{item.preview?.length >= 280 ? '…' : ''}</p>
+						</div>
+						<div class="staged-actions">
+							{#if item.kind === 'file'}
+								<a class="view" href={stagedFileUrl(item)} target="_blank" rel="noopener">View</a>
+							{/if}
+							<button class="view" onclick={() => ingestOne(item.id)} disabled={promotingId === item.id}>
+								{promotingId === item.id ? 'Ingesting…' : 'Ingest'}
+							</button>
+							<button class="view danger" onclick={() => discardStaged(item.id)}>Discard</button>
+						</div>
+					</li>
+				{/each}
+			</ul>
+		</div>
+	{/if}
 </Quiet>
+
+<Quiet title="3 · What Clinic knows">
+	{#if data.graph}
+		<p class="hint">{data.graph.node_count ?? 0} concepts · {data.graph.edge_count ?? 0} links · {(data.graph.unlinked ?? []).length} unlinked sources</p>
+	{/if}
+	{#if data.audit?.length}
+		<ul class="list">
+			{#each data.audit.slice(0, 6) as a (a.id ?? a.created_at)}
+				<li>{a.action ?? a.event} — {(a.created_at ?? '').slice(0, 16).replace('T', ' ')}</li>
+			{/each}
+		</ul>
+	{/if}
+</Quiet>
+</div>
 
 <Spotlight title="2 · The library">
 	<input
@@ -219,6 +353,7 @@
 		{/snippet}
 	</DataTable>
 </Spotlight>
+</div>
 
 <Dialog bind:open={confirmingDelete} title="Remove source">
 	{#if deleting}
@@ -241,20 +376,10 @@
 	{/if}
 </Dialog>
 
-<Quiet title="3 · What Clinic knows">
-	{#if data.graph}
-		<p class="hint">{data.graph.node_count ?? 0} concepts · {data.graph.edge_count ?? 0} links · {(data.graph.unlinked ?? []).length} unlinked sources</p>
-	{/if}
-	{#if data.audit?.length}
-		<ul class="list">
-			{#each data.audit.slice(0, 6) as a (a.id ?? a.created_at)}
-				<li>{a.action ?? a.event} — {(a.created_at ?? '').slice(0, 16).replace('T', ' ')}</li>
-			{/each}
-		</ul>
-	{/if}
-</Quiet>
-
 <style>
+	.layout { display: grid; grid-template-columns: 22rem 1fr; gap: var(--space-5); align-items: start; }
+	.side { display: grid; gap: var(--space-5); }
+	@media (max-width: 960px) { .layout { grid-template-columns: 1fr; } }
 	.ingest { display: grid; gap: var(--space-3); }
 	.search {
 		width: 100%; font-size: var(--text-lg); padding: var(--space-4);
@@ -297,6 +422,16 @@
 	}
 	.doc-body { white-space: pre-wrap; font-size: var(--text-sm); line-height: 1.6; max-height: 60vh; overflow-y: auto; }
 	.field { display: flex; flex-direction: column; gap: .35rem; }
+	.staged { margin-top: var(--space-5); padding-top: var(--space-4); border-top: 1px solid var(--glass-line); display: grid; gap: var(--space-3); }
+	.staged-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
+	.staged-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+	.staged-item { display: flex; gap: var(--space-3); align-items: flex-start; padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--r); }
+	.staged-item input[type='checkbox'] { margin-top: .3rem; }
+	.staged-body { flex: 1 1 auto; min-width: 0; }
+	.staged-title { display: flex; align-items: center; gap: .4rem; font-weight: 650; flex-wrap: wrap; }
+	.staged-preview { margin: .3rem 0 0; font-size: var(--text-sm); color: var(--muted); overflow-wrap: anywhere; }
+	.staged-actions { display: flex; gap: .35rem; flex: 0 0 auto; flex-wrap: wrap; }
+	.view:disabled { opacity: .5; cursor: not-allowed; }
 	.upload-progress {
 		display: flex; align-items: center; gap: var(--space-3);
 		background: var(--panel-2); border-radius: 99px; padding: .35rem .35rem .35rem .1rem;
