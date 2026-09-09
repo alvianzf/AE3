@@ -1,8 +1,13 @@
 <script lang="ts">
+	import { PUBLIC_API_BASE } from '$env/static/public';
 	import Quiet from '$lib/components/Quiet.svelte';
 	import Spotlight from '$lib/components/Spotlight.svelte';
 
 	let { data } = $props();
+
+	function fileUrl(f: any) {
+		return `${PUBLIC_API_BASE}/api/me/clients/${data.client.id}/files/${f.id}`;
+	}
 </script>
 
 <svelte:head><title>{data.client.name} — Practitioner portal</title></svelte:head>
@@ -23,6 +28,18 @@
 		</ul>
 	{/if}
 </Spotlight>
+
+<Quiet title="Files">
+	{#if !data.files?.length}
+		<p class="hint">No files uploaded yet.</p>
+	{:else}
+		<ul class="list">
+			{#each data.files as f (f.id)}
+				<li><a href={fileUrl(f)} target="_blank" rel="noopener">{f.original_name}</a> <span class="hint">{f.uploaded_at ?? ''}</span></li>
+			{/each}
+		</ul>
+	{/if}
+</Quiet>
 
 <Quiet title="Documents">
 	{#if !data.documents?.length}

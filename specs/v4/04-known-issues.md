@@ -231,7 +231,7 @@ copy/two-step shape as the pre-rewrite page — before calling `DELETE`.
 Added a `patch()` helper to `lib/api.ts` alongside the existing get/post/
 put/del, since none existed.
 
-### H2 — Uploaded files can never be opened again, by anyone
+### H2 — Uploaded files can never be opened again, by anyone — FIXED
 
 `POST /api/me/files` (`app/main.py:1294-1308`) stores a client's file;
 `vault_files.path()` (`app/vault_files.py:35`) can retrieve it by id, but no
@@ -248,6 +248,24 @@ never deletes the underlying file bytes, so an "erased" client's files stay
 on disk indefinitely. [v2/13 M3](../v2/13-known-issues.md#m3) fixed the
 *list* of previously-uploaded files; the actual read path was never built,
 before or after the rewrite.
+
+**Fixed:** a new `GET /api/me/files/{file_id}` (client-facing) and
+`GET /api/me/clients/{client_id}/files` + `.../files/{file_id}`
+(practitioner-facing, ownership-checked against the client) serve the
+stored bytes with the same inline-pdf/text-else-download + `nosniff`
+pattern `/original` already uses. `vault.get_uploaded_file()` looks the row
+up by its stored `storage_path` (the on-disk filename actually uses a
+*second*, unrelated id generated at upload time — `storage_path` is the
+only thing that ever linked the two; worth a closer look separately, not
+a functional problem here since the path is stored either way).
+`delete_client()` now unlinks each file's `storage_path` before dropping
+its row. The client Files page and a new "Files" section on the
+practitioner's client-detail page both link to these. Also fixed in the
+same pass: the client Files table's columns referenced `f.filename`/
+`f.content_type`, fields that don't exist on the real row
+(`original_name`/`media_type`) — every file's File/Type cells were
+silently blank; and [M8](#m8) (upload errors swallowed to a generic
+message) in the same file, while already there.
 
 ### H3 — Stripe checkout/portal redirects point at retired pre-rewrite pages
 
@@ -415,13 +433,17 @@ provider account has no way to undo it.
 list — every visit to the public directory search inflates every matching
 practitioner's view count, not just genuine profile opens.
 
-### M8 — Client file-upload errors are swallowed to a generic message
+### M8 — Client file-upload errors are swallowed to a generic message — FIXED
 
 `web/src/routes/(client)/client/files/+page.svelte:19-22` throws a
 hardcoded `'Upload failed.'` on any non-OK response instead of reading the
 real `detail` from the response body — unlike the admin ingest form, which
 does surface the backend's actual error. A client hitting a real
 validation failure (bad file type, size limit) gets no useful reason why.
+
+**Fixed:** in the same [H2](#h2) pass, since it's the same file — now reads
+`res.json()`'s `detail`/`detail.message` before falling back to the generic
+string.
 
 ### M9 — `GET /api/sources` has no upper bound on `per_page`
 

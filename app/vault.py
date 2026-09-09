@@ -7,6 +7,7 @@ SQLite file under cfg.vaults_path instead of a single module-global path.
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import uuid
 from datetime import datetime, timezone
@@ -320,6 +321,18 @@ def delete_client(practitioner_id: str, client_id: str) -> bool:
         conn.execute(
             "DELETE FROM questionnaire_responses WHERE client_id = ?",
             (client_id,))
+        # Delete the file bytes too, not just the row — previously only the
+        # uploaded_files rows were dropped, leaving an "erased" client's
+        # actual files on disk indefinitely (specs/v4/04-known-issues.md#h2).
+        file_rows = conn.execute(
+            "SELECT storage_path FROM uploaded_files WHERE client_id = ?",
+            (client_id,)).fetchall()
+        for row in file_rows:
+            try:
+                Path(row["storage_path"]).unlink(missing_ok=True)
+            except OSError as exc:
+                logging.warning("could not remove uploaded file %s: %s",
+                                row["storage_path"], exc)
         conn.execute("DELETE FROM uploaded_files WHERE client_id = ?", (client_id,))
         conn.execute(
             "DELETE FROM wearable_data_points WHERE client_id = ?", (client_id,))
@@ -623,6 +636,23 @@ def list_uploaded_files(practitioner_id: str, client_id: str) -> list[dict]:
             (client_id,),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def get_uploaded_file(practitioner_id: str, file_id: str, client_id: str | None = None) -> dict | None:
+    """One uploaded-file row, including its storage_path — for serving the
+    actual bytes back (specs/v4/04-known-issues.md#h2). `client_id`, when
+    given, scopes the lookup so a client can only ever fetch their own file,
+    and a practitioner's client-facing route can't be pointed at another
+    client's upload by guessing a file id."""
+    with _connect(practitioner_id) as conn:
+        if client_id is not None:
+            row = conn.execute(
+                "SELECT * FROM uploaded_files WHERE id = ? AND client_id = ?",
+                (file_id, client_id)).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT * FROM uploaded_files WHERE id = ?", (file_id,)).fetchone()
+    return dict(row) if row else None
 
 
 # --- Wearables ------------------------------------------------------------------

@@ -1368,6 +1368,53 @@ def me_list_files(session: dict = Depends(auth.require_client)) -> list[dict]:
             for f in vault.list_uploaded_files(session["practitioner_id"], session["id"])]
 
 
+def _serve_uploaded_file(practitioner_id: str, file_id: str, client_id: str | None) -> FileResponse:
+    """Shared by the client's own download route and the practitioner's
+    client-file route below — the upload path (POST /api/me/files) was fully
+    wired, but nothing ever served the bytes back to either side
+    (specs/v4/04-known-issues.md#h2)."""
+    row = vault.get_uploaded_file(practitioner_id, file_id, client_id)
+    if row is None:
+        raise HTTPException(404, "no such file")
+    path = Path(row["storage_path"])
+    if not path.is_file():
+        raise HTTPException(404, "the file is no longer on disk")
+    safe = "".join(c for c in Path(row["original_name"]).name if c.isprintable() and c != '"')
+    media_type = row.get("media_type") or _media_type(row["original_name"])
+    # Same reasoning as GET /api/sources/{id}/original: only preview types
+    # we control the rendering of; anything else downloads instead of
+    # rendering inline, and nosniff stops the browser from second-guessing it.
+    disposition = ("inline" if media_type in ("application/pdf", "text/plain")
+                   else "attachment")
+    return FileResponse(
+        path, media_type=media_type,
+        headers={"Content-Disposition": f'{disposition}; filename="{safe}"',
+                 "X-Content-Type-Options": "nosniff"},
+    )
+
+
+@app.get("/api/me/files/{file_id}")
+def me_download_file(file_id: str, session: dict = Depends(auth.require_client)) -> FileResponse:
+    return _serve_uploaded_file(session["practitioner_id"], file_id, session["id"])
+
+
+@app.get("/api/me/clients/{client_id}/files")
+def me_list_client_files(client_id: str,
+                         session: dict = Depends(auth.require_pro_practitioner)) -> list[dict]:
+    if vault.get_client(session["id"], client_id) is None:
+        raise HTTPException(404, "no such client")
+    return [{k: v for k, v in f.items() if k != "storage_path"}
+            for f in vault.list_uploaded_files(session["id"], client_id)]
+
+
+@app.get("/api/me/clients/{client_id}/files/{file_id}")
+def me_download_client_file(client_id: str, file_id: str,
+                            session: dict = Depends(auth.require_pro_practitioner)) -> FileResponse:
+    if vault.get_client(session["id"], client_id) is None:
+        raise HTTPException(404, "no such client")
+    return _serve_uploaded_file(session["id"], file_id, client_id)
+
+
 # --- Frontend -----------------------------------------------------------------
 #
 # specs/v4: SvelteKit's adapter-static build (WEB_BUILD) replaces the old

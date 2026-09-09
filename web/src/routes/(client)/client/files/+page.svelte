@@ -18,7 +18,10 @@
 		fd.set('file', f);
 		try {
 			const res = await fetch(`${PUBLIC_API_BASE}/api/me/files`, { method: 'POST', credentials: 'include', body: fd });
-			if (!res.ok) throw new Error('Upload failed.');
+			if (!res.ok) {
+				const body = await res.json().catch(() => ({}));
+				throw new Error(body?.detail?.message || body?.detail || 'Upload failed.');
+			}
 			toast('File uploaded.');
 			if (fileInput) fileInput.value = '';
 			await invalidateAll();
@@ -27,6 +30,10 @@
 		} finally {
 			uploading = false;
 		}
+	}
+
+	function viewUrl(f: any) {
+		return `${PUBLIC_API_BASE}/api/me/files/${f.id}`;
 	}
 </script>
 
@@ -38,18 +45,25 @@
 		<Button onclick={upload} loading={uploading}>Upload</Button>
 	</div>
 	<DataTable
-		columns={[{ key: 'filename', label: 'File' }, { key: 'content_type', label: 'Type' }, { key: 'uploaded_at', label: 'Uploaded' }]}
+		columns={[{ key: 'original_name', label: 'File' }, { key: 'media_type', label: 'Type' }, { key: 'uploaded_at', label: 'Uploaded' }, { key: 'view', label: '' }]}
 		rows={data.files}
 		empty="No files uploaded yet."
 	>
-		{#snippet row(f)}
-			<td>{f.filename}</td>
-			<td>{f.content_type}</td>
+		{#snippet row(f: any)}
+			<td>{f.original_name}</td>
+			<td>{f.media_type}</td>
 			<td>{f.uploaded_at ?? ''}</td>
+			<td><a class="view" href={viewUrl(f)} target="_blank" rel="noopener">View</a></td>
 		{/snippet}
 	</DataTable>
 </Spotlight>
 
 <style>
 	.uploader { display: flex; gap: var(--space-3); align-items: center; margin-bottom: var(--space-4); }
+	.view {
+		font-size: var(--text-sm); font-weight: 650; color: var(--accent-ink);
+		border: 1px solid var(--line); border-radius: var(--r); padding: .3rem .7rem;
+		text-decoration: none;
+	}
+	.view:hover { border-color: var(--accent); background: var(--accent-soft); }
 </style>
