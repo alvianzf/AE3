@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { post } from '$lib/api';
+	import { invalidateAll } from '$app/navigation';
+	import { post, del } from '$lib/api';
 	import { toast } from '$lib/stores/toast';
 	import Spotlight from '$lib/components/Spotlight.svelte';
 	import Chip from '$lib/components/Chip.svelte';
@@ -7,6 +8,7 @@
 
 	let { data } = $props();
 	const providers = ['oura', 'whoop', 'garmin'];
+	let disconnecting = $state<string | null>(null);
 
 	function connected(provider: string) {
 		return data.connections.some((c: any) => c.provider === provider);
@@ -20,6 +22,21 @@
 			toast(err.message, 'alert');
 		}
 	}
+
+	// Connect-only, no way to undo the wrong provider account, previously
+	// (specs/v4/04-known-issues.md#m6).
+	async function disconnect(provider: string) {
+		disconnecting = provider;
+		try {
+			await del(fetch, `/me/wearables/${provider}`);
+			toast(`${provider} disconnected.`);
+			await invalidateAll();
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		} finally {
+			disconnecting = null;
+		}
+	}
 </script>
 
 <svelte:head><title>Wearables — Client portal</title></svelte:head>
@@ -30,7 +47,10 @@
 			<div class="row">
 				<span class="pname">{p}</span>
 				{#if connected(p)}
-					<Chip tone="ok">Connected</Chip>
+					<div class="connected">
+						<Chip tone="ok">Connected</Chip>
+						<Button variant="text" onclick={() => disconnect(p)} loading={disconnecting === p}>Disconnect</Button>
+					</div>
 				{:else}
 					<Button variant="outlined" onclick={() => connect(p)}>Connect</Button>
 				{/if}
@@ -43,4 +63,5 @@
 	.providers { display: grid; gap: var(--space-3); }
 	.row { display: flex; align-items: center; justify-content: space-between; padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--r); }
 	.pname { text-transform: capitalize; font-weight: 650; }
+	.connected { display: flex; align-items: center; gap: .5rem; }
 </style>

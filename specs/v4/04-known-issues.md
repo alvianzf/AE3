@@ -525,13 +525,18 @@ higher-effort and explicitly skipped once before). No `is_active` toggle
 either — there's no backend route to flip it independent of creating a new
 version.
 
-### M6 — Wearable connections have no disconnect
+### M6 — Wearable connections have no disconnect — FIXED
 
 `web/src/routes/(client)/client/wearables/+page.svelte:32-33` shows a
 static "Connected" chip once true, with no disconnect action, and
 `app/wearables.py` registers `connect`/list/`callback` routes but no
 `disconnect`/revoke route anywhere. A client who connects the wrong
 provider account has no way to undo it.
+
+**Fixed:** a new `DELETE /api/me/wearables/{provider}` (backed by
+`vault.delete_wearable_connection()`, which also drops that provider's
+fixture data points, not just the connection row) plus a "Disconnect"
+button next to the Connected chip.
 
 ### M7 — Directory search inflates a practitioner's profile-view count on every listing, not just opens
 

@@ -666,6 +666,26 @@ def list_wearable_connections(practitioner_id: str, client_id: str) -> list[dict
     return [dict(r) for r in rows]
 
 
+def delete_wearable_connection(practitioner_id: str, client_id: str, provider: str) -> bool:
+    """Disconnect — no UI or API route ever exposed this before
+    (specs/v4/04-known-issues.md#m6); a client who connected the wrong
+    account had no way to undo it. Drops the fixture data points too, not
+    just the connection row, so re-connecting starts clean."""
+    with _connect(practitioner_id) as conn:
+        exists = conn.execute(
+            "SELECT 1 FROM wearable_connections WHERE client_id = ? AND provider = ?",
+            (client_id, provider)).fetchone()
+        if not exists:
+            return False
+        conn.execute(
+            "DELETE FROM wearable_connections WHERE client_id = ? AND provider = ?",
+            (client_id, provider))
+        conn.execute(
+            "DELETE FROM wearable_data_points WHERE client_id = ? AND provider = ?",
+            (client_id, provider))
+    return True
+
+
 def create_wearable_connection(
     practitioner_id: str, client_id: str, provider: str,
 ) -> dict:

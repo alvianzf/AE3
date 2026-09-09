@@ -207,6 +207,13 @@ def register(app: FastAPI) -> None:
     async def list_connections(session: dict = Depends(auth.require_client)):
         return vault.list_wearable_connections(session["practitioner_id"], session["id"])
 
+    @app.delete("/api/me/wearables/{provider}")
+    async def disconnect(provider: str, session: dict = Depends(auth.require_client)):
+        if not vault.delete_wearable_connection(
+                session["practitioner_id"], session["id"], provider):
+            raise HTTPException(status_code=404, detail="Not connected.")
+        return {"disconnected": True, "provider": provider}
+
     @app.get("/api/me/wearables/{provider}/callback")
     async def oauth_callback(provider: str, code: str, state: str):
         # The vendor's browser redirect lands here directly — send the
