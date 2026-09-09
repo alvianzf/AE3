@@ -4,14 +4,23 @@ name: Deploy to production
 # runs at all, so a broken push doesn't go live — see DEPLOY.md for what
 # this replaces (previously a manual `scp`/`ssh systemctl restart` per
 # DEPLOY.md's "Updating" sections).
+#
+# A PR targeting main also runs `check` (so it can be reviewed/approved
+# with real signal before merge), but never `deploy` — that stays gated to
+# an actual push to main, via the `if:` on the deploy job below.
 on:
   push:
+    branches: [main]
+  pull_request:
     branches: [main]
   workflow_dispatch: {}
 
 concurrency:
-  group: deploy-production
-  cancel-in-progress: false
+  # PRs get their own concurrency lane (keyed by PR number) so a check run
+  # doesn't queue behind an unrelated in-progress deploy; pushes to main
+  # all share one lane so deploys never overlap.
+  group: deploy-production-${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'push' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:
