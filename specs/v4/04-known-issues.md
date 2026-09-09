@@ -503,13 +503,27 @@ this finding is already closed as a side effect of [C8](#c8)'s fix
 `sessionId` can't change mid-request) plus the pre-existing `asking` guard
 at the top of `ask()`.
 
-### M5 — Questionnaire editing is backend-only
+### M5 — Questionnaire editing is backend-only — FIXED
 
 `POST /api/admin/questionnaires/{id}` (`app/main.py:794`) works, but
 `web/src/routes/(admin)/admin/questionnaires/+page.svelte` only has a "New
 questionnaire" create dialog and a read-only table — no way to edit an
 existing questionnaire's questions, toggle `is_active`, or view its full
 question list after creation.
+
+**Fixed:** an "Edit" action per row fetches the full questionnaire and
+opens the same dialog pre-filled, submitting to the edit route instead of
+create. Explicit copy warns that saving creates a new version and makes it
+active (matching what `edit_questionnaire`/`_insert_questionnaire` actually
+do — every other questionnaire, including the currently active one,
+gets deactivated). Scope kept deliberately narrow, matching this page's
+existing "one question per line, all plain text" create flow: editing is
+lossy for anything beyond a question's prompt text — a real per-question
+type/theme/options builder is a bigger, separate piece of work
+(`specs/v3/TODO.md` already lists the per-row-control class of UI as
+higher-effort and explicitly skipped once before). No `is_active` toggle
+either — there's no backend route to flip it independent of creating a new
+version.
 
 ### M6 — Wearable connections have no disconnect
 
