@@ -430,3 +430,33 @@ everywhere a PDF gets embedded, not just the new view modal: the ingest
 modal's own upload-preview `<embed>` (Upload tab, before a file is even
 staged) and the staged-item file-preview link both got the same
 fragment (`#toolbar=0&navpanes=0&scrollbar=0`) appended to their URLs.
+
+## Library: documents as cards below a one-row scrolling category strip
+
+Corrected the shape of the DMOZ-style browse (first built earlier the
+same day) against what was actually asked for: categories in one short
+row, scrolling on the x axis rather than wrapping into a multi-row
+grid, with the documents themselves as cards sitting directly below —
+not a click-to-drill-down front page that swaps the category tiles out
+for a table.
+
+- **`.directory-row`**: `display: flex; overflow-x: auto` instead of
+  `.directory-grid`'s wrapping `grid-template-columns: repeat(auto-fill,
+  ...)`. Each `.dir-tile` is now a short pill (`border-radius: 99px`,
+  name + count inline on one line, `flex: 0 0 auto`) rather than a
+  taller stacked-text card — "long and short vertically," one row,
+  scrolling horizontally once there are more categories than fit. An
+  "All" tile is always first (previously implicit — no query, no topic
+  selected — now an explicit, always-visible option alongside the rest).
+- **Categories are a toggle filter now, not a drill-down gate**: clicking
+  a tile sets `activeTopic` and the document grid below re-filters in
+  place; the tiles never disappear. Same change in spirit for the Kind
+  facet row, which already worked this way. The breadcrumb
+  ("All categories › Topic › Search") from the drill-down version is
+  gone — nothing to navigate back out of when the categories stay put.
+- **`.doc-grid`/`.doc-card`** replaces the `DataTable` entirely for the
+  Library tab: title (clickable, opens the same view modal) and its
+  topics up top, the Kind chip / grade input / ingested date along the
+  bottom, the eye/trash icon actions top-right. `DataTable` is no longer
+  imported by this page — Staged for review already used its own
+  checklist markup, not a table, so nothing else on this page used it.
