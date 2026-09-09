@@ -460,3 +460,20 @@ for a table.
   bottom, the eye/trash icon actions top-right. `DataTable` is no longer
   imported by this page — Staged for review already used its own
   checklist markup, not a table, so nothing else on this page used it.
+
+## Library documents: paginated
+
+The `doc-grid` was rendering every filtered result at once — fine at 9
+sources, not something to leave unbounded. Paginated client-side, same
+reasoning the filtering itself already used (the comment right above
+`filtered` in `+page.svelte`): the whole set is already in memory
+(`+page.ts` loads up to 200), so a page change has no reason to
+round-trip the server. `DOCS_PER_PAGE = 12`; `page` is plain `$state`,
+clamped to the current `totalPages` only at read time (`shownPage`) so
+narrowing a filter can't strand the view past the new last page without
+needing an effect to reset it. Every filter-changing control (search
+input, the category strip, the Kind facet, search-clear) explicitly
+resets `page` to 1 too, so switching categories never lands on a stale
+page number that happens to still be in range for the new set but shows
+unrelated results. Prev/Next controls plus a "Page X of Y (N documents)"
+line render below the grid, only when there's more than one page.

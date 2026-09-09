@@ -61,6 +61,20 @@
 		});
 	});
 
+	// Paginated client-side too, same reasoning as the filtering above — the
+	// full (filtered) set is already in memory, no reason to round-trip the
+	// server for a page change. `page` un-clamped in state, clamped only at
+	// read time so a filter that shrinks the result set can't strand it past
+	// the new last page.
+	const DOCS_PER_PAGE = 12;
+	let page = $state(1);
+	const totalPages = $derived(Math.max(1, Math.ceil(filtered.length / DOCS_PER_PAGE)));
+	const shownPage = $derived(Math.min(page, totalPages));
+	const pageItems = $derived.by(() => {
+		const start = (shownPage - 1) * DOCS_PER_PAGE;
+		return filtered.slice(start, start + DOCS_PER_PAGE);
+	});
+
 	let viewing = $state(false);
 	let viewTitle = $state('');
 	let viewLoading = $state(false);
@@ -302,10 +316,11 @@
 				type="search"
 				placeholder="Search titles, summaries, origins, authors…"
 				bind:value={q}
+				oninput={() => (page = 1)}
 				aria-label="Search the library"
 			/>
 			{#if q}
-				<button class="search-clear" onclick={() => (q = '')} aria-label="Clear search">&times;</button>
+				<button class="search-clear" onclick={() => { q = ''; page = 1; }} aria-label="Clear search">&times;</button>
 			{/if}
 		</div>
 
@@ -321,12 +336,12 @@
 		     subcategory nodes), so Kind below is a facet, not a second real
 		     tier — an honest read of a flat data model, not a fake nesting. -->
 		<div class="directory-row">
-			<button class="dir-tile" class:active={!activeTopic} onclick={() => (activeTopic = '')}>
+			<button class="dir-tile" class:active={!activeTopic} onclick={() => { activeTopic = ''; page = 1; }}>
 				<span class="dir-name">All</span>
 				<span class="dir-count">{data.sources.length}</span>
 			</button>
 			{#each data.coverage as c (c.topic)}
-				<button class="dir-tile" class:active={activeTopic === c.topic} onclick={() => (activeTopic = activeTopic === c.topic ? '' : c.topic)}>
+				<button class="dir-tile" class:active={activeTopic === c.topic} onclick={() => { activeTopic = activeTopic === c.topic ? '' : c.topic; page = 1; }}>
 					<span class="dir-name">{c.topic}</span>
 					<span class="dir-count">{c.sources}</span>
 				</button>
@@ -340,9 +355,9 @@
 			<div class="facets">
 				<div class="facet-row">
 					<span class="facet-label">Kind</span>
-					<button class="fchip" class:active={!activeKind} onclick={() => (activeKind = '')}>All</button>
+					<button class="fchip" class:active={!activeKind} onclick={() => { activeKind = ''; page = 1; }}>All</button>
 					{#each data.kinds as k (k)}
-						<button class="fchip" class:active={activeKind === k} onclick={() => (activeKind = activeKind === k ? '' : k)}>{k}</button>
+						<button class="fchip" class:active={activeKind === k} onclick={() => { activeKind = activeKind === k ? '' : k; page = 1; }}>{k}</button>
 					{/each}
 				</div>
 			</div>
@@ -351,7 +366,7 @@
 		<!-- Documents as cards, not a table — sits directly below the
 		     categories/Kind facets rather than behind a drill-down click. -->
 		<div class="doc-grid">
-			{#each filtered as s (s.id)}
+			{#each pageItems as s (s.id)}
 				<div class="doc-card">
 					<div class="doc-card-head">
 						<button class="title-link" onclick={() => viewDoc(s)}>{s.title}</button>
@@ -378,6 +393,14 @@
 				<p class="hint">{data.sources.length ? 'Nothing matches those filters.' : 'Nothing ingested yet.'}</p>
 			{/each}
 		</div>
+
+		{#if totalPages > 1}
+			<div class="pager">
+				<button class="view" onclick={() => (page = shownPage - 1)} disabled={shownPage <= 1}>← Prev</button>
+				<span class="hint">Page {shownPage} of {totalPages} ({filtered.length} document{filtered.length === 1 ? '' : 's'})</span>
+				<button class="view" onclick={() => (page = shownPage + 1)} disabled={shownPage >= totalPages}>Next →</button>
+			</div>
+		{/if}
 	{:else}
 		{#if data.staged?.length}
 			<div class="staged">
@@ -589,6 +612,7 @@
 	.doc-card-actions { display: flex; gap: .3rem; flex: 0 0 auto; }
 	.doc-card-foot { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin-top: auto; padding-top: .3rem; }
 	.grade-label { display: flex; align-items: center; gap: .35rem; font-size: var(--text-xs); color: var(--muted); }
+	.pager { display: flex; align-items: center; justify-content: center; gap: var(--space-4); margin-top: var(--space-5); }
 	.facet-row { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
 	.facet-label {
 		font-size: var(--text-xs); font-weight: 650; text-transform: uppercase; letter-spacing: .04em;
