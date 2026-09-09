@@ -423,13 +423,19 @@ restart is itself a rare, high-friction event, and a real deployment
 wanting attacker-triggered-restart resistance would need this in a shared
 store (Redis or the DB) instead, out of scope for this PoC's scale.
 
-### H12 — A failed consult stream is only reported for one specific exception type
+### H12 — A failed consult stream is only reported for one specific exception type — FIXED
 
 `me_consult`'s SSE generator (`app/main.py:1017-1078`) only catches
 `anthropic.APIError`. Any other exception — a Neo4j error out of
 `knowledge.traverse()` at line 1026, for instance — breaks the generator
 with no `error` SSE event emitted at all; the frontend just sees a dropped,
 incomplete stream instead of a clear failure message.
+
+**Fixed:** a second `except Exception` catches anything else, logs it
+server-side (`logging.exception`, so it's still visible to an operator),
+and emits a generic `error` SSE event instead of silently dropping the
+stream. The consult page's stuck-"running" UI on error is a separate,
+already-tracked gap — [M3](#m3).
 
 ---
 

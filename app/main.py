@@ -1157,6 +1157,15 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
             yield _sse({"event": "error",
                        "message": "The AI service is temporarily unavailable. Try again shortly."})
             return
+        except Exception:
+            # Anything else (a Neo4j error out of knowledge.traverse(), for
+            # instance) previously broke the generator with no `error` event
+            # at all — the frontend just saw a dropped, incomplete stream
+            # instead of a clear failure (specs/v4/04-known-issues.md#h12).
+            logging.exception("consult stream failed for practitioner %s", practitioner_id)
+            yield _sse({"event": "error",
+                       "message": "Something went wrong while answering. Try again shortly."})
+            return
 
         vault.log(
             practitioner_id, "practitioner", "question asked",
