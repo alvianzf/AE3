@@ -441,7 +441,7 @@ already-tracked gap — [M3](#m3).
 
 ## Medium
 
-### M1 — Suspended/rejected practitioners' public profile and contact form stay live
+### M1 — Suspended/rejected practitioners' public profile and contact form stay live — PARTLY FIXED
 
 `coach/[id]` is prerendered at build time
 (`web/src/routes/(public)/coach/[id]/+page.ts:5`, already flagged generically
@@ -450,6 +450,12 @@ in [02](02-open-questions.md)), but `POST /api/practitioners/{id}/contact`
 practitioner is suspended, their stale static profile page keeps working
 and its "Get in touch" form keeps accepting messages to them until the next
 rebuild.
+
+**Fixed:** `contact_practitioner` now 404s unless the practitioner is still
+`approved` — the stale page can't send anywhere anymore. The page itself
+staying visible/browsable until the next rebuild is unchanged — that's the
+prerendering tradeoff [02](02-open-questions.md) already tracks, not a
+one-route fix.
 
 ### M2 — Suspended/rejected practitioners have no way back, in the admin UI
 

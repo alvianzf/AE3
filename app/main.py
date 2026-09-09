@@ -621,7 +621,13 @@ class ContactSubmission(BaseModel):
 
 @app.post("/api/practitioners/{practitioner_id}/contact")
 def contact_practitioner(practitioner_id: str, body: ContactSubmission) -> dict:
-    if core_store.get_practitioner(practitioner_id) is None:
+    practitioner = core_store.get_practitioner(practitioner_id)
+    # A stale prerendered profile page (specs/v4/02-open-questions.md) can
+    # keep sending contact-form submissions to a practitioner who's since
+    # been suspended or rejected — this is the one part of that page that
+    # actually writes something, so it gets a live check even though the
+    # rest of the page can't (specs/v4/04-known-issues.md#m1).
+    if practitioner is None or practitioner["status"] != "approved":
         raise HTTPException(404, "no such practitioner")
     return core_store.create_contact_submission(
         practitioner_id, body.name, body.email, body.message)
