@@ -16,6 +16,7 @@
 	let { data } = $props();
 	let ingestOpen = $state(false);
 	let ingestTab = $state('upload');
+	let mainTab = $state('library');
 	let text = $state('');
 	let fileInput = $state<HTMLInputElement>();
 	let staging = $state(false);
@@ -286,53 +287,7 @@
      these two lists" confusion this page kept getting reported for). -->
 <div class="rail-layout">
 <div class="rail">
-<Quiet title="2 · Staged for review">
-	{#if data.staged?.length}
-		<div class="staged">
-			<div class="staged-head">
-				<strong>{data.staged.length} not yet in the library</strong>
-				<Button variant="outlined" onclick={ingestSelected} loading={promotingBatch} disabled={!selected.size}>
-					Ingest selected ({selected.size})
-				</Button>
-			</div>
-			<ul class="staged-list">
-				{#each data.staged as item (item.id)}
-					<li class="staged-item">
-						<input
-							type="checkbox"
-							checked={selected.has(item.id)}
-							onchange={() => toggleSelected(item.id)}
-							aria-label="Select {item.filename ?? 'pasted text'}"
-						/>
-						<div class="staged-body">
-							<div class="staged-title">
-								{item.filename ?? item.source_url ?? 'Pasted text'}
-								<Chip tone="neutral">{item.kind === 'scraped_url' ? 'scraped' : item.kind}</Chip>
-								{#if item.page_count}<span class="hint">{item.page_count} page(s)</span>{/if}
-							</div>
-							<p class="staged-preview">{item.preview}{item.preview?.length >= 280 ? '…' : ''}</p>
-						</div>
-						<div class="staged-actions">
-							{#if item.kind === 'file'}
-								<a class="view" href={stagedFileUrl(item)} target="_blank" rel="noopener">View</a>
-							{:else if item.kind === 'scraped_url'}
-								<a class="view" href={item.source_url} target="_blank" rel="noopener">Source</a>
-							{/if}
-							<button class="view" onclick={() => ingestOne(item.id)} disabled={promotingId === item.id}>
-								{promotingId === item.id ? 'Ingesting…' : 'Ingest'}
-							</button>
-							<button class="view danger" onclick={() => discardStaged(item.id)}>Discard</button>
-						</div>
-					</li>
-				{/each}
-			</ul>
-		</div>
-	{:else}
-		<p class="hint">Nothing staged. Use "+ Add resources" above the library to upload a document, paste text, or scrape a URL — it lands here for review before it's ingested.</p>
-	{/if}
-</Quiet>
-
-<Quiet title="3 · What Clinic knows">
+<Quiet title="2 · What Clinic knows">
 	{#if data.graph}
 		<p class="hint">{data.graph.concepts ?? 0} concepts · {data.graph.mentions ?? 0} links · {(data.graph.unlinked ?? []).length} unlinked sources</p>
 	{/if}
@@ -346,84 +301,139 @@
 </Quiet>
 </div>
 
-<Spotlight title="1 · The library" actions={libraryActions}>
-	<div class="search-bar">
-		<input
-			class="search"
-			type="search"
-			placeholder="Search titles, summaries, origins, authors…"
-			bind:value={q}
-			aria-label="Search the library"
-		/>
-		{#if q}
-			<button class="search-clear" onclick={() => (q = '')} aria-label="Clear search">&times;</button>
-		{/if}
-	</div>
+<Spotlight title="1 · Knowledge library" actions={libraryActions}>
+	<Tabs
+		bind:active={mainTab}
+		tabs={[
+			{ id: 'library', label: 'Library' },
+			{ id: 'staged', label: data.staged?.length ? `Staged for review (${data.staged.length})` : 'Staged for review' }
+		]}
+	/>
 
-	{#if !q && !activeTopic}
-		<!-- DMOZ-style directory front page: categories only, no document
-		     list yet — https://dmoz-odp.com/ shows the same shape. Topic is
-		     the only hierarchy the graph actually has (Neo4j has no
-		     subcategory nodes), so "subcategory" below is Kind, a facet
-		     applied once a category is opened rather than a second real
-		     tier — an honest read of a flat data model, not a fake nesting. -->
-		<div class="directory-grid">
-			{#each data.coverage as c (c.topic)}
-				<button class="dir-tile" onclick={() => (activeTopic = c.topic)}>
-					<span class="dir-name">{c.topic}</span>
-					<span class="dir-count">{c.sources} document{c.sources === 1 ? '' : 's'}</span>
-				</button>
-			{/each}
+	<div class="tab-panel">
+	{#if mainTab === 'library'}
+		<div class="search-bar">
+			<input
+				class="search"
+				type="search"
+				placeholder="Search titles, summaries, origins, authors…"
+				bind:value={q}
+				aria-label="Search the library"
+			/>
+			{#if q}
+				<button class="search-clear" onclick={() => (q = '')} aria-label="Clear search">&times;</button>
+			{/if}
 		</div>
-		{#if !data.coverage.length}
-			<p class="hint">Nothing ingested yet — use "+ Add resources" to start teaching Clinic.</p>
+
+		{#if !q && !activeTopic}
+			<!-- DMOZ-style directory front page: categories only, no document
+			     list yet — https://dmoz-odp.com/ shows the same shape. Topic is
+			     the only hierarchy the graph actually has (Neo4j has no
+			     subcategory nodes), so "subcategory" below is Kind, a facet
+			     applied once a category is opened rather than a second real
+			     tier — an honest read of a flat data model, not a fake nesting. -->
+			<div class="directory-grid">
+				{#each data.coverage as c (c.topic)}
+					<button class="dir-tile" onclick={() => (activeTopic = c.topic)}>
+						<span class="dir-name">{c.topic}</span>
+						<span class="dir-count">{c.sources} document{c.sources === 1 ? '' : 's'}</span>
+					</button>
+				{/each}
+			</div>
+			{#if !data.coverage.length}
+				<p class="hint">Nothing ingested yet — use "+ Add resources" to start teaching Clinic.</p>
+			{/if}
+		{:else}
+			<div class="breadcrumb">
+				<button class="crumb" onclick={() => { activeTopic = ''; activeKind = ''; }}>All categories</button>
+				{#if activeTopic}<span class="sep">›</span><span class="crumb current">{activeTopic}</span>{/if}
+				{#if q}<span class="sep">›</span><span class="crumb current">Search: "{q}"</span>{/if}
+			</div>
+
+			{#if data.kinds.length}
+				<div class="facets">
+					<div class="facet-row">
+						<span class="facet-label">Kind</span>
+						<button class="fchip" class:active={!activeKind} onclick={() => (activeKind = '')}>All</button>
+						{#each data.kinds as k (k)}
+							<button class="fchip" class:active={activeKind === k} onclick={() => (activeKind = activeKind === k ? '' : k)}>{k}</button>
+						{/each}
+					</div>
+				</div>
+			{/if}
+
+			<DataTable
+				columns={[{ key: 'title', label: 'Title', sortable: true }, { key: 'kind', label: 'Kind' }, { key: 'grade', label: 'Grade', sortable: true }, { key: 'created_at', label: 'Ingested' }, { key: 'actions', label: '' }]}
+				rows={filtered}
+				empty={data.sources.length ? 'Nothing matches those filters.' : 'Nothing ingested yet.'}
+			>
+				{#snippet row(s: any)}
+					<td>
+						{s.title}
+						{#if s.topics?.length}<div class="topics">{s.topics.join(' · ')}</div>{/if}
+					</td>
+					<td><Chip tone="neutral">{s.kind}</Chip></td>
+					<td>
+						<input
+							class="grade"
+							type="number" min="1" max="10" value={s.grade}
+							onchange={(e) => regrade(s, Number((e.target as HTMLInputElement).value))}
+						/>
+					</td>
+					<td>{(s.created_at ?? '').slice(0, 10)}</td>
+					<td class="actions">
+						<button class="view" onclick={() => viewDoc(s)}>View</button>
+						<button class="view danger" onclick={() => askDelete(s)}>Remove</button>
+					</td>
+				{/snippet}
+			</DataTable>
 		{/if}
 	{:else}
-		<div class="breadcrumb">
-			<button class="crumb" onclick={() => { activeTopic = ''; activeKind = ''; }}>All categories</button>
-			{#if activeTopic}<span class="sep">›</span><span class="crumb current">{activeTopic}</span>{/if}
-			{#if q}<span class="sep">›</span><span class="crumb current">Search: "{q}"</span>{/if}
-		</div>
-
-		{#if data.kinds.length}
-			<div class="facets">
-				<div class="facet-row">
-					<span class="facet-label">Kind</span>
-					<button class="fchip" class:active={!activeKind} onclick={() => (activeKind = '')}>All</button>
-					{#each data.kinds as k (k)}
-						<button class="fchip" class:active={activeKind === k} onclick={() => (activeKind = activeKind === k ? '' : k)}>{k}</button>
-					{/each}
+		{#if data.staged?.length}
+			<div class="staged">
+				<div class="staged-head">
+					<strong>{data.staged.length} not yet in the library</strong>
+					<Button variant="outlined" onclick={ingestSelected} loading={promotingBatch} disabled={!selected.size}>
+						Ingest selected ({selected.size})
+					</Button>
 				</div>
+				<ul class="staged-list">
+					{#each data.staged as item (item.id)}
+						<li class="staged-item">
+							<input
+								type="checkbox"
+								checked={selected.has(item.id)}
+								onchange={() => toggleSelected(item.id)}
+								aria-label="Select {item.filename ?? 'pasted text'}"
+							/>
+							<div class="staged-body">
+								<div class="staged-title">
+									{item.filename ?? item.source_url ?? 'Pasted text'}
+									<Chip tone="neutral">{item.kind === 'scraped_url' ? 'scraped' : item.kind}</Chip>
+									{#if item.page_count}<span class="hint">{item.page_count} page(s)</span>{/if}
+								</div>
+								<p class="staged-preview">{item.preview}{item.preview?.length >= 280 ? '…' : ''}</p>
+							</div>
+							<div class="staged-actions">
+								{#if item.kind === 'file'}
+									<a class="view" href={stagedFileUrl(item)} target="_blank" rel="noopener">View</a>
+								{:else if item.kind === 'scraped_url'}
+									<a class="view" href={item.source_url} target="_blank" rel="noopener">Source</a>
+								{/if}
+								<button class="view" onclick={() => ingestOne(item.id)} disabled={promotingId === item.id}>
+									{promotingId === item.id ? 'Ingesting…' : 'Ingest'}
+								</button>
+								<button class="view danger" onclick={() => discardStaged(item.id)}>Discard</button>
+							</div>
+						</li>
+					{/each}
+				</ul>
 			</div>
+		{:else}
+			<p class="hint">Nothing staged. Use "+ Add resources" above to upload a document, paste text, or scrape a URL — it lands here for review before it's ingested.</p>
 		{/if}
-
-		<DataTable
-			columns={[{ key: 'title', label: 'Title', sortable: true }, { key: 'kind', label: 'Kind' }, { key: 'grade', label: 'Grade', sortable: true }, { key: 'created_at', label: 'Ingested' }, { key: 'actions', label: '' }]}
-			rows={filtered}
-			empty={data.sources.length ? 'Nothing matches those filters.' : 'Nothing ingested yet.'}
-		>
-			{#snippet row(s: any)}
-				<td>
-					{s.title}
-					{#if s.reader_truncated}<Chip tone="warn">graded from a partial read</Chip>{/if}
-					{#if s.topics?.length}<div class="topics">{s.topics.join(' · ')}</div>{/if}
-				</td>
-				<td><Chip tone="neutral">{s.kind}</Chip></td>
-				<td>
-					<input
-						class="grade"
-						type="number" min="1" max="10" value={s.grade}
-						onchange={(e) => regrade(s, Number((e.target as HTMLInputElement).value))}
-					/>
-				</td>
-				<td>{(s.created_at ?? '').slice(0, 10)}</td>
-				<td class="actions">
-					<button class="view" onclick={() => viewDoc(s)}>View</button>
-					<button class="view danger" onclick={() => askDelete(s)}>Remove</button>
-				</td>
-			{/snippet}
-		</DataTable>
 	{/if}
+	</div>
 </Spotlight>
 </div>
 
@@ -513,6 +523,7 @@
 <style>
 	.ingest { display: grid; gap: var(--space-3); }
 	.ingest-panel { margin-top: var(--space-4); display: grid; gap: var(--space-3); }
+	.tab-panel { margin-top: var(--space-4); }
 	.dropzone {
 		display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .3rem;
 		min-height: 8rem; padding: var(--space-4); text-align: center; cursor: pointer;
