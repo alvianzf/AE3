@@ -58,7 +58,7 @@ pay for or use Pro features. The frontend status-only-view gap
 (`+layout.ts`) is a separate, lower-stakes follow-up — not fixed in this
 pass.
 
-### C2 — The anti-hallucination verdict badge always shows the wrong state
+### C2 — The anti-hallucination verdict badge always shows the wrong state — FIXED
 
 `consult/+page.svelte:98` checks `result.verdict === 'pass'`. The real SSE
 `result` payload (`app/main.py:1086-1094`) has no top-level `verdict` — it's
@@ -69,7 +69,12 @@ answer. This is the UI for the product's headline safety claim ("An
 independent check guards each answer") and it cannot currently show a true
 "pass."
 
-### C3 — Citations are never rendered — the `[S1]`/`[S2]` markers are dead text
+**Fixed:** reads `result.check?.verdict`; shows a neutral "not
+independently checked" chip when `check` is `null` (i.e. `run_check=false`)
+instead of a false "warn." Also now surfaces `check.unsupported` (the
+claims the Checker couldn't verify) when present.
+
+### C3 — Citations are never rendered — the `[S1]`/`[S2]` markers are dead text — FIXED
 
 `result.sources` — a rich per-passage array with `label`, `locator`,
 `origin`, `snippet` (`app/main.py:1108-1126`) — is captured by
@@ -79,6 +84,12 @@ independent check guards each answer") and it cannot currently show a true
 inert literal text with nothing to click. This breaks README.md's core
 grounding claim — "every citation carries a locator... click one to jump to
 the passage" — which has no working UI in the current build.
+
+**Fixed:** the answer text is now split on `[S1]`/`[S2]`… markers; each one
+that matches a real entry in `result.sources` renders as a button that
+scrolls to that source's card. A new sources panel renders every source's
+label, title, locator, and snippet. [H10](#h10) (librarian reasoning, the
+other half of this transparency gap) is fixed in the same change.
 
 ### C4 — A "weak"-verdict answer is summarized into the permanent patient record with no trace it was flagged
 
@@ -267,7 +278,7 @@ characters" hint shown on signup/join forms
 (`signup/+page.svelte:37`, `join/+page.svelte:57`) is purely cosmetic —
 nothing server-side enforces it at registration time.
 
-### H10 — "How the librarian chose" reasoning is captured by the backend but never shown
+### H10 — "How the librarian chose" reasoning is captured by the backend but never shown — FIXED
 
 The Librarian's `reasoning`, `considered`, `opened`, and `truncated` fields
 all exist in the real payload (`app/main.py:1098-1099`), but
@@ -276,6 +287,10 @@ type in `consultStream.ts:15` even expects a top-level `reasoning` field
 that doesn't match the real shape). A practitioner has no way to see which
 sources were considered versus opened, or why — one of the README's listed
 demo capabilities with no working UI.
+
+**Fixed:** in the same change as [C3](#c3), a collapsible "How the
+librarian chose" panel now renders `reasoning`, the considered/opened/
+truncated counts, and the list of opened sources with their grades.
 
 ### H11 — No rate limiting or lockout on login
 

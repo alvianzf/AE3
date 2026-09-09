@@ -23,6 +23,30 @@
 		librarian: 'Librarian', specialist: 'Specialist', checker: 'Checker'
 	};
 
+	// Splits the answer text on [S1]/[S2]… markers so each one that matches a
+	// real source in `sources` renders as a clickable jump-to-citation button
+	// instead of inert text — the markers were previously rendered literally
+	// with nothing to click and no source panel to click into.
+	function citationParts(text: string, sources: any[]) {
+		const labels = new Set((sources ?? []).map((s) => s.label));
+		const parts: { text?: string; cite?: string }[] = [];
+		const re = /\[(S\d+)\]/g;
+		let last = 0;
+		let m: RegExpExecArray | null;
+		while ((m = re.exec(text))) {
+			if (m.index > last) parts.push({ text: text.slice(last, m.index) });
+			if (labels.has(m[1])) parts.push({ cite: m[1] });
+			else parts.push({ text: m[0] });
+			last = re.lastIndex;
+		}
+		if (last < text.length) parts.push({ text: text.slice(last) });
+		return parts;
+	}
+
+	function jumpToSource(label: string) {
+		document.getElementById(`source-${label}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+	}
+
 	async function ask(e: Event) {
 		e.preventDefault();
 		if (!clientId || !question.trim()) return;
@@ -95,10 +119,49 @@
 		{#if result}
 			<div class="result">
 				<div class="rh">
-					<Chip tone={result.verdict === 'pass' ? 'ok' : 'warn'}>{result.verdict}</Chip>
+					{#if result.check?.verdict}
+						<Chip tone={result.check.verdict === 'pass' ? 'ok' : 'warn'}>{result.check.verdict}</Chip>
+					{:else}
+						<Chip tone="neutral">not independently checked</Chip>
+					{/if}
 					{#if result.revised}<Chip tone="accent">revised</Chip>{/if}
 				</div>
-				<p>{result.answer}</p>
+				<p>
+					{#each citationParts(result.answer, result.sources) as part}
+						{#if part.cite}<button type="button" class="cite" onclick={() => jumpToSource(part.cite as string)}>[{part.cite}]</button>{:else}{part.text}{/if}
+					{/each}
+				</p>
+
+				{#if result.check?.unsupported?.length}
+					<div class="unsupported">
+						<strong>Claims the check could not verify:</strong>
+						<ul>{#each result.check.unsupported as u}<li>{u}</li>{/each}</ul>
+					</div>
+				{/if}
+
+				{#if result.librarian}
+					<details class="librarian">
+						<summary>How the librarian chose — considered {result.librarian.considered}, opened {result.librarian.opened?.length ?? 0}{#if result.librarian.truncated}, {result.librarian.truncated} truncated{/if}</summary>
+						{#if result.librarian.reasoning}<p class="hint">{result.librarian.reasoning}</p>{/if}
+						{#if result.librarian.opened?.length}
+							<ul class="list">
+								{#each result.librarian.opened as o}<li>{o.title} <Chip tone="neutral">grade {o.grade}</Chip></li>{/each}
+							</ul>
+						{/if}
+					</details>
+				{/if}
+
+				{#if result.sources?.length}
+					<div class="sources">
+						<strong>Sources</strong>
+						{#each result.sources as s (s.label)}
+							<div class="source" id="source-{s.label}">
+								<div class="sh"><Chip tone="accent">{s.label}</Chip> {s.title} <span class="hint">{s.locator}</span></div>
+								<p class="snippet">{s.snippet}</p>
+							</div>
+						{/each}
+					</div>
+				{/if}
 			</div>
 		{/if}
 	</Spotlight>
@@ -119,5 +182,18 @@
 	.step.done .dot { background: var(--ok); animation: none; }
 	.result { margin-top: var(--space-5); padding-top: var(--space-4); border-top: 1px solid var(--glass-line); }
 	.rh { display: flex; gap: .5rem; margin-bottom: var(--space-2); }
+	.cite {
+		font: inherit; font-weight: 650; color: var(--accent-ink); background: var(--accent-soft);
+		border: none; border-radius: 4px; padding: 0 .3rem; cursor: pointer;
+	}
+	.unsupported { margin-top: var(--space-3); padding: var(--space-3); border-radius: var(--r); background: var(--warn-soft); color: var(--warn); font-size: var(--text-sm); }
+	.unsupported ul { margin: .3rem 0 0; padding-left: 1.1rem; }
+	.librarian { margin-top: var(--space-4); font-size: var(--text-sm); }
+	.librarian summary { cursor: pointer; color: var(--muted); font-weight: 600; }
+	.sources { margin-top: var(--space-4); display: grid; gap: var(--space-3); }
+	.source { padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--r); }
+	.sh { display: flex; align-items: center; gap: .4rem; font-weight: 600; font-size: var(--text-sm); }
+	.snippet { margin: .3rem 0 0; font-size: var(--text-sm); color: var(--muted); }
+	.list { margin: .3rem 0 0; padding-left: 1.1rem; font-size: var(--text-sm); }
 	@media (max-width: 860px) { .layout { grid-template-columns: 1fr; } }
 </style>
