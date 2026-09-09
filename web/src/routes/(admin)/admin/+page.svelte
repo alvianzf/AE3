@@ -111,6 +111,11 @@
 			toast('Source ingested.');
 			text = '';
 			if (fileInput) fileInput.value = '';
+			// An active category/kind filter could otherwise hide the source
+			// that was just ingested, with nothing telling the admin why it
+			// isn't in the list (specs/v4/04-known-issues.md#m16, found in
+			// this page's own initial review).
+			q = activeTopic = activeKind = '';
 			await invalidateAll();
 		} catch (err: any) {
 			toast(err.message, 'alert');

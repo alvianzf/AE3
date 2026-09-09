@@ -647,7 +647,7 @@ layout marks Clients/Consult/Knowledge `locked` when
 `require_pro_practitioner` on `/api/me/knowledge` and the client/consult
 routes — not guessed).
 
-### M16 — Self-flagged: an active library filter can silently hide a source right after ingesting it
+### M16 — Self-flagged: an active library filter can silently hide a source right after ingesting it — FIXED
 
 In this review's own `web/src/routes/(admin)/admin/+page.svelte`,
 `ingest()` calls `invalidateAll()` to refresh `data.sources`, but the
@@ -655,6 +655,10 @@ In this review's own `web/src/routes/(admin)/admin/+page.svelte`,
 filter is active and the newly ingested source is tagged with a different
 topic, it won't appear in the filtered list — the toast just says "Source
 ingested," with nothing indicating the new source is filtered out of view.
+
+**Fixed:** `ingest()` now clears `q`/`activeTopic`/`activeKind` on success,
+so the freshly ingested source is always visible ("All" + no search) right
+after it lands.
 
 ### M17 — Stale, transient flash of logged-out nav state on every load
 
