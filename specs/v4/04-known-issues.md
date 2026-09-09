@@ -187,7 +187,7 @@ client id at submit time (not read live from `clientId`) and the result
 panel shows "For **&lt;name&gt;**" above the answer, so even a result that
 finishes after navigation can't be mistaken for a different client's.
 
-### C9 — A demoted superadmin keeps superadmin power for up to 12 hours
+### C9 — A demoted superadmin keeps superadmin power for up to 12 hours — FIXED
 
 `require_superadmin` (`app/auth.py:60-63`) checks
 `session.get("admin_role")` — the cookie's cached claim from login time —
@@ -199,6 +199,11 @@ session cookie still grants superadmin routes until it expires
 (`_MAX_AGE` = 12h). Same shape of bug as
 [v2/13 C1](../v2/13-known-issues.md#c1) (suspension not enforced live),
 recurring on a different field.
+
+**Fixed:** `require_superadmin` now fetches the admin's live DB row and
+checks `admin["role"]`, the same pattern `require_admin` already uses for
+`is_active`. A demotion now takes effect on the demoted admin's very next
+request, not after their cookie expires.
 
 ---
 
@@ -478,7 +483,7 @@ wrong-state bug but not this transient one — an already-logged-in visitor
 still sees, and could click, the logged-out CTA for one round trip on
 every navigation.
 
-### M18 — Superadmin/admin-role staleness has one more instance than C9
+### M18 — Superadmin/admin-role staleness has one more instance than C9 — RESOLVED (via C9)
 
 Noted separately from C9 because it's a narrower version of the same root
 cause: `require_admin` does re-fetch `is_active` live, and
@@ -487,6 +492,9 @@ Only the `admin_role` claim on the session cookie (superadmin vs. plain
 admin, C9) was never given the same live-recheck treatment. Recorded here
 as confirmation that the fix pattern needed is narrow and already
 established elsewhere in the same file, not a new mechanism.
+
+C9's fix is exactly that pattern applied to the one missing spot — no
+separate change needed.
 
 ---
 

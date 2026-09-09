@@ -58,7 +58,13 @@ def require_admin(request: Request) -> dict:
 
 
 def require_superadmin(session: dict = Depends(require_admin)) -> dict:
-    if session.get("admin_role") != "superadmin":
+    # Live DB check, not the session cookie's cached admin_role claim: a
+    # demotion (superadmin_set_admin_role) needs to take effect immediately,
+    # not after the demoted admin's existing 12h cookie expires — same
+    # reasoning require_admin already applies to is_active, just missed here
+    # originally (found in review, specs/v4/04-known-issues.md#c9).
+    admin = core_store.get_admin(session["id"])
+    if admin is None or admin["role"] != "superadmin":
         raise HTTPException(status_code=403, detail="Superadmin access required.")
     return session
 
