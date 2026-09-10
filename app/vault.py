@@ -17,7 +17,13 @@ from .config import get_config
 
 cfg = get_config()
 
-KINDS = ("lab", "history", "note", "session_summary")
+KINDS = ("lab", "history", "note", "session_summary", "condition", "medication")
+# "condition"/"medication" added for app/patient/context.py — structured
+# retrieval-time patient context needs to tell an active condition from a
+# current medication, which the older "history"/"note" kinds never
+# distinguished. Existing entries stay "history"/"note"; get_patient_context()
+# has a documented heuristic fallback for them rather than requiring a
+# backfill migration before it can be used.
 
 WEARABLE_PROVIDERS = ("oura", "whoop", "garmin")
 

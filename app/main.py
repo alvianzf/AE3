@@ -29,8 +29,18 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel
 
-from . import auth, billing, core_store, knowledge, llm, originals, scraper, uploads, vault, vault_files, wearables
+from . import auth, billing, core_store, originals, scraper, uploads, vault, vault_files, wearables
 from .config import get_config
+from .clients.llm_client import Role as LLMRole
+from .clients.llm_client import get_client as get_llm_client
+from .clients.llm_client import ping as llm_ping
+from .graph import schema as graph_schema
+from .graph import store
+from .ingestion import pipeline as ingestion_pipeline
+from .patient.context import get_patient_context
+from .reasoning import checker, reasoner
+from .retrieval import seed_search
+from .retrieval.traversal import GraphTraversalRetriever
 
 cfg = get_config()
 STATIC = Path(__file__).parent.parent / "static"
@@ -48,7 +58,7 @@ async def lifespan(app: FastAPI):
     last: Exception | None = None
     for attempt in range(30):
         try:
-            knowledge.ensure_schema()
+            graph_schema.ensure_schema()
             last = None
             break
         except Exception as exc:
@@ -111,8 +121,8 @@ def health() -> dict:
                      "error": f"{type(exc).__name__}: {exc}"[:200]}
 
     checks = {
-        "neo4j": probe(knowledge.ping),
-        "nebius": probe(llm.ping),
+        "neo4j": probe(graph_schema.ping),
+        "nebius": probe(llm_ping),
         "core": probe(core_store.ping),
     }
 
@@ -133,7 +143,7 @@ def health() -> dict:
             "used_gb": round(disk.used / 1024 ** 3, 2),
             "free_gb": round(disk.free / 1024 ** 3, 2),
         },
-        "stats": knowledge.stats(),
+        "stats": store.stats(),
     }
 
 
@@ -218,8 +228,8 @@ def _locator(p: dict) -> str:
         return f"page {p['page_start']}"
     total = p.get("passage_count") or 0
     if total:
-        return f"passage {p['ordinal'] + 1} of {total}"
-    return f"passage {p['ordinal'] + 1}"
+        return f"passage {p['chunk_index'] + 1} of {total}"
+    return f"passage {p['chunk_index'] + 1}"
 
 
 def _ingest_pages(
@@ -245,46 +255,60 @@ def _ingest_pages(
             "pages are images and would need OCR before they can be ingested.",
         )
 
-    digest = knowledge.content_hash(body)
-    existing = knowledge.find_by_hash(digest)
+    digest = store.content_hash(body)
+    existing = store.find_by_hash(digest)
     if existing and existing["id"] != replaces:
         raise HTTPException(409, {
             "message": (
                 f'This is already in the library as "{existing["title"]}" '
                 f'(grade {existing["grade"]}, ingested '
-                f'{existing["created_at"][:10]}). Nothing was added.'
+                f'{existing["ingested_at"][:10]}). Nothing was added.'
             ),
             "duplicate_of": existing["id"],
         })
 
     # Show the Reader the shelves already in use so it files this source
     # beside its neighbours instead of coining a new label.
-    card = llm.read_source(body, filename, kind, origin,
-                           known_topics=knowledge.all_topics())
+    card = ingestion_pipeline.read_source(body, filename, kind, origin,
+                                          known_topics=store.facets()["topics"])
 
     # Remove the superseded source only once the new one has been read, so a
     # failure part-way through does not leave the library short.
     if replaces:
-        knowledge.delete_source(replaces)
+        store.delete_document(replaces)
 
-    passages = knowledge.chunk_pages(pages)
-    # Index each passage's concepts now, so it is connected to the rest of the
-    # corpus the moment it lands rather than sitting as an island.
+    passages = store.chunk_pages(pages)
+    # Embed + extract the knowledge graph now, so the document is connected
+    # to the rest of the corpus (and searchable) the moment it lands, rather
+    # than sitting as an island. Graph-building is additive — never lose the
+    # source over it — but embedding is not: without it the document is
+    # invisible to seed search entirely, so an embedding failure does fail
+    # the ingest (unlike the old concept-extraction path this replaces).
+    embeddings = get_llm_client(LLMRole.EMBEDDER).embed([p["text"] for p in passages])
+    for i, p in enumerate(passages):
+        p["embedding"] = embeddings[i] if i < len(embeddings) else None
+
+    entities_per_passage: list[list[dict]] = []
+    relationships: list[dict] = []
     try:
-        for p, concepts in zip(passages, llm.extract_concepts(
-                [p["text"] for p in passages])):
-            p["concepts"] = concepts
-    except Exception as exc:  # linking is additive; never lose the source over it
-        logging.warning("concept extraction failed for %s: %s", filename, exc)
+        for p in passages:
+            graph = ingestion_pipeline.extract_graph(p["text"])
+            entities_per_passage.append(graph["entities"])
+            relationships.extend(graph["relationships"])
+    except Exception as exc:  # graph-building is additive; never lose the source over it
+        logging.warning("knowledge-graph extraction failed for %s: %s", filename, exc)
+        entities_per_passage = [[] for _ in passages]
+        relationships = []
 
     try:
-        return knowledge.ingest_source(
+        return store.ingest_document(
             title=card["title"], filename=filename, kind=kind, origin=origin,
-            grade=card["suggested_grade"], summary=card["summary"],
+            grade=card["suggested_grade"], source_card_summary=card["summary"],
             topics=card["topics"], passages=passages,
             digest=digest, body=body, author=card["author"],
             published=card["published"], reference=card["reference"],
-            page_count=page_count, original=original,
+            page_count=page_count, entities_per_passage=entities_per_passage,
+            relationships=relationships, original=original,
         )
     except neo4j.exceptions.ConstraintError:
         # Another upload of the same body landed between our check and our write.
@@ -488,7 +512,7 @@ def scrape_url(body: ScrapeBody, _admin: dict = Depends(auth.require_admin)) -> 
     staged list like any other staged item, not ingested immediately."""
     stripped = scraper.fetch_and_strip(body.url)
     try:
-        extracted = llm.extract_article(stripped, body.url)
+        extracted = ingestion_pipeline.extract_article(stripped, body.url)
     except openai.APIError as exc:
         raise HTTPException(
             502, "The AI service is temporarily unavailable. Try again shortly."
@@ -573,7 +597,7 @@ def get_sources(
     sort: str = "newest", page: int = 1, per_page: int = 10,
     _admin: dict = Depends(auth.require_admin),
 ) -> dict:
-    return knowledge.list_sources(
+    return store.list_documents(
         search=search, topic=topic, kind=kind, min_grade=min_grade,
         max_grade=max_grade, sort=sort, page=page, per_page=per_page)
 
@@ -600,74 +624,74 @@ def get_sources_query(
 
 @app.get("/api/facets")
 def get_facets(_admin: dict = Depends(auth.require_admin)) -> dict:
-    return knowledge.facets()
+    return store.facets()
 
 
 @app.get("/api/graph")
 def get_graph(_admin: dict = Depends(auth.require_admin)) -> dict:
     """Shape of the knowledge graph, plus anything not yet linked into it."""
-    return {**knowledge.graph_stats(), "unlinked": knowledge.unlinked_sources()}
+    return {**store.graph_stats(), "unlinked": store.unlinked_documents()}
 
 
 @app.post("/api/relink")
 def relink(_admin: dict = Depends(auth.require_admin)) -> dict:
-    """Index concepts for sources that have none.
+    """Build the knowledge graph for documents that have none.
 
-    Sources ingested before linking existed are islands: reachable when the
-    Librarian opens them, invisible to traversal. This connects them.
+    Documents ingested before graph-building existed (or where extraction
+    failed) are islands: reachable via seed search, invisible to
+    traversal (nothing to expand from). This connects them.
     """
     done, failed = [], []
-    for src in knowledge.unlinked_sources():
-        full = knowledge.source_text(src["id"])
+    for doc in store.unlinked_documents():
+        full = store.document_text(doc["id"])
         if not full or not full["passages"]:
-            failed.append(src["title"])
+            failed.append(doc["title"])
             continue
         try:
-            concepts = llm.extract_concepts([p["text"] for p in full["passages"]])
-            edges = knowledge.link_source(src["id"], concepts)
-            knowledge.log("admin", "linked",
-                          f"{src['title']} — {edges} concept links")
-            done.append({"title": src["title"], "edges": edges})
+            entities_per_passage, relationships = [], []
+            for p in full["passages"]:
+                graph = ingestion_pipeline.extract_graph(p["text"])
+                entities_per_passage.append(graph["entities"])
+                relationships.extend(graph["relationships"])
+            edges = store.link_document(doc["id"], entities_per_passage, relationships)
+            store.log("admin", "linked", f"{doc['title']} — {edges} graph edges")
+            done.append({"title": doc["title"], "edges": edges})
         except Exception as exc:
-            logging.warning("relink failed for %s: %s", src["title"], exc)
-            failed.append(src["title"])
-    return {"linked": done, "failed": failed, **knowledge.graph_stats()}
+            logging.warning("relink failed for %s: %s", doc["title"], exc)
+            failed.append(doc["title"])
+    return {"linked": done, "failed": failed, **store.graph_stats()}
 
 
 @app.post("/api/consolidate")
 def consolidate(_admin: dict = Depends(auth.require_admin)) -> dict:
-    """Let the model tidy the index, then rewrite the graph to match.
+    """Let the model tidy the entity index, then rewrite the graph to match.
 
-    The alias table in knowledge.py catches the predictable cases; this catches
-    the tail — two labels for one idea that no static map anticipated. Merging
-    them turns two disconnected halves of the library into one.
+    The alias table in graph/store.py's canon() catches the predictable
+    cases; this catches the tail — two labels for one idea that no static
+    map anticipated. Merging them turns two disconnected halves of the
+    graph into one. Requires APOC — see store.merge_entities()'s docstring.
     """
-    out = {}
-    for label, names in (("Concept", knowledge.all_concepts()),
-                         ("Topic", knowledge.all_topics())):
-        groups = llm.merge_labels(names)
-        absorbed = knowledge.merge_nodes(label, groups) if groups else 0
-        if groups:
-            knowledge.log("admin", "consolidated",
-                          f"{label.lower()}s: " + "; ".join(
-                              f"{g['canonical']} ← {', '.join(g['aliases'])}"
-                              for g in groups)[:400])
-        out[label.lower()] = {"groups": groups, "absorbed": absorbed,
-                              "before": len(names)}
-    return {**out, **knowledge.graph_stats()}
+    names = [e["name"] for e in store.all_entities()]
+    groups = ingestion_pipeline.suggest_entity_merges(names)
+    absorbed = store.merge_entities(groups) if groups else 0
+    if groups:
+        store.log("admin", "consolidated", "entities: " + "; ".join(
+            f"{g['canonical']} ← {', '.join(g['aliases'])}" for g in groups)[:400])
+    return {"entity": {"groups": groups, "absorbed": absorbed, "before": len(names)},
+           **store.graph_stats()}
 
 
 @app.get("/api/sources/{source_id}/related")
 def source_related(source_id: str, _admin: dict = Depends(auth.require_admin)) -> dict:
-    if knowledge.get_source(source_id) is None:
+    if store.get_document(source_id) is None:
         raise HTTPException(404, "no such source")
-    return {"concepts": knowledge.concepts_for(source_id),
-            "neighbours": knowledge.neighbours_of(source_id)}
+    return {"concepts": store.entities_for(source_id),
+            "neighbours": store.neighbours_of(source_id)}
 
 
 @app.get("/api/sources/{source_id}")
 def get_source(source_id: str, _admin: dict = Depends(auth.require_admin)) -> dict:
-    source = knowledge.get_source(source_id)
+    source = store.get_document(source_id)
     if source is None:
         raise HTTPException(404, "no such source")
     return source
@@ -676,7 +700,7 @@ def get_source(source_id: str, _admin: dict = Depends(auth.require_admin)) -> di
 @app.get("/api/sources/{source_id}/text")
 def read_source(source_id: str, _admin: dict = Depends(auth.require_admin)) -> dict:
     """The source as ingested, so the original stays readable in the library."""
-    source = knowledge.source_text(source_id)
+    source = store.document_text(source_id)
     if source is None:
         raise HTTPException(404, "no such source")
     for p in source["passages"]:
@@ -692,7 +716,7 @@ def download_source(source_id: str, _admin: dict = Depends(auth.require_admin)) 
     store existed, or an archive write that failed. The UI checks `original_name`
     on the source card rather than probing this.
     """
-    source = knowledge.get_source(source_id)
+    source = store.get_document(source_id)
     if source is None:
         raise HTTPException(404, "no such source")
     name = source.get("original_name")
@@ -726,7 +750,7 @@ def regrade(source_id: str, body: GradeUpdate,
            _admin: dict = Depends(auth.require_admin)) -> dict:
     if not 1 <= body.grade <= 10:
         raise HTTPException(400, "grade must be between 1 and 10")
-    source = knowledge.set_grade(source_id, body.grade)
+    source = store.set_grade(source_id, body.grade)
     if source is None:
         raise HTTPException(404, "no such source")
     return source
@@ -734,13 +758,13 @@ def regrade(source_id: str, body: GradeUpdate,
 
 @app.delete("/api/sources/{source_id}")
 def remove_source(source_id: str, _admin: dict = Depends(auth.require_admin)) -> dict:
-    knowledge.delete_source(source_id)
+    store.delete_document(source_id)
     return {"deleted": source_id}
 
 
 @app.get("/api/coverage")
 def get_coverage(_admin: dict = Depends(auth.require_admin)) -> list[dict]:
-    return knowledge.coverage()
+    return store.coverage()
 
 
 @app.get("/api/audit")
@@ -752,7 +776,7 @@ def get_audit(_admin: dict = Depends(auth.require_admin)) -> list[dict]:
     library's, and only the library's, per the same never-mix-the-two-stores
     rule v1 drew (specs/v1/07-security.md#the-leak-that-was-found).
     """
-    return knowledge.audit()[:100]
+    return store.audit()[:100]
 
 
 def _public(d: dict) -> dict:
@@ -1227,7 +1251,7 @@ def me_update_contact(submission_id: str, body: ContactStatusUpdate,
 @app.get("/api/me/knowledge")
 def me_knowledge(session: dict = Depends(auth.require_pro_practitioner)) -> list[dict]:
     weights = vault.get_source_weights(session["id"])
-    cards = knowledge.catalogue(1)
+    cards = store.catalogue(1)
     for card in cards:
         card["weight"] = weights.get(card["id"], card["grade"])
     return cards
@@ -1321,7 +1345,7 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
     if vault.get_client(practitioner_id, body.client_id) is None:
         raise HTTPException(404, "no such client")
 
-    client_file = vault.client_file_text(practitioner_id, body.client_id)
+    patient = get_patient_context(practitioner_id, body.client_id)
 
     session_id = body.session_id
     if session_id and vault.get_session(practitioner_id, session_id) is None:
@@ -1329,15 +1353,18 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
     if not session_id:
         session_id = vault.create_session(practitioner_id, body.client_id, body.question)["id"]
     history = vault.session_history(practitioner_id, session_id)[-6:]
-
-    # Apply this practitioner's own source weights (never the shared admin
-    # grade) before the Librarian sees the list, so a personal down/up-weight
-    # affects only their own consultations — see specs/v2/14 addendum #5.
-    weights = vault.get_source_weights(practitioner_id)
-    cards = knowledge.catalogue(1)
-    for card in cards:
-        card["grade"] = weights.get(card["id"], card["grade"])
-    cards = [c for c in cards if c["grade"] >= body.min_grade]
+    # specs/graph-traversal-rag — the new pipeline's calls (seed formation,
+    # per-hop judging, reasoning) don't yet each take a separate `history`
+    # parameter the way the old select_sources()/answer() did; folded into
+    # the question text instead as a pragmatic stopgap so multi-turn
+    # continuity ("and the dose?") isn't silently dropped. Threading
+    # `history` as a real parameter through seed_search/traversal/reasoner
+    # is cleaner and worth doing as a follow-up, not done here.
+    history_block = "\n\n".join(
+        f"Practitioner asked: {t['question']}\nYou answered: {t['answer']}" for t in history
+    )
+    question = f"Earlier in this consultation:\n---\n{history_block}\n---\n\n{body.question}" \
+        if history_block else body.question
 
     def _sse(event: dict) -> str:
         return f"data: {json.dumps(event)}\n\n"
@@ -1352,68 +1379,70 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
             total_output_tokens += usage["output_tokens"]
 
         try:
-            yield _sse({"event": "agent_start", "agent": "librarian"})
-            chosen, reasoning, librarian_usage = llm.select_sources(
-                body.question, client_file, cards, history)
-            _track(librarian_usage)
-            yield _sse({"event": "agent_done", "agent": "librarian", **librarian_usage})
+            yield _sse({"event": "agent_start", "agent": "seed_search"})
+            seed_result = seed_search.seed(question, patient, body.min_grade)
+            yield _sse({"event": "agent_done", "agent": "seed_search",
+                       "input_tokens": 0, "output_tokens": 0})
 
-            focus = llm.question_concepts(body.question, client_file, history) if chosen else []
-            passages, hops = knowledge.traverse(chosen, body.min_grade, focus,
-                                                weights=weights)
-            available = hops["available"]
+            yield _sse({"event": "agent_start", "agent": "traversal"})
+            retriever = GraphTraversalRetriever(min_grade=body.min_grade)
+            traversal = retriever.retrieve(question, patient, seed_result)
+            # Per-hop relevance-judgment usage isn't tracked in
+            # total_input_tokens/output_tokens below — llm_judge_relevance
+            # (retrieval/traversal.py) doesn't currently return its usage
+            # back up through TraversalResult. Real gap, not fixed here.
+            yield _sse({"event": "agent_done", "agent": "traversal",
+                       "input_tokens": 0, "output_tokens": 0,
+                       "depth": traversal.depth_reached, "stopped": traversal.stopped_reason,
+                       "accumulated": len(traversal.accumulated)})
 
-            matched = bool(passages)
             verdict = None
             revised = False
-            if not matched:
+            if not traversal.accumulated:
+                reasoned = None
                 answer_text = (
                     "No source in the library answers this question, so I have nothing to "
                     "base an answer on and will not guess.\n\n"
-                    f"Why: {reasoning}\n\n"
-                    f"{len(cards)} source(s) were available at grade "
-                    f"≥ {body.min_grade}. Either lower the grade threshold, or add a "
+                    f"Seed search query: {seed_result.search_query!r} found nothing usable at "
+                    f"grade ≥ {body.min_grade}. Either lower the grade threshold, or add a "
                     "source covering this topic to the library."
                 )
             else:
-                yield _sse({"event": "agent_start", "agent": "specialist"})
-                answer_text, answer_usage = llm.answer(
-                    body.question, client_file, passages, history)
-                _track(answer_usage)
-                yield _sse({"event": "agent_done", "agent": "specialist", **answer_usage})
+                yield _sse({"event": "agent_start", "agent": "reasoner"})
+                reasoned = reasoner.answer(question, patient, traversal)
+                _track(reasoned.usage)
+                yield _sse({"event": "agent_done", "agent": "reasoner", **reasoned.usage})
+                answer_text = reasoned.text
                 if body.run_check:
                     yield _sse({"event": "agent_start", "agent": "checker"})
-                    verdict = llm.check(body.question, answer_text, client_file, passages)
-                    _track(verdict["usage"])
-                    yield _sse({"event": "agent_done", "agent": "checker", **verdict["usage"]})
-                    # Bounded retry, hard-capped at one attempt (specs/v3/07-ai-team.md):
-                    # a "weak" verdict gets one revision with the same passages and the
-                    # Checker's own unsupported-claim list, then one re-check. Whichever
-                    # answer has the better verdict is kept; a second "weak" still ships
-                    # as "weak", not silently upgraded.
+                    verdict = checker.check(question, reasoned, patient.as_query_text())
+                    yield _sse({"event": "agent_done", "agent": "checker",
+                               "input_tokens": 0, "output_tokens": 0})
+                    # Bounded retry, hard-capped at one attempt, same pattern
+                    # as the pre-existing Checker retry: a "weak" verdict
+                    # gets one revision with the same accumulated context
+                    # and the Checker's own unsupported-sentence list.
                     if verdict["verdict"] == "weak":
-                        yield _sse({"event": "agent_start", "agent": "specialist", "retry": True})
-                        revised_text, revised_usage = llm.answer(
-                            body.question, client_file, passages, history,
-                            unsupported=verdict["unsupported"])
-                        _track(revised_usage)
-                        yield _sse({"event": "agent_done", "agent": "specialist",
-                                   "retry": True, **revised_usage})
+                        yield _sse({"event": "agent_start", "agent": "reasoner", "retry": True})
+                        revised_reasoned = reasoner.answer(
+                            question, patient, traversal, unsupported=verdict["unsupported"])
+                        _track(revised_reasoned.usage)
+                        yield _sse({"event": "agent_done", "agent": "reasoner",
+                                   "retry": True, **revised_reasoned.usage})
                         yield _sse({"event": "agent_start", "agent": "checker", "retry": True})
-                        revised_verdict = llm.check(body.question, revised_text, client_file,
-                                                    passages)
-                        _track(revised_verdict["usage"])
-                        yield _sse({"event": "agent_done", "agent": "checker",
-                                   "retry": True, **revised_verdict["usage"]})
+                        revised_verdict = checker.check(
+                            question, revised_reasoned, patient.as_query_text())
+                        yield _sse({"event": "agent_done", "agent": "checker", "retry": True,
+                                   "input_tokens": 0, "output_tokens": 0})
                         if (revised_verdict["verdict"] == "pass"
                                 or len(revised_verdict["unsupported"]) < len(verdict["unsupported"])):
-                            answer_text, verdict, revised = revised_text, revised_verdict, True
+                            answer_text, verdict, revised = revised_reasoned.text, revised_verdict, True
         except openai.APIError:
             yield _sse({"event": "error",
                        "message": "The AI service is temporarily unavailable. Try again shortly."})
             return
         except Exception:
-            # Anything else (a Neo4j error out of knowledge.traverse(), for
+            # Anything else (a Neo4j error out of the traversal loop, for
             # instance) previously broke the generator with no `error` event
             # at all — the frontend just saw a dropped, incomplete stream
             # instead of a clear failure (specs/v4/04-known-issues.md#h12).
@@ -1424,50 +1453,43 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
 
         vault.log(
             practitioner_id, "practitioner", "question asked",
-            f"{body.question[:120]} — {len(chosen)}/{len(cards)} sources opened at "
-            f"grade ≥{body.min_grade}",
+            f"{body.question[:120]} — {len(traversal.accumulated)} nodes accumulated, "
+            f"traversal stopped: {traversal.stopped_reason}, grade ≥{body.min_grade}",
             body.client_id,
         )
-        if verdict is not None:
-            verdict = {k: v for k, v in verdict.items() if k != "usage"}
         result = {
             "event": "result",
             "session_id": session_id,
             "answer": answer_text,
-            "matched": matched,
+            "matched": bool(traversal.accumulated),
             "min_grade": body.min_grade,
             "check": verdict,
             "revised": revised,
             "total_input_tokens": total_input_tokens,
             "total_output_tokens": total_output_tokens,
-            "librarian": {
-                "reasoning": reasoning,
-                "considered": len(cards),
-                "opened": [
-                    {"title": c["title"], "grade": c["grade"]}
-                    for c in cards if c["id"] in chosen
-                ],
-                "truncated": max(0, available - len(passages)),
-            },
-            "traversal": hops,
+            "seed_search": {"search_query": seed_result.search_query,
+                           "seed_count": len(seed_result.seed_chunk_ids) + len(seed_result.seed_entity_ids)},
+            "traversal": {"depth_reached": traversal.depth_reached,
+                         "stopped_reason": traversal.stopped_reason,
+                         # The full per-hop log — what was expanded, what was
+                         # pruned and why — surfaced for the clinician, per
+                         # this architecture's own "close to a requirement,
+                         # not a debugging nice-to-have" logging spec.
+                         "path": [
+                             {"hop": e.hop, "id": e.candidate_id, "label": e.candidate_label,
+                              "relevant": e.relevant, "reason": e.reason}
+                             for e in traversal.path_log
+                         ]},
             "sources": [
                 {
-                    "label": f"S{i + 1}",
-                    "source_id": p["source_id"],
-                    "title": p["title"],
-                    "grade": p["grade"],
-                    "locator": _locator(p),
-                    "origin": p["origin"],
-                    "author": p["author"],
-                    "published": p["published"],
-                    "reference": p["reference"],
-                    "kind": p["kind"],
-                    "filename": p["filename"],
-                    "snippet": p["text"],
-                    "via": p.get("via", "opened"),
-                    "shared": p.get("shared") or [],
+                    "label": f"K{i + 1}",
+                    "id": node.get("id"),
+                    "title": node.get("document_title") or node.get("name") or node.get("id"),
+                    "grade": node.get("grade"),
+                    "snippet": node.get("text") or node.get("name") or "",
+                    "kind": "chunk" if node.get("text") is not None else "entity",
                 }
-                for i, p in enumerate(passages)
+                for i, node in enumerate(traversal.accumulated)
             ],
         }
         vault.add_turn(practitioner_id, session_id, body.question, answer_text,
@@ -1558,7 +1580,7 @@ def me_summarize_session(client_id: str, session_id: str,
     _owned_session(practitioner_id, client_id, session_id)
     transcript = vault.session_transcript(practitioner_id, session_id)
     try:
-        summary = llm.summarize_session(transcript)
+        summary = reasoner.summarize_session(transcript)
     except openai.APIError as exc:
         raise HTTPException(
             502, "The AI service is temporarily unavailable. Try again shortly."

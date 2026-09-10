@@ -58,6 +58,22 @@ class Config:
     embedder_model = os.getenv("EMBEDDER_MODEL", "Qwen3-Embedding-8B")
     retrieval_model = os.getenv("RETRIEVAL_MODEL", "Qwen3-8B")
     reasoner_model = os.getenv("REASONER_MODEL", "KIMI-K3")
+
+    # Per-role base_url/api_key overrides (app/clients/llm_client.py). Every
+    # role defaults to the shared Nebius endpoint above — set a role's own
+    # <ROLE>_BASE_URL/<ROLE>_API_KEY only when that specific role actually
+    # needs to move to a different provider/deployment. Never hardcode a
+    # base_url in business logic; this is the one place it's read from.
+    reader_base_url = os.getenv("READER_BASE_URL", nebius_base_url)
+    reader_api_key = os.getenv("READER_API_KEY", nebius_api_key)
+    graph_builder_base_url = os.getenv("GRAPH_BUILDER_BASE_URL", nebius_base_url)
+    graph_builder_api_key = os.getenv("GRAPH_BUILDER_API_KEY", nebius_api_key)
+    embedder_base_url = os.getenv("EMBEDDER_BASE_URL", nebius_base_url)
+    embedder_api_key = os.getenv("EMBEDDER_API_KEY", nebius_api_key)
+    retrieval_base_url = os.getenv("RETRIEVAL_BASE_URL", nebius_base_url)
+    retrieval_api_key = os.getenv("RETRIEVAL_API_KEY", nebius_api_key)
+    reasoner_base_url = os.getenv("REASONER_BASE_URL", nebius_base_url)
+    reasoner_api_key = os.getenv("REASONER_API_KEY", nebius_api_key)
     # Not a chat model — a hallucination-detection classifier run directly
     # via transformers, not through the Nebius chat endpoint. Default is
     # HHEM-2.1-Open's real Hugging Face repo id, not a Nebius catalog name.
@@ -120,6 +136,17 @@ class Config:
     # related. 1 is too loose ("vitamin d" alone links almost everything); 2 keeps
     # a link meaningful without needing embeddings.
     min_shared_concepts = int(os.getenv("MIN_SHARED_CONCEPTS", "2"))
+
+    # Graph-traversal retrieval (app/retrieval/). A circuit breaker against
+    # runaway cost/depth, not the primary stopping logic — the primary
+    # stop is the frontier actually going empty (every branch pruned).
+    traversal_max_depth = int(os.getenv("TRAVERSAL_MAX_DEPTH", "5"))
+    # Candidates fetched per hop, before LLM judgment — bounds one hop's
+    # Cypher result size and the batch size of the per-hop relevance call.
+    traversal_max_candidates_per_hop = int(os.getenv("TRAVERSAL_MAX_CANDIDATES_PER_HOP", "20"))
+    # Seed chunks pulled by the initial vector (+ full-text) search, before
+    # traversal ever starts expanding.
+    traversal_seed_top_k = int(os.getenv("TRAVERSAL_SEED_TOP_K", "10"))
 
 
 @lru_cache
