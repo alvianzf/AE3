@@ -45,6 +45,9 @@ against.
   of ever showing "not done," a consult summary that looks saved but
   disappears on reload), plus High/Medium/Low workflow and IA gaps per
   portal.
+- [**04 · Product rename: Clinic → Functional Health Collab**](04-product-rename.md) —
+  every user-visible and machine-facing occurrence of the product name,
+  found and listed; spec only, not implemented as part of 01-03.
 
 ## What this does not change
 
