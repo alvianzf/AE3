@@ -1,7 +1,7 @@
 <script lang="ts">
 	import AppRail from '$lib/components/AppRail.svelte';
 
-	let { children } = $props();
+	let { data, children } = $props();
 
 	const items = [
 		{ href: '/client/dashboard', label: 'Dashboard', icon: 'home' },
@@ -12,7 +12,7 @@
 </script>
 
 <div class="shell">
-	<AppRail {items} portalLabel="Client portal" />
+	<AppRail {items} portalLabel="Client portal" role="client" userLabel={data.session?.name} />
 	<main class="container">
 		{@render children()}
 	</main>

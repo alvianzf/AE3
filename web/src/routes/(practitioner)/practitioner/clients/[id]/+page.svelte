@@ -14,8 +14,15 @@
 
 	// POST .../summary has existed since v1 (app/llm.py's summarize_session())
 	// but had no UI anywhere to reach it — specs/v4/04-known-issues.md#h6.
+	// specs/v4.1/03 CR3 — the toast claimed "saved to the client record" but
+	// nothing re-read it on load, so a real, persisted summary looked gone
+	// after a reload. Seed from data.sessions[*].summary (now returned by
+	// GET .../sessions, backed by record_entries.session_id) instead of
+	// only ever holding it in this component's own runtime state.
 	let summarizing = $state<string | null>(null);
-	let summaries = $state<Record<string, string>>({});
+	let summaries = $state<Record<string, string>>(
+		Object.fromEntries((data.sessions ?? []).filter((s: any) => s.summary).map((s: any) => [s.id, s.summary]))
+	);
 
 	async function summarize(sessionId: string) {
 		summarizing = sessionId;

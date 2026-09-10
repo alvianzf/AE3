@@ -6,10 +6,15 @@
 
 	let { data } = $props();
 
+	// specs/v4.1/03 CR2 — step 1 was hardcoded `done: true` regardless of
+	// data.clients, and step 2's condition (`unviewed_intake >= 0`) was true
+	// for any non-negative number, i.e. always — neither step could ever
+	// show as not done, so the checklist could never actually prompt a new
+	// practitioner to do the thing it claims to track.
 	const steps = $derived([
-		{ label: 'Add your first client', done: true },
-		{ label: 'Set your Anthropic key', done: (data.notifications.unviewed_intake ?? 0) >= 0 },
-		{ label: 'Ask your first question in Consult', done: (data.recentSessions?.length ?? 0) > 0 }
+		{ label: 'Add your first client', done: (data.clients?.length ?? 0) > 0, href: '/practitioner/clients' },
+		{ label: 'Set your Anthropic key', done: !!data.profile?.has_anthropic_key, href: '/practitioner/profile' },
+		{ label: 'Ask your first question in Consult', done: (data.recentSessions?.length ?? 0) > 0, href: '/practitioner/consult' }
 	]);
 	const allDone = $derived(steps.every((s) => s.done));
 </script>
@@ -25,7 +30,7 @@
 			{#each steps as s (s.label)}
 				<li class:done={s.done}>
 					<span class="mark" aria-hidden="true">{s.done ? '✓' : '○'}</span>
-					{s.label}
+					{#if s.done}{s.label}{:else}<a href={s.href}>{s.label}</a>{/if}
 				</li>
 			{/each}
 		</ol>

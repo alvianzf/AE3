@@ -4,9 +4,12 @@
 	import Sprig from './Sprig.svelte';
 	import { currentSession, LANDING } from '$lib/session';
 
+	// specs/v4.1/01 — "/" is the information-first landing page now, not
+	// the directory (moved to /practitioners), so it no longer needs its
+	// own nav link (the logo already goes there); browse comes after the
+	// pitch, not before it.
 	const links = [
-		{ href: '/', label: 'Directory' },
-		{ href: '/about', label: 'About' },
+		{ href: '/practitioners', label: 'Find a practitioner' },
 		{ href: '/join', label: 'For practitioners' }
 	];
 

@@ -78,7 +78,8 @@ def ensure_schema(practitioner_id: str) -> None:
                 client_id TEXT NOT NULL REFERENCES clients(id),
                 kind TEXT NOT NULL,
                 content TEXT NOT NULL,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                session_id TEXT
             );
             CREATE INDEX IF NOT EXISTS entries_by_client
                 ON record_entries(client_id, created_at);
@@ -209,6 +210,13 @@ def ensure_schema(practitioner_id: str) -> None:
         response_cols = {row[1] for row in conn.execute("PRAGMA table_info(questionnaire_responses)")}
         if "viewed_at" not in response_cols:
             conn.execute("ALTER TABLE questionnaire_responses ADD COLUMN viewed_at TEXT")
+        # specs/v4.1/03 CR3 — record_entries had no session_id, so a saved
+        # session_summary entry couldn't be traced back to the session that
+        # produced it; the UI displayed it only from in-memory state, which
+        # made a genuinely-saved summary look gone again on reload.
+        entry_cols = {row[1] for row in conn.execute("PRAGMA table_info(record_entries)")}
+        if "session_id" not in entry_cols:
+            conn.execute("ALTER TABLE record_entries ADD COLUMN session_id TEXT")
 
 
 def ping(practitioner_id: str) -> bool:
@@ -349,15 +357,16 @@ def delete_client(practitioner_id: str, client_id: str) -> bool:
     return True
 
 
-def add_entry(practitioner_id: str, client_id: str, kind: str, content: str) -> dict:
+def add_entry(practitioner_id: str, client_id: str, kind: str, content: str,
+              session_id: str | None = None) -> dict:
     if kind not in KINDS:
         raise ValueError(f"unknown entry kind: {kind}")
     entry = {"id": str(uuid.uuid4()), "client_id": client_id, "kind": kind,
-              "content": content, "created_at": _now()}
+              "content": content, "created_at": _now(), "session_id": session_id}
     with _connect(practitioner_id) as conn:
         conn.execute(
-            "INSERT INTO record_entries (id, client_id, kind, content, created_at) "
-            "VALUES (:id, :client_id, :kind, :content, :created_at)",
+            "INSERT INTO record_entries (id, client_id, kind, content, created_at, session_id) "
+            "VALUES (:id, :client_id, :kind, :content, :created_at, :session_id)",
             entry,
         )
     return entry
@@ -432,7 +441,10 @@ def list_sessions(practitioner_id: str, client_id: str) -> list[dict]:
                    (SELECT count(*) FROM session_turns t WHERE t.session_id = s.id)
                        AS turns,
                    (SELECT t.question FROM session_turns t WHERE t.session_id = s.id
-                       ORDER BY t.ordinal DESC LIMIT 1) AS last_question
+                       ORDER BY t.ordinal DESC LIMIT 1) AS last_question,
+                   (SELECT e.content FROM record_entries e
+                       WHERE e.session_id = s.id AND e.kind = 'session_summary'
+                       ORDER BY e.created_at DESC LIMIT 1) AS summary
             FROM sessions s WHERE s.client_id = ?
             ORDER BY s.started_at DESC
             """,

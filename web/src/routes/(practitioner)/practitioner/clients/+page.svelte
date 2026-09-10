@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { invalidateAll } from '$app/navigation';
+	import { onMount } from 'svelte';
+	import { page } from '$app/state';
+	import { goto, invalidateAll } from '$app/navigation';
 	import { post, del } from '$lib/api';
 	import { toast } from '$lib/stores/toast';
 	import Spotlight from '$lib/components/Spotlight.svelte';
@@ -15,6 +17,24 @@
 	let dob = $state('');
 	let country = $state('');
 	let submitting = $state(false);
+
+	// specs/v4.1/03 H5 — arriving from "Add as client" on the Contacts page
+	// (?prefill_name=&prefill_email=) opens this dialog pre-filled instead
+	// of requiring the name/email to be retyped.
+	onMount(() => {
+		const prefillName = page.url.searchParams.get('prefill_name');
+		const prefillEmail = page.url.searchParams.get('prefill_email');
+		if (prefillName || prefillEmail) {
+			name = prefillName ?? '';
+			email = prefillEmail ?? '';
+			open = true;
+			goto('/practitioner/clients', { replaceState: true, noScroll: true, keepFocus: true });
+		}
+	});
+
+	let removeOpen = $state(false);
+	let removeTarget = $state<{ id: string; name: string } | null>(null);
+	let removing = $state(false);
 
 	async function create(e: Event) {
 		e.preventDefault();
@@ -32,14 +52,21 @@
 		}
 	}
 
-	async function remove(id: string) {
-		if (!confirm('Remove this client? This cannot be undone.')) return;
+	// specs/v4.1/03 M9 — was a native confirm(), the only destructive action
+	// in this portal not using the app's own Dialog component.
+	async function confirmRemove() {
+		if (!removeTarget) return;
+		removing = true;
 		try {
-			await del(fetch, `/me/clients/${id}`);
+			await del(fetch, `/me/clients/${removeTarget.id}`);
 			toast('Client removed.');
+			removeOpen = false;
+			removeTarget = null;
 			await invalidateAll();
 		} catch (err: any) {
 			toast(err.message, 'alert');
+		} finally {
+			removing = false;
 		}
 	}
 </script>
@@ -59,7 +86,7 @@
 			<td><a href="/practitioner/clients/{c.id}">{c.name}</a></td>
 			<td>{c.email}</td>
 			<td>{c.country ?? ''}</td>
-			<td><Button variant="text" onclick={() => remove(c.id as string)}>Remove</Button></td>
+			<td><Button variant="text" onclick={() => { removeTarget = { id: c.id as string, name: c.name as string }; removeOpen = true; }}>Remove</Button></td>
 		{/snippet}
 	</DataTable>
 </Spotlight>
@@ -74,5 +101,13 @@
 	{#snippet footer()}
 		<Button variant="ghost" onclick={() => (open = false)}>Cancel</Button>
 		<Button type="submit" onclick={create} loading={submitting}>Add client</Button>
+	{/snippet}
+</Dialog>
+
+<Dialog bind:open={removeOpen} title="Remove client">
+	<p>Remove {removeTarget?.name}? This cannot be undone.</p>
+	{#snippet footer()}
+		<Button variant="ghost" onclick={() => (removeOpen = false)}>Cancel</Button>
+		<Button variant="filled" onclick={confirmRemove} loading={removing}>Remove</Button>
 	{/snippet}
 </Dialog>

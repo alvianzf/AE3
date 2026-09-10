@@ -12,14 +12,14 @@
 		{ href: '/practitioner/clients', label: 'Clients', icon: 'users', locked: !isPro },
 		{ href: '/practitioner/consult', label: 'Consult', icon: 'message', locked: !isPro },
 		{ href: '/practitioner/contacts', label: 'Contacts', icon: 'mail' },
-		{ href: '/practitioner/knowledge', label: 'Knowledge', icon: 'book', locked: !isPro },
+		{ href: '/practitioner/knowledge', label: 'Library weights', icon: 'book', locked: !isPro },
 		{ href: '/practitioner/profile', label: 'Profile', icon: 'settings' },
 		{ href: '/practitioner/upgrade', label: 'Upgrade', icon: 'star' }
 	]);
 </script>
 
 <div class="shell">
-	<AppRail {items} portalLabel="Practitioner portal" userLabel={data.profile?.name} />
+	<AppRail {items} portalLabel="Practitioner portal" role="practitioner" userLabel={data.profile?.name} />
 	<main class="container">
 		{@render children()}
 	</main>

@@ -1626,7 +1626,8 @@ def me_summarize_session(client_id: str, session_id: str,
                     "by the internal accuracy check as not fully verified "
                     "against its sources. Review the consultation before "
                     "relying on this summary.")
-    vault.add_entry(practitioner_id, client_id, "session_summary", summary)
+    vault.add_entry(practitioner_id, client_id, "session_summary", summary,
+                     session_id=session_id)
     return {"summary": summary}
 
 

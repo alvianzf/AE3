@@ -1,18 +1,42 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import { post } from '$lib/api';
 	import Sprig from './Sprig.svelte';
 	import Icon from './Icon.svelte';
 
 	interface NavItem { href: string; label: string; icon: string; locked?: boolean }
-	let { items, portalLabel, userLabel }: { items: NavItem[]; portalLabel: string; userLabel?: string } = $props();
+	type Role = 'admin' | 'practitioner' | 'client';
+	let { items, portalLabel, userLabel, role }: { items: NavItem[]; portalLabel: string; userLabel?: string; role: Role } = $props();
+
+	// specs/v4.1/02 — one visual identity per user type, built as alternate
+	// values of the same rail-gradient/accent formula rather than a new
+	// palette. Client keeps the original red (the identity the public site
+	// already trained visitors on); practitioner and admin get distinct hues
+	// so a cropped screenshot of any portal is identifiable at a glance.
+	const ROLE_RAIL: Record<Role, { top: string; bottom: string; indicator: string }> = {
+		client: { top: 'rgba(203, 44, 68, .88)', bottom: 'rgba(64, 6, 16, .94)', indicator: '#ff8fa3' },
+		practitioner: { top: 'rgba(20, 108, 104, .88)', bottom: 'rgba(6, 40, 38, .94)', indicator: '#7fe0d6' },
+		admin: { top: 'rgba(70, 60, 90, .9)', bottom: 'rgba(20, 16, 30, .95)', indicator: '#c9b8ff' }
+	};
+	const rail = $derived(ROLE_RAIL[role]);
+
+	// specs/v4.1/03 CR1 — the sign-out form used to just preventDefault and
+	// never call the endpoint, so the session cookie outlived the click.
+	async function logout(e: Event) {
+		e.preventDefault();
+		await post(fetch, '/auth/logout').catch(() => {});
+		goto('/login', { invalidateAll: true });
+	}
 </script>
 
 <!-- Redesigned nav: a slim fixed icon rail (not a full labeled sidebar) —
      keeps the gradient identity, but the shell is genuinely restructured:
      icons + tooltips at rest, label revealed on hover/focus, content column
      gets the width back instead of losing 14.5rem to a permanent sidebar. -->
-<nav class="rail" aria-label="{portalLabel} navigation">
+<nav class="rail" aria-label="{portalLabel} navigation" style="--rail-top-local: {rail.top}; --rail-bottom-local: {rail.bottom}; --rail-indicator-local: {rail.indicator};">
 	<a href="/" class="mark" aria-label="Clinic home"><Sprig size={22} /></a>
+	<span class="portal-label">{portalLabel}</span>
 	<ul>
 		{#each items as it (it.href)}
 			<li>
@@ -28,8 +52,8 @@
 	</ul>
 	<div class="foot">
 		{#if userLabel}<span class="who">{userLabel}</span>{/if}
-		<form method="post" action="/api/auth/logout" onsubmit={(e) => e.preventDefault()}>
-			<a href="/login" class="logout" title="Sign out">⏻</a>
+		<form method="post" action="/api/auth/logout" onsubmit={logout}>
+			<button type="submit" class="logout" title="Sign out">⏻</button>
 		</form>
 	</div>
 </nav>
@@ -38,10 +62,15 @@
 	.rail {
 		position: sticky; top: 0; align-self: flex-start; height: 100dvh; width: 4.75rem; flex: 0 0 auto;
 		display: flex; flex-direction: column; align-items: center; gap: var(--space-4); padding: var(--space-4) 0;
-		background: linear-gradient(180deg, var(--rail-top), var(--rail-bottom));
+		background: linear-gradient(180deg, var(--rail-top-local, var(--rail-top)), var(--rail-bottom-local, var(--rail-bottom)));
 		color: #fdf1f2; z-index: 40;
 	}
 	.mark { color: #fff; display: flex; padding: .4rem; }
+	.portal-label {
+		writing-mode: vertical-rl; text-orientation: mixed; transform: rotate(180deg);
+		font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
+		color: #f7dfe2; opacity: .85; max-height: 5.5rem; overflow: hidden;
+	}
 	ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .35rem; width: 100%; }
 	li a {
 		display: flex; align-items: center; gap: .6rem; color: #f7dfe2; text-decoration: none;
@@ -65,11 +94,14 @@
 	li a.on { color: #fff; }
 	li a.on::before {
 		content: ''; position: absolute; left: 0; top: .3rem; bottom: .3rem; width: 3px;
-		background: #ff8fa3; border-radius: 2px;
+		background: var(--rail-indicator-local, #ff8fa3); border-radius: 2px;
 	}
 	.foot { margin-top: auto; display: flex; flex-direction: column; align-items: center; gap: .5rem; width: 100%; }
 	.who { font-size: var(--text-xs); color: #d9a2aa; writing-mode: vertical-rl; text-orientation: mixed; max-height: 6rem; overflow: hidden; }
-	.logout { color: #f7dfe2; text-decoration: none; font-size: 1.1rem; }
+	.logout {
+		color: #f7dfe2; font-size: 1.1rem; background: none; border: none; padding: 0;
+		cursor: pointer; font-family: inherit; line-height: 1;
+	}
 	@media (max-width: 720px) {
 		.rail { position: fixed; bottom: 0; top: auto; width: 100%; height: auto; flex-direction: row; padding: .5rem; }
 		ul { flex-direction: row; justify-content: space-around; }

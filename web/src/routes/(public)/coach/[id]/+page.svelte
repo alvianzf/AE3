@@ -44,21 +44,30 @@
 				<div class="chip-row">
 					{#each p.specialties ?? [] as s (s)}<Chip tone="accent">{s}</Chip>{/each}
 				</div>
-				<p class="hint">{p.years_experience ?? 0} years experience · {(p.languages ?? []).join(', ') || 'Language not listed'}</p>
+				<p class="hint">{p.years_experience != null ? `${p.years_experience} years experience` : 'Experience not listed'} · {(p.languages ?? []).join(', ') || 'Language not listed'}</p>
 			</div>
 		</div>
 		<p>{p.bio || 'No bio yet.'}</p>
 	</Quiet>
 
-	<!-- Tier 1 + leafmark: the CTA is the reason this page exists -->
-	<Spotlight title="Get in touch" leaf>
+	<!-- specs/v4.1/01 — this used to be the only CTA on the page; a visitor
+	     who'd already decided "this one" had to separately re-find the same
+	     practitioner from a bare <select> on /signup, losing everything
+	     that convinced them. Sign-up is now the primary path; the contact
+	     form (for someone with a question first) is demoted alongside it. -->
+	<Spotlight title="Sign up with {p.name}" leaf>
+		<p class="hint">Create your account and get matched with {p.name} directly.</p>
+		<Button href="/signup?practitioner={p.id}">Sign up with {p.name}</Button>
+	</Spotlight>
+
+	<Quiet title="Have a question first?">
 		<form onsubmit={submitContact}>
 			<TextField label="Your name" bind:value={name} required />
 			<TextField label="Your email" type="email" bind:value={email} required />
 			<TextField label="Message" type="textarea" bind:value={message} required />
-			<Button type="submit" loading={submitting}>Send message</Button>
+			<Button type="submit" variant="outlined" loading={submitting}>Send message</Button>
 		</form>
-	</Spotlight>
+	</Quiet>
 </div>
 
 <style>
