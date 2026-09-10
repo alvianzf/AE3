@@ -19,13 +19,21 @@
 </script>
 
 <div class="shell">
-	<AppRail {items} portalLabel="Practitioner portal" role="practitioner" userLabel={data.profile?.name} />
+	<AppRail {items} portalLabel="Practitioner portal" userLabel={data.profile?.name} />
 	<main class="container">
 		{@render children()}
 	</main>
 </div>
 
 <style>
-	.shell { display: flex; align-items: flex-start; min-height: 100dvh; }
+	.shell {
+		display: flex; align-items: flex-start; min-height: 100dvh;
+		/* specs/v4.1/02 — practitioner portal's own rail identity, via the
+		   same CSS custom properties AppRail already reads (a cascade
+		   override, not component-side role logic). */
+		--rail-top: rgba(20, 108, 104, .88);
+		--rail-bottom: rgba(6, 40, 38, .94);
+		--rail-indicator: #7fe0d6;
+	}
 	main { flex: 1 1 auto; padding: var(--space-6) var(--space-5); }
 </style>

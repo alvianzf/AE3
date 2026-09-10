@@ -12,7 +12,11 @@
 </script>
 
 <div class="shell">
-	<AppRail {items} portalLabel="Client portal" role="client" userLabel={data.session?.name} />
+	<!-- No role-specific rail colors needed here — the global --rail-top/
+	     --rail-bottom/--rail-indicator defaults (app.css) already are the
+	     client portal's identity; practitioner and admin override them on
+	     their own .shell instead. -->
+	<AppRail {items} portalLabel="Client portal" userLabel={data.session?.name} />
 	<main class="container">
 		{@render children()}
 	</main>

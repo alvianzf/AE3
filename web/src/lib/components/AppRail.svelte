@@ -6,20 +6,15 @@
 	import Icon from './Icon.svelte';
 
 	interface NavItem { href: string; label: string; icon: string; locked?: boolean }
-	type Role = 'admin' | 'practitioner' | 'client';
-	let { items, portalLabel, userLabel, role }: { items: NavItem[]; portalLabel: string; userLabel?: string; role: Role } = $props();
+	let { items, portalLabel, userLabel }: { items: NavItem[]; portalLabel: string; userLabel?: string } = $props();
 
-	// specs/v4.1/02 — one visual identity per user type, built as alternate
-	// values of the same rail-gradient/accent formula rather than a new
-	// palette. Client keeps the original red (the identity the public site
-	// already trained visitors on); practitioner and admin get distinct hues
-	// so a cropped screenshot of any portal is identifiable at a glance.
-	const ROLE_RAIL: Record<Role, { top: string; bottom: string; indicator: string }> = {
-		client: { top: 'rgba(203, 44, 68, .88)', bottom: 'rgba(64, 6, 16, .94)', indicator: '#ff8fa3' },
-		practitioner: { top: 'rgba(20, 108, 104, .88)', bottom: 'rgba(6, 40, 38, .94)', indicator: '#7fe0d6' },
-		admin: { top: 'rgba(70, 60, 90, .9)', bottom: 'rgba(20, 16, 30, .95)', indicator: '#c9b8ff' }
-	};
-	const rail = $derived(ROLE_RAIL[role]);
+	// specs/v4.1/02 — one visual identity per user type. Colors come from
+	// --rail-top/--rail-bottom/--rail-indicator, the same CSS custom
+	// properties this component already read before role-theming existed
+	// — each portal's own +layout.svelte sets them on its .shell wrapper
+	// (a plain cascade override, not a second JS-side theming mechanism),
+	// so this component stays role-agnostic rather than needing a `role`
+	// prop and a color lookup table of its own.
 
 	// specs/v4.1/03 CR1 — the sign-out form used to just preventDefault and
 	// never call the endpoint, so the session cookie outlived the click.
@@ -34,7 +29,7 @@
      keeps the gradient identity, but the shell is genuinely restructured:
      icons + tooltips at rest, label revealed on hover/focus, content column
      gets the width back instead of losing 14.5rem to a permanent sidebar. -->
-<nav class="rail" aria-label="{portalLabel} navigation" style="--rail-top-local: {rail.top}; --rail-bottom-local: {rail.bottom}; --rail-indicator-local: {rail.indicator};">
+<nav class="rail" aria-label="{portalLabel} navigation">
 	<a href="/" class="mark" aria-label="Clinic home"><Sprig size={22} /></a>
 	<span class="portal-label">{portalLabel}</span>
 	<ul>
@@ -62,7 +57,7 @@
 	.rail {
 		position: sticky; top: 0; align-self: flex-start; height: 100dvh; width: 4.75rem; flex: 0 0 auto;
 		display: flex; flex-direction: column; align-items: center; gap: var(--space-4); padding: var(--space-4) 0;
-		background: linear-gradient(180deg, var(--rail-top-local, var(--rail-top)), var(--rail-bottom-local, var(--rail-bottom)));
+		background: linear-gradient(180deg, var(--rail-top), var(--rail-bottom));
 		color: #fdf1f2; z-index: 40;
 	}
 	.mark { color: #fff; display: flex; padding: .4rem; }
@@ -94,7 +89,7 @@
 	li a.on { color: #fff; }
 	li a.on::before {
 		content: ''; position: absolute; left: 0; top: .3rem; bottom: .3rem; width: 3px;
-		background: var(--rail-indicator-local, #ff8fa3); border-radius: 2px;
+		background: var(--rail-indicator, #ff8fa3); border-radius: 2px;
 	}
 	.foot { margin-top: auto; display: flex; flex-direction: column; align-items: center; gap: .5rem; width: 100%; }
 	.who { font-size: var(--text-xs); color: #d9a2aa; writing-mode: vertical-rl; text-orientation: mixed; max-height: 6rem; overflow: hidden; }

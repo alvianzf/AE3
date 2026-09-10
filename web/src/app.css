@@ -33,9 +33,13 @@
   --blur: saturate(1.15) blur(16px);
   --ease: cubic-bezier(.22, .68, 0, 1);
 
-  /* sidebar gradient — kept literal per spec (rejected any reinterpretation) */
+  /* sidebar gradient — kept literal per spec (rejected any reinterpretation).
+     specs/v4.1/02: the default here is also the client portal's identity
+     (the one the public site already trained visitors on); practitioner
+     and admin layouts override all three on their own .shell wrapper. */
   --rail-top: rgba(203, 44, 68, .88);
   --rail-bottom: rgba(64, 6, 16, .94);
+  --rail-indicator: #ff8fa3;
 
   --space-1: .25rem; --space-2: .5rem; --space-3: .75rem;
   --space-4: 1rem;   --space-5: 1.5rem; --space-6: 2rem; --space-7: 3rem;

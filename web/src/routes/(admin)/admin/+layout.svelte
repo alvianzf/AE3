@@ -13,14 +13,21 @@
 </script>
 
 <div class="shell">
-	<AppRail {items} portalLabel="Admin portal" role="admin" userLabel={data.session?.admin_role} />
+	<AppRail {items} portalLabel="Admin portal" userLabel={data.session?.admin_role} />
 	<main>
 		{@render children()}
 	</main>
 </div>
 
 <style>
-	.shell { display: flex; align-items: flex-start; min-height: 100dvh; }
+	.shell {
+		display: flex; align-items: flex-start; min-height: 100dvh;
+		/* specs/v4.1/02 — admin portal's own rail identity, via the same
+		   CSS custom properties AppRail already reads. */
+		--rail-top: rgba(70, 60, 90, .9);
+		--rail-bottom: rgba(20, 16, 30, .95);
+		--rail-indicator: #c9b8ff;
+	}
 	/* No .container max-width here on purpose: admin screens are data-dense
 	   (tables, a directory grid) and benefit from the full width next to the
 	   icon-only AppRail, unlike the public site's prose-width pages that
