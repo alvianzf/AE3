@@ -48,15 +48,41 @@ def _now() -> str:
 # that canonicalise to the same string become one Entity node via MERGE.
 
 ALIASES = {
-    "vit d": "vitamin d", "vitd": "vitamin d", "25(oh)d": "vitamin d",
-    "hashimoto's": "hashimoto thyroiditis", "hashimotos": "hashimoto thyroiditis",
-    "autoimmune thyroid disease": "hashimoto thyroiditis", "ht": "hashimoto thyroiditis",
-    "tsh": "thyroid stimulating hormone", "t4": "thyroxine", "t3": "triiodothyronine",
-    "pcos": "polycystic ovary syndrome",
+    # elements and analytes
+    "fe": "iron", "ferrous": "iron", "ferric": "iron", "iron stores": "iron",
+    "serum iron": "iron", "elemental iron": "iron",
+    "ferritin level": "ferritin", "serum ferritin": "ferritin",
+    "25(oh)d": "vitamin d", "25-oh-d": "vitamin d", "25 hydroxyvitamin d": "vitamin d",
+    "25-hydroxyvitamin d": "vitamin d", "calcidiol": "vitamin d",
+    "cholecalciferol": "vitamin d", "vitamin d3": "vitamin d", "vit d": "vitamin d",
+    "b12": "vitamin b12", "cobalamin": "vitamin b12",
+    "mg": "magnesium", "zn": "zinc", "i2": "iodine",
+    "hb": "haemoglobin", "hgb": "haemoglobin", "hemoglobin": "haemoglobin",
+    "crp": "c-reactive protein",
+    # thyroid — "autoimmune thyroid disease" is the broader category, NOT
+    # a synonym for Hashimoto's specifically: keeping it a distinct target
+    # (not collapsed into "hashimoto thyroiditis") matters, since a
+    # passage discussing autoimmune thyroid disease generally (e.g.
+    # Graves') would otherwise mislink as being about Hashimoto's.
+    "ht": "hashimoto thyroiditis", "hashimoto": "hashimoto thyroiditis",
+    "hashimoto's": "hashimoto thyroiditis",
+    "hashimoto's thyroiditis": "hashimoto thyroiditis",
+    "hashimoto disease": "hashimoto thyroiditis",
+    "autoimmune thyroiditis": "autoimmune thyroid disease",
+    "aitd": "autoimmune thyroid disease",
+    "tsh": "thyroid stimulating hormone", "ft4": "free t4", "t4": "thyroxine",
+    "levothyroxine sodium": "levothyroxine", "l-thyroxine": "levothyroxine",
+    "tpo antibodies": "thyroid peroxidase antibodies", "anti-tpo": "thyroid peroxidase antibodies",
+    # reproductive and metabolic
+    "hrt": "hormone replacement therapy", "mht": "hormone replacement therapy",
+    "e2": "oestradiol", "estradiol": "oestradiol", "estrogen": "oestrogen",
+    "oestrogens": "oestrogen", "progestogen": "progesterone",
+    "pcos": "polycystic ovary syndrome", "homa-ir": "insulin resistance",
     "ir": "insulin resistance", "t2dm": "type 2 diabetes",
     "amh": "anti-mullerian hormone", "fsh": "follicle stimulating hormone",
     "bmi": "body mass index", "vte": "venous thromboembolism",
     "dvt": "venous thromboembolism",
+    # misc
     "gi": "gastrointestinal", "coeliac": "coeliac disease", "celiac": "coeliac disease",
     "celiac disease": "coeliac disease",
     "tiredness": "fatigue", "exhaustion": "fatigue",
@@ -690,39 +716,59 @@ def stats() -> dict:
 # rather than in retrieval/ because these are still just Cypher against
 # this module's schema, same reasoning as every other function above.
 
-def seed_chunks_by_vector(embedding: list[float], top_k: int, min_grade: int) -> list[dict]:
-    """Nearest chunks by cosine similarity, grade-filtered at the source."""
+_LUCENE_SPECIAL = re.compile(r'([+\-!(){}\[\]^"~*?:\\/&|])')
+
+
+def _escape_lucene(text: str) -> str:
+    """Neo4j's full-text index is Lucene underneath — a query string with
+    unescaped Lucene operators (a clinical question containing
+    parentheses, a colon, a plus sign: "TSH > 4.5 (subclinical
+    hypothyroidism)") throws a query-parse error instead of searching
+    for those characters literally. Escaping every special character is
+    the standard fix (over trying to enumerate which combinations are
+    actually unsafe)."""
+    return _LUCENE_SPECIAL.sub(r"\\\1", text)
+
+
+def seed_chunks_by_vector(embedding: list[float], top_k: int) -> list[dict]:
+    """Nearest chunks by cosine similarity. Deliberately NOT grade-filtered
+    here — a practitioner's own per-source weight override (never the
+    shared admin grade) has to win when the two disagree, and that
+    override isn't knowable at this layer. The caller applies the real
+    (weight-aware) threshold in Python; see retrieval/seed_search.py."""
     with session() as s:
         recs = s.run(
             """
             CALL db.index.vector.queryNodes('chunk_embedding', $top_k, $embedding)
             YIELD node AS c, score
             MATCH (doc:Document)-[:HAS_CHUNK]->(c)
-            WHERE doc.grade >= $min_grade
             RETURN c.id AS id, c.text AS text, c.chunk_index AS chunk_index,
+                   c.page_start AS page_start, c.page_end AS page_end,
                    doc.id AS document_id, doc.title AS document_title,
                    doc.grade AS grade, score
             ORDER BY score DESC
             """,
-            embedding=embedding, top_k=top_k, min_grade=min_grade,
+            embedding=embedding, top_k=top_k,
         )
         return [dict(r) for r in recs]
 
 
-def seed_chunks_by_fulltext(query: str, top_k: int, min_grade: int) -> list[dict]:
+def seed_chunks_by_fulltext(query: str, top_k: int) -> list[dict]:
+    """See seed_chunks_by_vector()'s docstring — not grade-filtered here,
+    same reasoning."""
     with session() as s:
         recs = s.run(
             """
             CALL db.index.fulltext.queryNodes('chunk_text_fulltext', $query)
             YIELD node AS c, score
             MATCH (doc:Document)-[:HAS_CHUNK]->(c)
-            WHERE doc.grade >= $min_grade
             RETURN c.id AS id, c.text AS text, c.chunk_index AS chunk_index,
+                   c.page_start AS page_start, c.page_end AS page_end,
                    doc.id AS document_id, doc.title AS document_title,
                    doc.grade AS grade, score
             ORDER BY score DESC LIMIT $top_k
             """,
-            query=query, top_k=top_k, min_grade=min_grade,
+            query=_escape_lucene(query), top_k=top_k,
         )
         return [dict(r) for r in recs]
 
@@ -736,7 +782,7 @@ def seed_entities_by_fulltext(query: str, top_k: int) -> list[dict]:
             RETURN e.id AS id, e.name AS name, e.type AS type, score
             ORDER BY score DESC LIMIT $top_k
             """,
-            query=query, top_k=top_k,
+            query=_escape_lucene(query), top_k=top_k,
         )
         return [dict(r) for r in recs]
 
@@ -779,7 +825,8 @@ def entities_mentioned_by_chunks(chunk_ids: list[str]) -> list[dict]:
 
 
 def fetch_hop_neighbors(frontier_ids: list[str], visited_ids: set[str],
-                        min_grade: int, limit: int) -> list[dict]:
+                        min_grade: int, limit: int,
+                        weights: dict[str, int] | None = None) -> list[dict]:
     """Unvisited neighbors of the current frontier, one hop out, in any
     direction and via any relationship type (MENTIONS, NEXT_CHUNK,
     HAS_CHUNK's reverse, or any typed entity-entity relationship the
@@ -793,9 +840,18 @@ def fetch_hop_neighbors(frontier_ids: list[str], visited_ids: set[str],
     claim on its own, only the Chunks that mention it do, and those get
     filtered when *they're* reached. Capped at `limit` candidates,
     matching the hop's config.traversal_max_candidates_per_hop budget.
+
+    `weights` is a practitioner's own per-document grade override
+    (never the shared admin grade, vault.get_source_weights()) — when a
+    document has one, it wins over doc.grade for this threshold check,
+    same as the pre-v5 traverse()'s behavior. Without this, a source a
+    practitioner explicitly down-weighted below their own threshold
+    could still reach the answer via a hop that only checked the shared
+    grade.
     """
     if not frontier_ids:
         return []
+    weights = weights or {}
     with session() as s:
         recs = s.run(
             """
@@ -807,6 +863,7 @@ def fetch_hop_neighbors(frontier_ids: list[str], visited_ids: set[str],
             RETURN neighbor.id AS id, labs AS labels, via,
                    neighbor.name AS name, neighbor.type AS type,
                    neighbor.text AS text, neighbor.chunk_index AS chunk_index,
+                   neighbor.page_start AS page_start, neighbor.page_end AS page_end,
                    doc.id AS document_id, doc.title AS document_title, doc.grade AS grade
             LIMIT $limit
             """,
@@ -815,5 +872,8 @@ def fetch_hop_neighbors(frontier_ids: list[str], visited_ids: set[str],
         candidates = [dict(r) for r in recs]
     return [
         c for c in candidates
-        if "Entity" in c["labels"] or (c.get("grade") is not None and c["grade"] >= min_grade)
+        if "Entity" in c["labels"] or (
+            c.get("grade") is not None
+            and weights.get(c.get("document_id"), c["grade"]) >= min_grade
+        )
     ]

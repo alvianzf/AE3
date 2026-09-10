@@ -130,13 +130,20 @@ JudgeFn = Callable[[str, PatientContext, list[dict], list[dict]], list[dict]]
 class GraphTraversalRetriever:
     def __init__(self, min_grade: int | None = None, max_depth: int | None = None,
                 max_candidates_per_hop: int | None = None,
-                judge_fn: JudgeFn | None = None):
+                judge_fn: JudgeFn | None = None,
+                weights: dict[str, int] | None = None):
         self.min_grade = cfg.min_grade if min_grade is None else min_grade
         self.max_depth = cfg.traversal_max_depth if max_depth is None else max_depth
         self.max_candidates_per_hop = (
             cfg.traversal_max_candidates_per_hop if max_candidates_per_hop is None
             else max_candidates_per_hop
         )
+        # A practitioner's own per-document grade override (never the
+        # shared admin grade) — threaded through to every hop's
+        # store.fetch_hop_neighbors() call so a down-weighted source
+        # can't re-enter via a later hop just because that hop only
+        # checked the shared grade.
+        self.weights = weights or {}
         # Injectable so the stopping/pruning logic can be verified with a
         # deterministic fake judge_fn, independent of any real LLM call —
         # see tests/test_traversal.py.
@@ -157,7 +164,8 @@ class GraphTraversalRetriever:
                 break
 
             candidates = store.fetch_hop_neighbors(
-                frontier, visited, self.min_grade, self.max_candidates_per_hop)
+                frontier, visited, self.min_grade, self.max_candidates_per_hop,
+                weights=self.weights)
             if not candidates:
                 stopped_reason = "no_new_candidates"
                 break

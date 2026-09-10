@@ -71,7 +71,7 @@ class TraversalStoppingTests(unittest.TestCase):
         """Circuit breaker: every hop finds relevant candidates forever,
         so only the depth cap can end this traversal."""
         with patch("app.retrieval.traversal.store.fetch_hop_neighbors") as fetch:
-            fetch.side_effect = lambda frontier, visited, min_grade, limit: [
+            fetch.side_effect = lambda frontier, visited, min_grade, limit, weights=None: [
                 _candidate(f"{'.'.join(sorted(frontier))}-child")
             ]
             retriever = GraphTraversalRetriever(max_depth=3, judge_fn=_all_relevant)
@@ -103,7 +103,7 @@ class TraversalStoppingTests(unittest.TestCase):
         pruning is about the next frontier, not about revisitability)."""
         calls: list[set[str]] = []
 
-        def fetch(frontier, visited, min_grade, limit):
+        def fetch(frontier, visited, min_grade, limit, weights=None):
             calls.append(set(visited))
             if len(calls) == 1:
                 return [_candidate("a"), _candidate("b")]

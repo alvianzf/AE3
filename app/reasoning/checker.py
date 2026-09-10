@@ -47,23 +47,40 @@ def _node_text(node: dict) -> str:
 
 
 def check(question: str, reasoned: ReasonedAnswer, patient_context_text: str) -> dict:
-    """Scores each sentence of the Reasoner's answer against the
-    accumulated, pruned KB context, flagging the answer 'weak' if any
-    sentence's best-matching evidence scores below cfg.checker_threshold.
-    Genuinely unverified end-to-end — see specs/v4.2/01's status note."""
-    evidence = "\n\n".join(_node_text(n) for n in reasoned.citations) or patient_context_text
+    """Scores each sentence of the Reasoner's answer against its own
+    best-matching individual citation, flagging the answer 'weak' if a
+    sentence's best match still scores below cfg.checker_threshold.
+
+    Deliberately per-citation, not one merged blob of every citation
+    concatenated together: scoring against a blob lets an unrelated but
+    topically-similar sentence elsewhere in the blob paper over a claim
+    that no single source actually supports — exactly the failure mode
+    this check exists to catch. Genuinely unverified end-to-end — see
+    specs/v4.2/01's status note.
+    """
+    evidence_texts = [_node_text(n) for n in reasoned.citations] or [patient_context_text]
     model = _get_checker_model()
     sentences = _sentences(reasoned.text)
+    if not sentences:
+        return {"verdict": "pass", "unsupported": [], "note": "Nothing to check."}
+
+    # One batched predict() call for every (evidence, sentence) pair
+    # rather than one call per sentence (or per sentence-per-citation) —
+    # keeps this cheap regardless of how many sources were cited.
+    pairs = [(ev, s) for s in sentences for ev in evidence_texts]
+    scores = model.predict(pairs)
+    per_evidence = len(evidence_texts)
+
     unsupported: list[str] = []
-    for sentence in sentences:
-        score = model.predict([(evidence, sentence)])[0]
-        if score < cfg.checker_threshold:
+    for i, sentence in enumerate(sentences):
+        sentence_scores = scores[i * per_evidence:(i + 1) * per_evidence]
+        if max(sentence_scores) < cfg.checker_threshold:
             unsupported.append(sentence)
 
     verdict = "weak" if unsupported else "pass"
     note = (
-        f"{len(unsupported)} sentence(s) not confidently supported by the accumulated "
-        "context." if unsupported else
-        "Every sentence checked against the accumulated context."
+        f"{len(unsupported)} sentence(s) not confidently supported by any single cited "
+        "source." if unsupported else
+        "Every sentence checked against its cited sources."
     )
     return {"verdict": verdict, "unsupported": unsupported, "note": note}

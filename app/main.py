@@ -66,7 +66,22 @@ async def lifespan(app: FastAPI):
             await asyncio.sleep(2)
     if last is not None:
         raise RuntimeError(f"Neo4j unreachable after 60s: {last}")
-    core_store.ensure_schema()
+    # specs/v6 — Postgres has the identical cold-boot race Neo4j does
+    # above (app/db.py's connection pool connects eagerly on first real
+    # use, which is this call), but had no retry here: a Postgres service
+    # that starts slightly after this app would crash-loop instead of
+    # waiting, the exact failure mode the Neo4j loop above exists to avoid.
+    last = None
+    for attempt in range(30):
+        try:
+            core_store.ensure_schema()
+            last = None
+            break
+        except Exception as exc:
+            last = exc
+            await asyncio.sleep(2)
+    if last is not None:
+        raise RuntimeError(f"Postgres unreachable after 60s: {last}")
     auth.ensure_bootstrap_admin()
     # vault.ensure_schema() is what applies schema migrations (e.g. the
     # password_set column added in v2.6) — it only ran automatically for a
@@ -231,15 +246,23 @@ def _media_type(filename: str) -> str:
 
 
 def _locator(p: dict) -> str:
-    """Where in the source this passage sits, for the clinician to look up."""
+    """Where in the source this passage sits, for the clinician to look up.
+
+    `p` can be a Document passage (always has chunk_index) or a
+    traversal-accumulated node (a Chunk has chunk_index; an Entity has
+    neither) — chunk_index is looked up defensively, not assumed present.
+    """
     if p.get("page_start"):
-        if p["page_end"] and p["page_end"] != p["page_start"]:
+        if p.get("page_end") and p["page_end"] != p["page_start"]:
             return f"pages {p['page_start']}–{p['page_end']}"
         return f"page {p['page_start']}"
+    chunk_index = p.get("chunk_index")
+    if chunk_index is None:
+        return ""
     total = p.get("passage_count") or 0
     if total:
-        return f"passage {p['chunk_index'] + 1} of {total}"
-    return f"passage {p['chunk_index'] + 1}"
+        return f"passage {chunk_index + 1} of {total}"
+    return f"passage {chunk_index + 1}"
 
 
 def _ingest_pages(
@@ -298,17 +321,22 @@ def _ingest_pages(
     for i, p in enumerate(passages):
         p["embedding"] = embeddings[i] if i < len(embeddings) else None
 
+    # Graph-building is additive — never lose the source, or the other
+    # passages' already-extracted entities, over one passage's failure.
+    # Caught per-passage, not around the whole loop: a single transient
+    # LLM error used to blank out every passage's contribution, not just
+    # the one that actually failed.
     entities_per_passage: list[list[dict]] = []
     relationships: list[dict] = []
-    try:
-        for p in passages:
+    for p in passages:
+        try:
             graph = ingestion_pipeline.extract_graph(p["text"])
             entities_per_passage.append(graph["entities"])
             relationships.extend(graph["relationships"])
-    except Exception as exc:  # graph-building is additive; never lose the source over it
-        logging.warning("knowledge-graph extraction failed for %s: %s", filename, exc)
-        entities_per_passage = [[] for _ in passages]
-        relationships = []
+        except Exception as exc:
+            logging.warning("knowledge-graph extraction failed for a passage of %s: %s",
+                            filename, exc)
+            entities_per_passage.append([])
 
     try:
         return store.ingest_document(
@@ -1355,7 +1383,15 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
     if vault.get_client(practitioner_id, body.client_id) is None:
         raise HTTPException(404, "no such client")
 
+    # get_patient_context() does its own independent vault.get_client()
+    # lookup rather than reusing the check above (it's a separate module,
+    # callable on its own) — a client deleted in the gap between the two
+    # calls would otherwise make this None and crash the first
+    # patient.as_query_text() call deep inside the stream with an opaque
+    # AttributeError instead of a clean 404.
     patient = get_patient_context(practitioner_id, body.client_id)
+    if patient is None:
+        raise HTTPException(404, "no such client")
 
     session_id = body.session_id
     if session_id and vault.get_session(practitioner_id, session_id) is None:
@@ -1363,6 +1399,10 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
     if not session_id:
         session_id = vault.create_session(practitioner_id, body.client_id, body.question)["id"]
     history = vault.session_history(practitioner_id, session_id)[-6:]
+    # Applied throughout seed search and every traversal hop below — never
+    # the shared admin grade — so a practitioner's own down/up-weight
+    # actually affects only their own consultations (specs/v2/14 addendum #5).
+    weights = vault.get_source_weights(practitioner_id)
     # specs/graph-traversal-rag — the new pipeline's calls (seed formation,
     # per-hop judging, reasoning) don't yet each take a separate `history`
     # parameter the way the old select_sources()/answer() did; folded into
@@ -1390,12 +1430,12 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
 
         try:
             yield _sse({"event": "agent_start", "agent": "seed_search"})
-            seed_result = seed_search.seed(question, patient, body.min_grade)
+            seed_result = seed_search.seed(question, patient, body.min_grade, weights=weights)
             yield _sse({"event": "agent_done", "agent": "seed_search",
                        "input_tokens": 0, "output_tokens": 0})
 
             yield _sse({"event": "agent_start", "agent": "traversal"})
-            retriever = GraphTraversalRetriever(min_grade=body.min_grade)
+            retriever = GraphTraversalRetriever(min_grade=body.min_grade, weights=weights)
             traversal = retriever.retrieve(question, patient, seed_result)
             # Per-hop relevance-judgment usage isn't tracked in
             # total_input_tokens/output_tokens below — llm_judge_relevance
@@ -1498,6 +1538,7 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
                     "grade": node.get("grade"),
                     "snippet": node.get("text") or node.get("name") or "",
                     "kind": "chunk" if node.get("text") is not None else "entity",
+                    "locator": _locator(node),
                 }
                 for i, node in enumerate(traversal.accumulated)
             ],

@@ -61,18 +61,31 @@ def form_search_query(question: str, patient: PatientContext) -> str:
 
 
 def seed(question: str, patient: PatientContext, min_grade: int,
-        top_k: int | None = None) -> SeedResult:
+        top_k: int | None = None, weights: dict[str, int] | None = None) -> SeedResult:
+    """`weights` is a practitioner's own per-document grade override
+    (vault.get_source_weights()) — applied here, in Python, rather than
+    as a Cypher WHERE clause (store.seed_chunks_by_vector/_fulltext
+    deliberately return unfiltered candidates) so a source the
+    practitioner explicitly up-weighted above min_grade can still seed
+    the traversal even if the shared admin grade alone would have
+    excluded it, matching fetch_hop_neighbors' same weight-aware check
+    at every later hop."""
     top_k = top_k or cfg.traversal_seed_top_k
+    weights = weights or {}
     search_query = form_search_query(question, patient)
 
     embedding = get_client(Role.EMBEDDER).embed([search_query])[0]
-    vector_hits = store.seed_chunks_by_vector(embedding, top_k, min_grade)
-    fulltext_hits = store.seed_chunks_by_fulltext(search_query, top_k, min_grade)
+    vector_hits = store.seed_chunks_by_vector(embedding, top_k)
+    fulltext_hits = store.seed_chunks_by_fulltext(search_query, top_k)
 
     records: dict[str, dict] = {}
     for hit in (*vector_hits, *fulltext_hits):
         records.setdefault(hit["id"], hit)
-    chunk_ids = list(records)
+    chunk_ids = [
+        cid for cid, r in records.items()
+        if weights.get(r.get("document_id"), r.get("grade", 0)) >= min_grade
+    ]
+    records = {cid: records[cid] for cid in chunk_ids}
 
     for entity in store.entities_mentioned_by_chunks(chunk_ids):
         records.setdefault(entity["id"], entity)
