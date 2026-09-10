@@ -80,7 +80,7 @@ no longer gates anything once v2 is deployed.
 | Origin TLS | self-signed, `/etc/nginx/origin-tls/` |
 | Real client IP | `/etc/nginx/conf.d/cloudflare-realip.conf` — logs show the visitor, not Cloudflare's edge |
 | Neo4j | localhost only, heap 512m / pagecache 256m (`/etc/neo4j/neo4j.conf`) |
-| Patient vault | `/opt/clinic/data/patients.db` (SQLite) |
+| Postgres | localhost only, role `postgres`, database `clinic` — core store (`public` schema) + one schema per Pro practitioner's vault (`vault_<id>`). Replaces the old per-file SQLite stores (specs/v6) |
 | Original files | `/opt/clinic/data/originals/` — one file per source, named by source id |
 | Secrets | `/opt/clinic/.env`, mode 600 — Anthropic key, Neo4j password, session secret |
 
@@ -102,6 +102,61 @@ Easy to lose in a rewrite and each breaks a core feature silently:
   to stay well under this even on a slow connection; if `CHUNK_BYTES` in
   `chunkedUpload.ts` is ever raised, raise this alongside it or a chunk
   upload from a slow connection will time out server-side.
+
+## Postgres (specs/v6 — replaces the old per-file SQLite stores)
+
+**One-time setup on the server**, alongside the existing Neo4j install:
+
+```bash
+sudo apt-get install -y postgresql
+sudo -u postgres psql -c "ALTER ROLE postgres WITH PASSWORD '<a real generated password>';"
+sudo -u postgres createdb -O postgres clinic
+```
+
+Add to `/opt/clinic/.env` (alongside the existing Neo4j/Nebius vars):
+
+```
+POSTGRES_HOST=127.0.0.1
+POSTGRES_PORT=5432
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=<the password set above>
+POSTGRES_DATABASE=clinic
+```
+
+`app/core_store.py`'s `ensure_schema()` and each practitioner's
+`app/vault.py`'s `ensure_schema()` create their own tables/schemas on
+boot — no separate `CREATE TABLE` step needed beyond the database itself
+existing.
+
+**Migrating existing data** (only relevant the first time this cutover
+ships to a server that already has `data/core.db` / `data/vaults/*.db`
+from before this change):
+
+```bash
+cd /opt/clinic
+.venv/bin/python scripts/migrate_sqlite_to_postgres.py --dry-run   # see counts first
+.venv/bin/python scripts/migrate_sqlite_to_postgres.py             # then actually copy
+```
+
+Idempotent (every insert is `ON CONFLICT DO NOTHING`) — safe to re-run if
+it's interrupted partway. The old SQLite files are left in place, not
+deleted, after a successful migration; remove them manually once the new
+data's been spot-checked.
+
+**Isolation note, worth stating plainly since it's a real security
+property**: the old design kept each practitioner's clinical data in a
+physically separate SQLite file specifically so one practitioner's data
+could never leak into a query scoped to another (specs/v1/07-security.md,
+"the leak that was found"). This migration preserves that guarantee via
+a separate Postgres **schema** per practitioner rather than a separate
+**file** — a query against `vault_connection(practitioner_id)` has its
+`search_path` set to exactly that practitioner's schema and nothing
+enforces cross-schema queries at the app layer, but this is a *weaker*
+boundary than separate files/processes: a bug that runs raw SQL with an
+attacker-controlled schema-qualifier, or a Postgres-level privilege
+misconfiguration, could cross the boundary in a way a wrong file path
+couldn't. Worth a real security review before this handles actual patient
+data in production, not assumed equivalent to the old guarantee by default.
 
 ## Memory
 

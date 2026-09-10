@@ -21,10 +21,21 @@ class Config:
     # Filesystem — uploaded files, kept byte-for-byte alongside the chunks
     originals_path = os.getenv("ORIGINALS_PATH", "data/originals")
 
-    # SQLite — the core store: practitioners, plans, contact forms,
-    # questionnaires, site stats. Shared, cross-tenant by nature.
+    # Postgres — replaces the old per-file SQLite stores (specs/v6). The
+    # core store lives in the `public` schema; each Pro practitioner's
+    # vault gets its own schema (vault_<id>), created on Pro activation —
+    # same physical database, isolation preserved via schema instead of
+    # a separate file. See app/db.py.
+    postgres_host = os.getenv("POSTGRES_HOST", "127.0.0.1")
+    postgres_port = int(os.getenv("POSTGRES_PORT", "5433"))
+    postgres_user = os.getenv("POSTGRES_USER", "postgres")
+    postgres_password = os.getenv("POSTGRES_PASSWORD", "")
+    postgres_database = os.getenv("POSTGRES_DATABASE", "clinic")
+    postgres_pool_max = int(os.getenv("POSTGRES_POOL_MAX", "20"))
+    # Pre-migration SQLite paths — no longer read by core_store.py/vault.py
+    # themselves, kept only as scripts/migrate_sqlite_to_postgres.py's
+    # source-data locations.
     core_db_path = os.getenv("CORE_DB_PATH", "data/core.db")
-    # One SQLite file per Pro practitioner, created on Pro activation.
     vaults_path = os.getenv("VAULTS_PATH", "data/vaults")
     # A Pro practitioner's uploaded client files, id-not-filename, one
     # directory per practitioner underneath this.

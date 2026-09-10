@@ -12,6 +12,9 @@ openai==2.7.1
 transformers==4.57.1
 torch==2.9.0
 
+# Core store + vaults — Postgres, replacing sqlite3 (specs/v6)
+psycopg2-binary==2.9.11
+
 # Knowledge library
 neo4j==6.2.0
 

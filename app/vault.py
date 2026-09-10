@@ -1,21 +1,22 @@
-"""The client vault: one SQLite file per Pro practitioner.
+"""The client vault: one Postgres schema per Pro practitioner.
 
-Same schema and behavior as v1's single global patient vault (app/patients.py),
-except every function is scoped to a practitioner_id and resolves its own
-SQLite file under cfg.vaults_path instead of a single module-global path.
+specs/v6 — used to be one SQLite file per practitioner
+(cfg.vaults_path/<id>.db); now one Postgres schema (vault_<id>) inside
+the same shared database as the core store, via app/db.py's
+vault_connection() (SET search_path scopes every query in this module to
+that one practitioner's tables, same isolation guarantee the separate
+file used to give). Every function signature and return shape is
+unchanged, so nothing outside this module needed to change.
 """
 from __future__ import annotations
 
 import json
 import logging
-import sqlite3
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .config import get_config
-
-cfg = get_config()
+from .db import vault_connection
 
 KINDS = ("lab", "history", "note", "session_summary", "condition", "medication")
 # "condition"/"medication" added for app/patient/context.py — structured
@@ -57,16 +58,8 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def _connect(practitioner_id: str) -> sqlite3.Connection:
-    path = Path(cfg.vaults_path) / f"{practitioner_id}.db"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
 def ensure_schema(practitioner_id: str) -> None:
-    with _connect(practitioner_id) as conn:
+    with vault_connection(practitioner_id) as conn:
         conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS clients (
@@ -74,7 +67,7 @@ def ensure_schema(practitioner_id: str) -> None:
                 name TEXT NOT NULL,
                 email TEXT NOT NULL,
                 password_hash TEXT NOT NULL,
-                password_set INTEGER NOT NULL DEFAULT 1,
+                password_set BOOLEAN NOT NULL DEFAULT TRUE,
                 dob TEXT,
                 country TEXT,
                 created_at TEXT NOT NULL
@@ -192,41 +185,17 @@ def ensure_schema(practitioner_id: str) -> None:
                 client_id TEXT NOT NULL,
                 provider TEXT NOT NULL,
                 metric TEXT NOT NULL,
-                value REAL NOT NULL,
+                value DOUBLE PRECISION NOT NULL,
                 recorded_at TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS data_points_by_client
                 ON wearable_data_points(client_id, recorded_at);
             """
         )
-        # Migration for vaults created before password_set existed —
-        # CREATE TABLE IF NOT EXISTS above doesn't add columns to an
-        # existing table. Default is 1 (already-active): every real client
-        # in an existing vault got their password some other way already,
-        # so treating them as "still pending signup" would be the wrong
-        # default, not a safe one.
-        cols = {row[1] for row in conn.execute("PRAGMA table_info(clients)")}
-        if "password_set" not in cols:
-            conn.execute(
-                "ALTER TABLE clients ADD COLUMN password_set INTEGER NOT NULL DEFAULT 1")
-        session_cols = {row[1] for row in conn.execute("PRAGMA table_info(sessions)")}
-        if "status" not in session_cols:
-            conn.execute(
-                "ALTER TABLE sessions ADD COLUMN status TEXT NOT NULL DEFAULT 'in_progress'")
-        response_cols = {row[1] for row in conn.execute("PRAGMA table_info(questionnaire_responses)")}
-        if "viewed_at" not in response_cols:
-            conn.execute("ALTER TABLE questionnaire_responses ADD COLUMN viewed_at TEXT")
-        # specs/v4.1/03 CR3 — record_entries had no session_id, so a saved
-        # session_summary entry couldn't be traced back to the session that
-        # produced it; the UI displayed it only from in-memory state, which
-        # made a genuinely-saved summary look gone again on reload.
-        entry_cols = {row[1] for row in conn.execute("PRAGMA table_info(record_entries)")}
-        if "session_id" not in entry_cols:
-            conn.execute("ALTER TABLE record_entries ADD COLUMN session_id TEXT")
 
 
 def ping(practitioner_id: str) -> bool:
-    with _connect(practitioner_id) as conn:
+    with vault_connection(practitioner_id) as conn:
         conn.execute("SELECT 1")
     return True
 
@@ -240,27 +209,27 @@ def create_client(
     throwaway hash nobody knows), and completing signup later is allowed to
     set a real one exactly once — see set_client_password's mark_set."""
     client = {"id": str(uuid.uuid4()), "name": name, "email": email,
-              "password_hash": password_hash, "password_set": int(password_set),
+              "password_hash": password_hash, "password_set": password_set,
               "dob": dob, "country": country, "created_at": _now()}
-    with _connect(practitioner_id) as conn:
+    with vault_connection(practitioner_id) as conn:
         conn.execute(
             "INSERT INTO clients (id, name, email, password_hash, password_set,"
-            " dob, country, created_at) VALUES (:id, :name, :email,"
-            " :password_hash, :password_set, :dob, :country, :created_at)",
+            " dob, country, created_at) VALUES (%(id)s, %(name)s, %(email)s,"
+            " %(password_hash)s, %(password_set)s, %(dob)s, %(country)s, %(created_at)s)",
             client,
         )
     return client
 
 
 def get_client(practitioner_id: str, client_id: str) -> dict | None:
-    with _connect(practitioner_id) as conn:
+    with vault_connection(practitioner_id) as conn:
         row = conn.execute(
-            "SELECT * FROM clients WHERE id = ?", (client_id,)
+            "SELECT * FROM clients WHERE id = %s", (client_id,)
         ).fetchone()
         if row is None:
             return None
         entries = conn.execute(
-            "SELECT * FROM record_entries WHERE client_id = ? "
+            "SELECT * FROM record_entries WHERE client_id = %s "
             "ORDER BY created_at",
             (client_id,),
         ).fetchall()
@@ -278,29 +247,29 @@ def set_client_password(
     an ordinary already-authenticated password change (mark_set=False —
     leaves the flag as it already was).
     """
-    with _connect(practitioner_id) as conn:
+    with vault_connection(practitioner_id) as conn:
         if mark_set:
             conn.execute(
-                "UPDATE clients SET password_hash = ?, password_set = 1 WHERE id = ?",
+                "UPDATE clients SET password_hash = %s, password_set = TRUE WHERE id = %s",
                 (password_hash, client_id),
             )
         else:
             conn.execute(
-                "UPDATE clients SET password_hash = ? WHERE id = ?",
+                "UPDATE clients SET password_hash = %s WHERE id = %s",
                 (password_hash, client_id),
             )
 
 
 def get_client_by_email(practitioner_id: str, email: str) -> dict | None:
-    with _connect(practitioner_id) as conn:
+    with vault_connection(practitioner_id) as conn:
         row = conn.execute(
-            "SELECT * FROM clients WHERE email = ?", (email,)
+            "SELECT * FROM clients WHERE email = %s", (email,)
         ).fetchone()
     return dict(row) if row else None
 
 
 def list_clients(practitioner_id: str) -> list[dict]:
-    with _connect(practitioner_id) as conn:
+    with vault_connection(practitioner_id) as conn:
         rows = conn.execute(
             """
             SELECT c.*,
@@ -321,25 +290,24 @@ def delete_client(practitioner_id: str, client_id: str) -> bool:
     shows that a client existed and was erased without retaining the name — an
     erasure request should not also erase the evidence that it was honoured.
     """
-    with _connect(practitioner_id) as conn:
+    with vault_connection(practitioner_id) as conn:
         exists = conn.execute(
-            "SELECT 1 FROM clients WHERE id = ?", (client_id,)
+            "SELECT 1 FROM clients WHERE id = %s", (client_id,)
         ).fetchone()
         if not exists:
             return False
         conn.execute(
             "DELETE FROM session_turns WHERE session_id IN "
-            "(SELECT id FROM sessions WHERE client_id = ?)", (client_id,))
-        conn.execute("DELETE FROM sessions WHERE client_id = ?", (client_id,))
-        conn.execute("DELETE FROM record_entries WHERE client_id = ?", (client_id,))
+            "(SELECT id FROM sessions WHERE client_id = %s)", (client_id,))
+        conn.execute("DELETE FROM sessions WHERE client_id = %s", (client_id,))
+        conn.execute("DELETE FROM record_entries WHERE client_id = %s", (client_id,))
         conn.execute(
-            "DELETE FROM questionnaire_responses WHERE client_id = ?",
+            "DELETE FROM questionnaire_responses WHERE client_id = %s",
             (client_id,))
-        # Delete the file bytes too, not just the row — previously only the
-        # uploaded_files rows were dropped, leaving an "erased" client's
-        # actual files on disk indefinitely (specs/v4/04-known-issues.md#h2).
+        # Delete the file bytes too, not just the row — an "erased" client's
+        # actual files must not survive on disk indefinitely.
         file_rows = conn.execute(
-            "SELECT storage_path FROM uploaded_files WHERE client_id = ?",
+            "SELECT storage_path FROM uploaded_files WHERE client_id = %s",
             (client_id,)).fetchall()
         for row in file_rows:
             try:
@@ -347,15 +315,15 @@ def delete_client(practitioner_id: str, client_id: str) -> bool:
             except OSError as exc:
                 logging.warning("could not remove uploaded file %s: %s",
                                 row["storage_path"], exc)
-        conn.execute("DELETE FROM uploaded_files WHERE client_id = ?", (client_id,))
+        conn.execute("DELETE FROM uploaded_files WHERE client_id = %s", (client_id,))
         conn.execute(
-            "DELETE FROM wearable_data_points WHERE client_id = ?", (client_id,))
+            "DELETE FROM wearable_data_points WHERE client_id = %s", (client_id,))
         conn.execute(
-            "DELETE FROM wearable_connections WHERE client_id = ?", (client_id,))
-        conn.execute("DELETE FROM clients WHERE id = ?", (client_id,))
+            "DELETE FROM wearable_connections WHERE client_id = %s", (client_id,))
+        conn.execute("DELETE FROM clients WHERE id = %s", (client_id,))
         conn.execute(
             "UPDATE audit_events SET detail = '[redacted on erasure]' "
-            "WHERE client_id = ?",
+            "WHERE client_id = %s",
             (client_id,),
         )
     log(practitioner_id, "practitioner", "client erased",
@@ -369,10 +337,10 @@ def add_entry(practitioner_id: str, client_id: str, kind: str, content: str,
         raise ValueError(f"unknown entry kind: {kind}")
     entry = {"id": str(uuid.uuid4()), "client_id": client_id, "kind": kind,
               "content": content, "created_at": _now(), "session_id": session_id}
-    with _connect(practitioner_id) as conn:
+    with vault_connection(practitioner_id) as conn:
         conn.execute(
             "INSERT INTO record_entries (id, client_id, kind, content, created_at, session_id) "
-            "VALUES (:id, :client_id, :kind, :content, :created_at, :session_id)",
+            "VALUES (%(id)s, %(client_id)s, %(kind)s, %(content)s, %(created_at)s, %(session_id)s)",
             entry,
         )
     return entry
@@ -386,34 +354,34 @@ SESSION_STATUSES = ("in_progress", "done")
 def create_session(practitioner_id: str, client_id: str, title: str) -> dict:
     row = {"id": str(uuid.uuid4()), "client_id": client_id,
            "title": title[:90], "started_at": _now(), "status": "in_progress"}
-    with _connect(practitioner_id) as conn:
+    with vault_connection(practitioner_id) as conn:
         conn.execute(
             "INSERT INTO sessions (id, client_id, title, started_at, status) "
-            "VALUES (:id, :client_id, :title, :started_at, :status)", row)
+            "VALUES (%(id)s, %(client_id)s, %(title)s, %(started_at)s, %(status)s)", row)
     return row
 
 
 def set_session_status(practitioner_id: str, session_id: str, status: str) -> dict | None:
     if status not in SESSION_STATUSES:
         raise ValueError(f"unknown session status: {status}")
-    with _connect(practitioner_id) as conn:
+    with vault_connection(practitioner_id) as conn:
         exists = conn.execute(
-            "SELECT 1 FROM sessions WHERE id = ?", (session_id,)).fetchone()
+            "SELECT 1 FROM sessions WHERE id = %s", (session_id,)).fetchone()
         if not exists:
             return None
-        conn.execute("UPDATE sessions SET status = ? WHERE id = ?", (status, session_id))
+        conn.execute("UPDATE sessions SET status = %s WHERE id = %s", (status, session_id))
     return get_session(practitioner_id, session_id)
 
 
 def add_turn(practitioner_id: str, session_id: str, question: str, answer: str,
              payload: dict) -> None:
-    with _connect(practitioner_id) as conn:
+    with vault_connection(practitioner_id) as conn:
         ordinal = conn.execute(
-            "SELECT count(*) FROM session_turns WHERE session_id = ?",
-            (session_id,)).fetchone()[0]
+            "SELECT count(*) AS n FROM session_turns WHERE session_id = %s",
+            (session_id,)).fetchone()["n"]
         conn.execute(
             "INSERT INTO session_turns (id, session_id, ordinal, question, answer,"
-            " payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            " payload, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (str(uuid.uuid4()), session_id, ordinal, question, answer,
              json.dumps(payload), _now()),
         )
@@ -422,7 +390,7 @@ def add_turn(practitioner_id: str, session_id: str, question: str, answer: str,
 def list_recent_sessions(practitioner_id: str, limit: int = 8) -> list[dict]:
     """Most recent consultations across every client — the practitioner
     dashboard's historical-consultation widget, not scoped to one client."""
-    with _connect(practitioner_id) as conn:
+    with vault_connection(practitioner_id) as conn:
         rows = conn.execute(
             """
             SELECT s.id, s.title, s.started_at, s.status, s.client_id,
@@ -432,7 +400,7 @@ def list_recent_sessions(practitioner_id: str, limit: int = 8) -> list[dict]:
                    (SELECT t.question FROM session_turns t WHERE t.session_id = s.id
                        ORDER BY t.ordinal DESC LIMIT 1) AS last_question
             FROM sessions s JOIN clients c ON c.id = s.client_id
-            ORDER BY s.started_at DESC LIMIT ?
+            ORDER BY s.started_at DESC LIMIT %s
             """,
             (limit,),
         ).fetchall()
@@ -440,7 +408,7 @@ def list_recent_sessions(practitioner_id: str, limit: int = 8) -> list[dict]:
 
 
 def list_sessions(practitioner_id: str, client_id: str) -> list[dict]:
-    with _connect(practitioner_id) as conn:
+    with vault_connection(practitioner_id) as conn:
         rows = conn.execute(
             """
             SELECT s.id, s.title, s.started_at, s.status,
@@ -451,7 +419,7 @@ def list_sessions(practitioner_id: str, client_id: str) -> list[dict]:
                    (SELECT e.content FROM record_entries e
                        WHERE e.session_id = s.id AND e.kind = 'session_summary'
                        ORDER BY e.created_at DESC LIMIT 1) AS summary
-            FROM sessions s WHERE s.client_id = ?
+            FROM sessions s WHERE s.client_id = %s
             ORDER BY s.started_at DESC
             """,
             (client_id,),
@@ -460,14 +428,14 @@ def list_sessions(practitioner_id: str, client_id: str) -> list[dict]:
 
 
 def get_session(practitioner_id: str, session_id: str) -> dict | None:
-    with _connect(practitioner_id) as conn:
-        row = conn.execute("SELECT * FROM sessions WHERE id = ?",
+    with vault_connection(practitioner_id) as conn:
+        row = conn.execute("SELECT * FROM sessions WHERE id = %s",
                            (session_id,)).fetchone()
         if row is None:
             return None
         turns = conn.execute(
             "SELECT question, answer, payload, created_at FROM session_turns "
-            "WHERE session_id = ? ORDER BY ordinal", (session_id,)).fetchall()
+            "WHERE session_id = %s ORDER BY ordinal", (session_id,)).fetchall()
     return {**dict(row), "turns": [
         {"question": t["question"], "answer": t["answer"],
          "created_at": t["created_at"], **json.loads(t["payload"])}
@@ -476,23 +444,22 @@ def get_session(practitioner_id: str, session_id: str) -> dict | None:
 
 def session_history(practitioner_id: str, session_id: str) -> list[dict]:
     """Prior turns, in the shape the Librarian and Specialist expect."""
-    with _connect(practitioner_id) as conn:
+    with vault_connection(practitioner_id) as conn:
         rows = conn.execute(
-            "SELECT question, answer FROM session_turns WHERE session_id = ? "
+            "SELECT question, answer FROM session_turns WHERE session_id = %s "
             "ORDER BY ordinal", (session_id,)).fetchall()
     return [dict(r) for r in rows]
 
 
 def session_transcript(practitioner_id: str, session_id: str) -> str:
     """The Summariser's input. Includes each turn's Checker verdict when it
-    wasn't a clean 'pass' — previously dropped entirely (only question/answer
-    were read), so a session summary written into the permanent patient
-    record carried no trace that an answer had been flagged as containing an
-    unsupported claim."""
-    with _connect(practitioner_id) as conn:
+    wasn't a clean 'pass' — a session summary written into the permanent
+    patient record should carry a trace that an answer had been flagged as
+    containing an unsupported claim."""
+    with vault_connection(practitioner_id) as conn:
         rows = conn.execute(
             "SELECT question, answer, payload FROM session_turns "
-            "WHERE session_id = ? ORDER BY ordinal", (session_id,)).fetchall()
+            "WHERE session_id = %s ORDER BY ordinal", (session_id,)).fetchall()
     parts = []
     for r in rows:
         payload = json.loads(r["payload"]) if r["payload"] else {}
@@ -513,9 +480,9 @@ def session_has_flagged_turn(practitioner_id: str, session_id: str) -> bool:
     """True if any turn's Checker verdict wasn't a clean 'pass' — used to
     append a deterministic note to a session summary rather than relying on
     the Summariser to choose to mention it."""
-    with _connect(practitioner_id) as conn:
+    with vault_connection(practitioner_id) as conn:
         rows = conn.execute(
-            "SELECT payload FROM session_turns WHERE session_id = ?",
+            "SELECT payload FROM session_turns WHERE session_id = %s",
             (session_id,)).fetchall()
     for r in rows:
         payload = json.loads(r["payload"]) if r["payload"] else {}
@@ -528,19 +495,19 @@ def session_has_flagged_turn(practitioner_id: str, session_id: str) -> bool:
 def log(practitioner_id: str, actor: str, action: str, detail: str,
         client_id: str | None = None) -> None:
     """Record a client-touching event inside the vault."""
-    with _connect(practitioner_id) as conn:
+    with vault_connection(practitioner_id) as conn:
         conn.execute(
             "INSERT INTO audit_events (id, ts, actor, action, detail, client_id) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s)",
             (str(uuid.uuid4()), _now(), actor, action, detail, client_id),
         )
 
 
 def audit(practitioner_id: str, limit: int = 100) -> list[dict]:
-    with _connect(practitioner_id) as conn:
+    with vault_connection(practitioner_id) as conn:
         rows = conn.execute(
             "SELECT id, ts, actor, action, detail, client_id FROM audit_events "
-            "ORDER BY ts DESC LIMIT ?",
+            "ORDER BY ts DESC LIMIT %s",
             (limit,),
         ).fetchall()
     return [{**dict(r), "vault": "client"} for r in rows]
@@ -574,21 +541,21 @@ def save_questionnaire_response(
            "questionnaire_id": questionnaire_id,
            "questionnaire_version": questionnaire_version,
            "answers_json": json.dumps(answers), "submitted_at": _now()}
-    with _connect(practitioner_id) as conn:
+    with vault_connection(practitioner_id) as conn:
         conn.execute(
             "INSERT INTO questionnaire_responses (id, client_id, questionnaire_id,"
             " questionnaire_version, answers_json, submitted_at) VALUES"
-            " (:id, :client_id, :questionnaire_id, :questionnaire_version,"
-            " :answers_json, :submitted_at)",
+            " (%(id)s, %(client_id)s, %(questionnaire_id)s, %(questionnaire_version)s,"
+            " %(answers_json)s, %(submitted_at)s)",
             row,
         )
     return {**row, "answers": answers}
 
 
 def get_questionnaire_response(practitioner_id: str, client_id: str) -> dict | None:
-    with _connect(practitioner_id) as conn:
+    with vault_connection(practitioner_id) as conn:
         row = conn.execute(
-            "SELECT * FROM questionnaire_responses WHERE client_id = ? "
+            "SELECT * FROM questionnaire_responses WHERE client_id = %s "
             "ORDER BY submitted_at DESC LIMIT 1",
             (client_id,),
         ).fetchone()
@@ -603,10 +570,10 @@ def mark_intake_viewed(practitioner_id: str, client_id: str) -> None:
     """Mark a client's latest questionnaire response as viewed — called when
     a practitioner opens their intake review, so the unviewed-count badge
     clears without needing a separate explicit action."""
-    with _connect(practitioner_id) as conn:
+    with vault_connection(practitioner_id) as conn:
         conn.execute(
-            "UPDATE questionnaire_responses SET viewed_at = ? WHERE id = ("
-            "  SELECT id FROM questionnaire_responses WHERE client_id = ? "
+            "UPDATE questionnaire_responses SET viewed_at = %s WHERE id = ("
+            "  SELECT id FROM questionnaire_responses WHERE client_id = %s "
             "  ORDER BY submitted_at DESC LIMIT 1)",
             (_now(), client_id),
         )
@@ -614,17 +581,17 @@ def mark_intake_viewed(practitioner_id: str, client_id: str) -> None:
 
 def count_unviewed_intake(practitioner_id: str) -> int:
     """Clients whose most recent questionnaire response hasn't been viewed."""
-    with _connect(practitioner_id) as conn:
+    with vault_connection(practitioner_id) as conn:
         row = conn.execute(
             """
-            SELECT count(*) FROM questionnaire_responses qr
+            SELECT count(*) AS n FROM questionnaire_responses qr
             WHERE qr.viewed_at IS NULL
               AND qr.submitted_at = (
                   SELECT max(qr2.submitted_at) FROM questionnaire_responses qr2
                   WHERE qr2.client_id = qr.client_id)
             """
         ).fetchone()
-    return row[0] if row else 0
+    return row["n"] if row else 0
 
 
 # --- Uploaded files -------------------------------------------------------------
@@ -636,20 +603,20 @@ def save_uploaded_file(
     row = {"id": str(uuid.uuid4()), "client_id": client_id,
            "original_name": original_name, "media_type": media_type,
            "storage_path": storage_path, "uploaded_at": _now()}
-    with _connect(practitioner_id) as conn:
+    with vault_connection(practitioner_id) as conn:
         conn.execute(
             "INSERT INTO uploaded_files (id, client_id, original_name, "
-            "media_type, storage_path, uploaded_at) VALUES (:id, :client_id, "
-            ":original_name, :media_type, :storage_path, :uploaded_at)",
+            "media_type, storage_path, uploaded_at) VALUES (%(id)s, %(client_id)s, "
+            "%(original_name)s, %(media_type)s, %(storage_path)s, %(uploaded_at)s)",
             row,
         )
     return row
 
 
 def list_uploaded_files(practitioner_id: str, client_id: str) -> list[dict]:
-    with _connect(practitioner_id) as conn:
+    with vault_connection(practitioner_id) as conn:
         rows = conn.execute(
-            "SELECT * FROM uploaded_files WHERE client_id = ? "
+            "SELECT * FROM uploaded_files WHERE client_id = %s "
             "ORDER BY uploaded_at DESC",
             (client_id,),
         ).fetchall()
@@ -658,48 +625,46 @@ def list_uploaded_files(practitioner_id: str, client_id: str) -> list[dict]:
 
 def get_uploaded_file(practitioner_id: str, file_id: str, client_id: str | None = None) -> dict | None:
     """One uploaded-file row, including its storage_path — for serving the
-    actual bytes back (specs/v4/04-known-issues.md#h2). `client_id`, when
-    given, scopes the lookup so a client can only ever fetch their own file,
-    and a practitioner's client-facing route can't be pointed at another
-    client's upload by guessing a file id."""
-    with _connect(practitioner_id) as conn:
+    actual bytes back. `client_id`, when given, scopes the lookup so a
+    client can only ever fetch their own file, and a practitioner's
+    client-facing route can't be pointed at another client's upload by
+    guessing a file id."""
+    with vault_connection(practitioner_id) as conn:
         if client_id is not None:
             row = conn.execute(
-                "SELECT * FROM uploaded_files WHERE id = ? AND client_id = ?",
+                "SELECT * FROM uploaded_files WHERE id = %s AND client_id = %s",
                 (file_id, client_id)).fetchone()
         else:
             row = conn.execute(
-                "SELECT * FROM uploaded_files WHERE id = ?", (file_id,)).fetchone()
+                "SELECT * FROM uploaded_files WHERE id = %s", (file_id,)).fetchone()
     return dict(row) if row else None
 
 
 # --- Wearables ------------------------------------------------------------------
 
 def list_wearable_connections(practitioner_id: str, client_id: str) -> list[dict]:
-    with _connect(practitioner_id) as conn:
+    with vault_connection(practitioner_id) as conn:
         rows = conn.execute(
             "SELECT provider, status, connected_at FROM wearable_connections "
-            "WHERE client_id = ? ORDER BY connected_at", (client_id,),
+            "WHERE client_id = %s ORDER BY connected_at", (client_id,),
         ).fetchall()
     return [dict(r) for r in rows]
 
 
 def delete_wearable_connection(practitioner_id: str, client_id: str, provider: str) -> bool:
-    """Disconnect — no UI or API route ever exposed this before
-    (specs/v4/04-known-issues.md#m6); a client who connected the wrong
-    account had no way to undo it. Drops the fixture data points too, not
-    just the connection row, so re-connecting starts clean."""
-    with _connect(practitioner_id) as conn:
+    """Disconnect — drops the fixture data points too, not just the
+    connection row, so re-connecting starts clean."""
+    with vault_connection(practitioner_id) as conn:
         exists = conn.execute(
-            "SELECT 1 FROM wearable_connections WHERE client_id = ? AND provider = ?",
+            "SELECT 1 FROM wearable_connections WHERE client_id = %s AND provider = %s",
             (client_id, provider)).fetchone()
         if not exists:
             return False
         conn.execute(
-            "DELETE FROM wearable_connections WHERE client_id = ? AND provider = ?",
+            "DELETE FROM wearable_connections WHERE client_id = %s AND provider = %s",
             (client_id, provider))
         conn.execute(
-            "DELETE FROM wearable_data_points WHERE client_id = ? AND provider = ?",
+            "DELETE FROM wearable_data_points WHERE client_id = %s AND provider = %s",
             (client_id, provider))
     return True
 
@@ -711,11 +676,11 @@ def create_wearable_connection(
         raise ValueError(f"unknown wearable provider: {provider}")
     row = {"id": str(uuid.uuid4()), "client_id": client_id, "provider": provider,
            "status": "connected", "connected_at": _now()}
-    with _connect(practitioner_id) as conn:
+    with vault_connection(practitioner_id) as conn:
         conn.execute(
             "INSERT INTO wearable_connections (id, client_id, provider, status,"
-            " connected_at) VALUES (:id, :client_id, :provider, :status,"
-            " :connected_at)",
+            " connected_at) VALUES (%(id)s, %(client_id)s, %(provider)s, %(status)s,"
+            " %(connected_at)s)",
             row,
         )
     return row
@@ -737,20 +702,20 @@ def seed_fixture_wearable_data(
          "metric": metric, "value": value, "recorded_at": now}
         for metric, value in FIXTURE_WEARABLE_METRICS[provider]
     ]
-    with _connect(practitioner_id) as conn:
+    with vault_connection(practitioner_id) as conn:
         conn.executemany(
             "INSERT INTO wearable_data_points (id, client_id, provider, metric,"
-            " value, recorded_at) VALUES (:id, :client_id, :provider, :metric,"
-            " :value, :recorded_at)",
+            " value, recorded_at) VALUES (%(id)s, %(client_id)s, %(provider)s, %(metric)s,"
+            " %(value)s, %(recorded_at)s)",
             points,
         )
     return points
 
 
 def list_wearable_data(practitioner_id: str, client_id: str) -> list[dict]:
-    with _connect(practitioner_id) as conn:
+    with vault_connection(practitioner_id) as conn:
         rows = conn.execute(
-            "SELECT * FROM wearable_data_points WHERE client_id = ? "
+            "SELECT * FROM wearable_data_points WHERE client_id = %s "
             "ORDER BY recorded_at DESC",
             (client_id,),
         ).fetchall()
@@ -773,23 +738,23 @@ def save_document(
         raise ValueError(f"unknown document status: {status}")
     row = {"id": str(uuid.uuid4()), "session_id": session_id, "client_id": client_id,
            "kind": kind, "status": status, "content": content, "updated_at": _now()}
-    with _connect(practitioner_id) as conn:
+    with vault_connection(practitioner_id) as conn:
         conn.execute(
             "INSERT INTO session_documents (id, session_id, client_id, kind, "
-            "status, content, updated_at) VALUES (:id, :session_id, :client_id, "
-            ":kind, :status, :content, :updated_at) "
-            "ON CONFLICT(session_id, kind) DO UPDATE SET "
-            "status = excluded.status, content = excluded.content, "
-            "updated_at = excluded.updated_at",
+            "status, content, updated_at) VALUES (%(id)s, %(session_id)s, %(client_id)s, "
+            "%(kind)s, %(status)s, %(content)s, %(updated_at)s) "
+            "ON CONFLICT (session_id, kind) DO UPDATE SET "
+            "status = EXCLUDED.status, content = EXCLUDED.content, "
+            "updated_at = EXCLUDED.updated_at",
             row,
         )
     return get_document(practitioner_id, session_id, kind)
 
 
 def get_document(practitioner_id: str, session_id: str, kind: str) -> dict | None:
-    with _connect(practitioner_id) as conn:
+    with vault_connection(practitioner_id) as conn:
         row = conn.execute(
-            "SELECT * FROM session_documents WHERE session_id = ? AND kind = ?",
+            "SELECT * FROM session_documents WHERE session_id = %s AND kind = %s",
             (session_id, kind),
         ).fetchone()
     return dict(row) if row else None
@@ -798,11 +763,11 @@ def get_document(practitioner_id: str, session_id: str, kind: str) -> dict | Non
 def list_documents(practitioner_id: str, client_id: str) -> list[dict]:
     """All documents across a client's sessions, newest first — the
     reports & documents side panel."""
-    with _connect(practitioner_id) as conn:
+    with vault_connection(practitioner_id) as conn:
         rows = conn.execute(
             "SELECT d.*, s.title AS session_title FROM session_documents d "
             "JOIN sessions s ON s.id = d.session_id "
-            "WHERE d.client_id = ? ORDER BY d.updated_at DESC",
+            "WHERE d.client_id = %s ORDER BY d.updated_at DESC",
             (client_id,),
         ).fetchall()
     return [dict(r) for r in rows]
@@ -812,12 +777,12 @@ def list_documents(practitioner_id: str, client_id: str) -> list[dict]:
 
 def upsert_intake_note(practitioner_id: str, client_id: str, theme: str, note: str) -> dict:
     row = {"client_id": client_id, "theme": theme, "note": note, "updated_at": _now()}
-    with _connect(practitioner_id) as conn:
+    with vault_connection(practitioner_id) as conn:
         conn.execute(
             "INSERT INTO intake_notes (client_id, theme, note, updated_at) "
-            "VALUES (:client_id, :theme, :note, :updated_at) "
-            "ON CONFLICT(client_id, theme) DO UPDATE SET "
-            "note = excluded.note, updated_at = excluded.updated_at",
+            "VALUES (%(client_id)s, %(theme)s, %(note)s, %(updated_at)s) "
+            "ON CONFLICT (client_id, theme) DO UPDATE SET "
+            "note = EXCLUDED.note, updated_at = EXCLUDED.updated_at",
             row,
         )
     return row
@@ -825,9 +790,9 @@ def upsert_intake_note(practitioner_id: str, client_id: str, theme: str, note: s
 
 def list_intake_notes(practitioner_id: str, client_id: str) -> dict:
     """Returns {theme: note} for a client."""
-    with _connect(practitioner_id) as conn:
+    with vault_connection(practitioner_id) as conn:
         rows = conn.execute(
-            "SELECT theme, note FROM intake_notes WHERE client_id = ?",
+            "SELECT theme, note FROM intake_notes WHERE client_id = %s",
             (client_id,),
         ).fetchall()
     return {r["theme"]: r["note"] for r in rows}
@@ -837,7 +802,7 @@ def list_intake_notes(practitioner_id: str, client_id: str) -> dict:
 
 def get_source_weights(practitioner_id: str) -> dict:
     """Returns {source_id: weight} — this practitioner's own overrides only."""
-    with _connect(practitioner_id) as conn:
+    with vault_connection(practitioner_id) as conn:
         rows = conn.execute("SELECT source_id, weight FROM source_weights").fetchall()
     return {r["source_id"]: r["weight"] for r in rows}
 
@@ -846,12 +811,12 @@ def set_source_weight(practitioner_id: str, source_id: str, weight: int) -> dict
     if not 1 <= weight <= 10:
         raise ValueError("weight must be between 1 and 10")
     row = {"source_id": source_id, "weight": weight, "updated_at": _now()}
-    with _connect(practitioner_id) as conn:
+    with vault_connection(practitioner_id) as conn:
         conn.execute(
             "INSERT INTO source_weights (source_id, weight, updated_at) "
-            "VALUES (:source_id, :weight, :updated_at) "
-            "ON CONFLICT(source_id) DO UPDATE SET "
-            "weight = excluded.weight, updated_at = excluded.updated_at",
+            "VALUES (%(source_id)s, %(weight)s, %(updated_at)s) "
+            "ON CONFLICT (source_id) DO UPDATE SET "
+            "weight = EXCLUDED.weight, updated_at = EXCLUDED.updated_at",
             row,
         )
     return row

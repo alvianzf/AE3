@@ -75,8 +75,8 @@ async def lifespan(app: FastAPI):
     # and broke the next write to that vault (found live: sqlite3.
     # OperationalError on an existing practitioner's client signup). Re-run
     # it against every existing vault on every boot so this can't recur.
-    for db_file in Path(cfg.vaults_path).glob("*.db"):
-        vault.ensure_schema(db_file.stem)
+    for practitioner in core_store.list_practitioners():
+        vault.ensure_schema(practitioner["id"])
     yield
 
 
