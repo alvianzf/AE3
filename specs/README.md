@@ -7,6 +7,7 @@ edited after the fact; a change becomes a new version.
 
 | Version | Status | Covers |
 |---|---|---|
+| [v4.1](v4.1/README.md) | **spec only, not built** | A role-by-role redesign pass on top of deployed v4: splits the landing page from the practitioner directory, a per-role visual/structural separation system for client/practitioner/admin, and a severity-ranked list of gaps and bugs found while auditing all four portals (3 Critical functional bugs, plus High/Medium/Low workflow gaps) |
 | [v4](v4/README.md) | **deployed — actually current** | A SvelteKit frontend rewrite, plus post-launch work: a PM/QA/Clinician review (42/44 fixed), CI/CD, chunked uploads, a staged-source review queue |
 | [v3](v3/README.md) | superseded in practice, not yet formally cut | v2 plus bounded AI-answer revision, a reachable Summariser, and Material Design 3 |
 | [v2](v2/README.md) | superseded | Full product: public website, admin portal, practitioner portal, client portal |
