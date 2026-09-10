@@ -19,7 +19,13 @@ Reader/Librarian/Answer/Checker names the way the labels alone suggested**
 | Embedder | **Qwen3-Embedding-8B** | Embeds KB chunks into the database | No current equivalent — genuinely new. Retrieval today is explicitly non-embedding (`.env.example`: *"Retrieval — the librarian picks from source cards; no embeddings"*) |
 | Answer Engine | **Qwen3 8B** | Works out what's being asked and what to go fetch | `LIBRARIAN_MODEL`'s query-time job (`app/llm.py:409`, docstring: *"turns a question into what to look for; it does not answer"*) |
 | Reasoner (Specialist) | **KIMI K3** | Senior reasoner — reads retrieved KB + patient data, reasons over it | `ANSWER_MODEL` (`app/llm.py:444` `answer()`, docstring names this role "Specialist" too — genuine naming agreement, not a coincidence worth second-guessing) |
-| Checker | **Qwen3.6-27B** (same model as Reader, different system prompt/role) | *(not separately described — added after the initial four-role pass, confirmed as a distinct role reusing the Reader model)* | `CHECKER_MODEL` (`app/llm.py:541` `check()`) — matches directly |
+| Checker (Anti-Hallucination) | **HHEM-2.1-Open / LettuceDetect** | Verifies every sentence against the sources it came from | `CHECKER_MODEL` (`app/llm.py:541` `check()`) — same *role*, but see [§The Checker is not a chat model](#the-checker-is-not-a-chat-model-a-different-integration-shape-than-the-other-five-roles) below: this is a materially different kind of model than the other five |
+
+**Correction, superseding an earlier pass in this doc's drafting**: the
+Checker was first given as "Qwen3.6-27B, same model as Reader" — that's
+wrong, superseded by the row above. HHEM-2.1-Open and LettuceDetect are
+two *candidate* models for the same slot (a specific choice between them
+isn't made here), not a two-step pipeline.
 
 ## Why this isn't a simple rename of the existing four roles
 
@@ -49,6 +55,39 @@ docstring already calls that exact role "Specialist"
 (`app/llm.py:5`). Whoever implements this should **not** wire "Answer
 Engine" → `answer()` just because of the name; wire it to the retrieval/
 planning step, and "Reasoner (Specialist)" → `answer()`.
+
+## The Checker is not a chat model — a different integration shape than the other five
+
+HHEM-2.1-Open and LettuceDetect are **hallucination-detection / NLI
+(natural-language-inference) models, not general chat/completion LLMs**
+like the other five roles in this list. They're normally run as a
+classifier over a (claim, evidence) pair, returning a score or
+entailment label — not invoked with a system prompt + JSON-schema chat
+completion the way `_json_call()` (`app/llm.py:29-48`) calls the other
+five roles today. Concretely, this means:
+
+- The Checker likely **cannot reuse `_json_call()` or the OpenAI-style
+  `/chat/completions` request shape at all** — it needs its own call
+  path, and possibly its own hosting story (confirm whether Nebius's
+  token factory serves HHEM/LettuceDetect via the same OpenAI-compatible
+  endpoint, or via a separate inference API with a different request/
+  response shape — genuinely unknown until checked against Nebius's
+  actual catalog).
+- The current `check()` function's job (`app/llm.py:541`, verifying a
+  drafted answer's claims against its cited sources, one call per
+  answer) maps conceptually to HHEM/LettuceDetect's actual purpose
+  (sentence-level entailment against evidence) — the role doesn't change,
+  but **the shape of the check might**: today's `check()` likely asks a
+  chat model "does this answer's claims hold up against these sources"
+  as one JSON-schema call; HHEM/LettuceDetect more naturally run
+  per-sentence, which could mean multiple calls per answer (one per
+  claim/sentence) rather than one holistic call — a real function
+  rewrite, not a model swap, if that's how the chosen model actually
+  works.
+- **Choosing between HHEM-2.1-Open and LettuceDetect** is itself
+  unresolved (both given as candidates) — they have different licensing,
+  hosting, and output shapes; picking one is a prerequisite for writing
+  the integration, not a detail to leave open during implementation.
 
 ## What changes mechanically in `app/llm.py`
 

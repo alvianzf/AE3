@@ -30,14 +30,40 @@ and adds it to a living library. When a practitioner asks a question
 during a consult, an AI team goes to work — and never once reaches
 outside that library for an answer.
 
-| | |
-|---|---|
-| 🧠 **Trained on what you teach it** | Nothing reaches an answer that isn't in your library. No open-internet guessing. |
-| 📎 **Every claim is cited** | Click a citation, jump straight to the passage — page number included. |
-| 🔍 **An independent check challenges every answer** | A second AI verifies the draft against its sources before a practitioner sees it, and flags anything it can't confirm. |
-| 🎚️ **You decide what it's allowed to use** | A grade slider controls the reliability bar in real time — drop it and a low-confidence source becomes reachable; raise it and it's gone. |
-| 🩺 **It remembers** | Save a consult summary straight into the patient record — nothing has to be re-explained next visit. |
-| 🗂️ **A full paper trail** | Every ingest, every regrade, every question — logged, for the moments someone needs to know exactly what the AI was shown. |
+### 🧠 Trained on what you teach it
+Nothing reaches an answer that isn't in your library. There's no fallback
+to whatever the underlying model absorbed during training — if your
+clinic hasn't uploaded it, graded it, and let it into the library, the AI
+can't see it, let alone cite it.
+
+### 📎 Every claim is cited
+Every sentence in an answer traces back to a specific source and page.
+Click a citation and you land on the exact passage it came from — not a
+document-level "trust me," a line you can actually go read.
+
+### 🔍 An independent check challenges every answer
+A second, separate AI re-reads the draft answer against its cited sources
+before a practitioner ever sees it — the same "don't grade your own
+homework" principle a second reviewer gives you, run automatically on
+every single answer, and it says so explicitly when it can't confirm a
+claim rather than staying quiet about it.
+
+### 🎚️ You decide what it's allowed to use
+Every source carries a reliability grade, and a slider controls the bar
+in real time. Drop it and a lower-confidence source becomes reachable for
+that question; raise it and the AI loses access to anything below the
+line — your clinic's judgment call, adjustable per question, not a fixed
+setting buried in an admin panel.
+
+### 🩺 It remembers
+A consult summary saves straight into the patient record with one click —
+nothing a practitioner explained in one visit has to be re-explained by
+the client, or re-derived by the practitioner, at the next one.
+
+### 🗂️ A full paper trail
+Every ingest, every regrade, every question asked — logged, so when
+someone needs to know exactly what the AI was shown before it answered a
+specific question, that's a lookup, not a reconstruction.
 
 ## Built entirely on Claude
 
