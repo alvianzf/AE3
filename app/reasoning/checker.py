@@ -14,6 +14,7 @@ from __future__ import annotations
 import re
 
 from ..config import get_config
+from ..graph import store
 from .reasoner import ReasonedAnswer
 
 cfg = get_config()
@@ -40,9 +41,9 @@ def _sentences(text: str) -> list[str]:
 
 
 def _node_text(node: dict) -> str:
-    if node.get("text") is not None:
+    if store.is_chunk(node):
         return node["text"]
-    return f"{node.get('name', '')} ({node.get('type') or node.get('entity_type') or ''})"
+    return f"{node.get('name', '')} ({store.node_type(node)})"
 
 
 def check(question: str, reasoned: ReasonedAnswer, patient_context_text: str) -> dict:

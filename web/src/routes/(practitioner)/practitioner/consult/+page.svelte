@@ -69,14 +69,17 @@
 		librarian: 'Librarian', specialist: 'Specialist', checker: 'Checker'
 	};
 
-	// Splits the answer text on [S1]/[S2]… markers so each one that matches a
-	// real source in `sources` renders as a clickable jump-to-citation button
-	// instead of inert text — the markers were previously rendered literally
-	// with nothing to click and no source panel to click into.
+	// Splits the answer text on [S1]/[S2]… or [K1]/[K2]… markers so each one
+	// that matches a real source in `sources` renders as a clickable
+	// jump-to-citation button instead of inert text — the markers were
+	// previously rendered literally with nothing to click and no source
+	// panel to click into. Both prefixes are matched: the Reasoner
+	// (specs/v5) cites as [K1], but a session answered before that change
+	// may still have [S1]-style markers stored in its transcript.
 	function citationParts(text: string, sources: any[]) {
 		const labels = new Set((sources ?? []).map((s) => s.label));
 		const parts: { text?: string; cite?: string }[] = [];
-		const re = /\[(S\d+)\]/g;
+		const re = /\[([SK]\d+)\]/g;
 		let last = 0;
 		let m: RegExpExecArray | null;
 		while ((m = re.exec(text))) {
@@ -178,13 +181,26 @@
 			</div>
 		{/if}
 
-		{#if t.librarian}
+		{#if t.traversal}
+			<!-- specs/v5 replaced the Librarian-picks-then-traverses pipeline
+			     with graph traversal + per-hop pruning; this panel reads the
+			     new result shape (seed_search/traversal) instead of the
+			     retired `librarian` key. -->
 			<details class="librarian">
-				<summary>How the librarian chose — considered {t.librarian.considered}, opened {t.librarian.opened?.length ?? 0}{#if t.librarian.truncated}, {t.librarian.truncated} truncated{/if}</summary>
-				{#if t.librarian.reasoning}<p class="hint">{t.librarian.reasoning}</p>{/if}
-				{#if t.librarian.opened?.length}
+				<summary>
+					How it searched
+					{#if t.seed_search}— seed query {JSON.stringify(t.seed_search.search_query)}, {t.seed_search.seed_count} seed node(s){/if},
+					traversal reached depth {t.traversal.depth_reached} ({t.traversal.stopped_reason.replaceAll('_', ' ')})
+				</summary>
+				{#if t.traversal.path?.length}
 					<ul class="list">
-						{#each t.librarian.opened as o}<li>{o.title} <Chip tone="neutral">grade {o.grade}</Chip></li>{/each}
+						{#each t.traversal.path as p}
+							<li>
+								<Chip tone={p.relevant ? 'accent' : 'neutral'}>{p.relevant ? 'kept' : 'dropped'}</Chip>
+								hop {p.hop} — {p.label}
+								{#if p.reason}<span class="hint">— {p.reason}</span>{/if}
+							</li>
+						{/each}
 					</ul>
 				{/if}
 			</details>

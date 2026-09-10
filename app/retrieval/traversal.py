@@ -63,10 +63,10 @@ RELEVANCE_SYSTEM = (
 
 
 def _candidate_label(c: dict) -> str:
-    if "text" in c and c.get("text") is not None:
+    if store.is_chunk(c):
         doc = c.get("document_title", "unknown source")
         return f"[chunk from {doc}] {c['text'][:400]}"
-    return f"[entity: {c.get('entity_type') or c.get('type') or 'unknown type'}] {c.get('name', c['id'])}"
+    return f"[entity: {store.node_type(c)}] {c.get('name', c['id'])}"
 
 
 def llm_judge_relevance(question: str, patient: PatientContext,

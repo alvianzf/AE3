@@ -77,7 +77,7 @@ def seed(question: str, patient: PatientContext, min_grade: int,
     for entity in store.entities_mentioned_by_chunks(chunk_ids):
         records.setdefault(entity["id"], entity)
 
-    entity_ids = [rid for rid, r in records.items() if "name" in r and "text" not in r]
+    entity_ids = [rid for rid, r in records.items() if not store.is_chunk(r)]
     return SeedResult(
         search_query=search_query,
         seed_chunk_ids=chunk_ids,

@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..clients.llm_client import Role, get_client
+from ..graph import store
 from ..patient.context import PatientContext
 from ..retrieval.traversal import TraversalResult
 
@@ -35,9 +36,9 @@ class ReasonedAnswer:
 
 
 def _label(node: dict) -> str:
-    if node.get("text") is not None:
+    if store.is_chunk(node):
         return f"(source: {node.get('document_title', 'unknown')}) {node['text']}"
-    return f"(entity, {node.get('type') or node.get('entity_type') or 'unknown type'}: {node.get('name', node.get('id'))})"
+    return f"(entity, {store.node_type(node)}: {node.get('name', node.get('id'))})"
 
 
 def answer(question: str, patient: PatientContext, traversal: TraversalResult,

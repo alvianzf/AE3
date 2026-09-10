@@ -100,11 +100,32 @@ def vault_schema_name(practitioner_id: str) -> str:
     return f"vault_{safe}"
 
 
-@contextmanager
-def vault_connection(practitioner_id: str):
+def list_vault_schemas() -> list[str]:
+    """Every vault_* schema that actually exists in Postgres — used for
+    boot-time repair (app/main.py) so a schema whose owning practitioner
+    row is missing or stale from core_store still gets its DDL re-run,
+    not just the schemas derivable from today's practitioners list."""
     pool = _get_pool()
     raw = pool.getconn()
+    try:
+        cur = raw.cursor()
+        cur.execute(
+            "SELECT schema_name FROM information_schema.schemata "
+            r"WHERE schema_name LIKE 'vault\_%' ESCAPE '\'"
+        )
+        names = [r[0] for r in cur.fetchall()]
+        cur.close()
+        raw.commit()
+        return names
+    finally:
+        pool.putconn(raw)
+
+
+@contextmanager
+def vault_connection(practitioner_id: str):
     schema = vault_schema_name(practitioner_id)
+    pool = _get_pool()
+    raw = pool.getconn()
     try:
         setup = raw.cursor()
         setup.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
@@ -119,4 +140,38 @@ def vault_connection(practitioner_id: str):
         reset = raw.cursor()
         reset.execute("SET search_path TO public")
         reset.close()
+        raw.commit()
+        pool.putconn(raw)
+
+
+@contextmanager
+def schema_connection(schema_name: str):
+    """Like vault_connection(), but scoped directly to an already-known
+    Postgres schema name (from list_vault_schemas()) rather than derived
+    from a practitioner_id — the schema-name sanitization in
+    vault_schema_name() is one-way, so a schema found this way can't be
+    reliably mapped back to the practitioner_id that created it."""
+    pool = _get_pool()
+    raw = pool.getconn()
+    try:
+        setup = raw.cursor()
+        setup.execute(f'SET search_path TO "{schema_name}", public')
+        setup.close()
+        yield _Conn(raw)
+        raw.commit()
+    except Exception:
+        raw.rollback()
+        raise
+    finally:
+        # The reset itself runs inside a fresh implicit transaction (this
+        # connection is never autocommit) — left uncommitted, the
+        # connection goes back to the pool "idle in transaction" and the
+        # next caller to check it out inherits a dangling transaction
+        # that a later rollback() would incorrectly unwind. Close it out
+        # explicitly rather than relying on the commit()/rollback() above,
+        # which already happened before this statement ran.
+        reset = raw.cursor()
+        reset.execute("SET search_path TO public")
+        reset.close()
+        raw.commit()
         pool.putconn(raw)

@@ -741,6 +741,25 @@ def seed_entities_by_fulltext(query: str, top_k: int) -> list[dict]:
         return [dict(r) for r in recs]
 
 
+def is_chunk(node: dict) -> bool:
+    """True for a Chunk record, false for an Entity record — both shapes
+    come back from seed_chunks_by_vector()/seed_chunks_by_fulltext()/
+    seed_entities_by_fulltext()/fetch_hop_neighbors() as plain dicts with
+    no type tag, so every caller across retrieval/ and reasoning/ needs
+    this same test. Centralized here (instead of four independent,
+    already-diverging reimplementations) so a future change to this
+    module's column aliasing only has one call site to update."""
+    return node.get("text") is not None
+
+
+def node_type(node: dict) -> str:
+    """An Entity's clinical category (Condition, Medication, ...), or a
+    fallback label if one was never set. Every query in this module that
+    returns an Entity aliases the column as `type` — use this instead of
+    guessing a field name per call site."""
+    return node.get("type") or "unknown type"
+
+
 def entities_mentioned_by_chunks(chunk_ids: list[str]) -> list[dict]:
     """The Entity nodes a set of chunks mentions — used to seed the
     traversal frontier with entity points alongside the seed chunks
@@ -786,7 +805,7 @@ def fetch_hop_neighbors(frontier_ids: list[str], visited_ids: set[str],
             WITH DISTINCT neighbor, type(r) AS via, labels(neighbor) AS labs
             OPTIONAL MATCH (doc:Document)-[:HAS_CHUNK]->(neighbor)
             RETURN neighbor.id AS id, labs AS labels, via,
-                   neighbor.name AS name, neighbor.type AS entity_type,
+                   neighbor.name AS name, neighbor.type AS type,
                    neighbor.text AS text, neighbor.chunk_index AS chunk_index,
                    doc.id AS document_id, doc.title AS document_title, doc.grade AS grade
             LIMIT $limit

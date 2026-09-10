@@ -115,15 +115,21 @@ def _copy_table(pg_conn, source_rows, table: str, columns: list[str],
             row[c] = v
         rows.append(row)
     if dry_run:
-        logging.info("  [dry-run] would insert %d row(s) into %s", len(rows), table)
+        logging.info("  [dry-run] would insert up to %d row(s) into %s", len(rows), table)
         return len(rows)
     cur = pg_conn.cursor()
+    inserted = 0
     for row in rows:
         cur.execute(sql, row)
-    n = cur.rowcount
+        # ON CONFLICT DO NOTHING makes this 0 for a row that already
+        # existed — summing per-statement rowcount (not just checking it
+        # once after the loop) is what makes a rerun's log honestly
+        # distinguish "already migrated" from "just inserted".
+        inserted += cur.rowcount
     cur.close()
-    logging.info("  %s: %d row(s) migrated (source had %d)", table, len(rows), len(source_rows))
-    return len(rows)
+    logging.info("  %s: %d/%d row(s) newly inserted (rest already present)",
+                table, inserted, len(rows))
+    return inserted
 
 
 def migrate_core(cfg, dry_run: bool) -> None:
@@ -136,7 +142,14 @@ def migrate_core(cfg, dry_run: bool) -> None:
     logging.info("Migrating core store from %s", path)
     with core_connection() as conn:
         from app import core_store
-        core_store.ensure_schema()
+        # ensure_schema() isn't a read — it runs real DDL and can promote
+        # an admin to superadmin (see its docstring) — so it's gated the
+        # same as every actual row insert below, not run unconditionally.
+        # A --dry-run against a brand-new Postgres instance would
+        # otherwise still create every core table and mutate admin roles,
+        # contradicting "writes nothing".
+        if not dry_run:
+            core_store.ensure_schema()
         for table, columns, bool_cols in CORE_TABLES:
             rows = _sqlite_rows(path, table)
             _copy_table(conn._raw, rows, table, columns, bool_cols, dry_run)

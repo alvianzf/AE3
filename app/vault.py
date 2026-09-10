@@ -16,7 +16,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .db import vault_connection
+from .db import schema_connection, vault_connection
 
 KINDS = ("lab", "history", "note", "session_summary", "condition", "medication")
 # "condition"/"medication" added for app/patient/context.py — structured
@@ -58,10 +58,11 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def ensure_schema(practitioner_id: str) -> None:
-    with vault_connection(practitioner_id) as conn:
-        conn.executescript(
-            """
+# Factored out of ensure_schema() so ensure_schema_by_name() (boot-time
+# repair of a schema whose owning practitioner_id can't be recovered —
+# see app/db.py's list_vault_schemas()) runs the identical DDL rather
+# than a second copy that could drift out of sync with this one.
+_SCHEMA_DDL = """
             CREATE TABLE IF NOT EXISTS clients (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
@@ -146,10 +147,9 @@ def ensure_schema(practitioner_id: str) -> None:
                 question TEXT NOT NULL,
                 answer TEXT NOT NULL,
                 payload TEXT NOT NULL,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                UNIQUE (session_id, ordinal)
             );
-            CREATE INDEX IF NOT EXISTS turns_by_session
-                ON session_turns(session_id, ordinal);
             CREATE TABLE IF NOT EXISTS questionnaire_responses (
                 id TEXT PRIMARY KEY,
                 client_id TEXT NOT NULL,
@@ -191,7 +191,22 @@ def ensure_schema(practitioner_id: str) -> None:
             CREATE INDEX IF NOT EXISTS data_points_by_client
                 ON wearable_data_points(client_id, recorded_at);
             """
-        )
+
+
+def ensure_schema(practitioner_id: str) -> None:
+    with vault_connection(practitioner_id) as conn:
+        conn.executescript(_SCHEMA_DDL)
+
+
+def ensure_schema_by_name(schema_name: str) -> None:
+    """Same DDL as ensure_schema(), against an already-known Postgres
+    schema name directly — used to repair every vault_* schema that
+    actually exists (app/main.py's boot-time loop), including one whose
+    owning practitioner_id can't be reconstructed from the schema name
+    (vault_schema_name()'s sanitization is one-way) or whose
+    practitioners row is missing/stale in the core store."""
+    with schema_connection(schema_name) as conn:
+        conn.executescript(_SCHEMA_DDL)
 
 
 def ping(practitioner_id: str) -> bool:
@@ -375,7 +390,17 @@ def set_session_status(practitioner_id: str, session_id: str, status: str) -> di
 
 def add_turn(practitioner_id: str, session_id: str, question: str, answer: str,
              payload: dict) -> None:
+    # `SELECT ... FOR UPDATE` on the session row serializes concurrent
+    # add_turn() calls for the same session (two browser tabs, a retried
+    # request after a timeout) so two callers can't both compute the same
+    # next ordinal — the old SQLite-per-vault-file design had this for
+    # free via the file's single-writer lock; a shared, pooled Postgres
+    # connection doesn't, so it has to be explicit here. The UNIQUE
+    # (session_id, ordinal) constraint (ensure_schema above) is the
+    # backstop: if this lock is ever bypassed, the insert fails loudly
+    # instead of silently writing two turns with the same ordinal.
     with vault_connection(practitioner_id) as conn:
+        conn.execute("SELECT id FROM sessions WHERE id = %s FOR UPDATE", (session_id,))
         ordinal = conn.execute(
             "SELECT count(*) AS n FROM session_turns WHERE session_id = %s",
             (session_id,)).fetchone()["n"]

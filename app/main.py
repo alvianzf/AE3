@@ -29,7 +29,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel
 
-from . import auth, billing, core_store, originals, scraper, uploads, vault, vault_files, wearables
+from . import auth, billing, core_store, db, originals, scraper, uploads, vault, vault_files, wearables
 from .config import get_config
 from .clients.llm_client import Role as LLMRole
 from .clients.llm_client import get_client as get_llm_client
@@ -75,8 +75,18 @@ async def lifespan(app: FastAPI):
     # and broke the next write to that vault (found live: sqlite3.
     # OperationalError on an existing practitioner's client signup). Re-run
     # it against every existing vault on every boot so this can't recur.
+    #
+    # specs/v6 — this used to glob every *.db file under the vaults
+    # directory, which caught a vault regardless of whether its
+    # practitioner row still existed. Iterating list_practitioners() alone
+    # would silently skip a vault_* Postgres schema left behind by a
+    # botched migration or a deleted/corrupted practitioner row — so also
+    # repair every schema that actually exists, by name, not just the
+    # ones derivable from today's practitioners list.
     for practitioner in core_store.list_practitioners():
         vault.ensure_schema(practitioner["id"])
+    for schema_name in db.list_vault_schemas():
+        vault.ensure_schema_by_name(schema_name)
     yield
 
 
