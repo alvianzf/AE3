@@ -1,6 +1,8 @@
 # v4.2 — LLM provider swap: Anthropic → Nebius (OpenAI-compatible)
 
-**Status: spec only, not implemented.** A new version folder rather than a
+**Status: implemented, not live-verified** — see
+[01](01-nebius-provider-swap.md)'s status note for exactly what that
+means. A new version folder rather than a
 v4.1 doc because this is a provider/data-model change to `app/llm.py` and
 the AI pipeline's role structure, not a frontend IA/UX pass — per
 [`specs/README.md`](../README.md)'s own rule ("a new version is cut when

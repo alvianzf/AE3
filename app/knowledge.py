@@ -3,7 +3,13 @@
 Sources are ingested once (read, tagged, graded, split into passages). Retrieval
 is card-based: the Librarian is shown the catalogue of source cards at or above
 the requested grade and picks which sources to open, then those sources'
-passages go to the Specialist. No embeddings are involved.
+passages go to the Specialist.
+
+specs/v4.2 — each Chunk now also gets an embedding at ingest time (the
+Embedder role, `llm.embed_passages()`), stored in a Neo4j vector index.
+Write path only: nothing in this file's retrieval functions reads it back
+yet — see llm.py's "Embedder" section for why that's deliberate, not an
+oversight.
 """
 from __future__ import annotations
 
@@ -14,7 +20,7 @@ from pathlib import Path
 
 import neo4j
 
-from . import originals
+from . import llm, originals
 from .config import get_config
 
 cfg = get_config()
@@ -57,6 +63,19 @@ def ensure_schema() -> None:
         # both pass.
         s.run("CREATE CONSTRAINT source_hash IF NOT EXISTS "
               "FOR (n:Source) REQUIRE n.content_hash IS UNIQUE")
+        # specs/v4.2 — write path for the Embedder role. No retrieval
+        # function in this file queries this index yet (deliberate, see
+        # module docstring); it only needs to exist so ingest_source() has
+        # somewhere to write embeddings starting now, rather than
+        # backfilling every existing Chunk once a consumer is built later.
+        s.run(
+            "CREATE VECTOR INDEX chunk_embedding IF NOT EXISTS "
+            "FOR (c:Chunk) ON (c.embedding) "
+            "OPTIONS {indexConfig: {"
+            "`vector.dimensions`: $dims, "
+            "`vector.similarity_function`: 'cosine'}}",
+            dims=cfg.embedding_dimensions,
+        )
 
 
 def ping() -> bool:
@@ -242,10 +261,15 @@ def ingest_source(
     """
     source_id = str(uuid.uuid4())
     total = len(passages)
+    # specs/v4.2 — one Embedder call for the whole document, same reasoning
+    # as extract_concepts()'s one-call-per-document batching: cheaper than
+    # a call per passage, and embed_passages() already preserves order.
+    embeddings = llm.embed_passages([p["text"] for p in passages])
     rows = [
         {"id": f"{source_id}:{i}", "text": p["text"], "ordinal": i,
          "page_start": p["page_start"], "page_end": p["page_end"],
-         "concepts": canon_all(p.get("concepts"))}
+         "concepts": canon_all(p.get("concepts")),
+         "embedding": embeddings[i] if i < len(embeddings) else None}
         for i, p in enumerate(passages)
     ]
     with _session() as s:
@@ -266,7 +290,8 @@ def ingest_source(
               MERGE (src)-[:TAGGED]->(t))
             FOREACH (row IN $rows |
               CREATE (c:Chunk {id: row.id, text: row.text, ordinal: row.ordinal,
-                               page_start: row.page_start, page_end: row.page_end})
+                               page_start: row.page_start, page_end: row.page_end,
+                               embedding: row.embedding})
               CREATE (src)-[:HAS_CHUNK]->(c)
               // Concepts are the edges that let a passage find related material in
               // other documents; MERGE so the same label is one shared node.

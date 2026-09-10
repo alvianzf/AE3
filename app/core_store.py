@@ -468,14 +468,6 @@ def set_practitioner_password(practitioner_id: str, password_hash: str) -> None:
         )
 
 
-def set_practitioner_api_key(practitioner_id: str, encrypted_key: str | None) -> None:
-    with _connect() as conn:
-        conn.execute(
-            "UPDATE practitioners SET anthropic_api_key_encrypted = ? WHERE id = ?",
-            (encrypted_key, practitioner_id),
-        )
-
-
 def set_stripe_fields(
     practitioner_id: str, customer_id: str | None = None,
     subscription_id: str | None = None, status: str | None = None,

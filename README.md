@@ -65,20 +65,20 @@ Every ingest, every regrade, every question asked — logged, so when
 someone needs to know exactly what the AI was shown before it answered a
 specific question, that's a lookup, not a reconstruction.
 
-## Built entirely on Claude
+## Six purpose-picked models, not one black box
 
-Every role on the AI team — the one that reads your sources, the one that
-decides what to open, the one that writes the answer, the one that checks
-it — is an Anthropic model. No second vendor, no mystery pipeline stitched
-together from whatever was cheapest. One accountable model family, doing
-four different, deliberately separated jobs.
+Every role on the AI team runs on the model actually suited to that job —
+not one vendor's model wearing six different hats, and not a mystery
+pipeline stitched together from whatever was cheapest that week.
 
 | Role | Job |
 |---|---|
 | **Reader** | Reads a new source, writes its title, summary, topics, and a suggested reliability grade |
-| **Librarian** | Decides which sources are worth opening for a given question — never told the grade, so relevance and trust stay separate |
-| **Specialist** | Writes the grounded answer, citing every claim back to its source |
-| **Checker** | Independently verifies the draft against those sources before it's shown to anyone |
+| **Graph-builder** | Pulls the medical concepts out of a document and links them, so related material across the library can find each other |
+| **Embedder** | Embeds knowledge-base chunks for future semantic recall |
+| **Retrieval planner** | Decides which sources are worth opening for a given question — never told the grade, so relevance and trust stay separate |
+| **Reasoner** | Writes the grounded answer, citing every claim back to its source |
+| **Checker** | Verifies every sentence of the draft against its cited sources — a dedicated anti-hallucination classifier, not a chat model asked to grade its own kind's work |
 
 ## See it for yourself — a 5-minute walkthrough
 

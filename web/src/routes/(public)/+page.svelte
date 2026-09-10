@@ -72,11 +72,14 @@
 		<div class="pb">
 			<p>
 				Every role on the team — the one that reads a new source, the one
-				that decides what’s worth opening, the one that writes the answer,
-				the one that checks it — is an Anthropic Claude model. No second
-				vendor, no black-box pipeline stitched together from whatever was
-				cheapest that week. Four deliberately separated jobs, one model
-				family, fully accountable.
+				that builds the knowledge graph, the one that decides what’s worth
+				opening, the one that writes the answer, the one that checks it
+				against its sources — is a deliberately separated, purpose-picked
+				model, not one black-box pipeline stitched together from whatever
+				was cheapest that week. Each job gets the model actually suited to
+				it, and the one that checks the answer isn’t even a chat model at
+				all — it’s a dedicated anti-hallucination classifier, built for
+				exactly that one job.
 			</p>
 			<div class="chip-row">
 				<Chip tone="accent">Grounded answers</Chip>

@@ -4,8 +4,13 @@ uvicorn==0.51.0
 python-multipart==0.0.32
 python-dotenv==1.2.2
 
-# The AI team — Anthropic only
-anthropic==0.120.0
+# The AI team — Nebius token factory, OpenAI-compatible (specs/v4.2)
+openai==2.7.1
+# Checker (anti-hallucination) — HHEM-2.1-Open is a classifier, not a chat
+# model; run directly via transformers, not through the OpenAI-compatible
+# chat endpoint (specs/v4.2/01#the-checker-is-a-direct-classifier-call-not-a-chat-completion)
+transformers==4.57.1
+torch==2.9.0
 
 # Knowledge library
 neo4j==6.2.0
@@ -13,10 +18,9 @@ neo4j==6.2.0
 # Source ingestion
 pypdf==6.14.2
 
-# v2 — accounts, sessions, and per-practitioner secrets
+# v2 — accounts, sessions
 bcrypt==5.0.0
 itsdangerous==2.2.0
-cryptography==50.0.0
 
 # v2 — Pro plan billing
 stripe==15.5.0

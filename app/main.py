@@ -21,9 +21,8 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-import anthropic
+import openai
 import neo4j.exceptions
-from cryptography.fernet import Fernet, InvalidToken
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -40,14 +39,6 @@ STATIC = Path(__file__).parent.parent / "static"
 # stays on disk as the pre-cutover record rather than being overwritten.
 WEB_BUILD = Path(__file__).parent.parent / "web-build"
 Path(cfg.photos_path).mkdir(parents=True, exist_ok=True)
-
-# Encrypts/decrypts a practitioner's own Anthropic API key at rest. Falls
-# back to a per-process ephemeral key when unconfigured — fine for local
-# development (matches config.py's other dev-only defaults), but any real
-# deployment must set VAULT_ENCRYPTION_KEY or every stored key becomes
-# undecryptable across a restart.
-_fernet = Fernet(cfg.vault_encryption_key.encode()) if cfg.vault_encryption_key \
-    else Fernet(Fernet.generate_key())
 
 
 @asynccontextmanager
@@ -121,7 +112,7 @@ def health() -> dict:
 
     checks = {
         "neo4j": probe(knowledge.ping),
-        "anthropic": probe(llm.ping),
+        "nebius": probe(llm.ping),
         "core": probe(core_store.ping),
     }
 
@@ -498,7 +489,7 @@ def scrape_url(body: ScrapeBody, _admin: dict = Depends(auth.require_admin)) -> 
     stripped = scraper.fetch_and_strip(body.url)
     try:
         extracted = llm.extract_article(stripped, body.url)
-    except anthropic.APIError as exc:
+    except openai.APIError as exc:
         raise HTTPException(
             502, "The AI service is temporarily unavailable. Try again shortly."
         ) from exc
@@ -764,41 +755,20 @@ def get_audit(_admin: dict = Depends(auth.require_admin)) -> list[dict]:
     return knowledge.audit()[:100]
 
 
-def _decrypt_api_key(encrypted: str) -> str:
-    # InvalidToken means the key on file was encrypted under a different
-    # Fernet key than this process is running with — e.g. VAULT_ENCRYPTION_KEY
-    # was unset and a fresh random key got generated on this boot (config.py
-    # now fails closed against that in production, but a value that's simply
-    # wrong/rotated hits this same path). A clean, actionable 400 instead of
-    # an unhandled 500 (specs/v4/04-known-issues.md#h5).
-    try:
-        return _fernet.decrypt(encrypted.encode()).decode()
-    except InvalidToken as exc:
-        raise HTTPException(
-            400, "Your stored Anthropic API key could not be read — please "
-                 "re-enter it in your profile."
-        ) from exc
-
-
 def _public(d: dict) -> dict:
     """Strip fields that must never cross the API boundary. core_store/vault
     getters return password_hash (and, for practitioners,
-    anthropic_api_key_encrypted) because auth.py needs them internally for
-    credential checks — every route that hands one of those dicts to a
-    caller must pass it through this first."""
+    anthropic_api_key_encrypted — vestigial since specs/v4.2 retired the
+    BYO-key model; the column stays in the schema but is never written or
+    read for LLM calls any more) because auth.py needs password_hash
+    internally for credential checks — every route that hands one of
+    those dicts to a caller must pass it through this first."""
     return {k: v for k, v in d.items()
             if k not in ("password_hash", "anthropic_api_key_encrypted")}
 
 
 def _public_list(items: list[dict]) -> list[dict]:
     return [_public(d) for d in items]
-
-
-def _practitioner_public(p: dict) -> dict:
-    """_public(), plus a has_anthropic_key flag so the practitioner's own
-    profile page can show whether a key is on file — without ever
-    exposing the encrypted value itself, which _public() still strips."""
-    return {**_public(p), "has_anthropic_key": bool(p.get("anthropic_api_key_encrypted"))}
 
 
 _MAX_PHOTO_BYTES = 5 * 1024 * 1024
@@ -1177,7 +1147,7 @@ def admin_edit_questionnaire(questionnaire_id: str, body: QuestionnaireIn,
 
 @app.get("/api/me/profile")
 def me_profile(session: dict = Depends(auth.require_practitioner)) -> dict:
-    return _practitioner_public(core_store.get_practitioner(session["id"]))
+    return _public(core_store.get_practitioner(session["id"]))
 
 
 @app.put("/api/me/profile")
@@ -1217,7 +1187,7 @@ async def me_update_profile(request: Request,
     practitioner = core_store.update_practitioner_profile(practitioner_id, **fields)
     if practitioner is None:
         raise HTTPException(404, "no such practitioner")
-    return _practitioner_public(practitioner)
+    return _public(practitioner)
 
 
 @app.get("/api/me/contacts")
@@ -1252,18 +1222,6 @@ def me_update_contact(submission_id: str, body: ContactStatusUpdate,
         return core_store.update_contact_status(submission_id, body.status)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
-
-
-class ApiKeyUpdate(BaseModel):
-    api_key: str
-
-
-@app.post("/api/me/anthropic-key")
-def me_set_api_key(body: ApiKeyUpdate,
-                   session: dict = Depends(auth.require_pro_practitioner)) -> dict:
-    encrypted = _fernet.encrypt(body.api_key.encode()).decode()
-    core_store.set_practitioner_api_key(session["id"], encrypted)
-    return {"ok": True}
 
 
 @app.get("/api/me/knowledge")
@@ -1360,12 +1318,6 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
         raise HTTPException(400, "Question cannot be empty.")
 
     practitioner_id = session["id"]
-    practitioner = core_store.get_practitioner(practitioner_id)
-    if not practitioner.get("anthropic_api_key_encrypted"):
-        raise HTTPException(
-            400, "Set your Anthropic API key before starting a consultation.")
-    client_llm = llm.client_for(_decrypt_api_key(practitioner["anthropic_api_key_encrypted"]))
-
     if vault.get_client(practitioner_id, body.client_id) is None:
         raise HTTPException(404, "no such client")
 
@@ -1402,12 +1354,11 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
         try:
             yield _sse({"event": "agent_start", "agent": "librarian"})
             chosen, reasoning, librarian_usage = llm.select_sources(
-                body.question, client_file, cards, history, client=client_llm)
+                body.question, client_file, cards, history)
             _track(librarian_usage)
             yield _sse({"event": "agent_done", "agent": "librarian", **librarian_usage})
 
-            focus = llm.question_concepts(body.question, client_file, history,
-                                          client=client_llm) if chosen else []
+            focus = llm.question_concepts(body.question, client_file, history) if chosen else []
             passages, hops = knowledge.traverse(chosen, body.min_grade, focus,
                                                 weights=weights)
             available = hops["available"]
@@ -1427,13 +1378,12 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
             else:
                 yield _sse({"event": "agent_start", "agent": "specialist"})
                 answer_text, answer_usage = llm.answer(
-                    body.question, client_file, passages, history, client=client_llm)
+                    body.question, client_file, passages, history)
                 _track(answer_usage)
                 yield _sse({"event": "agent_done", "agent": "specialist", **answer_usage})
                 if body.run_check:
                     yield _sse({"event": "agent_start", "agent": "checker"})
-                    verdict = llm.check(body.question, answer_text, client_file, passages,
-                                        client=client_llm)
+                    verdict = llm.check(body.question, answer_text, client_file, passages)
                     _track(verdict["usage"])
                     yield _sse({"event": "agent_done", "agent": "checker", **verdict["usage"]})
                     # Bounded retry, hard-capped at one attempt (specs/v3/07-ai-team.md):
@@ -1445,20 +1395,20 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
                         yield _sse({"event": "agent_start", "agent": "specialist", "retry": True})
                         revised_text, revised_usage = llm.answer(
                             body.question, client_file, passages, history,
-                            client=client_llm, unsupported=verdict["unsupported"])
+                            unsupported=verdict["unsupported"])
                         _track(revised_usage)
                         yield _sse({"event": "agent_done", "agent": "specialist",
                                    "retry": True, **revised_usage})
                         yield _sse({"event": "agent_start", "agent": "checker", "retry": True})
                         revised_verdict = llm.check(body.question, revised_text, client_file,
-                                                    passages, client=client_llm)
+                                                    passages)
                         _track(revised_verdict["usage"])
                         yield _sse({"event": "agent_done", "agent": "checker",
                                    "retry": True, **revised_verdict["usage"]})
                         if (revised_verdict["verdict"] == "pass"
                                 or len(revised_verdict["unsupported"]) < len(verdict["unsupported"])):
                             answer_text, verdict, revised = revised_text, revised_verdict, True
-        except anthropic.APIError:
+        except openai.APIError:
             yield _sse({"event": "error",
                        "message": "The AI service is temporarily unavailable. Try again shortly."})
             return
@@ -1606,15 +1556,10 @@ def me_summarize_session(client_id: str, session_id: str,
     v1 but never reachable from a route until now."""
     practitioner_id = session["id"]
     _owned_session(practitioner_id, client_id, session_id)
-    practitioner = core_store.get_practitioner(practitioner_id)
-    if not practitioner.get("anthropic_api_key_encrypted"):
-        raise HTTPException(
-            400, "Set your Anthropic API key before summarizing a consultation.")
-    client_llm = llm.client_for(_decrypt_api_key(practitioner["anthropic_api_key_encrypted"]))
     transcript = vault.session_transcript(practitioner_id, session_id)
     try:
-        summary = llm.summarize_session(transcript, client=client_llm)
-    except anthropic.APIError as exc:
+        summary = llm.summarize_session(transcript)
+    except openai.APIError as exc:
         raise HTTPException(
             502, "The AI service is temporarily unavailable. Try again shortly."
         ) from exc

@@ -6,14 +6,17 @@
 
 	let { data } = $props();
 
-	// specs/v4.1/03 CR2 — step 1 was hardcoded `done: true` regardless of
-	// data.clients, and step 2's condition (`unviewed_intake >= 0`) was true
-	// for any non-negative number, i.e. always — neither step could ever
-	// show as not done, so the checklist could never actually prompt a new
-	// practitioner to do the thing it claims to track.
+	// specs/v4.1/03 CR2 — step 1 used to be hardcoded `done: true` regardless
+	// of data.clients, and a second step's condition (`unviewed_intake >= 0`)
+	// was true for any non-negative number, i.e. always — neither step could
+	// ever show as not done, so the checklist could never actually prompt a
+	// new practitioner to do the thing it claims to track.
+	//
+	// specs/v4.2 — the "Set your Anthropic key" step that used to sit here
+	// is gone: every practitioner now runs against the app's own shared
+	// Nebius key, so there's nothing left to onboard onto.
 	const steps = $derived([
 		{ label: 'Add your first client', done: (data.clients?.length ?? 0) > 0, href: '/practitioner/clients' },
-		{ label: 'Set your Anthropic key', done: !!data.profile?.has_anthropic_key, href: '/practitioner/profile' },
 		{ label: 'Ask your first question in Consult', done: (data.recentSessions?.length ?? 0) > 0, href: '/practitioner/consult' }
 	]);
 	const allDone = $derived(steps.every((s) => s.done));

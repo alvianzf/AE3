@@ -1,59 +1,68 @@
 """The AI team. One function per role, each with its model pinned.
 
-Reader     — reads an incoming source, tags it, drafts its source card
-Librarian  — turns a question into what to look for; it does not answer
-Specialist — writes the grounded, referenced answer
-Checker    — verifies the draft against its sources before it is shown
+Reader          — reads an incoming source, tags it, drafts its source card
+Graph-builder   — pulls medical concepts out of a document and links them
+Embedder        — embeds knowledge-base chunks for later semantic recall
+Retrieval       — turns a question into what to look for; it does not answer
+Reasoner        — writes the grounded, referenced answer
+Checker         — verifies the draft against its sources before it is shown
+
+specs/v4.2 — this used to be four roles on one Anthropic client; it's now
+six roles on Nebius's OpenAI-compatible token factory, with one exception:
+the Checker isn't a chat model at all (see its own section below). There
+is also no more per-practitioner key — every call, ingestion or query
+time, runs through the one shared client below.
 """
 from __future__ import annotations
 
 import json
+import re
 
-import anthropic
+from openai import OpenAI
 
 from .config import get_config
 
 cfg = get_config()
-_client = anthropic.Anthropic()
-
-
-def client_for(api_key: str | None) -> anthropic.Anthropic:
-    return anthropic.Anthropic(api_key=api_key) if api_key else _client
+_client = OpenAI(base_url=cfg.nebius_base_url, api_key=cfg.nebius_api_key)
 
 
 def _usage_of(response) -> dict:
-    return {"input_tokens": response.usage.input_tokens,
-            "output_tokens": response.usage.output_tokens}
+    return {"input_tokens": response.usage.prompt_tokens,
+            "output_tokens": response.usage.completion_tokens}
 
 
 def _json_call(model: str, system: str, prompt: str, schema: dict,
-               max_tokens: int = 2000, client: anthropic.Anthropic | None = None,
-               return_usage: bool = False):
+               max_tokens: int = 2000, return_usage: bool = False):
     """One structured-output call. The schema is enforced by the API.
 
     Returns the parsed dict, or (dict, usage) when return_usage is True —
     kept opt-in so existing callers are unaffected.
     """
-    response = (client or _client).messages.create(
+    response = _client.chat.completions.create(
         model=model,
         max_tokens=max_tokens,
-        system=system,
-        messages=[{"role": "user", "content": prompt}],
-        output_config={"format": {"type": "json_schema", "schema": schema}},
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": prompt},
+        ],
+        response_format={
+            "type": "json_schema",
+            "json_schema": {"name": "response", "schema": schema, "strict": True},
+        },
     )
     # next() with no default raised a bare, confusing StopIteration if the
-    # model's response somehow had no text block at all (specs/v4/04-known-
+    # model's response somehow had no content at all (specs/v4/04-known-
     # issues.md#m11) — a clear domain error instead.
-    text = next((b.text for b in response.content if b.type == "text"), None)
+    text = response.choices[0].message.content
     if text is None:
-        raise ValueError(f"{model} returned no text content block")
+        raise ValueError(f"{model} returned no content")
     result = json.loads(text)
     return (result, _usage_of(response)) if return_usage else result
 
 
 def ping() -> bool:
     """Validate credentials without spending tokens."""
-    _client.models.retrieve(cfg.answer_model)
+    _client.models.retrieve(cfg.reasoner_model)
     return True
 
 
@@ -201,8 +210,11 @@ def extract_concepts(passages: list[str]) -> list[list[str]]:
     listing = "\n\n".join(
         f"[{i + 1}] {p[:1500]}" for i, p in enumerate(passages)
     )
+    # specs/v4.2 — concept extraction moved from the Reader to the
+    # Graph-builder role (its whole job is "pull out medical concepts and
+    # how they connect").
     result = _json_call(
-        cfg.reader_model, CONCEPTS_SYSTEM,
+        cfg.graph_builder_model, CONCEPTS_SYSTEM,
         f"Passages to index:\n---\n{listing}\n---", CONCEPTS_SCHEMA,
         max_tokens=8000,
     )
@@ -263,8 +275,11 @@ def merge_labels(names: list[str]) -> list[dict]:
     """Ask which existing labels are the same idea. Returns merge groups."""
     if len(names) < 2:
         return []
+    # specs/v4.2 — the graph-merge step is ingestion-time graph-building
+    # too, not the query-time retrieval-planning job the old "Librarian"
+    # name also covered (those are now separate roles/models).
     result = _json_call(
-        cfg.librarian_model, MERGE_SYSTEM,
+        cfg.graph_builder_model, MERGE_SYSTEM,
         "Labels in use:\n" + "\n".join(f"- {n}" for n in sorted(names)),
         MERGE_SCHEMA, max_tokens=4000,
     )
@@ -292,8 +307,7 @@ FOCUS_SCHEMA = {
 
 
 def question_concepts(question: str, patient_file: str,
-                      history: list[dict] | None = None,
-                      client: anthropic.Anthropic | None = None) -> list[str]:
+                      history: list[dict] | None = None) -> list[str]:
     """The concepts to hunt for in the corpus, in the same vocabulary as indexing.
 
     These anchor the traversal: a passage mentioning one of them is pulled in
@@ -305,14 +319,16 @@ def question_concepts(question: str, patient_file: str,
         f"{_history_block(history or [])}"
         f"Question: {question}"
     )
+    # specs/v4.2 — query-time (working out what's being asked and what to
+    # go fetch) is the retrieval-planner role now, not the Reader's.
     result = _json_call(
-        cfg.reader_model,
+        cfg.retrieval_model,
         CONCEPTS_SYSTEM + "\n\nHere you are given a question rather than a "
         "document. List the concepts that a passage would have to be about in "
         "order to help answer it — including the ones implied by the patient's "
         "own labs and history, and by the earlier turns of the consultation, not "
         "only the words in the question itself.",
-        prompt, FOCUS_SCHEMA, client=client,
+        prompt, FOCUS_SCHEMA,
     )
     seen, out = set(), []
     for c in result["concepts"]:
@@ -382,8 +398,7 @@ def _history_block(history: list[dict]) -> str:
 
 
 def select_sources(question: str, patient_file: str, cards: list[dict],
-                   history: list[dict] | None = None,
-                   client: anthropic.Anthropic | None = None
+                   history: list[dict] | None = None
                    ) -> tuple[list[str], str, dict]:
     """Pick which sources to open. Returns (source_ids, reasoning, usage)."""
     if not cards:
@@ -406,8 +421,8 @@ def select_sources(question: str, patient_file: str, cards: list[dict],
         f"Catalogue of available sources:\n---\n{listing}\n---\n\n"
         f"Practitioner's latest question: {question}"
     )
-    result, usage = _json_call(cfg.librarian_model, LIBRARIAN_SYSTEM, prompt,
-                               LIBRARIAN_SCHEMA, client=client, return_usage=True)
+    result, usage = _json_call(cfg.retrieval_model, LIBRARIAN_SYSTEM, prompt,
+                               LIBRARIAN_SCHEMA, return_usage=True)
 
     picked: list[str] = []
     for n in result["sources"]:
@@ -443,7 +458,6 @@ SPECIALIST_SYSTEM = (
 
 def answer(question: str, patient_file: str, passages: list[dict],
            history: list[dict] | None = None,
-           client: anthropic.Anthropic | None = None,
            unsupported: list[str] | None = None) -> tuple[str, dict]:
     """Returns (answer_text, usage).
 
@@ -489,70 +503,93 @@ def answer(question: str, patient_file: str, passages: list[dict],
         f"Practitioner's question: {question}"
         f"{revision_block}"
     )
-    response = (client or _client).messages.create(
-        model=cfg.answer_model,
+    # specs/v4.2 — this was cfg.answer_model on Anthropic's "effort" param
+    # (a Claude-specific reasoning-effort knob, dropped: not carried over
+    # since the OpenAI-compatible shape doesn't define an equivalent —
+    # confirm whether Nebius exposes something similar before assuming
+    # response quality/latency is unaffected). Now the Reasoner role.
+    response = _client.chat.completions.create(
+        model=cfg.reasoner_model,
         max_tokens=8000,
-        system=SPECIALIST_SYSTEM,
-        output_config={"effort": "medium"},
-        messages=[{"role": "user", "content": prompt}],
+        messages=[
+            {"role": "system", "content": SPECIALIST_SYSTEM},
+            {"role": "user", "content": prompt},
+        ],
     )
-    text = "".join(b.text for b in response.content if b.type == "text").strip()
+    text = (response.choices[0].message.content or "").strip()
     return text, _usage_of(response)
 
 
 # --- Checker (anti-hallucination) ---------------------------------------------
+#
+# specs/v4.2/01 — the Checker used to be a fifth chat-model call, asking a
+# Claude model "does this answer's claims hold up against these sources" as
+# one JSON-schema call. It's now HHEM-2.1-Open, a hallucination-detection
+# classifier: no system prompt, no JSON schema, no chat completion at all —
+# a direct (premise, hypothesis) scoring call, run once per sentence in the
+# drafted answer rather than once for the whole answer. This is genuinely
+# unverified end-to-end (no live model download/inference has been run
+# against this code) — confirm the model's actual call signature against
+# its current Hugging Face model card before relying on this in production.
 
-CHECKER_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "verdict": {"type": "string", "enum": ["pass", "weak"],
-                    "description": "'pass' if every clinical claim is supported."},
-        "unsupported": {
-            "type": "array", "items": {"type": "string"},
-            "description": "Each claim in the answer that its cited passages do "
-                           "not actually support. Empty when the verdict is pass.",
-        },
-        "note": {"type": "string", "description": "One sentence for the practitioner."},
-    },
-    "required": ["verdict", "unsupported", "note"],
-    "additionalProperties": False,
-}
+_checker_model = None
 
-CHECKER_SYSTEM = (
-    "You independently verify a draft clinical answer against the passages it was "
-    "written from. You did not write it and you have no stake in it.\n\n"
-    "For each clinical claim, find the sentence in the cited passage that carries "
-    "it. A claim is SUPPORTED when the passage states it, paraphrases it, or "
-    "directly entails it — restating the passage in different words is support, "
-    "not invention. A claim about the patient's own labs or history is supported "
-    "when it matches the patient file.\n\n"
-    "A claim is UNSUPPORTED when nothing in the passages carries it: a number or "
-    "mechanism that does not appear, a general finding asserted as certain about "
-    "this individual, or a recommendation the passages never make. Quote the claim "
-    "as it appears in the answer.\n\n"
-    "Return 'weak' only when you found at least one genuinely unsupported claim, "
-    "and list it. If every claim traces to a passage, return 'pass' — do not "
-    "manufacture doubt, and do not fault the answer for hedging, for omitting "
-    "something, or for style. An unsupported list must never be empty when the "
-    "verdict is 'weak', and must be empty when it is 'pass'."
-)
+
+def _get_checker_model():
+    """Lazy singleton: only pay the transformers/torch import + model
+    download cost the first time check() is actually called, not on every
+    import of this module (ingestion-only code paths never need it)."""
+    global _checker_model
+    if _checker_model is None:
+        from transformers import AutoModelForSequenceClassification
+        _checker_model = AutoModelForSequenceClassification.from_pretrained(
+            cfg.checker_model, trust_remote_code=True)
+    return _checker_model
+
+
+_SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
+
+
+def _sentences(text: str) -> list[str]:
+    return [s.strip() for s in _SENTENCE_SPLIT.split(text) if s.strip()]
 
 
 def check(question: str, answer_text: str, patient_file: str,
-          passages: list[dict],
-          client: anthropic.Anthropic | None = None) -> dict:
-    block = "\n\n".join(
-        f"[S{i + 1}] {p['text']}" for i, p in enumerate(passages)
-    ) or "(none)"
-    prompt = (
-        f"Question: {question}\n\n"
-        f"Patient file:\n---\n{patient_file}\n---\n\n"
-        f"Passages:\n---\n{block}\n---\n\n"
-        f"Draft answer to verify:\n---\n{answer_text}\n---"
+          passages: list[dict]) -> dict:
+    """Scores each sentence of the drafted answer against the cited
+    passages, flagging the answer 'weak' if any sentence's best-matching
+    passage scores below cfg.checker_threshold.
+
+    Returns the same shape the old chat-based Checker returned
+    (verdict/unsupported/note/usage) so callers don't need to change —
+    'usage' is zeroed since a local classifier call has no token cost.
+    """
+    evidence = "\n\n".join(p["text"] for p in passages) or patient_file
+    model = _get_checker_model()
+    sentences = _sentences(answer_text)
+    unsupported: list[str] = []
+    for sentence in sentences:
+        # HHEM scores a single (premise, hypothesis) pair; scoring against
+        # the whole evidence block (rather than per-passage) is a
+        # deliberate simplification — comparing against each passage
+        # individually and taking the best score would be more precise
+        # but is left for a follow-up once this path has a live smoke test.
+        score = model.predict([(evidence, sentence)])[0]
+        if score < cfg.checker_threshold:
+            unsupported.append(sentence)
+
+    verdict = "weak" if unsupported else "pass"
+    note = (
+        f"{len(unsupported)} sentence(s) not confidently supported by the cited "
+        "sources." if unsupported else
+        "Every sentence checked against its sources."
     )
-    result, usage = _json_call(cfg.checker_model, CHECKER_SYSTEM, prompt, CHECKER_SCHEMA,
-                               client=client, return_usage=True)
-    return {**result, "usage": usage}
+    return {
+        "verdict": verdict,
+        "unsupported": unsupported,
+        "note": note,
+        "usage": {"input_tokens": 0, "output_tokens": 0},
+    }
 
 
 # --- Session summary ----------------------------------------------------------
@@ -564,14 +601,19 @@ SUMMARY_SYSTEM = (
 )
 
 
-def summarize_session(transcript: str, client: anthropic.Anthropic | None = None) -> str:
-    response = (client or _client).messages.create(
-        model=cfg.checker_model,
+def summarize_session(transcript: str) -> str:
+    # specs/v4.2 — was cfg.checker_model, a chat model. The Checker is no
+    # longer a chat model at all (see above), so this free-text writing
+    # task moves to the Reasoner, the role actually meant for prose output.
+    response = _client.chat.completions.create(
+        model=cfg.reasoner_model,
         max_tokens=1000,
-        system=SUMMARY_SYSTEM,
-        messages=[{"role": "user", "content": transcript}],
+        messages=[
+            {"role": "system", "content": SUMMARY_SYSTEM},
+            {"role": "user", "content": transcript},
+        ],
     )
-    return "".join(b.text for b in response.content if b.type == "text").strip()
+    return (response.choices[0].message.content or "").strip()
 
 
 # --- Web-page extraction (specs/v3/18-document-ingest-upgrade.md Component 2) -
@@ -589,18 +631,44 @@ EXTRACT_ARTICLE_SYSTEM = (
 )
 
 
-def extract_article(stripped_text: str, url: str,
-                    client: anthropic.Anthropic | None = None) -> str:
+def extract_article(stripped_text: str, url: str) -> str:
     """Plain-text output, not a JSON-schema call like every other role in
     this file — the output *is* the document body, closer in shape to
     answer()'s free-text output than read_source()'s structured card.
-    cfg.reader_model (Haiku by default) — a bounded extraction task, not
-    one that needs a stronger model."""
-    response = (client or _client).messages.create(
+    cfg.reader_model — a bounded extraction task, not one that needs a
+    stronger model."""
+    response = _client.chat.completions.create(
         model=cfg.reader_model,
         max_tokens=8000,
-        system=EXTRACT_ARTICLE_SYSTEM,
-        messages=[{"role": "user",
-                   "content": f"URL: {url}\n\nPage text:\n---\n{stripped_text[:40000]}\n---"}],
+        messages=[
+            {"role": "system", "content": EXTRACT_ARTICLE_SYSTEM},
+            {"role": "user",
+             "content": f"URL: {url}\n\nPage text:\n---\n{stripped_text[:40000]}\n---"},
+        ],
     )
-    return "".join(b.text for b in response.content if b.type == "text").strip()
+    return (response.choices[0].message.content or "").strip()
+
+
+# --- Embedder -------------------------------------------------------------
+#
+# specs/v4.2/01 — write path only, deliberately. This computes and stores
+# an embedding per passage at ingest time (knowledge.ingest_source() calls
+# embed_passages() and stores the vectors on each Passage node — see
+# knowledge.py and its Neo4j vector index). Nothing reads these back yet:
+# graph/source-card retrieval (select_sources() above) stays the only
+# retrieval path in this change. Wiring a semantic-recall consumer (a
+# vector-similarity query merged into select_sources()'s candidate set,
+# still filtered by the practitioner's grade threshold) is real, valuable
+# follow-up work — not done here because it touches the live retrieval
+# path with no way to verify it against a real Neo4j instance in this
+# change's environment, and a bug there would silently degrade every
+# clinical answer. Shipping the write path alone is safe: it's additive,
+# nothing existing reads or depends on it.
+
+
+def embed_passages(texts: list[str]) -> list[list[float]]:
+    """One embedding per input text, same order in, same order out."""
+    if not texts:
+        return []
+    response = _client.embeddings.create(model=cfg.embedder_model, input=texts)
+    return [d.embedding for d in response.data]
