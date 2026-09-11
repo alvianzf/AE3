@@ -80,6 +80,27 @@ pipeline stitched together from whatever was cheapest that week.
 | **Reasoner** | Writes the grounded answer, citing every claim back to its source |
 | **Checker** | Verifies every sentence of the draft against its cited sources — a dedicated anti-hallucination classifier, not a chat model asked to grade its own kind's work |
 
+## How a question becomes a trustworthy answer
+
+```mermaid
+flowchart LR
+    subgraph ingest["Ingestion (once per source)"]
+        direction LR
+        U["Upload / paste"] --> R["Reader\ntitles, grades, tags"] --> C["Chunk"] --> E["Embedder"] & G["Graph-builder\nentities + relationships"]
+    end
+    E --> N[("Neo4j\nDocument → Chunk → Entity")]
+    G --> N
+
+    subgraph answer["Every question"]
+        direction LR
+        Q["Clinician asks"] --> S["Seed search\n(vector + full-text)"] --> T["Graph traversal\n(LLM-judged, hop by hop)"] --> W["Reasoner\nwrites cited answer"] --> H["Checker\nHHEM anti-hallucination scoring"] --> A["Answer + citations\n+ unsupported-claim flags"]
+    end
+    N --> S
+```
+
+A full diagram of both pipelines, plus the graph schema they read and write,
+is in [`clinic-rag-pipeline.pdf`](clinic-rag-pipeline.pdf).
+
 ## See it for yourself — a 5-minute walkthrough
 
 1. **Admin uploads a source.** Watch the Reader title it, summarize it, tag
