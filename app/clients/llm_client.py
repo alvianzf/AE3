@@ -141,9 +141,18 @@ def ping_role(role: Role) -> None:
     """Validate one role's credentials without spending tokens. Raises on
     failure — callers that want a non-raising per-role status (the health
     endpoint) should wrap this themselves, same as every other health
-    check in app/main.py does via its own probe() helper."""
+    check in app/main.py does via its own probe() helper.
+
+    Lists models rather than retrieving the role's specific one — found
+    live against the real Nebius endpoint: GET /models/{id} (models.retrieve)
+    404s unconditionally, for every model id, even ones models.list() itself
+    just returned; only the list endpoint is actually implemented there.
+    """
     client = get_client(role)
-    client._client.with_options(timeout=_PING_TIMEOUT_SECONDS).models.retrieve(client.model)
+    scoped = client._client.with_options(timeout=_PING_TIMEOUT_SECONDS)
+    models = {m.id for m in scoped.models.list().data}
+    if client.model not in models:
+        raise ValueError(f"{client.model} ({role.value}) not found in the provider's model catalog")
 
 
 def ping() -> bool:
