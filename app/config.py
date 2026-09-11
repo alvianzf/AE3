@@ -59,16 +59,14 @@ class Config:
     nebius_base_url = os.getenv("NEBIUS_BASE_URL", "https://api.tokenfactory.nebius.com/v1/")
 
     # The AI team — six roles now, not four (specs/v4.2/01). Defaults below
-    # are the human-readable model names as given when this was specced;
-    # **confirm each one against Nebius's actual catalog ID** before relying
-    # on these defaults (specs/v4.2/01 flags this as unverified — the
-    # catalog's real `model=` strings are typically namespaced, e.g.
-    # "Qwen/Qwen3-32B", not the bare label used here).
-    reader_model = os.getenv("READER_MODEL", "Qwen3.6-27B")
-    graph_builder_model = os.getenv("GRAPH_BUILDER_MODEL", "MedGemma-27B")
-    embedder_model = os.getenv("EMBEDDER_MODEL", "Qwen3-Embedding-8B")
-    retrieval_model = os.getenv("RETRIEVAL_MODEL", "Qwen3-8B")
-    reasoner_model = os.getenv("REASONER_MODEL", "KIMI-K3")
+    # are real Nebius catalog IDs, confirmed 2026-09-11 against a live
+    # `models.list()` call — the originally specced bare labels
+    # (Qwen3.6-27B, MedGemma-27B, Qwen3-8B) don't exist in the catalog.
+    reader_model = os.getenv("READER_MODEL", "Qwen/Qwen3-30B-A3B-Instruct-2507")
+    graph_builder_model = os.getenv("GRAPH_BUILDER_MODEL", "Qwen/Qwen3-235B-A22B-Instruct-2507")
+    embedder_model = os.getenv("EMBEDDER_MODEL", "Qwen/Qwen3-Embedding-8B")
+    retrieval_model = os.getenv("RETRIEVAL_MODEL", "nvidia/Nemotron-3_5-Lightning")
+    reasoner_model = os.getenv("REASONER_MODEL", "moonshotai/Kimi-K3")
 
     # Per-role base_url/api_key overrides (app/clients/llm_client.py). Every
     # role defaults to the shared Nebius endpoint above — set a role's own
@@ -131,22 +129,12 @@ class Config:
     # Base URL this app is served at, needed to build OAuth redirect_uris.
     public_base_url = os.getenv("PUBLIC_BASE_URL", "http://localhost:8000")
 
-    # Retrieval
+    # Retrieval — the grade threshold below which a Document (or, in a
+    # traversal hop, its Chunk) is invisible to the graph-traversal
+    # retriever (app/retrieval/), same threshold a practitioner's own
+    # per-source weight can override upward or downward (app/vault.py's
+    # source_weights, threaded through as `weights` in retrieval/).
     min_grade = int(os.getenv("MIN_GRADE", "7"))
-    # How many sources the Librarian may open at once, and how many passages
-    # those sources may contribute. Both are ceilings, not targets — the API
-    # reports when either one truncated the material.
-    #
-    # max_sources is effectively "no limit" at PoC scale: the Librarian's own
-    # relevance judgement is the real filter, and capping it would silently drop
-    # sources it deliberately chose. max_passages is the binding constraint that
-    # keeps the Specialist's prompt bounded.
-    max_sources = int(os.getenv("MAX_SOURCES", "100"))
-    max_passages = int(os.getenv("MAX_PASSAGES", "120"))
-    # How many concepts two passages must share before the graph treats them as
-    # related. 1 is too loose ("vitamin d" alone links almost everything); 2 keeps
-    # a link meaningful without needing embeddings.
-    min_shared_concepts = int(os.getenv("MIN_SHARED_CONCEPTS", "2"))
 
     # Graph-traversal retrieval (app/retrieval/). A circuit breaker against
     # runaway cost/depth, not the primary stopping logic — the primary
