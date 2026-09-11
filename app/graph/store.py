@@ -769,7 +769,7 @@ def seed_chunks_by_fulltext(query: str, top_k: int) -> list[dict]:
     with session() as s:
         recs = s.run(
             """
-            CALL db.index.fulltext.queryNodes('chunk_text_fulltext', $query)
+            CALL db.index.fulltext.queryNodes('chunk_text_fulltext', $search_query)
             YIELD node AS c, score
             MATCH (doc:Document)-[:HAS_CHUNK]->(c)
             RETURN c.id AS id, c.text AS text, c.chunk_index AS chunk_index,
@@ -778,7 +778,7 @@ def seed_chunks_by_fulltext(query: str, top_k: int) -> list[dict]:
                    doc.grade AS grade, score
             ORDER BY score DESC LIMIT $top_k
             """,
-            query=_escape_lucene(query), top_k=top_k,
+            search_query=_escape_lucene(query), top_k=top_k,
         )
         return [dict(r) for r in recs]
 
@@ -787,12 +787,12 @@ def seed_entities_by_fulltext(query: str, top_k: int) -> list[dict]:
     with session() as s:
         recs = s.run(
             """
-            CALL db.index.fulltext.queryNodes('entity_name_fulltext', $query)
+            CALL db.index.fulltext.queryNodes('entity_name_fulltext', $search_query)
             YIELD node AS e, score
             RETURN e.id AS id, e.name AS name, e.type AS type, score
             ORDER BY score DESC LIMIT $top_k
             """,
-            query=_escape_lucene(query), top_k=top_k,
+            search_query=_escape_lucene(query), top_k=top_k,
         )
         return [dict(r) for r in recs]
 
