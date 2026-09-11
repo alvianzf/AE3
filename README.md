@@ -8,7 +8,7 @@ open internet. Clinic doesn't. It answers a practitioner's question using
 answer ships with the receipts: which source, which page, checked by a
 second, independent AI before a practitioner ever sees it.
 
-**Live right now:** [telehealth.devshorepartners.id](https://telehealth.devshorepartners.id)
+**Live right now:** [functionalhealthcollab.com](https://functionalhealthcollab.com)
 
 ---
 
