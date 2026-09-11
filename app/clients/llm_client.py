@@ -65,16 +65,18 @@ class LLMClient:
         self._client = OpenAI(base_url=self._rc.base_url, api_key=self._rc.api_key)
 
     def chat_json(self, system: str, prompt: str, schema: dict,
-                  max_tokens: int = 2000) -> tuple[dict, dict]:
+                  max_tokens: int = 100_000) -> tuple[dict, dict]:
         """One structured-output call. Returns (parsed_dict, usage).
 
-        Retries once on an empty response — found live against Nebius:
-        an otherwise-healthy model occasionally returns no content for a
-        strict json_schema call (~1 in 5 on nvidia/NVIDIA-Nemotron-3-Nano-
-        30B-A3B), with no distinguishing error, just an empty choice. A
-        second attempt succeeds essentially every time, so this is
-        provider flakiness worth absorbing here, not a caller-level retry
-        loop repeated at every one of chat_json's call sites.
+        Retries once on a broken response — found live against Nebius, two
+        distinct failure shapes from otherwise-healthy models on a strict
+        json_schema call: empty content (no choice text at all), and
+        truncated content (a real JSON string cut off mid-value by
+        max_tokens before it closed, so json.loads() fails on the partial
+        string). Both are provider/token-budget flakiness, not a
+        malformed-schema problem, and a second attempt succeeds
+        essentially every time — worth absorbing here once, not repeated
+        as a retry loop at every one of chat_json's call sites.
         """
         import json
 
@@ -93,14 +95,23 @@ class LLMClient:
             )
             return response.choices[0].message.content, response
 
-        text, response = _call()
-        if text is None:
+        def _attempt():
             text, response = _call()
-        if text is None:
-            raise ValueError(f"{self.model} ({self.role.value}) returned no content (twice)")
-        return json.loads(text), self._usage(response)
+            if text is None:
+                return None, None
+            try:
+                return json.loads(text), response
+            except json.JSONDecodeError:
+                return None, None
 
-    def chat_text(self, system: str, prompt: str, max_tokens: int = 4000) -> tuple[str, dict]:
+        parsed, response = _attempt()
+        if parsed is None:
+            parsed, response = _attempt()
+        if parsed is None:
+            raise ValueError(f"{self.model} ({self.role.value}) returned no usable JSON (twice)")
+        return parsed, self._usage(response)
+
+    def chat_text(self, system: str, prompt: str, max_tokens: int = 100_000) -> tuple[str, dict]:
         """One free-text call. Returns (text, usage)."""
         response = self._client.chat.completions.create(
             model=self.model,

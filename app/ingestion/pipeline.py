@@ -154,7 +154,7 @@ def extract_article(stripped_text: str, url: str) -> str:
     text, _usage = get_client(Role.READER).chat_text(
         EXTRACT_ARTICLE_SYSTEM,
         f"URL: {url}\n\nPage text:\n---\n{stripped_text[:40000]}\n---",
-        max_tokens=8000,
+        max_tokens=100_000,
     )
     return text
 
@@ -164,7 +164,7 @@ def extract_graph(passage_text: str) -> dict:
     in the shape store.ingest_document() expects."""
     prompt = f"Passage:\n---\n{passage_text}\n---"
     result, _usage = get_client(Role.GRAPH_BUILDER).chat_json(
-        KG_BUILDER_SYSTEM, prompt, KG_BUILDER_SCHEMA, max_tokens=3000)
+        KG_BUILDER_SYSTEM, prompt, KG_BUILDER_SCHEMA, max_tokens=100_000)
     return result
 
 
@@ -212,7 +212,7 @@ def suggest_entity_merges(names: list[str]) -> list[dict]:
         return []
     result, _usage = get_client(Role.GRAPH_BUILDER).chat_json(
         MERGE_SYSTEM, "Entity names in use:\n" + "\n".join(f"- {n}" for n in sorted(names)),
-        MERGE_SCHEMA, max_tokens=4000,
+        MERGE_SCHEMA, max_tokens=100_000,
     )
     groups = []
     for g in result["groups"]:

@@ -101,7 +101,7 @@ def llm_judge_relevance(question: str, patient: PatientContext,
         f"New candidates to judge:\n{candidates_text}"
     )
     result, usage = get_client(Role.ANSWER_ENGINE).chat_json(
-        RELEVANCE_SYSTEM, prompt, RELEVANCE_SCHEMA, max_tokens=4000)
+        RELEVANCE_SYSTEM, prompt, RELEVANCE_SCHEMA, max_tokens=100_000)
     by_id = {j["id"]: j for j in result["judgments"]}
     # A model that drops an id from its response is treated as "not
     # relevant, no reason given" rather than crashing the hop — a partial
