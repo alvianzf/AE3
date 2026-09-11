@@ -74,10 +74,10 @@ pipeline stitched together from whatever was cheapest that week.
 | Role | Job |
 |---|---|
 | **Reader** | Reads a new source, writes its title, summary, topics, and a suggested reliability grade |
-| **Graph-builder** | Pulls the medical concepts out of a document and links them, so related material across the library can find each other |
-| **Embedder** | Embeds knowledge-base chunks for future semantic recall |
-| **Retrieval planner** | Decides which sources are worth opening for a given question — never told the grade, so relevance and trust stay separate |
-| **Reasoner** | Writes the grounded answer, citing every claim back to its source |
+| **Graph-builder** ("The Cartographer") | Pulls the medical concepts out of a document and links them, so related material across the library can find each other |
+| **Embedder** ("The Indexer") | Embeds knowledge-base chunks for future semantic recall |
+| **Retrieval planner** ("The Librarian") | Decides which sources are worth opening for a given question — never told the grade, so relevance and trust stay separate |
+| **Reasoner** ("The Specialist") | Writes the grounded answer, citing every claim back to its source |
 | **Checker** | Verifies every sentence of the draft against its cited sources — a dedicated anti-hallucination classifier, not a chat model asked to grade its own kind's work |
 
 ## How a question becomes a trustworthy answer
@@ -86,14 +86,14 @@ pipeline stitched together from whatever was cheapest that week.
 flowchart LR
     subgraph ingest["Ingestion (once per source)"]
         direction LR
-        U["Upload / paste"] --> R["Reader\ntitles, grades, tags"] --> C["Chunk"] --> E["Embedder"] & G["Graph-builder\nentities + relationships"]
+        U["Upload / paste"] --> R["Reader\ntitles, grades, tags"] --> C["Chunk"] --> E["Indexer\n(Embedder)"] & G["Cartographer\n(Graph-builder)\nentities + relationships"]
     end
     E --> N[("Neo4j\nDocument → Chunk → Entity")]
     G --> N
 
     subgraph answer["Every question"]
         direction LR
-        Q["Clinician asks"] --> S["Seed search\n(vector + full-text)"] --> T["Graph traversal\n(LLM-judged, hop by hop)"] --> W["Reasoner\nwrites cited answer"] --> H["Checker\nHHEM anti-hallucination scoring"] --> A["Answer + citations\n+ unsupported-claim flags"]
+        Q["Clinician asks"] --> S["Librarian\n(Answer Engine)\nseed search"] --> T["Graph traversal\n(Librarian, LLM-judged, hop by hop)"] --> W["Specialist\n(Reasoner)\nwrites cited answer"] --> H["Checker\nHHEM anti-hallucination scoring"] --> A["Answer + citations\n+ unsupported-claim flags"]
     end
     N --> S
 ```
