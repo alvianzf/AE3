@@ -21,17 +21,25 @@ class Config:
     # Filesystem — uploaded files, kept byte-for-byte alongside the chunks
     originals_path = os.getenv("ORIGINALS_PATH", "data/originals")
 
-    # SQLite — the core store: practitioners, plans, contact forms,
-    # questionnaires, site stats. Shared, cross-tenant by nature.
+    # Postgres — replaces the old per-file SQLite stores (specs/v6). The
+    # core store lives in the `public` schema; each Pro practitioner's
+    # vault gets its own schema (vault_<id>), created on Pro activation —
+    # same physical database, isolation preserved via schema instead of
+    # a separate file. See app/db.py.
+    postgres_host = os.getenv("POSTGRES_HOST", "127.0.0.1")
+    postgres_port = int(os.getenv("POSTGRES_PORT", "5433"))
+    postgres_user = os.getenv("POSTGRES_USER", "postgres")
+    postgres_password = os.getenv("POSTGRES_PASSWORD", "")
+    postgres_database = os.getenv("POSTGRES_DATABASE", "clinic")
+    postgres_pool_max = int(os.getenv("POSTGRES_POOL_MAX", "20"))
+    # Pre-migration SQLite paths — no longer read by core_store.py/vault.py
+    # themselves, kept only as scripts/migrate_sqlite_to_postgres.py's
+    # source-data locations.
     core_db_path = os.getenv("CORE_DB_PATH", "data/core.db")
-    # One SQLite file per Pro practitioner, created on Pro activation.
     vaults_path = os.getenv("VAULTS_PATH", "data/vaults")
     # A Pro practitioner's uploaded client files, id-not-filename, one
     # directory per practitioner underneath this.
     vault_files_path = os.getenv("VAULT_FILES_PATH", "data/vault-files")
-    # Encrypts a practitioner's own Anthropic API key at rest (Fernet).
-    # Must be set to a real generated key in any deployment that stores one.
-    vault_encryption_key = os.getenv("VAULT_ENCRYPTION_KEY", "")
     # Practitioner profile photos — public, served directly (unlike the
     # private originals/vault-files stores above).
     photos_path = os.getenv("PHOTOS_PATH", "data/photos")
@@ -44,14 +52,53 @@ class Config:
     # Enforced at chunked-upload init, before any bytes are received.
     max_upload_bytes = int(os.getenv("MAX_UPLOAD_BYTES", str(200 * 1024 * 1024)))
 
-    # The AI team (one model per role)
-    reader_model = os.getenv("READER_MODEL", "claude-haiku-4-5")
-    # Sonnet, not Haiku: Haiku 4.5 refuses to open a low-graded source even when
-    # the practitioner has explicitly allowed it in, which silently breaks the
-    # grade slider. Sonnet 5 separates relevance from reliability as instructed.
-    librarian_model = os.getenv("LIBRARIAN_MODEL", "claude-sonnet-5")
-    answer_model = os.getenv("ANSWER_MODEL", "claude-opus-5")
-    checker_model = os.getenv("CHECKER_MODEL", "claude-haiku-4-5")
+    # Nebius token factory — OpenAI-compatible (specs/v4.2). One shared
+    # server-side key for every practitioner; the earlier per-practitioner
+    # BYO-Anthropic-key model is retired, not renamed.
+    nebius_api_key = os.getenv("NEBIUS_API_KEY", "")
+    nebius_base_url = os.getenv("NEBIUS_BASE_URL", "https://api.tokenfactory.nebius.com/v1/")
+
+    # The AI team — six roles now, not four (specs/v4.2/01). Defaults below
+    # are the human-readable model names as given when this was specced;
+    # **confirm each one against Nebius's actual catalog ID** before relying
+    # on these defaults (specs/v4.2/01 flags this as unverified — the
+    # catalog's real `model=` strings are typically namespaced, e.g.
+    # "Qwen/Qwen3-32B", not the bare label used here).
+    reader_model = os.getenv("READER_MODEL", "Qwen3.6-27B")
+    graph_builder_model = os.getenv("GRAPH_BUILDER_MODEL", "MedGemma-27B")
+    embedder_model = os.getenv("EMBEDDER_MODEL", "Qwen3-Embedding-8B")
+    retrieval_model = os.getenv("RETRIEVAL_MODEL", "Qwen3-8B")
+    reasoner_model = os.getenv("REASONER_MODEL", "KIMI-K3")
+
+    # Per-role base_url/api_key overrides (app/clients/llm_client.py). Every
+    # role defaults to the shared Nebius endpoint above — set a role's own
+    # <ROLE>_BASE_URL/<ROLE>_API_KEY only when that specific role actually
+    # needs to move to a different provider/deployment. Never hardcode a
+    # base_url in business logic; this is the one place it's read from.
+    reader_base_url = os.getenv("READER_BASE_URL", nebius_base_url)
+    reader_api_key = os.getenv("READER_API_KEY", nebius_api_key)
+    graph_builder_base_url = os.getenv("GRAPH_BUILDER_BASE_URL", nebius_base_url)
+    graph_builder_api_key = os.getenv("GRAPH_BUILDER_API_KEY", nebius_api_key)
+    embedder_base_url = os.getenv("EMBEDDER_BASE_URL", nebius_base_url)
+    embedder_api_key = os.getenv("EMBEDDER_API_KEY", nebius_api_key)
+    retrieval_base_url = os.getenv("RETRIEVAL_BASE_URL", nebius_base_url)
+    retrieval_api_key = os.getenv("RETRIEVAL_API_KEY", nebius_api_key)
+    reasoner_base_url = os.getenv("REASONER_BASE_URL", nebius_base_url)
+    reasoner_api_key = os.getenv("REASONER_API_KEY", nebius_api_key)
+    # Not a chat model — a hallucination-detection classifier run directly
+    # via transformers, not through the Nebius chat endpoint. Default is
+    # HHEM-2.1-Open's real Hugging Face repo id, not a Nebius catalog name.
+    checker_model = os.getenv("CHECKER_MODEL", "vectara/hallucination_evaluation_model")
+    # Threshold below which a (claim, evidence) pair is flagged as
+    # unsupported — HHEM's score is a 0-1 consistency probability, higher
+    # is more supported. Not calibrated against real examples yet
+    # (specs/v4.2/01) — a starting value, not a validated one.
+    checker_threshold = float(os.getenv("CHECKER_THRESHOLD", "0.5"))
+    # Qwen3-Embedding-8B's real output dimension is unconfirmed here
+    # (specs/v4.2/01) — must match whatever the model actually returns or
+    # the Neo4j vector index creation below fails outright, loudly, not
+    # silently: confirm this value before deploying.
+    embedding_dimensions = int(os.getenv("EMBEDDING_DIMENSIONS", "4096"))
 
     # Ingestion — passages are the citable unit
     chunk_size = int(os.getenv("CHUNK_SIZE", "1200"))
@@ -101,6 +148,17 @@ class Config:
     # a link meaningful without needing embeddings.
     min_shared_concepts = int(os.getenv("MIN_SHARED_CONCEPTS", "2"))
 
+    # Graph-traversal retrieval (app/retrieval/). A circuit breaker against
+    # runaway cost/depth, not the primary stopping logic — the primary
+    # stop is the frontier actually going empty (every branch pruned).
+    traversal_max_depth = int(os.getenv("TRAVERSAL_MAX_DEPTH", "5"))
+    # Candidates fetched per hop, before LLM judgment — bounds one hop's
+    # Cypher result size and the batch size of the per-hop relevance call.
+    traversal_max_candidates_per_hop = int(os.getenv("TRAVERSAL_MAX_CANDIDATES_PER_HOP", "20"))
+    # Seed chunks pulled by the initial vector (+ full-text) search, before
+    # traversal ever starts expanding.
+    traversal_seed_top_k = int(os.getenv("TRAVERSAL_SEED_TOP_K", "10"))
+
 
 @lru_cache
 def get_config() -> Config:
@@ -114,12 +172,8 @@ def get_config() -> Config:
             raise RuntimeError(
                 "NEO4J_PASSWORD must be set to a real value when ENV=production"
             )
-        if not cfg.vault_encryption_key:
-            # Unset previously meant a fresh random key every process start,
-            # silently undecryptable across restarts — found in review
-            # (specs/v4/04-known-issues.md#h5), same "fails open by default"
-            # shape as the two checks above, just missed originally.
+        if not cfg.nebius_api_key:
             raise RuntimeError(
-                "VAULT_ENCRYPTION_KEY must be set to a real value when ENV=production"
+                "NEBIUS_API_KEY must be set to a real value when ENV=production"
             )
     return cfg

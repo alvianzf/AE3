@@ -1,9 +1,8 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
-	import { put, post } from '$lib/api';
+	import { put } from '$lib/api';
 	import { toast } from '$lib/stores/toast';
 	import Spotlight from '$lib/components/Spotlight.svelte';
-	import Quiet from '$lib/components/Quiet.svelte';
 	import TextField from '$lib/components/TextField.svelte';
 	import Button from '$lib/components/Button.svelte';
 
@@ -23,9 +22,6 @@
 		years_experience = String(p?.years_experience ?? 0);
 	});
 
-	let apiKey = $state('');
-	let savingKey = $state(false);
-
 	async function save(e: Event) {
 		e.preventDefault();
 		saving = true;
@@ -39,25 +35,13 @@
 			saving = false;
 		}
 	}
-
-	async function saveKey(e: Event) {
-		e.preventDefault();
-		savingKey = true;
-		try {
-			await post(fetch, '/me/anthropic-key', { api_key: apiKey });
-			toast('Anthropic key saved.');
-			apiKey = '';
-			await invalidateAll();
-		} catch (err: any) {
-			toast(err.message, 'alert');
-		} finally {
-			savingKey = false;
-		}
-	}
 </script>
 
 <svelte:head><title>Profile — Practitioner portal</title></svelte:head>
 
+<!-- specs/v4.2 — the "Anthropic API key" panel that used to live here is
+     gone: every practitioner now runs against the app's own shared Nebius
+     key, so there's nothing left for a practitioner to set. -->
 <Spotlight title="Your profile">
 	<form onsubmit={save}>
 		<TextField label="Name" bind:value={name} required />
@@ -66,14 +50,6 @@
 		<Button type="submit" loading={saving}>Save</Button>
 	</form>
 </Spotlight>
-
-<Quiet title="Anthropic API key">
-	<p class="hint">{p?.has_anthropic_key ? 'A key is on file.' : 'No key on file yet — required to use Consult.'}</p>
-	<form onsubmit={saveKey}>
-		<TextField label="Anthropic API key" type="password" bind:value={apiKey} required />
-		<Button type="submit" loading={savingKey}>Save key</Button>
-	</form>
-</Quiet>
 
 <style>
 	form { display: grid; gap: var(--space-3); margin-top: var(--space-2); }

@@ -7,24 +7,22 @@ table doesn't name but real login requires:
   public-profile fields that make no sense for an admin).
 - `client_directory`: clients live entirely inside their practitioner's
   vault (correctly — that's the isolation boundary), but a login request
-  arrives with just an email and needs to know which vault file to open
+  arrives with just an email and needs to know which vault schema to open
   before any vault can be queried. This table is a routing pointer only,
   never clinical content.
 
-Same shape as app/patients.py: a fresh connection per call, idempotent
-schema, plain module-level functions.
+specs/v6 — this used to be its own SQLite file (data/core.db); it's now
+the `public` schema of the shared Postgres database (app/db.py). Every
+function signature and return shape is unchanged, so nothing outside this
+module (auth.py, billing.py, main.py) needed to change.
 """
 from __future__ import annotations
 
 import json
-import sqlite3
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 
-from .config import get_config
-
-cfg = get_config()
+from .db import core_connection
 
 STATUSES = ("pending", "approved", "rejected", "suspended")
 PLANS = ("basic", "pro")
@@ -34,16 +32,8 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def _connect() -> sqlite3.Connection:
-    path = Path(cfg.core_db_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
 def ensure_schema() -> None:
-    with _connect() as conn:
+    with core_connection() as conn:
         conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS admins (
@@ -52,7 +42,7 @@ def ensure_schema() -> None:
                 password_hash TEXT NOT NULL,
                 name TEXT NOT NULL,
                 role TEXT NOT NULL DEFAULT 'admin',
-                is_active INTEGER NOT NULL DEFAULT 1,
+                is_active BOOLEAN NOT NULL DEFAULT TRUE,
                 created_at TEXT NOT NULL
             );
 
@@ -79,8 +69,8 @@ def ensure_schema() -> None:
             CREATE INDEX IF NOT EXISTS practitioners_by_status
                 ON practitioners(status);
 
-            -- Routing only: which vault a client's login belongs to. No
-            -- clinical content — that lives in the vault itself.
+            -- Routing only: which vault schema a client's login belongs
+            -- to. No clinical content — that lives in the vault itself.
             CREATE TABLE IF NOT EXISTS client_directory (
                 email TEXT PRIMARY KEY,
                 practitioner_id TEXT NOT NULL,
@@ -103,7 +93,7 @@ def ensure_schema() -> None:
                 id TEXT PRIMARY KEY,
                 title TEXT NOT NULL,
                 version INTEGER NOT NULL,
-                is_active INTEGER NOT NULL DEFAULT 0,
+                is_active BOOLEAN NOT NULL DEFAULT FALSE,
                 created_by TEXT NOT NULL,
                 created_at TEXT NOT NULL
             );
@@ -143,15 +133,8 @@ def ensure_schema() -> None:
             CREATE INDEX IF NOT EXISTS core_audit_by_ts ON audit_events(ts);
 
             -- An uploaded/pasted item sitting reviewable before an admin
-            -- explicitly promotes it into the real knowledge graph
-            -- (specs/v3/18-document-ingest-upgrade.md's "staged uploads" —
-            -- specced, never built until now). `pages_json` — a JSON list
-            -- of [page_number|null, text] pairs, the same shape
-            -- _extract_pages()/_extract_pages_from_path() already return —
-            -- not the flat string that spec proposed: keeping page
-            -- boundaries means a PDF staged now and promoted later still
-            -- gets real "page 4" citations instead of falling back to
-            -- passage-number-only.
+            -- explicitly promotes it into the real knowledge graph.
+            -- pages_json — a JSON list of [page_number|null, text] pairs.
             CREATE TABLE IF NOT EXISTS staged_sources (
                 id TEXT PRIMARY KEY,
                 kind TEXT NOT NULL,               -- 'file' | 'text' | 'scraped_url'
@@ -168,50 +151,34 @@ def ensure_schema() -> None:
                 ON staged_sources(created_at);
             """
         )
-        # Migration for deployments whose admins table predates the
-        # superadmin/admin split — CREATE TABLE IF NOT EXISTS above doesn't
-        # add columns to an existing table. Schemas only ever grow, never
-        # rewritten in place, same rule v1 followed.
-        cols = {row[1] for row in conn.execute("PRAGMA table_info(admins)")}
-        if "role" not in cols:
-            conn.execute("ALTER TABLE admins ADD COLUMN role TEXT NOT NULL DEFAULT 'admin'")
-        if "is_active" not in cols:
-            conn.execute("ALTER TABLE admins ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1")
-        q_cols = {row[1] for row in conn.execute("PRAGMA table_info(questionnaire_questions)")}
-        if "theme" not in q_cols:
-            conn.execute(
-                "ALTER TABLE questionnaire_questions ADD COLUMN theme TEXT NOT NULL DEFAULT 'General'")
-        # Added when the web scraper (specs/v3/18 Component 2) landed —
-        # staged_sources already existed in production without it.
-        staged_cols = {row[1] for row in conn.execute("PRAGMA table_info(staged_sources)")}
-        if "source_url" not in staged_cols:
-            conn.execute("ALTER TABLE staged_sources ADD COLUMN source_url TEXT")
-        # Every deployment needs at least one superadmin able to manage other
-        # admins. If none exists (a fresh install before the first admin is
-        # created, or an existing deployment migrating through this schema
-        # change for the first time), promote the earliest-created admin
-        # automatically rather than leaving every admin locked out.
+        # Every deployment needs at least one superadmin able to manage
+        # other admins. If none exists (fresh install), promote the
+        # earliest-created admin automatically rather than leaving every
+        # admin locked out.
         has_superadmin = conn.execute(
-            "SELECT 1 FROM admins WHERE role = 'superadmin' LIMIT 1").fetchone()
+            "SELECT 1 FROM admins WHERE role = 'superadmin' LIMIT 1"
+        ).fetchone()
         if not has_superadmin:
             oldest = conn.execute(
-                "SELECT id FROM admins ORDER BY created_at LIMIT 1").fetchone()
+                "SELECT id FROM admins ORDER BY created_at LIMIT 1"
+            ).fetchone()
             if oldest:
                 conn.execute(
-                    "UPDATE admins SET role = 'superadmin' WHERE id = ?", (oldest[0],))
+                    "UPDATE admins SET role = 'superadmin' WHERE id = %s",
+                    (oldest["id"],))
 
 
 def ping() -> bool:
-    with _connect() as conn:
+    with core_connection() as conn:
         conn.execute("SELECT 1")
     return True
 
 
 def log(actor: str, action: str, detail: str) -> None:
-    with _connect() as conn:
+    with core_connection() as conn:
         conn.execute(
             "INSERT INTO audit_events (id, ts, actor, action, detail) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s)",
             (str(uuid.uuid4()), _now(), actor, action, detail),
         )
 
@@ -221,77 +188,75 @@ def log(actor: str, action: str, detail: str) -> None:
 ADMIN_ROLES = ("admin", "superadmin")
 
 
-def _decode_admin(row: sqlite3.Row) -> dict:
-    d = dict(row)
-    d["is_active"] = bool(d["is_active"])
-    return d
+def _decode_admin(row: dict) -> dict:
+    return dict(row)
 
 
 def create_admin(email: str, password_hash: str, name: str, role: str = "admin") -> dict:
     if role not in ADMIN_ROLES:
         raise ValueError(f"unknown admin role: {role}")
     admin_id = str(uuid.uuid4())
-    with _connect() as conn:
+    with core_connection() as conn:
         conn.execute(
             "INSERT INTO admins (id, email, password_hash, name, role, "
-            "is_active, created_at) VALUES (?, ?, ?, ?, ?, 1, ?)",
+            "is_active, created_at) VALUES (%s, %s, %s, %s, %s, TRUE, %s)",
             (admin_id, email, password_hash, name, role, _now()),
         )
     return get_admin(admin_id)
 
 
 def get_admin_by_email(email: str) -> dict | None:
-    with _connect() as conn:
+    with core_connection() as conn:
         row = conn.execute(
-            "SELECT * FROM admins WHERE email = ?", (email,)
+            "SELECT * FROM admins WHERE email = %s", (email,)
         ).fetchone()
     return _decode_admin(row) if row else None
 
 
 def get_admin(admin_id: str) -> dict | None:
-    with _connect() as conn:
+    with core_connection() as conn:
         row = conn.execute(
-            "SELECT * FROM admins WHERE id = ?", (admin_id,)
+            "SELECT * FROM admins WHERE id = %s", (admin_id,)
         ).fetchone()
     return _decode_admin(row) if row else None
 
 
 def list_admins() -> list[dict]:
-    with _connect() as conn:
+    with core_connection() as conn:
         rows = conn.execute(
             "SELECT * FROM admins ORDER BY created_at DESC"
         ).fetchall()
     return [_decode_admin(r) for r in rows]
 
 
-def _active_superadmin_count(conn: sqlite3.Connection, excluding: str) -> int:
+def _active_superadmin_count(conn, excluding: str) -> int:
     return conn.execute(
-        "SELECT count(*) FROM admins WHERE role = 'superadmin' AND "
-        "is_active = 1 AND id != ?", (excluding,),
-    ).fetchone()[0]
+        "SELECT count(*) AS n FROM admins WHERE role = 'superadmin' AND "
+        "is_active = TRUE AND id != %s", (excluding,),
+    ).fetchone()["n"]
 
 
 def set_admin_role(admin_id: str, role: str) -> dict | None:
     if role not in ADMIN_ROLES:
         raise ValueError(f"unknown admin role: {role}")
-    with _connect() as conn:
+    with core_connection() as conn:
         row = conn.execute(
-            "SELECT role FROM admins WHERE id = ?", (admin_id,)
+            "SELECT role FROM admins WHERE id = %s", (admin_id,)
         ).fetchone()
         if row is None:
             return None
         if row["role"] == "superadmin" and role != "superadmin" and \
                 _active_superadmin_count(conn, admin_id) == 0:
             raise ValueError("cannot demote the last superadmin")
-        conn.execute("UPDATE admins SET role = ? WHERE id = ?", (role, admin_id))
+        conn.execute("UPDATE admins SET role = %s WHERE id = %s", (role, admin_id))
     log("superadmin", "admin role changed", f"{admin_id} -> {role}")
     return get_admin(admin_id)
 
 
 def set_admin_active(admin_id: str, is_active: bool) -> dict | None:
-    with _connect() as conn:
+    with core_connection() as conn:
         row = conn.execute(
-            "SELECT role, is_active FROM admins WHERE id = ?", (admin_id,)
+            "SELECT role, is_active FROM admins WHERE id = %s", (admin_id,)
         ).fetchone()
         if row is None:
             return None
@@ -299,24 +264,24 @@ def set_admin_active(admin_id: str, is_active: bool) -> dict | None:
                 _active_superadmin_count(conn, admin_id) == 0:
             raise ValueError("cannot suspend the last active superadmin")
         conn.execute(
-            "UPDATE admins SET is_active = ? WHERE id = ?",
-            (1 if is_active else 0, admin_id),
+            "UPDATE admins SET is_active = %s WHERE id = %s",
+            (is_active, admin_id),
         )
     log("superadmin", "admin " + ("reactivated" if is_active else "suspended"), admin_id)
     return get_admin(admin_id)
 
 
 def set_admin_password(admin_id: str, password_hash: str) -> None:
-    with _connect() as conn:
+    with core_connection() as conn:
         conn.execute(
-            "UPDATE admins SET password_hash = ? WHERE id = ?",
+            "UPDATE admins SET password_hash = %s WHERE id = %s",
             (password_hash, admin_id),
         )
 
 
 # --- Practitioners ---------------------------------------------------------
 
-def _decode_practitioner(row: sqlite3.Row) -> dict:
+def _decode_practitioner(row: dict) -> dict:
     d = dict(row)
     d["specialties"] = json.loads(d.pop("specialties_json"))
     d["languages"] = json.loads(d.pop("languages_json"))
@@ -329,12 +294,12 @@ def create_practitioner_pending(
     years_experience: int = 0, consultation_price_cents: int = 0,
 ) -> dict:
     practitioner_id = str(uuid.uuid4())
-    with _connect() as conn:
+    with core_connection() as conn:
         conn.execute(
             "INSERT INTO practitioners (id, email, password_hash, name, "
             "status, plan, bio, specialties_json, languages_json, "
             "years_experience, consultation_price_cents, created_at) "
-            "VALUES (?, ?, ?, ?, 'pending', 'basic', ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, 'pending', 'basic', %s, %s, %s, %s, %s, %s)",
             (practitioner_id, email, password_hash, name, bio,
              json.dumps(specialties or []), json.dumps(languages or []),
              years_experience, consultation_price_cents, _now()),
@@ -343,17 +308,17 @@ def create_practitioner_pending(
 
 
 def get_practitioner(practitioner_id: str) -> dict | None:
-    with _connect() as conn:
+    with core_connection() as conn:
         row = conn.execute(
-            "SELECT * FROM practitioners WHERE id = ?", (practitioner_id,)
+            "SELECT * FROM practitioners WHERE id = %s", (practitioner_id,)
         ).fetchone()
     return _decode_practitioner(row) if row else None
 
 
 def get_practitioner_by_email(email: str) -> dict | None:
-    with _connect() as conn:
+    with core_connection() as conn:
         row = conn.execute(
-            "SELECT * FROM practitioners WHERE email = ?", (email,)
+            "SELECT * FROM practitioners WHERE email = %s", (email,)
         ).fetchone()
     return _decode_practitioner(row) if row else None
 
@@ -362,38 +327,38 @@ def list_practitioners(status: str | None = None) -> list[dict]:
     query = "SELECT * FROM practitioners"
     params: tuple = ()
     if status is not None:
-        query += " WHERE status = ?"
+        query += " WHERE status = %s"
         params = (status,)
     query += " ORDER BY created_at DESC"
-    with _connect() as conn:
+    with core_connection() as conn:
         rows = conn.execute(query, params).fetchall()
     return [_decode_practitioner(r) for r in rows]
 
 
 def approve_practitioner(practitioner_id: str) -> dict | None:
-    with _connect() as conn:
+    with core_connection() as conn:
         exists = conn.execute(
-            "SELECT 1 FROM practitioners WHERE id = ?", (practitioner_id,)
+            "SELECT 1 FROM practitioners WHERE id = %s", (practitioner_id,)
         ).fetchone()
         if not exists:
             return None
         conn.execute(
-            "UPDATE practitioners SET status = 'approved', approved_at = ? "
-            "WHERE id = ?", (_now(), practitioner_id),
+            "UPDATE practitioners SET status = 'approved', approved_at = %s "
+            "WHERE id = %s", (_now(), practitioner_id),
         )
     log("admin", "practitioner approved", practitioner_id)
     return get_practitioner(practitioner_id)
 
 
 def reject_practitioner(practitioner_id: str) -> dict | None:
-    with _connect() as conn:
+    with core_connection() as conn:
         exists = conn.execute(
-            "SELECT 1 FROM practitioners WHERE id = ?", (practitioner_id,)
+            "SELECT 1 FROM practitioners WHERE id = %s", (practitioner_id,)
         ).fetchone()
         if not exists:
             return None
         conn.execute(
-            "UPDATE practitioners SET status = 'rejected' WHERE id = ?",
+            "UPDATE practitioners SET status = 'rejected' WHERE id = %s",
             (practitioner_id,),
         )
     log("admin", "practitioner rejected", practitioner_id)
@@ -401,14 +366,14 @@ def reject_practitioner(practitioner_id: str) -> dict | None:
 
 
 def suspend_practitioner(practitioner_id: str) -> dict | None:
-    with _connect() as conn:
+    with core_connection() as conn:
         exists = conn.execute(
-            "SELECT 1 FROM practitioners WHERE id = ?", (practitioner_id,)
+            "SELECT 1 FROM practitioners WHERE id = %s", (practitioner_id,)
         ).fetchone()
         if not exists:
             return None
         conn.execute(
-            "UPDATE practitioners SET status = 'suspended' WHERE id = ?",
+            "UPDATE practitioners SET status = 'suspended' WHERE id = %s",
             (practitioner_id,),
         )
     log("admin", "practitioner suspended", practitioner_id)
@@ -418,14 +383,14 @@ def suspend_practitioner(practitioner_id: str) -> dict | None:
 def set_plan(practitioner_id: str, plan: str) -> dict | None:
     if plan not in PLANS:
         raise ValueError(f"unknown plan: {plan}")
-    with _connect() as conn:
+    with core_connection() as conn:
         exists = conn.execute(
-            "SELECT 1 FROM practitioners WHERE id = ?", (practitioner_id,)
+            "SELECT 1 FROM practitioners WHERE id = %s", (practitioner_id,)
         ).fetchone()
         if not exists:
             return None
         conn.execute(
-            "UPDATE practitioners SET plan = ? WHERE id = ?",
+            "UPDATE practitioners SET plan = %s WHERE id = %s",
             (plan, practitioner_id),
         )
     log("admin", "practitioner plan changed", f"{practitioner_id} -> {plan}")
@@ -446,33 +411,25 @@ def update_practitioner_profile(practitioner_id: str, **fields) -> dict | None:
             columns[f"{key}_json"] = json.dumps(value)
         else:
             columns[key] = value
-    set_clause = ", ".join(f"{col} = ?" for col in columns)
-    with _connect() as conn:
+    set_clause = ", ".join(f"{col} = %s" for col in columns)
+    with core_connection() as conn:
         exists = conn.execute(
-            "SELECT 1 FROM practitioners WHERE id = ?", (practitioner_id,)
+            "SELECT 1 FROM practitioners WHERE id = %s", (practitioner_id,)
         ).fetchone()
         if not exists:
             return None
         conn.execute(
-            f"UPDATE practitioners SET {set_clause} WHERE id = ?",
+            f"UPDATE practitioners SET {set_clause} WHERE id = %s",
             (*columns.values(), practitioner_id),
         )
     return get_practitioner(practitioner_id)
 
 
 def set_practitioner_password(practitioner_id: str, password_hash: str) -> None:
-    with _connect() as conn:
+    with core_connection() as conn:
         conn.execute(
-            "UPDATE practitioners SET password_hash = ? WHERE id = ?",
+            "UPDATE practitioners SET password_hash = %s WHERE id = %s",
             (password_hash, practitioner_id),
-        )
-
-
-def set_practitioner_api_key(practitioner_id: str, encrypted_key: str | None) -> None:
-    with _connect() as conn:
-        conn.execute(
-            "UPDATE practitioners SET anthropic_api_key_encrypted = ? WHERE id = ?",
-            (encrypted_key, practitioner_id),
         )
 
 
@@ -489,35 +446,34 @@ def set_stripe_fields(
         updates["stripe_status"] = status
     if not updates:
         return get_practitioner(practitioner_id)
-    set_clause = ", ".join(f"{col} = ?" for col in updates)
-    with _connect() as conn:
+    set_clause = ", ".join(f"{col} = %s" for col in updates)
+    with core_connection() as conn:
         exists = conn.execute(
-            "SELECT 1 FROM practitioners WHERE id = ?", (practitioner_id,)
+            "SELECT 1 FROM practitioners WHERE id = %s", (practitioner_id,)
         ).fetchone()
         if not exists:
             return None
         conn.execute(
-            f"UPDATE practitioners SET {set_clause} WHERE id = ?",
+            f"UPDATE practitioners SET {set_clause} WHERE id = %s",
             (*updates.values(), practitioner_id),
         )
     return get_practitioner(practitioner_id)
 
 
 def activate_pro(practitioner_id: str) -> dict:
-    """Flip the plan to pro and make sure a vault file exists.
+    """Flip the plan to pro and make sure a vault schema exists.
 
-    Idempotent: if data/vaults/<id>.db already exists (e.g. a downgrade
-    followed by re-upgrade), it is reused rather than recreated.
+    Idempotent: vault.ensure_schema() (CREATE SCHEMA IF NOT EXISTS under
+    the hood) is safe to call whether or not the schema already exists,
+    e.g. a downgrade followed by re-upgrade.
     """
     practitioner = set_plan(practitioner_id, "pro")
     if practitioner is None:
         raise ValueError(f"unknown practitioner: {practitioner_id}")
-    vault_path = Path(cfg.vaults_path) / f"{practitioner_id}.db"
-    if not vault_path.exists():
-        # Deferred import: vault.py may not exist yet when this module is
-        # authored/run in parallel with it, same reasoning as auth.py.
-        from . import vault
-        vault.ensure_schema(practitioner_id)
+    # Deferred import: vault.py may not exist yet when this module is
+    # authored/run in parallel with it, same reasoning as auth.py.
+    from . import vault
+    vault.ensure_schema(practitioner_id)
     return practitioner
 
 
@@ -531,12 +487,12 @@ def create_contact_submission(
         "client_name": client_name, "client_email": client_email,
         "message": message, "status": "new", "created_at": _now(),
     }
-    with _connect() as conn:
+    with core_connection() as conn:
         conn.execute(
             "INSERT INTO contact_form_submissions (id, practitioner_id, "
             "client_name, client_email, message, status, created_at) "
-            "VALUES (:id, :practitioner_id, :client_name, :client_email, "
-            ":message, :status, :created_at)",
+            "VALUES (%(id)s, %(practitioner_id)s, %(client_name)s, %(client_email)s, "
+            "%(message)s, %(status)s, %(created_at)s)",
             submission,
         )
     log("client", "contact submission received", practitioner_id)
@@ -548,13 +504,13 @@ def list_contact_submissions(
 ) -> list[dict]:
     where, params = [], []
     if practitioner_id:
-        where.append("practitioner_id = ?")
+        where.append("practitioner_id = %s")
         params.append(practitioner_id)
     if status:
-        where.append("status = ?")
+        where.append("status = %s")
         params.append(status)
     clause = f"WHERE {' AND '.join(where)}" if where else ""
-    with _connect() as conn:
+    with core_connection() as conn:
         rows = conn.execute(
             f"SELECT * FROM contact_form_submissions {clause} "
             "ORDER BY created_at DESC",
@@ -566,19 +522,19 @@ def list_contact_submissions(
 def update_contact_status(submission_id: str, status: str) -> dict | None:
     if status not in ("new", "contacted", "closed"):
         raise ValueError(f"unknown status: {status}")
-    with _connect() as conn:
+    with core_connection() as conn:
         exists = conn.execute(
-            "SELECT 1 FROM contact_form_submissions WHERE id = ?",
+            "SELECT 1 FROM contact_form_submissions WHERE id = %s",
             (submission_id,),
         ).fetchone()
         if not exists:
             return None
         conn.execute(
-            "UPDATE contact_form_submissions SET status = ? WHERE id = ?",
+            "UPDATE contact_form_submissions SET status = %s WHERE id = %s",
             (status, submission_id),
         )
         row = conn.execute(
-            "SELECT * FROM contact_form_submissions WHERE id = ?",
+            "SELECT * FROM contact_form_submissions WHERE id = %s",
             (submission_id,),
         ).fetchone()
     return dict(row)
@@ -587,36 +543,36 @@ def update_contact_status(submission_id: str, status: str) -> dict | None:
 # --- Analytics ---------------------------------------------------------------
 
 def log_profile_view(practitioner_id: str) -> None:
-    with _connect() as conn:
+    with core_connection() as conn:
         conn.execute(
             "INSERT INTO profile_view_events (id, practitioner_id, ts) "
-            "VALUES (?, ?, ?)",
+            "VALUES (%s, %s, %s)",
             (str(uuid.uuid4()), practitioner_id, _now()),
         )
 
 
 def site_stats() -> dict:
-    with _connect() as conn:
+    with core_connection() as conn:
         views = conn.execute(
-            "SELECT count(*) FROM profile_view_events"
-        ).fetchone()[0]
+            "SELECT count(*) AS n FROM profile_view_events"
+        ).fetchone()["n"]
         contacts = conn.execute(
-            "SELECT count(*) FROM contact_form_submissions"
-        ).fetchone()[0]
+            "SELECT count(*) AS n FROM contact_form_submissions"
+        ).fetchone()["n"]
     return {"total_views": views, "total_contacts": contacts}
 
 
 def practitioner_stats(practitioner_id: str) -> dict:
-    with _connect() as conn:
+    with core_connection() as conn:
         views = conn.execute(
-            "SELECT count(*) FROM profile_view_events WHERE practitioner_id = ?",
+            "SELECT count(*) AS n FROM profile_view_events WHERE practitioner_id = %s",
             (practitioner_id,),
-        ).fetchone()[0]
+        ).fetchone()["n"]
         contacts = conn.execute(
-            "SELECT count(*) FROM contact_form_submissions "
-            "WHERE practitioner_id = ?",
+            "SELECT count(*) AS n FROM contact_form_submissions "
+            "WHERE practitioner_id = %s",
             (practitioner_id,),
-        ).fetchone()[0]
+        ).fetchone()["n"]
     return {"views": views, "contacts": contacts}
 
 
@@ -625,7 +581,7 @@ def practitioner_stats(practitioner_id: str) -> dict:
 QUESTION_TYPES = ("text", "number", "date", "choice", "multi_choice")
 
 
-def _decode_question(row: sqlite3.Row) -> dict:
+def _decode_question(row: dict) -> dict:
     d = dict(row)
     d["options"] = json.loads(d.pop("options_json"))
     return d
@@ -640,18 +596,18 @@ def _insert_questionnaire(
         if q["input_type"] not in QUESTION_TYPES:
             raise ValueError(f"unknown question type: {q['input_type']}")
     questionnaire_id = str(uuid.uuid4())
-    with _connect() as conn:
-        conn.execute("UPDATE questionnaires SET is_active = 0")
+    with core_connection() as conn:
+        conn.execute("UPDATE questionnaires SET is_active = FALSE")
         conn.execute(
             "INSERT INTO questionnaires (id, title, version, is_active, "
-            "created_by, created_at) VALUES (?, ?, ?, 1, ?, ?)",
+            "created_by, created_at) VALUES (%s, %s, %s, TRUE, %s, %s)",
             (questionnaire_id, title, version, created_by, _now()),
         )
         for ordinal, q in enumerate(questions):
             conn.execute(
                 "INSERT INTO questionnaire_questions (id, questionnaire_id, "
                 "ordinal, prompt, input_type, options_json, theme) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                 (str(uuid.uuid4()), questionnaire_id, ordinal, q["prompt"],
                  q["input_type"], json.dumps(q.get("options", [])),
                  q.get("theme") or "General"),
@@ -671,9 +627,9 @@ def edit_questionnaire(
     """Create a new version rather than mutate the one clients already
     answered against; _insert_questionnaire flips the old version's
     is_active off as part of the single-active-version invariant."""
-    with _connect() as conn:
+    with core_connection() as conn:
         old = conn.execute(
-            "SELECT version FROM questionnaires WHERE id = ?",
+            "SELECT version FROM questionnaires WHERE id = %s",
             (questionnaire_id,),
         ).fetchone()
     if old is None:
@@ -684,22 +640,22 @@ def edit_questionnaire(
 
 
 def get_active_questionnaire() -> dict | None:
-    with _connect() as conn:
+    with core_connection() as conn:
         row = conn.execute(
-            "SELECT id FROM questionnaires WHERE is_active = 1"
+            "SELECT id FROM questionnaires WHERE is_active = TRUE"
         ).fetchone()
     return get_questionnaire(row["id"]) if row else None
 
 
 def get_questionnaire(questionnaire_id: str) -> dict | None:
-    with _connect() as conn:
+    with core_connection() as conn:
         row = conn.execute(
-            "SELECT * FROM questionnaires WHERE id = ?", (questionnaire_id,)
+            "SELECT * FROM questionnaires WHERE id = %s", (questionnaire_id,)
         ).fetchone()
         if row is None:
             return None
         questions = conn.execute(
-            "SELECT * FROM questionnaire_questions WHERE questionnaire_id = ? "
+            "SELECT * FROM questionnaire_questions WHERE questionnaire_id = %s "
             "ORDER BY ordinal",
             (questionnaire_id,),
         ).fetchall()
@@ -707,7 +663,7 @@ def get_questionnaire(questionnaire_id: str) -> dict | None:
 
 
 def list_questionnaires() -> list[dict]:
-    with _connect() as conn:
+    with core_connection() as conn:
         rows = conn.execute(
             "SELECT * FROM questionnaires ORDER BY created_at DESC"
         ).fetchall()
@@ -719,25 +675,27 @@ def list_questionnaires() -> list[dict]:
 def add_client_directory_entry(
     email: str, practitioner_id: str, client_id: str,
 ) -> None:
-    with _connect() as conn:
+    with core_connection() as conn:
         conn.execute(
-            "INSERT OR REPLACE INTO client_directory "
-            "(email, practitioner_id, client_id) VALUES (?, ?, ?)",
+            "INSERT INTO client_directory (email, practitioner_id, client_id) "
+            "VALUES (%s, %s, %s) "
+            "ON CONFLICT (email) DO UPDATE SET "
+            "practitioner_id = EXCLUDED.practitioner_id, client_id = EXCLUDED.client_id",
             (email, practitioner_id, client_id),
         )
 
 
 def get_client_directory_entry(email: str) -> dict | None:
-    with _connect() as conn:
+    with core_connection() as conn:
         row = conn.execute(
-            "SELECT * FROM client_directory WHERE email = ?", (email,)
+            "SELECT * FROM client_directory WHERE email = %s", (email,)
         ).fetchone()
     return dict(row) if row else None
 
 
 # --- Staged sources (uploaded/pasted, not yet promoted into the graph) --------
 
-def _decode_staged(row: sqlite3.Row) -> dict:
+def _decode_staged(row: dict) -> dict:
     """Drops the full page text from what's returned — a staged list can
     hold many large documents, and the checklist UI only needs a short
     preview, not the whole body. get_staged_pages() below is the one call
@@ -764,19 +722,19 @@ def create_staged_source(
         "media_type": media_type, "pages_json": json.dumps(pages), "char_count": char_count,
         "page_count": page_count, "created_at": _now(), "created_by": created_by,
     }
-    with _connect() as conn:
+    with core_connection() as conn:
         conn.execute(
             "INSERT INTO staged_sources (id, kind, filename, source_url, media_type, "
             "pages_json, char_count, page_count, created_at, created_by) VALUES "
-            "(:id, :kind, :filename, :source_url, :media_type, :pages_json, :char_count, "
-            ":page_count, :created_at, :created_by)",
+            "(%(id)s, %(kind)s, %(filename)s, %(source_url)s, %(media_type)s, "
+            "%(pages_json)s, %(char_count)s, %(page_count)s, %(created_at)s, %(created_by)s)",
             row,
         )
     return get_staged_source(staged_id)
 
 
 def list_staged_sources() -> list[dict]:
-    with _connect() as conn:
+    with core_connection() as conn:
         rows = conn.execute(
             "SELECT * FROM staged_sources ORDER BY created_at DESC"
         ).fetchall()
@@ -784,9 +742,9 @@ def list_staged_sources() -> list[dict]:
 
 
 def get_staged_source(staged_id: str) -> dict | None:
-    with _connect() as conn:
+    with core_connection() as conn:
         row = conn.execute(
-            "SELECT * FROM staged_sources WHERE id = ?", (staged_id,)
+            "SELECT * FROM staged_sources WHERE id = %s", (staged_id,)
         ).fetchone()
     return _decode_staged(row) if row else None
 
@@ -796,14 +754,14 @@ def get_staged_pages(staged_id: str) -> list[list] | None:
     kept separate from get_staged_source()/list_staged_sources() so an
     admin's checklist view never has to pull every staged document's full
     body over the wire just to render a list."""
-    with _connect() as conn:
+    with core_connection() as conn:
         row = conn.execute(
-            "SELECT pages_json FROM staged_sources WHERE id = ?", (staged_id,)
+            "SELECT pages_json FROM staged_sources WHERE id = %s", (staged_id,)
         ).fetchone()
     return json.loads(row["pages_json"]) if row else None
 
 
 def delete_staged_source(staged_id: str) -> bool:
-    with _connect() as conn:
-        cur = conn.execute("DELETE FROM staged_sources WHERE id = ?", (staged_id,))
+    with core_connection() as conn:
+        cur = conn.execute("DELETE FROM staged_sources WHERE id = %s", (staged_id,))
     return cur.rowcount > 0

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import AppRail from '$lib/components/AppRail.svelte';
 
-	let { children } = $props();
+	let { data, children } = $props();
 
 	const items = [
 		{ href: '/client/dashboard', label: 'Dashboard', icon: 'home' },
@@ -12,7 +12,11 @@
 </script>
 
 <div class="shell">
-	<AppRail {items} portalLabel="Client portal" />
+	<!-- No role-specific rail colors needed here — the global --rail-top/
+	     --rail-bottom/--rail-indicator defaults (app.css) already are the
+	     client portal's identity; practitioner and admin override them on
+	     their own .shell instead. -->
+	<AppRail {items} portalLabel="Client portal" userLabel={data.session?.name} />
 	<main class="container">
 		{@render children()}
 	</main>

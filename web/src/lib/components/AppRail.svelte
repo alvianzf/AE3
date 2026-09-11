@@ -1,10 +1,28 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import { post } from '$lib/api';
 	import Sprig from './Sprig.svelte';
 	import Icon from './Icon.svelte';
 
 	interface NavItem { href: string; label: string; icon: string; locked?: boolean }
 	let { items, portalLabel, userLabel }: { items: NavItem[]; portalLabel: string; userLabel?: string } = $props();
+
+	// specs/v4.1/02 — one visual identity per user type. Colors come from
+	// --rail-top/--rail-bottom/--rail-indicator, the same CSS custom
+	// properties this component already read before role-theming existed
+	// — each portal's own +layout.svelte sets them on its .shell wrapper
+	// (a plain cascade override, not a second JS-side theming mechanism),
+	// so this component stays role-agnostic rather than needing a `role`
+	// prop and a color lookup table of its own.
+
+	// specs/v4.1/03 CR1 — the sign-out form used to just preventDefault and
+	// never call the endpoint, so the session cookie outlived the click.
+	async function logout(e: Event) {
+		e.preventDefault();
+		await post(fetch, '/auth/logout').catch(() => {});
+		goto('/login', { invalidateAll: true });
+	}
 </script>
 
 <!-- Redesigned nav: a slim fixed icon rail (not a full labeled sidebar) —
@@ -13,6 +31,7 @@
      gets the width back instead of losing 14.5rem to a permanent sidebar. -->
 <nav class="rail" aria-label="{portalLabel} navigation">
 	<a href="/" class="mark" aria-label="Clinic home"><Sprig size={22} /></a>
+	<span class="portal-label">{portalLabel}</span>
 	<ul>
 		{#each items as it (it.href)}
 			<li>
@@ -28,8 +47,8 @@
 	</ul>
 	<div class="foot">
 		{#if userLabel}<span class="who">{userLabel}</span>{/if}
-		<form method="post" action="/api/auth/logout" onsubmit={(e) => e.preventDefault()}>
-			<a href="/login" class="logout" title="Sign out">⏻</a>
+		<form method="post" action="/api/auth/logout" onsubmit={logout}>
+			<button type="submit" class="logout" title="Sign out">⏻</button>
 		</form>
 	</div>
 </nav>
@@ -42,6 +61,11 @@
 		color: #fdf1f2; z-index: 40;
 	}
 	.mark { color: #fff; display: flex; padding: .4rem; }
+	.portal-label {
+		writing-mode: vertical-rl; text-orientation: mixed; transform: rotate(180deg);
+		font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
+		color: #f7dfe2; opacity: .85; max-height: 5.5rem; overflow: hidden;
+	}
 	ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .35rem; width: 100%; }
 	li a {
 		display: flex; align-items: center; gap: .6rem; color: #f7dfe2; text-decoration: none;
@@ -65,11 +89,14 @@
 	li a.on { color: #fff; }
 	li a.on::before {
 		content: ''; position: absolute; left: 0; top: .3rem; bottom: .3rem; width: 3px;
-		background: #ff8fa3; border-radius: 2px;
+		background: var(--rail-indicator, #ff8fa3); border-radius: 2px;
 	}
 	.foot { margin-top: auto; display: flex; flex-direction: column; align-items: center; gap: .5rem; width: 100%; }
 	.who { font-size: var(--text-xs); color: #d9a2aa; writing-mode: vertical-rl; text-orientation: mixed; max-height: 6rem; overflow: hidden; }
-	.logout { color: #f7dfe2; text-decoration: none; font-size: 1.1rem; }
+	.logout {
+		color: #f7dfe2; font-size: 1.1rem; background: none; border: none; padding: 0;
+		cursor: pointer; font-family: inherit; line-height: 1;
+	}
 	@media (max-width: 720px) {
 		.rail { position: fixed; bottom: 0; top: auto; width: 100%; height: auto; flex-direction: row; padding: .5rem; }
 		ul { flex-direction: row; justify-content: space-around; }

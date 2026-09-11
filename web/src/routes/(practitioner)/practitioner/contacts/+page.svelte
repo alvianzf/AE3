@@ -1,11 +1,17 @@
 <script lang="ts">
-	import { invalidateAll } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 	import { api } from '$lib/api';
 	import { toast } from '$lib/stores/toast';
 	import Spotlight from '$lib/components/Spotlight.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import Chip from '$lib/components/Chip.svelte';
 	import Button from '$lib/components/Button.svelte';
+
+	// specs/v4.1/03 H5 — converting a contact into a client used to mean
+	// retyping the name/email it already contains into a separate dialog.
+	function addAsClient(c: any) {
+		goto(`/practitioner/clients?prefill_name=${encodeURIComponent(c.name)}&prefill_email=${encodeURIComponent(c.email)}`);
+	}
 
 	let { data } = $props();
 

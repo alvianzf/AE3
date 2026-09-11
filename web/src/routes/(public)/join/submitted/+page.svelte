@@ -10,7 +10,7 @@
 			<Sprig size={30} />
 			<h1>Application received</h1>
 			<p class="hint">An admin will review your application. You'll get access once approved — check back at <a href="/login">login</a>.</p>
-			<a class="btn filled" href="/">Back to the directory</a>
+			<a class="btn filled" href="/">Back to the homepage</a>
 		</div>
 	</section>
 </div>
