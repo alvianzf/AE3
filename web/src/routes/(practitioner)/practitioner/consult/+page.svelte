@@ -58,7 +58,7 @@
 
 	let question = $state('');
 	let asking = $state(false);
-	let steps = $state<{ agent: string; status: 'running' | 'done' | 'error'; input_tokens?: number; output_tokens?: number }[]>([]);
+	let steps = $state<{ agent: string; status: 'running' | 'done' | 'error'; input_tokens?: number; output_tokens?: number; progress?: string }[]>([]);
 	// Aborts the in-flight fetch if the practitioner navigates away mid-consult
 	// — see the note in consultStream.ts on what this does and doesn't stop
 	// server-side (specs/v4/04-known-issues.md#m4).
@@ -119,6 +119,14 @@
 			for await (const ev of streamConsult(clientId, askedQuestion, sessionId, abortController.signal)) {
 				if (ev.event === 'agent_start') {
 					steps = [...steps, { agent: ev.agent, status: 'running' }];
+				} else if (ev.event === 'agent_progress') {
+					// A traversal hop is a real ~60-100s round-trip each — without
+					// this, "running…" sat unchanged for the whole multi-minute
+					// span, indistinguishable from the request actually being stuck.
+					const progress = `hop ${ev.hop}/${ev.max_depth} · ${ev.relevant}/${ev.candidates} relevant`;
+					steps = steps.map((s) =>
+						s.agent === ev.agent && s.status === 'running' ? { ...s, progress } : s
+					);
 				} else if (ev.event === 'agent_done') {
 					steps = steps.map((s) =>
 						s.agent === ev.agent && s.status === 'running'
@@ -242,7 +250,7 @@
 						{:else if s.status === 'error'}
 							<span class="hint">failed</span>
 						{:else}
-							<span class="hint">running…</span>
+							<span class="hint">{s.progress ?? 'running…'}</span>
 						{/if}
 					</div>
 				{/each}
