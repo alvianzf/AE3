@@ -99,7 +99,9 @@ flowchart LR
 ```
 
 A full diagram of both pipelines, plus the graph schema they read and write,
-is in [`clinic-rag-pipeline.pdf`](clinic-rag-pipeline.pdf).
+is in [`clinic-rag-pipeline.pdf`](clinic-rag-pipeline.pdf). For the wider
+picture — every building block, the AI team, and how they all connect —
+see [`clinic-big-picture.pdf`](clinic-big-picture.pdf).
 
 ## See it for yourself — a 5-minute walkthrough
 
