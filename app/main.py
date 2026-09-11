@@ -1487,7 +1487,21 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
 
             yield _sse({"event": "agent_start", "agent": "traversal"})
             retriever = GraphTraversalRetriever(min_grade=body.min_grade, weights=weights)
-            traversal = retriever.retrieve(question, patient, seed_result)
+            traversal = None
+            # A broad question can legitimately run every hop up to
+            # max_depth, each a full LLM round-trip — retrieve_streaming()
+            # reports progress after each one instead of leaving the UI
+            # showing "running..." indistinguishably from actually stuck
+            # for the whole span (specs/v5, live: 90-100s+ on one question).
+            for hop_event, hop_payload in retriever.retrieve_streaming(question, patient, seed_result):
+                if hop_event == "hop":
+                    yield _sse({"event": "agent_progress", "agent": "traversal",
+                               "hop": hop_payload.hop, "max_depth": hop_payload.max_depth,
+                               "candidates": hop_payload.candidates,
+                               "relevant": hop_payload.relevant,
+                               "accumulated": hop_payload.accumulated})
+                else:
+                    traversal = hop_payload
             _track(traversal.usage)
             yield _sse({"event": "agent_done", "agent": "traversal", **traversal.usage,
                        "depth": traversal.depth_reached, "stopped": traversal.stopped_reason,

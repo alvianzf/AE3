@@ -21,6 +21,17 @@ from ..config import get_config
 cfg = get_config()
 
 
+# A generation call must fail fast, not hang — found live: with max_tokens
+# raised to 100_000 (to stop truncation crashes) and no request timeout,
+# a slow/verbose response on a broad question left a traversal hop
+# blocked on a raw socket read for 3+ minutes with no error, "running..."
+# forever in the UI. 90s is generous for any of this app's real prompts
+# (the largest observed real call — a full traversal judge on 20+
+# candidates — finished in a few seconds) while still turning a genuine
+# stall into a clean, fast openai.APIError instead of an indefinite hang.
+_CHAT_TIMEOUT_SECONDS = 90.0
+
+
 class Role(str, Enum):
     READER = "reader"
     GRAPH_BUILDER = "graph_builder"
@@ -77,11 +88,19 @@ class LLMClient:
         malformed-schema problem, and a second attempt succeeds
         essentially every time — worth absorbing here once, not repeated
         as a retry loop at every one of chat_json's call sites.
+
+        Bounded by _CHAT_TIMEOUT_SECONDS, same as ping_role() — found live:
+        raising max_tokens to remove truncation (see that failure mode
+        above) also removed the one thing that kept a verbose response
+        bounded in wall-clock time. A traversal hop stuck 3+ minutes on
+        "running..." with no error was this: nothing timed out, it was
+        just still generating. A timeout turns that into a clean, fast
+        openai.APIError instead of an indefinite hang.
         """
         import json
 
         def _call():
-            response = self._client.chat.completions.create(
+            response = self._client.with_options(timeout=_CHAT_TIMEOUT_SECONDS).chat.completions.create(
                 model=self.model,
                 max_tokens=max_tokens,
                 messages=[
@@ -112,8 +131,9 @@ class LLMClient:
         return parsed, self._usage(response)
 
     def chat_text(self, system: str, prompt: str, max_tokens: int = 100_000) -> tuple[str, dict]:
-        """One free-text call. Returns (text, usage)."""
-        response = self._client.chat.completions.create(
+        """One free-text call. Returns (text, usage). Bounded by
+        _CHAT_TIMEOUT_SECONDS — see chat_json's docstring."""
+        response = self._client.with_options(timeout=_CHAT_TIMEOUT_SECONDS).chat.completions.create(
             model=self.model,
             max_tokens=max_tokens,
             messages=[

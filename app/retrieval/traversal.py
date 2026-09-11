@@ -125,6 +125,15 @@ class HopLogEntry:
 
 
 @dataclass
+class HopProgress:
+    hop: int
+    max_depth: int
+    candidates: int
+    relevant: int
+    accumulated: int
+
+
+@dataclass
 class TraversalResult:
     accumulated: list[dict]
     path_log: list[HopLogEntry]
@@ -160,6 +169,27 @@ class GraphTraversalRetriever:
 
     def retrieve(self, question: str, patient: PatientContext,
                 seed_result: SeedResult) -> TraversalResult:
+        """Runs every hop to completion, returns only the final result.
+        For per-hop progress (an SSE stream that shouldn't sit silent for
+        the whole traversal), use retrieve_streaming() instead — same
+        loop, same stopping logic, this is a thin wrapper over it."""
+        for event, payload in self.retrieve_streaming(question, patient, seed_result):
+            if event == "done":
+                return payload
+        raise AssertionError("retrieve_streaming() ended without a 'done' event")
+
+    def retrieve_streaming(self, question: str, patient: PatientContext,
+                           seed_result: SeedResult):
+        """Same traversal as retrieve(), yielding ("hop", HopProgress) after
+        every hop completes and finally ("done", TraversalResult) once.
+
+        Found live: a broad question can legitimately run all 5 hops,
+        each a full LLM round-trip — 80-100+ seconds is real, not a hang,
+        but retrieve()'s single blocking call gave an SSE consumer nothing
+        to forward for that whole span, so the UI just says "running..."
+        indistinguishably from actually being stuck. This lets a caller
+        report real progress ("hop 3 of 5, judged 18 candidates") instead.
+        """
         frontier = list(dict.fromkeys([*seed_result.seed_chunk_ids, *seed_result.seed_entity_ids]))
         visited: set[str] = set(frontier)
         accumulated: dict[str, dict] = {fid: seed_result.seed_records[fid] for fid in frontier}
@@ -186,6 +216,7 @@ class GraphTraversalRetriever:
             total_usage["input_tokens"] += hop_usage.get("input_tokens", 0)
             total_usage["output_tokens"] += hop_usage.get("output_tokens", 0)
             next_frontier: list[str] = []
+            relevant_count = 0
             for cand, verdict in zip(candidates, judgments):
                 cid = cand["id"]
                 visited.add(cid)
@@ -197,11 +228,16 @@ class GraphTraversalRetriever:
                 if relevant:
                     accumulated[cid] = cand
                     next_frontier.append(cid)
+                    relevant_count += 1
+            yield "hop", HopProgress(
+                hop=depth, max_depth=self.max_depth, candidates=len(candidates),
+                relevant=relevant_count, accumulated=len(accumulated),
+            )
             frontier = next_frontier
             if not frontier:
                 stopped_reason = "frontier_empty"
 
-        return TraversalResult(
+        yield "done", TraversalResult(
             accumulated=list(accumulated.values()), path_log=path_log,
             depth_reached=depth, stopped_reason=stopped_reason, usage=total_usage,
         )
