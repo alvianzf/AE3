@@ -5,6 +5,15 @@ import { PUBLIC_API_BASE } from '$env/static/public';
 
 export type ConsultEvent =
 	| { event: 'agent_start'; agent: string }
+	| {
+			event: 'agent_progress';
+			agent: string;
+			hop: number;
+			max_depth: number;
+			candidates: number;
+			relevant: number;
+			accumulated: number;
+	  }
 	| { event: 'agent_done'; agent: string; input_tokens: number; output_tokens: number }
 	| {
 			event: 'result';
