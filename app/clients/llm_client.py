@@ -65,7 +65,7 @@ class LLMClient:
         self._client = OpenAI(base_url=self._rc.base_url, api_key=self._rc.api_key)
 
     def chat_json(self, system: str, prompt: str, schema: dict,
-                  max_tokens: int = 2000) -> tuple[dict, dict]:
+                  max_tokens: int = 100_000) -> tuple[dict, dict]:
         """One structured-output call. Returns (parsed_dict, usage).
 
         Retries once on a broken response — found live against Nebius, two
@@ -111,7 +111,7 @@ class LLMClient:
             raise ValueError(f"{self.model} ({self.role.value}) returned no usable JSON (twice)")
         return parsed, self._usage(response)
 
-    def chat_text(self, system: str, prompt: str, max_tokens: int = 4000) -> tuple[str, dict]:
+    def chat_text(self, system: str, prompt: str, max_tokens: int = 100_000) -> tuple[str, dict]:
         """One free-text call. Returns (text, usage)."""
         response = self._client.chat.completions.create(
             model=self.model,

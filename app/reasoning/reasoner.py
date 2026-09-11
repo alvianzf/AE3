@@ -71,7 +71,7 @@ def answer(question: str, patient: PatientContext, traversal: TraversalResult,
         f"Accumulated knowledge-base context:\n---\n{block}\n---\n\n"
         f"Practitioner's question: {question}{revision_block}"
     )
-    text, usage = get_client(Role.REASONER).chat_text(REASONER_SYSTEM, prompt, max_tokens=8000)
+    text, usage = get_client(Role.REASONER).chat_text(REASONER_SYSTEM, prompt, max_tokens=100_000)
     return ReasonedAnswer(text=text, usage=usage, citations=traversal.accumulated)
 
 
@@ -83,5 +83,5 @@ SUMMARY_SYSTEM = (
 
 
 def summarize_session(transcript: str) -> str:
-    text, _usage = get_client(Role.REASONER).chat_text(SUMMARY_SYSTEM, transcript, max_tokens=1000)
+    text, _usage = get_client(Role.REASONER).chat_text(SUMMARY_SYSTEM, transcript, max_tokens=100_000)
     return text
