@@ -50,7 +50,7 @@ jobs:
           # member", since there's no web/.env in this repo (gitignored,
           # dev-local only per web/.env.example).
           PUBLIC_API_BASE: ''
-          PUBLIC_API_BASE_BUILD: https://telehealth.devshorepartners.id
+          PUBLIC_API_BASE_BUILD: https://functionalhealthcollab.com
         run: |
           npm ci
           npm run check
@@ -77,7 +77,7 @@ jobs:
           # Only used during this build step, for prerendering dynamic
           # coach/[id] entries against the real, currently-live backend
           # (web/.env.example's own documented reasoning).
-          PUBLIC_API_BASE_BUILD: https://telehealth.devshorepartners.id
+          PUBLIC_API_BASE_BUILD: https://functionalhealthcollab.com
         run: |
           npm ci
           npm run build
@@ -126,4 +126,4 @@ jobs:
       - name: Health check
         run: |
           sleep 5
-          curl -sf https://telehealth.devshorepartners.id/api/health
+          curl -sf https://functionalhealthcollab.com/api/health
