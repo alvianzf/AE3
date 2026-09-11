@@ -317,7 +317,15 @@ def _ingest_pages(
     # source over it — but embedding is not: without it the document is
     # invisible to seed search entirely, so an embedding failure does fail
     # the ingest (unlike the old concept-extraction path this replaces).
-    embeddings = get_llm_client(LLMRole.EMBEDDER).embed([p["text"] for p in passages])
+    # The failure itself is still surfaced as a clean, actionable error
+    # (matching /api/scrape's handling of the same class of failure a few
+    # routes away), not a bare unhandled 500.
+    try:
+        embeddings = get_llm_client(LLMRole.EMBEDDER).embed([p["text"] for p in passages])
+    except openai.APIError as exc:
+        raise HTTPException(
+            502, "The AI service is temporarily unavailable. Try again shortly."
+        ) from exc
     for i, p in enumerate(passages):
         p["embedding"] = embeddings[i] if i < len(embeddings) else None
 
@@ -1431,18 +1439,14 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
         try:
             yield _sse({"event": "agent_start", "agent": "seed_search"})
             seed_result = seed_search.seed(question, patient, body.min_grade, weights=weights)
-            yield _sse({"event": "agent_done", "agent": "seed_search",
-                       "input_tokens": 0, "output_tokens": 0})
+            _track(seed_result.usage)
+            yield _sse({"event": "agent_done", "agent": "seed_search", **seed_result.usage})
 
             yield _sse({"event": "agent_start", "agent": "traversal"})
             retriever = GraphTraversalRetriever(min_grade=body.min_grade, weights=weights)
             traversal = retriever.retrieve(question, patient, seed_result)
-            # Per-hop relevance-judgment usage isn't tracked in
-            # total_input_tokens/output_tokens below — llm_judge_relevance
-            # (retrieval/traversal.py) doesn't currently return its usage
-            # back up through TraversalResult. Real gap, not fixed here.
-            yield _sse({"event": "agent_done", "agent": "traversal",
-                       "input_tokens": 0, "output_tokens": 0,
+            _track(traversal.usage)
+            yield _sse({"event": "agent_done", "agent": "traversal", **traversal.usage,
                        "depth": traversal.depth_reached, "stopped": traversal.stopped_reason,
                        "accumulated": len(traversal.accumulated)})
 

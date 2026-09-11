@@ -57,8 +57,16 @@ def check(question: str, reasoned: ReasonedAnswer, patient_context_text: str) ->
     that no single source actually supports — exactly the failure mode
     this check exists to catch. Genuinely unverified end-to-end — see
     specs/v4.2/01's status note.
+
+    `patient_context_text` is always one of the evidence candidates, not
+    just a fallback for zero citations — a claim about the patient's own
+    labs/history is legitimately supported by the patient record alone,
+    never needing a library citation (the pre-v5 Checker's own rule).
+    Checking such a claim only against cited library chunks — which
+    don't mention this patient at all — would flag it "unsupported" on
+    essentially every consult that cites anything.
     """
-    evidence_texts = [_node_text(n) for n in reasoned.citations] or [patient_context_text]
+    evidence_texts = [_node_text(n) for n in reasoned.citations] + [patient_context_text]
     model = _get_checker_model()
     sentences = _sentences(reasoned.text)
     if not sentences:

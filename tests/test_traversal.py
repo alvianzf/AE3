@@ -42,12 +42,15 @@ def _candidate(cid: str) -> dict:
             "document_title": "doc", "grade": 8, "via": "MENTIONS"}
 
 
+_ZERO_USAGE = {"input_tokens": 0, "output_tokens": 0}
+
+
 def _all_relevant(question, patient, accumulated, candidates):
-    return [{"id": c["id"], "relevant": True, "reason": "matches"} for c in candidates]
+    return [{"id": c["id"], "relevant": True, "reason": "matches"} for c in candidates], dict(_ZERO_USAGE)
 
 
 def _all_irrelevant(question, patient, accumulated, candidates):
-    return [{"id": c["id"], "relevant": False, "reason": "off-topic"} for c in candidates]
+    return [{"id": c["id"], "relevant": False, "reason": "off-topic"} for c in candidates], dict(_ZERO_USAGE)
 
 
 class TraversalStoppingTests(unittest.TestCase):
@@ -117,7 +120,7 @@ class TraversalStoppingTests(unittest.TestCase):
             # fetch_hop_neighbors legitimately has nothing left to offer.
             def judge(question, patient, accumulated, candidates):
                 return [{"id": c["id"], "relevant": c["id"] != "b", "reason": ""}
-                        for c in candidates]
+                        for c in candidates], dict(_ZERO_USAGE)
 
             retriever = GraphTraversalRetriever(max_depth=10, judge_fn=judge)
             result = retriever.retrieve("question", _patient(), _seed("seed1"))

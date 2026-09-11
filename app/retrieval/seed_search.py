@@ -10,7 +10,7 @@ already taking.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ..clients.llm_client import Role, get_client
 from ..config import get_config
@@ -51,13 +51,14 @@ class SeedResult:
     seed_chunk_ids: list[str]
     seed_entity_ids: list[str]
     seed_records: dict[str, dict]  # id -> the record store.py returned for it
+    usage: dict = field(default_factory=lambda: {"input_tokens": 0, "output_tokens": 0})
 
 
-def form_search_query(question: str, patient: PatientContext) -> str:
+def form_search_query(question: str, patient: PatientContext) -> tuple[str, dict]:
     prompt = f"Patient context:\n{patient.as_query_text()}\n\nQuestion: {question}"
-    result, _usage = get_client(Role.ANSWER_ENGINE).chat_json(
+    result, usage = get_client(Role.ANSWER_ENGINE).chat_json(
         SEARCH_QUERY_SYSTEM, prompt, SEARCH_QUERY_SCHEMA, max_tokens=300)
-    return result["search_query"]
+    return result["search_query"], usage
 
 
 def seed(question: str, patient: PatientContext, min_grade: int,
@@ -72,7 +73,7 @@ def seed(question: str, patient: PatientContext, min_grade: int,
     at every later hop."""
     top_k = top_k or cfg.traversal_seed_top_k
     weights = weights or {}
-    search_query = form_search_query(question, patient)
+    search_query, usage = form_search_query(question, patient)
 
     embedding = get_client(Role.EMBEDDER).embed([search_query])[0]
     vector_hits = store.seed_chunks_by_vector(embedding, top_k)
@@ -96,4 +97,5 @@ def seed(question: str, patient: PatientContext, min_grade: int,
         seed_chunk_ids=chunk_ids,
         seed_entity_ids=entity_ids,
         seed_records=records,
+        usage=usage,
     )

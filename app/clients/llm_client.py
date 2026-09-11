@@ -122,6 +122,16 @@ def get_client(role: Role) -> LLMClient:
 
 
 def ping() -> bool:
-    """Validate the shared Nebius credentials without spending tokens."""
-    get_client(Role.REASONER)._client.models.retrieve(cfg.reasoner_model)
+    """Validate every role's credentials without spending tokens.
+
+    Each of the 5 chat-model roles can independently override its own
+    base_url/api_key (config.py's <ROLE>_BASE_URL/<ROLE>_API_KEY) — a
+    health check that only probed one role (as this used to) would
+    report "nebius: ok" even with a typo'd key for a different role,
+    silently letting that role start failing in production undetected.
+    """
+    for role in (Role.READER, Role.GRAPH_BUILDER, Role.EMBEDDER,
+                Role.ANSWER_ENGINE, Role.REASONER):
+        client = get_client(role)
+        client._client.models.retrieve(client.model)
     return True

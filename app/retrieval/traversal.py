@@ -69,18 +69,25 @@ def _candidate_label(c: dict) -> str:
     return f"[entity: {store.node_type(c)}] {c.get('name', c['id'])}"
 
 
+_ZERO_USAGE = {"input_tokens": 0, "output_tokens": 0}
+
+
 def llm_judge_relevance(question: str, patient: PatientContext,
-                        accumulated: list[dict], candidates: list[dict]) -> list[dict]:
+                        accumulated: list[dict], candidates: list[dict]
+                        ) -> tuple[list[dict], dict]:
     """Default judge_fn: one batched Role.ANSWER_ENGINE call per hop.
 
-    Returns a list aligned to `candidates` (same order, same length) —
-    GraphTraversalRetriever._run_hop() depends on that alignment, not on
-    matching the returned `id` back up (a model dropping/reordering an id
-    would otherwise silently desync accumulated state from what was
-    actually judged).
+    Returns (judgments, usage). `judgments` is aligned to `candidates`
+    (same order, same length) — GraphTraversalRetriever.retrieve()
+    depends on that alignment, not on matching the returned `id` back up
+    (a model dropping/reordering an id would otherwise silently desync
+    accumulated state from what was actually judged). `usage` is real
+    per-hop token spend — every hop makes a real Nebius call, and that
+    cost needs to reach the practitioner-facing total, not just the
+    single final Reasoner call.
     """
     if not candidates:
-        return []
+        return [], dict(_ZERO_USAGE)
     accumulated_text = "\n".join(
         f"- {_candidate_label(a)}" for a in accumulated[-30:]  # bounded, not the whole history verbatim
     ) or "(nothing gathered yet)"
@@ -93,7 +100,7 @@ def llm_judge_relevance(question: str, patient: PatientContext,
         f"Already gathered (for context, not to be re-judged):\n{accumulated_text}\n\n"
         f"New candidates to judge:\n{candidates_text}"
     )
-    result, _usage = get_client(Role.ANSWER_ENGINE).chat_json(
+    result, usage = get_client(Role.ANSWER_ENGINE).chat_json(
         RELEVANCE_SYSTEM, prompt, RELEVANCE_SCHEMA, max_tokens=4000)
     by_id = {j["id"]: j for j in result["judgments"]}
     # A model that drops an id from its response is treated as "not
@@ -101,10 +108,11 @@ def llm_judge_relevance(question: str, patient: PatientContext,
     # judgment failure shouldn't take down the whole traversal, but it's
     # logged in the returned reason so it's visible in the path log, not
     # silently indistinguishable from a real negative judgment.
-    return [
+    judgments = [
         by_id.get(c["id"], {"relevant": False, "reason": "no judgment returned by model"})
         for c in candidates
     ]
+    return judgments, usage
 
 
 @dataclass
@@ -122,9 +130,10 @@ class TraversalResult:
     path_log: list[HopLogEntry]
     depth_reached: int
     stopped_reason: str  # "frontier_empty" | "max_depth_reached" | "no_new_candidates"
+    usage: dict = field(default_factory=lambda: dict(_ZERO_USAGE))
 
 
-JudgeFn = Callable[[str, PatientContext, list[dict], list[dict]], list[dict]]
+JudgeFn = Callable[[str, PatientContext, list[dict], list[dict]], tuple[list[dict], dict]]
 
 
 class GraphTraversalRetriever:
@@ -158,6 +167,7 @@ class GraphTraversalRetriever:
 
         depth = 0
         stopped_reason = "frontier_empty"
+        total_usage = dict(_ZERO_USAGE)
         while frontier:
             if depth >= self.max_depth:
                 stopped_reason = "max_depth_reached"
@@ -171,7 +181,10 @@ class GraphTraversalRetriever:
                 break
 
             depth += 1
-            judgments = self.judge_fn(question, patient, list(accumulated.values()), candidates)
+            judgments, hop_usage = self.judge_fn(
+                question, patient, list(accumulated.values()), candidates)
+            total_usage["input_tokens"] += hop_usage.get("input_tokens", 0)
+            total_usage["output_tokens"] += hop_usage.get("output_tokens", 0)
             next_frontier: list[str] = []
             for cand, verdict in zip(candidates, judgments):
                 cid = cand["id"]
@@ -190,5 +203,5 @@ class GraphTraversalRetriever:
 
         return TraversalResult(
             accumulated=list(accumulated.values()), path_log=path_log,
-            depth_reached=depth, stopped_reason=stopped_reason,
+            depth_reached=depth, stopped_reason=stopped_reason, usage=total_usage,
         )

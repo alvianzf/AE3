@@ -79,7 +79,7 @@ no longer gates anything once v2 is deployed.
 | NGINX | `/etc/nginx/sites-available/clinic` (80 + 443), shared body in `snippets/clinic-proxy.conf` |
 | Origin TLS | self-signed, `/etc/nginx/origin-tls/` |
 | Real client IP | `/etc/nginx/conf.d/cloudflare-realip.conf` — logs show the visitor, not Cloudflare's edge |
-| Neo4j | localhost only, heap 512m / pagecache 256m (`/etc/neo4j/neo4j.conf`) |
+| Neo4j | localhost only, heap 512m / pagecache 256m (`/etc/neo4j/neo4j.conf`) — **needs the APOC plugin** (specs/v5): `POST /api/consolidate`'s entity-merge tool (`app/graph/store.py`'s `merge_entities()`) calls `apoc.merge.relationship`, which doesn't exist on stock Neo4j. Install via `apt-get install neo4j-plugin-apoc` (or drop `apoc.jar` into Neo4j's `plugins/` dir per the version in use) and add `dbms.security.procedures.unrestricted=apoc.*` to `neo4j.conf`, then restart. Without it, ingestion/retrieval/the admin Library work fine — only the "Consolidate" dedup action fails, loudly (`Unknown function 'apoc.merge.relationship'`), not silently |
 | Postgres | localhost only, role `postgres`, database `clinic` — core store (`public` schema) + one schema per Pro practitioner's vault (`vault_<id>`). Replaces the old per-file SQLite stores (specs/v6) |
 | Original files | `/opt/clinic/data/originals/` — one file per source, named by source id |
 | Secrets | `/opt/clinic/.env`, mode 600 — Anthropic key, Neo4j password, session secret |

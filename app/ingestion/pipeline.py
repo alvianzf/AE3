@@ -10,6 +10,8 @@ relationships in the graph, idempotent on content_hash.
 """
 from __future__ import annotations
 
+import logging
+
 from ..clients.llm_client import Role, get_client
 from ..graph import store
 
@@ -246,12 +248,22 @@ def ingest(*, text: str, filename: str, kind: str, origin: str,
     for i, p in enumerate(passages):
         p["embedding"] = embeddings[i] if i < len(embeddings) else None
 
+    # Graph-building is additive — never lose the document, or another
+    # passage's already-extracted entities, over one passage's failure.
+    # Caught per-passage, not around the whole loop, matching
+    # app/main.py's inline copy of this same flow (_ingest_pages) — a
+    # transient extraction error here used to abort the whole ingest.
     entities_per_passage: list[list[dict]] = []
     all_relationships: list[dict] = []
     for p in passages:
-        graph = extract_graph(p["text"])
-        entities_per_passage.append(graph["entities"])
-        all_relationships.extend(graph["relationships"])
+        try:
+            graph = extract_graph(p["text"])
+            entities_per_passage.append(graph["entities"])
+            all_relationships.extend(graph["relationships"])
+        except Exception as exc:
+            logging.warning("knowledge-graph extraction failed for a passage of %s: %s",
+                            filename, exc)
+            entities_per_passage.append([])
 
     return store.ingest_document(
         title=card["title"], filename=filename, kind=kind, origin=origin,

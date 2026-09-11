@@ -100,16 +100,22 @@ def _copy_table(pg_conn, source_rows, table: str, columns: list[str],
                 bool_columns: list[str], dry_run: bool) -> int:
     if not source_rows:
         return 0
-    placeholders = ", ".join(f"%({c})s" for c in columns)
-    sql = (
-        f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({placeholders}) "
-        "ON CONFLICT DO NOTHING"
-    )
     rows = []
     for r in source_rows:
         row = {}
         for c in columns:
-            v = r[c] if c in r.keys() else None
+            if c not in r.keys():
+                # Genuinely absent from an older source schema (e.g. a
+                # pre-v2.6 vault with no password_set column) — leave it
+                # out of this row entirely rather than defaulting to
+                # None/False, so the INSERT below omits the column and
+                # the destination table's own DEFAULT applies. Coercing
+                # a missing bool column to bool(None) == False used to
+                # silently override DEFAULT TRUE, miscategorizing every
+                # already-active client from an old vault as still
+                # awaiting first-time signup.
+                continue
+            v = r[c]
             if c in bool_columns:
                 v = bool(v)
             row[c] = v
@@ -120,6 +126,12 @@ def _copy_table(pg_conn, source_rows, table: str, columns: list[str],
     cur = pg_conn.cursor()
     inserted = 0
     for row in rows:
+        present = list(row)
+        sql = (
+            f"INSERT INTO {table} ({', '.join(present)}) "
+            f"VALUES ({', '.join(f'%({c})s' for c in present)}) "
+            "ON CONFLICT DO NOTHING"
+        )
         cur.execute(sql, row)
         # ON CONFLICT DO NOTHING makes this 0 for a row that already
         # existed — summing per-statement rowcount (not just checking it
@@ -171,12 +183,22 @@ def migrate_vaults(cfg, dry_run: bool) -> None:
     for db_file in db_files:
         practitioner_id = db_file.stem
         logging.info("Migrating vault for practitioner %s from %s", practitioner_id, db_file)
-        with vault_connection(practitioner_id) as conn:
-            if not dry_run:
-                vault.ensure_schema(practitioner_id)
+        if dry_run:
+            # vault_connection()'s setup SQL runs `CREATE SCHEMA IF NOT
+            # EXISTS` unconditionally on every checkout — real DDL, not a
+            # read — so a --dry-run avoids it entirely rather than
+            # relying on the (nonexistent) dry_run-awareness of a
+            # connection helper that has no concept of dry-run. Only the
+            # SQLite source is touched here; nothing reaches Postgres.
             for table, columns, bool_cols in VAULT_TABLES:
                 rows = _sqlite_rows(db_file, table)
-                _copy_table(conn._raw, rows, table, columns, bool_cols, dry_run)
+                _copy_table(None, rows, table, columns, bool_cols, dry_run=True)
+            continue
+        with vault_connection(practitioner_id) as conn:
+            vault.ensure_schema(practitioner_id)
+            for table, columns, bool_cols in VAULT_TABLES:
+                rows = _sqlite_rows(db_file, table)
+                _copy_table(conn._raw, rows, table, columns, bool_cols, dry_run=False)
 
 
 def main() -> None:

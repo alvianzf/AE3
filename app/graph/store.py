@@ -331,7 +331,17 @@ def sanitize_relationship_type(raw: str) -> str:
     force one), just made safe to use as an identifier. Falls back to
     RELATED_TO if sanitization leaves nothing usable."""
     cleaned = _REL_TYPE_RE.sub("_", raw.strip().upper().replace(" ", "_")).strip("_")
-    return cleaned or "RELATED_TO"
+    if not cleaned:
+        return "RELATED_TO"
+    if cleaned[0].isdigit():
+        # An unquoted Cypher relationship type can't start with a digit
+        # ("5-HT2A agonist" sanitizes to "5_HT2A_AGONIST", still invalid)
+        # — a query with one raises a syntax error deep inside
+        # upsert_relationship(), aborting the whole ingest_document()
+        # session and losing every chunk/entity already written for that
+        # document, not just the one bad relationship.
+        cleaned = f"REL_{cleaned}"
+    return cleaned
 
 
 def upsert_entity(name: str, entity_type: str, s=None) -> str:
