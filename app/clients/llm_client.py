@@ -66,23 +66,38 @@ class LLMClient:
 
     def chat_json(self, system: str, prompt: str, schema: dict,
                   max_tokens: int = 2000) -> tuple[dict, dict]:
-        """One structured-output call. Returns (parsed_dict, usage)."""
+        """One structured-output call. Returns (parsed_dict, usage).
+
+        Retries once on an empty response — found live against Nebius:
+        an otherwise-healthy model occasionally returns no content for a
+        strict json_schema call (~1 in 5 on nvidia/NVIDIA-Nemotron-3-Nano-
+        30B-A3B), with no distinguishing error, just an empty choice. A
+        second attempt succeeds essentially every time, so this is
+        provider flakiness worth absorbing here, not a caller-level retry
+        loop repeated at every one of chat_json's call sites.
+        """
         import json
-        response = self._client.chat.completions.create(
-            model=self.model,
-            max_tokens=max_tokens,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": prompt},
-            ],
-            response_format={
-                "type": "json_schema",
-                "json_schema": {"name": "response", "schema": schema, "strict": True},
-            },
-        )
-        text = response.choices[0].message.content
+
+        def _call():
+            response = self._client.chat.completions.create(
+                model=self.model,
+                max_tokens=max_tokens,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": prompt},
+                ],
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {"name": "response", "schema": schema, "strict": True},
+                },
+            )
+            return response.choices[0].message.content, response
+
+        text, response = _call()
         if text is None:
-            raise ValueError(f"{self.model} ({self.role.value}) returned no content")
+            text, response = _call()
+        if text is None:
+            raise ValueError(f"{self.model} ({self.role.value}) returned no content (twice)")
         return json.loads(text), self._usage(response)
 
     def chat_text(self, system: str, prompt: str, max_tokens: int = 4000) -> tuple[str, dict]:

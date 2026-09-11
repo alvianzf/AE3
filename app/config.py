@@ -65,7 +65,7 @@ class Config:
     reader_model = os.getenv("READER_MODEL", "Qwen/Qwen3-30B-A3B-Instruct-2507")
     graph_builder_model = os.getenv("GRAPH_BUILDER_MODEL", "Qwen/Qwen3-235B-A22B-Instruct-2507")
     embedder_model = os.getenv("EMBEDDER_MODEL", "Qwen/Qwen3-Embedding-8B")
-    retrieval_model = os.getenv("RETRIEVAL_MODEL", "nvidia/Nemotron-3_5-Lightning")
+    retrieval_model = os.getenv("RETRIEVAL_MODEL", "Qwen/Qwen3-30B-A3B-Instruct-2507")
     reasoner_model = os.getenv("REASONER_MODEL", "moonshotai/Kimi-K3")
 
     # Per-role base_url/api_key overrides (app/clients/llm_client.py). Every
