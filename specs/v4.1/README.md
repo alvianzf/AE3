@@ -1,7 +1,16 @@
 # v4.1 — Information architecture, user-type separation, known gaps
 
-**Status: spec only.** No code, no HTML mockups, no changes to `web/src/`
-or `app/`. Produced from a role-by-role walkthrough of the deployed v4
+**Status: implemented, partially.** 01 and 02 (landing/directory split,
+user-type separation) are built. Of 03's 28 findings, all 3 Critical and
+5 of 7 High are fixed; 2 High, 11 of 12 Medium, and 5 of 6 Low remain open
+(one Low is obsolete — see [03](03-known-issues-and-gaps.md) for the
+per-finding status, re-audited 2026-09-11). 04 (the product rename) is
+still spec-only, explicitly out of scope of the 01-03 implementation work
+per this doc's own original scope note below. This status line was stale
+as "spec only" until this same re-audit — [specs/README.md](../README.md)'s
+table is corrected alongside it.
+
+Produced from a role-by-role walkthrough of the deployed v4
 build (commit `5e0c14f` plus everything merged since, through the library
 pagination work) on 2026-09-10, reading every route file in
 `web/src/routes/` across all four portals — public, client, practitioner,
