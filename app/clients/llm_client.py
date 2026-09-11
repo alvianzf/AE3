@@ -121,17 +121,44 @@ def get_client(role: Role) -> LLMClient:
     return _clients[role]
 
 
+# Every chat-model role that /api/health should report on individually.
+# Named here (not just implied by the Role enum) so ping_all()'s output
+# order is stable and every caller iterates the same list.
+ALL_ROLES = (Role.READER, Role.GRAPH_BUILDER, Role.EMBEDDER,
+            Role.ANSWER_ENGINE, Role.REASONER)
+
+
+# A health check must fail fast, not hang — the openai SDK's default
+# timeout is many minutes (tuned for a real generation call, not a
+# credential probe), so a degraded/unreachable Nebius endpoint would
+# otherwise make /api/health itself hang for that long instead of
+# reporting "degraded" quickly. Found live: this exact hang, testing
+# against a sandbox with no route to Nebius's real endpoint.
+_PING_TIMEOUT_SECONDS = 8.0
+
+
+def ping_role(role: Role) -> None:
+    """Validate one role's credentials without spending tokens. Raises on
+    failure — callers that want a non-raising per-role status (the health
+    endpoint) should wrap this themselves, same as every other health
+    check in app/main.py does via its own probe() helper."""
+    client = get_client(role)
+    client._client.with_options(timeout=_PING_TIMEOUT_SECONDS).models.retrieve(client.model)
+
+
 def ping() -> bool:
-    """Validate every role's credentials without spending tokens.
+    """Validate every chat-model role's credentials without spending
+    tokens — kept as a single all-or-nothing check for callers that just
+    want a bool (nothing in this codebase currently does, but it's the
+    natural complement to ping_role()).
 
     Each of the 5 chat-model roles can independently override its own
     base_url/api_key (config.py's <ROLE>_BASE_URL/<ROLE>_API_KEY) — a
     health check that only probed one role (as this used to) would
     report "nebius: ok" even with a typo'd key for a different role,
     silently letting that role start failing in production undetected.
+    See app/main.py's /api/health for the per-role breakdown instead.
     """
-    for role in (Role.READER, Role.GRAPH_BUILDER, Role.EMBEDDER,
-                Role.ANSWER_ENGINE, Role.REASONER):
-        client = get_client(role)
-        client._client.models.retrieve(client.model)
+    for role in ALL_ROLES:
+        ping_role(role)
     return True

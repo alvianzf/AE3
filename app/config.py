@@ -131,22 +131,12 @@ class Config:
     # Base URL this app is served at, needed to build OAuth redirect_uris.
     public_base_url = os.getenv("PUBLIC_BASE_URL", "http://localhost:8000")
 
-    # Retrieval
+    # Retrieval — the grade threshold below which a Document (or, in a
+    # traversal hop, its Chunk) is invisible to the graph-traversal
+    # retriever (app/retrieval/), same threshold a practitioner's own
+    # per-source weight can override upward or downward (app/vault.py's
+    # source_weights, threaded through as `weights` in retrieval/).
     min_grade = int(os.getenv("MIN_GRADE", "7"))
-    # How many sources the Librarian may open at once, and how many passages
-    # those sources may contribute. Both are ceilings, not targets — the API
-    # reports when either one truncated the material.
-    #
-    # max_sources is effectively "no limit" at PoC scale: the Librarian's own
-    # relevance judgement is the real filter, and capping it would silently drop
-    # sources it deliberately chose. max_passages is the binding constraint that
-    # keeps the Specialist's prompt bounded.
-    max_sources = int(os.getenv("MAX_SOURCES", "100"))
-    max_passages = int(os.getenv("MAX_PASSAGES", "120"))
-    # How many concepts two passages must share before the graph treats them as
-    # related. 1 is too loose ("vitamin d" alone links almost everything); 2 keeps
-    # a link meaningful without needing embeddings.
-    min_shared_concepts = int(os.getenv("MIN_SHARED_CONCEPTS", "2"))
 
     # Graph-traversal retrieval (app/retrieval/). A circuit breaker against
     # runaway cost/depth, not the primary stopping logic — the primary

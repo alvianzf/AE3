@@ -33,7 +33,7 @@ from . import auth, billing, core_store, db, originals, scraper, uploads, vault,
 from .config import get_config
 from .clients.llm_client import Role as LLMRole
 from .clients.llm_client import get_client as get_llm_client
-from .clients.llm_client import ping as llm_ping
+from .clients.llm_client import ping_role
 from .graph import schema as graph_schema
 from .graph import store
 from .ingestion import pipeline as ingestion_pipeline
@@ -134,21 +134,63 @@ wearables.register(app)
 
 # --- Ops ----------------------------------------------------------------------
 
+# Every AI-team role /api/health reports on individually, plus what it
+# actually does — the operator-facing description, not the internal
+# Role enum name, since this endpoint's audience is "is my deployment
+# healthy," not "what's this role called in the code."
+_AI_TEAM_ROLES = (
+    (LLMRole.READER, "Reads a new source: summary, topics, suggested grade"),
+    (LLMRole.GRAPH_BUILDER, "Extracts medical concepts/relationships at ingest time"),
+    (LLMRole.EMBEDDER, "Embeds knowledge-base chunks for seed search"),
+    (LLMRole.ANSWER_ENGINE, "Forms the seed search query; judges relevance per traversal hop"),
+    (LLMRole.REASONER, "Writes the final grounded answer"),
+)
+
+
 @app.get("/api/health")
 def health() -> dict:
     def probe(fn):
         start = time.monotonic()
         try:
-            fn()
-            return {"ok": True, "ping_ms": round((time.monotonic() - start) * 1000, 1)}
+            result = fn()
+            extra = result if isinstance(result, dict) else {}
+            return {"ok": True, "ping_ms": round((time.monotonic() - start) * 1000, 1), **extra}
         except Exception as exc:
             return {"ok": False, "ping_ms": round((time.monotonic() - start) * 1000, 1),
                      "error": f"{type(exc).__name__}: {exc}"[:200]}
 
+    # Each of the 5 chat-model roles below can independently override its
+    # own base_url/api_key (config.py's <ROLE>_BASE_URL/<ROLE>_API_KEY) —
+    # reported individually, not as one aggregated "nebius: ok", so a
+    # typo'd key for a single role is visible here instead of silently
+    # passing a coarser check (specs/v6 review: this endpoint used to
+    # probe only Role.REASONER and call the whole provider "ok").
+    ai_team = {
+        role.value: {
+            "model": get_llm_client(role).model,
+            "job": job,
+            **probe(lambda role=role: ping_role(role)),
+        }
+        for role, job in _AI_TEAM_ROLES
+    }
+    # Not a chat-model role — HHEM-2.1-Open is a local anti-hallucination
+    # classifier (specs/v4.2/01), run via transformers/torch, no Nebius
+    # call involved. First health check after a cold boot pays the model
+    # load cost; every one after that reuses the cached singleton.
+    ai_team["checker"] = {
+        "model": cfg.checker_model,
+        "job": "Anti-hallucination check: scores each answer sentence "
+               "against its cited sources (not an LLM call)",
+        **probe(checker.ping),
+    }
+
     checks = {
         "neo4j": probe(graph_schema.ping),
-        "nebius": probe(llm_ping),
-        "core": probe(core_store.ping),
+        "postgres": probe(core_store.ping),
+        "ai_team": {
+            "status": "ok" if all(r["ok"] for r in ai_team.values()) else "degraded",
+            "roles": ai_team,
+        },
     }
 
     # ru_maxrss is KB on Linux (where this actually runs, per DEPLOY.md)
@@ -159,7 +201,8 @@ def health() -> dict:
     disk = shutil.disk_usage("/")
 
     return {
-        "status": "ok" if all(c["ok"] for c in checks.values()) else "degraded",
+        "status": "ok" if (checks["neo4j"]["ok"] and checks["postgres"]["ok"]
+                          and checks["ai_team"]["status"] == "ok") else "degraded",
         "uptime_seconds": round(time.monotonic() - _PROCESS_START, 1),
         "checks": checks,
         "process": {"memory_rss_mb": memory_mb, "pid": os.getpid()},

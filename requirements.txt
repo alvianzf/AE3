@@ -10,6 +10,11 @@ openai==2.7.1
 # model; run directly via transformers, not through the OpenAI-compatible
 # chat endpoint (specs/v4.2/01#the-checker-is-a-direct-classifier-call-not-a-chat-completion)
 transformers==4.57.1
+# CPU-only build, from PyTorch's own index below — the default PyPI wheel
+# bundles CUDA and is several GB; this classifier never needs a GPU, and
+# the full wheel exhausted disk space on the production deploy (a real
+# incident, not a hypothetical: it failed the first deploy of specs/v6).
+--extra-index-url https://download.pytorch.org/whl/cpu
 torch==2.9.0
 
 # Core store + vaults — Postgres, replacing sqlite3 (specs/v6)

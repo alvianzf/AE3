@@ -24,13 +24,41 @@ _checker_model = None
 
 def _get_checker_model():
     """Lazy singleton — only pay the transformers/torch import + model
-    download cost the first time check() actually runs."""
+    download cost the first time check() (or ping()) actually runs."""
     global _checker_model
     if _checker_model is None:
         from transformers import AutoModelForSequenceClassification
         _checker_model = AutoModelForSequenceClassification.from_pretrained(
             cfg.checker_model, trust_remote_code=True)
     return _checker_model
+
+
+def is_loaded() -> bool:
+    """True once a prior check() (or ping()) has actually loaded the
+    classifier into this process — used by ping() to decide whether it's
+    safe to run a cheap inference check or whether doing so would first
+    trigger a slow, network-dependent model download."""
+    return _checker_model is not None
+
+
+def ping() -> dict:
+    """Report the Checker's status without ever blocking a health check
+    on a cold model download.
+
+    If the model is already loaded (a real check() has run in this
+    process), runs one trivial (premise, hypothesis) scoring call to
+    confirm it can still do inference, not just that it once loaded.
+    If it isn't loaded yet, reports that plainly rather than forcing the
+    download inline — HHEM-2.1-Open is hundreds of MB and its first load
+    can take minutes on a slow connection; a monitoring endpoint hanging
+    that long (or timing out) on every check before the first real
+    consult would be worse than an honest "not loaded yet."
+    """
+    if not is_loaded():
+        return {"loaded": False, "note": "not loaded yet — loads on the first real check() call"}
+    model = _get_checker_model()
+    model.predict([("The patient takes levothyroxine.", "The patient takes levothyroxine.")])
+    return {"loaded": True}
 
 
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
