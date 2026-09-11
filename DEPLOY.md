@@ -1,9 +1,12 @@
 # Clinic — deployment
 
-**Live at https://telehealth.devshorepartners.id**, origin `179.198.198.186`,
-behind Cloudflare. (This doc previously said `43.156.136.92` — stale; the
-origin moved at some point without this file being updated. Verified
-against the live server, 2026-09-09.)
+**Live at https://functionalhealthcollab.com**, origin `179.198.198.186`,
+**not** behind Cloudflare — DNS (`ns3`/`ns4.gkg.net`) points straight at the
+origin, and NGINX terminates TLS directly with a real Let's Encrypt cert
+(certbot, auto-renewing). The previous domain, `telehealth.devshorepartners.id`
+(Cloudflare-proxied), was retired 2026-09-11 — see "How TLS ended up
+arranged" below for why that one needed the Cloudflare-specific setup this
+domain doesn't.
 
 ## Automatic deploy (current)
 
@@ -18,7 +21,27 @@ Everything below this section describes what that workflow automates —
 kept for manual/emergency use and for understanding what's actually
 happening on the server, not the normal path anymore.
 
-## How TLS ended up arranged
+## TLS today (functionalhealthcollab.com)
+
+No Cloudflare in front of this domain — DNS points straight at the origin,
+so the HTTP-01 challenge certbot uses reaches it directly with none of the
+grey-cloud/DNS-01 workarounds the old domain needed (see "How TLS ended up
+arranged" below, kept for history/if this domain ever moves behind a proxy).
+
+- `certbot --nginx -d functionalhealthcollab.com -d www.functionalhealthcollab.com`
+  — real Let's Encrypt cert at `/etc/letsencrypt/live/functionalhealthcollab.com/`,
+  auto-renewing (certbot's own systemd timer, nothing this app manages).
+- NGINX's `sites-available/clinic` has an explicit `default_server` catch-all
+  on both 80 and 443 (`server_name _; return 444;`) — without it, any Host
+  header that reaches this origin falls through to the first server block
+  and gets served the app under any hostname, which is exactly how the
+  retired `telehealth.devshorepartners.id` kept working after being pulled
+  from `server_name` until this catch-all was added.
+- `www` and apex both resolve and are both in the cert's SAN + nginx's
+  `server_name` — certbot's `--redirect` flag also added the plain-HTTP →
+  HTTPS 301 blocks.
+
+## How TLS ended up arranged (historical — telehealth.devshorepartners.id, retired)
 
 The plan was Cloudflare-Flexible (edge TLS, plain HTTP to the origin), but the
 zone's SSL/TLS mode is **Full**, so Cloudflare connects to the origin on **443**,
@@ -76,9 +99,9 @@ no longer gates anything once v2 is deployed.
 |---|---|
 | App | `/opt/clinic`, venv at `/opt/clinic/.venv`, systemd unit `clinic` |
 | Uvicorn | `127.0.0.1:8000`, `--proxy-headers`, `MemoryMax=500M` |
-| NGINX | `/etc/nginx/sites-available/clinic` (80 + 443), shared body in `snippets/clinic-proxy.conf` |
-| Origin TLS | self-signed, `/etc/nginx/origin-tls/` |
-| Real client IP | `/etc/nginx/conf.d/cloudflare-realip.conf` — logs show the visitor, not Cloudflare's edge |
+| NGINX | `/etc/nginx/sites-available/clinic` (80 + 443, plus a `default_server` catch-all — see "TLS today" above), shared body in `snippets/clinic-proxy.conf` |
+| Origin TLS | real Let's Encrypt cert (certbot), `/etc/letsencrypt/live/functionalhealthcollab.com/` — the old self-signed one at `/etc/nginx/origin-tls/` is no longer referenced by any server block, left on disk unused |
+| Real client IP | `/etc/nginx/conf.d/cloudflare-realip.conf` still exists but is now vestigial — nothing is Cloudflare-proxied anymore, so it never matches |
 | Neo4j | localhost only, heap 512m / pagecache 256m (`/etc/neo4j/neo4j.conf`) — **needs the APOC plugin** (specs/v5): `POST /api/consolidate`'s entity-merge tool (`app/graph/store.py`'s `merge_entities()`) calls `apoc.merge.relationship`, which doesn't exist on stock Neo4j. Install via `apt-get install neo4j-plugin-apoc` (or drop `apoc.jar` into Neo4j's `plugins/` dir per the version in use) and add `dbms.security.procedures.unrestricted=apoc.*` to `neo4j.conf`, then restart. Without it, ingestion/retrieval/the admin Library work fine — only the "Consolidate" dedup action fails, loudly (`Unknown function 'apoc.merge.relationship'`), not silently |
 | Postgres | localhost only, role `postgres`, database `clinic` — core store (`public` schema) + one schema per Pro practitioner's vault (`vault_<id>`). Replaces the old per-file SQLite stores (specs/v6) |
 | Original files | `/opt/clinic/data/originals/` — one file per source, named by source id |
@@ -88,7 +111,7 @@ All three services are `enabled`, so they come back after a reboot. Verified: th
 app waits for Neo4j's bolt port on cold boot instead of crash-looping, and is
 healthy roughly 95 seconds after `reboot` (most of that is the JVM starting).
 
-### Three NGINX settings this app depends on
+### Four NGINX settings this app depends on
 
 Easy to lose in a rewrite and each breaks a core feature silently:
 
@@ -96,8 +119,19 @@ Easy to lose in a rewrite and each breaks a core feature silently:
   Uploads up to 200 MB are supported without raising this: `app/uploads.py`
   + `web/src/lib/chunkedUpload.ts` split a large file into 4 MiB chunks, so
   no single request needs a body anywhere near 25m.
-- `proxy_read_timeout 300s` — a consult runs Sonnet, then Opus, then Haiku; the
-  60 second default cuts it off mid-answer.
+- `proxy_read_timeout 300s` — a consult runs the Answer Engine through several
+  traversal hops, then the Reasoner, then optionally the Checker; the 60
+  second default cuts it off mid-answer.
+- `proxy_buffering off` — **without this, `/api/me/consult`'s SSE stream is
+  silently broken**, not just slow. NGINX's default (`on`) buffers the
+  *entire* upstream response before forwarding anything downstream, so no
+  event reaches the client until the whole multi-hop consult finishes —
+  and since that can legitimately take 100+ seconds, Cloudflare's own edge
+  timeout fires first (`524`) with the practitioner seeing nothing at all,
+  not even a slow answer. Found live 2026-09-11: the backend was correctly
+  streaming per-hop progress the whole time; NGINX just never passed any
+  of it through. Every other route here is a normal request/response, so
+  turning buffering off doesn't cost anything elsewhere.
 - `client_body_timeout` (nginx default: 60s) — chunk size (4 MiB) was picked
   to stay well under this even on a slow connection; if `CHUNK_BYTES` in
   `chunkedUpload.ts` is ever raised, raise this alongside it or a chunk
