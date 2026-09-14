@@ -13,8 +13,9 @@ export type ConsultEvent =
 			candidates: number;
 			relevant: number;
 			accumulated: number;
+			duration_s: number;
 	  }
-	| { event: 'agent_done'; agent: string; input_tokens: number; output_tokens: number }
+	| { event: 'agent_done'; agent: string; input_tokens: number; output_tokens: number; duration_s: number }
 	| {
 			event: 'result';
 			session_id: string;
@@ -25,6 +26,8 @@ export type ConsultEvent =
 			librarian: { reasoning: string; considered: number; opened: unknown[]; truncated: number };
 			total_input_tokens: number;
 			total_output_tokens: number;
+			step_times: Record<string, number>;
+			total_time_s: number;
 	  }
 	| { event: 'error'; message: string };
 
