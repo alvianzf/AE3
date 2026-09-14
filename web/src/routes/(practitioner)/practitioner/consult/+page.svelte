@@ -121,9 +121,12 @@
 	let abortController: AbortController | null = null;
 	onDestroy(() => abortController?.abort());
 
+	// Practitioner-facing labels only — the underlying agent/event names
+	// (seed_search, traversal, reasoner, checker) are unchanged everywhere
+	// else (SSE events, step_times keys, AGENT_LABELS' own dict keys).
 	const AGENT_LABELS: Record<string, string> = {
-		seed_search: 'Seed search', traversal: 'Graph traversal', lookup: 'Lookup',
-		reasoner: 'Reasoner', checker: 'Checker'
+		seed_search: 'Searching', traversal: 'Connecting the dots', lookup: 'Lookup',
+		reasoner: 'Answering', checker: 'Checking the facts'
 	};
 
 	const MODE_LABELS: Record<string, string> = {
