@@ -1,6 +1,7 @@
 # v6.3 — Checker alternatives (lightweight/local + small-LLM fallback)
 
-**Status: investigated, not implemented.** A new version folder rather
+**Status: implemented — LLM-as-judge Checker shipped, `run_check` back
+on by default.** A new version folder rather
 than appending to `v6.1`/`v6.2` (both released and not edited after the
 fact) — same class of question (is there a cheaper way to do this), a
 different pipeline stage: the anti-hallucination Checker
@@ -34,14 +35,17 @@ on by default without the latency cost that got it turned off.
   choice — which weakens the case for `01`'s other two local-model
   candidates too, and makes the small-LLM-as-judge fallback (offloads
   inference off this VPS entirely) the more promising unprototyped path.
+- [**03 · LLM-as-judge Checker — implemented**](03-llm-checker-implemented.md)
+  — `01`'s fourth candidate, prototyped and shipped the same day.
+  `app/reasoning/llm_checker.py` (new) offloads scoring to a Nebius
+  `Role.CHECKER` call instead of a local classifier: 1.2-6.5s/call
+  verified live, down from HHEM's 28-77s. `run_check` defaults back to
+  `true`. The local HHEM path (`app/reasoning/checker.py`) is untouched
+  and still selectable.
 
 ## What this does not change
 
-`app/reasoning/checker.py` and `app/config.py` remain on HHEM-2.1-Open —
-the MiniCheck prototype in `02` ran from an isolated scratch copy and
-was reverted, never landed on the live production file or its `.env`.
-`run_check` stays `false` by default. Research and one same-day
-prototype only, against the current `check()` contract in
-`app/reasoning/checker.py` and the `Role` pattern in
-`app/clients/llm_client.py` — written up for whoever prototypes the
-small-LLM-judge fallback next.
+`app/reasoning/checker.py` (the local HHEM classifier) is untouched —
+still there, still selectable, not deleted. `03`'s LLM-as-judge path is
+what `/api/me/consult` actually calls now; switching back is a one-line
+import swap in `app/main.py`, not a rewrite.
