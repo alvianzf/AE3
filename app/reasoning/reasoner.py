@@ -13,6 +13,11 @@ from ..graph import store
 from ..patient.context import PatientContext
 from ..retrieval.traversal import TraversalResult
 
+# moonshotai/Kimi-K3's hidden chain-of-thought pass costs 30-120s+ per
+# call with no visible quality difference on this app's prompts (found
+# live, 2026-09-14) — disabled for every Reasoner call.
+_NO_THINKING = {"thinking": {"type": "disabled"}}
+
 REASONER_SYSTEM = (
     "You are a senior clinician advising a practitioner during a consultation.\n\n"
     "Answer using ONLY the accumulated knowledge-base context below and the "
@@ -71,7 +76,8 @@ def answer(question: str, patient: PatientContext, traversal: TraversalResult,
         f"Accumulated knowledge-base context:\n---\n{block}\n---\n\n"
         f"Practitioner's question: {question}{revision_block}"
     )
-    text, usage = get_client(Role.REASONER).chat_text(REASONER_SYSTEM, prompt, max_tokens=100_000)
+    text, usage = get_client(Role.REASONER).chat_text(
+        REASONER_SYSTEM, prompt, max_tokens=100_000, extra_body=_NO_THINKING)
     return ReasonedAnswer(text=text, usage=usage, citations=traversal.accumulated)
 
 
@@ -83,5 +89,6 @@ SUMMARY_SYSTEM = (
 
 
 def summarize_session(transcript: str) -> str:
-    text, _usage = get_client(Role.REASONER).chat_text(SUMMARY_SYSTEM, transcript, max_tokens=100_000)
+    text, _usage = get_client(Role.REASONER).chat_text(
+        SUMMARY_SYSTEM, transcript, max_tokens=100_000, extra_body=_NO_THINKING)
     return text

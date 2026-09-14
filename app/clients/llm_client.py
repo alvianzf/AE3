@@ -130,9 +130,21 @@ class LLMClient:
             raise ValueError(f"{self.model} ({self.role.value}) returned no usable JSON (twice)")
         return parsed, self._usage(response)
 
-    def chat_text(self, system: str, prompt: str, max_tokens: int = 100_000) -> tuple[str, dict]:
+    def chat_text(self, system: str, prompt: str, max_tokens: int = 100_000,
+                 extra_body: dict | None = None) -> tuple[str, dict]:
         """One free-text call. Returns (text, usage). Bounded by
-        _CHAT_TIMEOUT_SECONDS — see chat_json's docstring."""
+        _CHAT_TIMEOUT_SECONDS — see chat_json's docstring.
+
+        `extra_body` is a passthrough for provider/model-specific request
+        fields — e.g. moonshotai/Kimi-K3 (Role.REASONER) needs
+        {"thinking": {"type": "disabled"}} to skip its hidden chain-of-
+        thought pass: found live, an *unset* thinking mode costs 30-120s+
+        per call (reasoning_tokens in the raw response, invisible in the
+        parsed text) for no visible quality difference on this app's
+        prompts; disabled, the same call is ~1-2s. Caller's responsibility
+        to know which models need which fields — this method stays a
+        thin, generic passthrough rather than special-casing a model name.
+        """
         response = self._client.with_options(timeout=_CHAT_TIMEOUT_SECONDS).chat.completions.create(
             model=self.model,
             max_tokens=max_tokens,
@@ -140,6 +152,7 @@ class LLMClient:
                 {"role": "system", "content": system},
                 {"role": "user", "content": prompt},
             ],
+            extra_body=extra_body,
         )
         text = (response.choices[0].message.content or "").strip()
         return text, self._usage(response)
