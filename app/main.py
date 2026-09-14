@@ -18,6 +18,7 @@ import shutil
 import sys
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -377,17 +378,32 @@ def _ingest_pages(
     # Caught per-passage, not around the whole loop: a single transient
     # LLM error used to blank out every passage's contribution, not just
     # the one that actually failed.
-    entities_per_passage: list[list[dict]] = []
+    #
+    # Run concurrently, not sequentially: each passage's extract_graph()
+    # call is fully independent (no shared state, no ordering dependency
+    # between passages), but this used to run one call, wait, next call —
+    # live-timed at ~26s for 10 passages, ~44% of a real ingest's total
+    # time (specs/v6.1/01). max_workers=8 is a plain default, not tuned
+    # against a real Nebius rate limit — lower it if ingesting a large
+    # document ever triggers 429s.
+    entities_per_passage: list[list[dict] | None] = [None] * len(passages)
     relationships: list[dict] = []
-    for p in passages:
+
+    def _extract(i: int, text: str) -> tuple[int, list[dict], list[dict]]:
         try:
-            graph = ingestion_pipeline.extract_graph(p["text"])
-            entities_per_passage.append(graph["entities"])
-            relationships.extend(graph["relationships"])
+            graph = ingestion_pipeline.extract_graph(text)
+            return i, graph["entities"], graph["relationships"]
         except Exception as exc:
             logging.warning("knowledge-graph extraction failed for a passage of %s: %s",
                             filename, exc)
-            entities_per_passage.append([])
+            return i, [], []
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futures = [pool.submit(_extract, i, p["text"]) for i, p in enumerate(passages)]
+        for future in futures:
+            i, entities, rels = future.result()
+            entities_per_passage[i] = entities
+            relationships.extend(rels)
 
     try:
         return store.ingest_document(
