@@ -1895,6 +1895,110 @@ def me_save_intake_note(client_id: str, body: IntakeNoteIn,
     return vault.upsert_intake_note(practitioner_id, client_id, body.theme, body.note)
 
 
+# --- Client record entries (labs, conditions, medications, notes) -----------------
+# The consult pipeline's patient context (app/patient/context.py) has read
+# conditions/medications/labs since it was written, but nothing ever wrote
+# them — vault.add_entry() was only ever called for session_summary. Found
+# live, 2026-09-14: every real client's recent_labs was empty not because
+# no labs existed, but because there was no way to record one.
+
+# session_summary is written by me_summarize_session() only, not this
+# endpoint — a practitioner shouldn't be able to author a "summary" entry
+# by hand and have it silently treated the same as a real AI-written one.
+_RECORD_ENTRY_KINDS = tuple(k for k in vault.KINDS if k != "session_summary")
+
+
+class RecordEntryIn(BaseModel):
+    kind: str
+    content: str
+
+
+@app.get("/api/me/clients/{client_id}/entries")
+def me_list_entries(client_id: str,
+                    session: dict = Depends(auth.require_pro_practitioner)) -> list[dict]:
+    practitioner_id = session["id"]
+    if vault.get_client(practitioner_id, client_id) is None:
+        raise HTTPException(404, "no such client")
+    return vault.list_entries(practitioner_id, client_id)
+
+
+@app.post("/api/me/clients/{client_id}/entries")
+def me_add_entry(client_id: str, body: RecordEntryIn,
+                 session: dict = Depends(auth.require_pro_practitioner)) -> dict:
+    practitioner_id = session["id"]
+    if vault.get_client(practitioner_id, client_id) is None:
+        raise HTTPException(404, "no such client")
+    if body.kind not in _RECORD_ENTRY_KINDS:
+        raise HTTPException(400, f"kind must be one of {_RECORD_ENTRY_KINDS}")
+    if not body.content.strip():
+        raise HTTPException(400, "content is required")
+    entry = vault.add_entry(practitioner_id, client_id, body.kind, body.content.strip())
+    vault.log(practitioner_id, "practitioner", f"{body.kind} recorded",
+              body.content[:120], client_id)
+    return entry
+
+
+@app.delete("/api/me/clients/{client_id}/entries/{entry_id}")
+def me_delete_entry(client_id: str, entry_id: str,
+                    session: dict = Depends(auth.require_pro_practitioner)) -> dict:
+    practitioner_id = session["id"]
+    if vault.get_client(practitioner_id, client_id) is None:
+        raise HTTPException(404, "no such client")
+    if not vault.delete_entry(practitioner_id, client_id, entry_id):
+        raise HTTPException(404, "no such entry")
+    return {"deleted": entry_id}
+
+
+# A client can add to their own record too — self-reported labs/conditions/
+# etc. are marked with this prefix so the practitioner-facing panel and the
+# consult pipeline's context can tell them apart from what a practitioner
+# entered themselves (self-reported data carries less clinical certainty).
+# No schema change for this: record_entries has no author column, so the
+# marker lives in the content string itself, same technique already used
+# for legacy history/note entries (app/patient/context.py's "[kind] ..."
+# prefix).
+_PATIENT_REPORTED_PREFIX = "[patient-reported] "
+
+
+@app.get("/api/me/entries")
+def me_list_own_entries(session: dict = Depends(auth.require_client)) -> list[dict]:
+    # Only the client's own self-reported entries — not a practitioner's
+    # private clinical notes/conditions/medications about them. A SOAP-style
+    # note isn't necessarily meant to be shown back to the patient verbatim,
+    # so this is a real privacy boundary, not just a display filter.
+    entries = vault.list_entries(session["practitioner_id"], session["id"])
+    return [e for e in entries if e["content"].startswith(_PATIENT_REPORTED_PREFIX)]
+
+
+@app.post("/api/me/entries")
+def me_add_own_entry(body: RecordEntryIn, session: dict = Depends(auth.require_client)) -> dict:
+    if body.kind not in _RECORD_ENTRY_KINDS:
+        raise HTTPException(400, f"kind must be one of {_RECORD_ENTRY_KINDS}")
+    if not body.content.strip():
+        raise HTTPException(400, "content is required")
+    practitioner_id, client_id = session["practitioner_id"], session["id"]
+    entry = vault.add_entry(practitioner_id, client_id, body.kind,
+                            _PATIENT_REPORTED_PREFIX + body.content.strip())
+    vault.log(practitioner_id, "client", f"{body.kind} recorded by patient",
+              body.content[:120], client_id)
+    return entry
+
+
+@app.delete("/api/me/entries/{entry_id}")
+def me_delete_own_entry(entry_id: str, session: dict = Depends(auth.require_client)) -> dict:
+    practitioner_id, client_id = session["practitioner_id"], session["id"]
+    entries = vault.list_entries(practitioner_id, client_id)
+    entry = next((e for e in entries if e["id"] == entry_id), None)
+    if entry is None:
+        raise HTTPException(404, "no such entry")
+    # A client can only remove what they themselves added — not a
+    # practitioner-authored entry, even one about them.
+    if not entry["content"].startswith(_PATIENT_REPORTED_PREFIX):
+        raise HTTPException(403, "only entries you added yourself can be removed")
+    vault.delete_entry(practitioner_id, client_id, entry_id)
+    return {"deleted": entry_id}
+
+
 # --- Client portal -----------------------------------------------------------------
 
 @app.get("/api/me/questionnaire")

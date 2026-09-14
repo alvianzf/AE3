@@ -361,6 +361,33 @@ def add_entry(practitioner_id: str, client_id: str, kind: str, content: str,
     return entry
 
 
+def list_entries(practitioner_id: str, client_id: str) -> list[dict]:
+    """A client's clinical record entries — conditions, medications, labs,
+    and the older history/note kinds — for the practitioner-facing record
+    panel. Excludes session_summary, the same exclusion
+    app/patient/context.py's get_patient_context() already makes: a past
+    AI answer is consult history, not patient baseline data."""
+    with vault_connection(practitioner_id) as conn:
+        rows = conn.execute(
+            "SELECT * FROM record_entries WHERE client_id = %s AND kind != 'session_summary' "
+            "ORDER BY created_at DESC",
+            (client_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def delete_entry(practitioner_id: str, client_id: str, entry_id: str) -> bool:
+    with vault_connection(practitioner_id) as conn:
+        exists = conn.execute(
+            "SELECT 1 FROM record_entries WHERE id = %s AND client_id = %s",
+            (entry_id, client_id),
+        ).fetchone()
+        if not exists:
+            return False
+        conn.execute("DELETE FROM record_entries WHERE id = %s", (entry_id,))
+    return True
+
+
 # --- Consultation sessions ----------------------------------------------------
 
 SESSION_STATUSES = ("in_progress", "done")
