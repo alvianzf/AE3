@@ -1,55 +1,92 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount, onDestroy, tick } from 'svelte';
 	import { page } from '$app/state';
 	import { get } from '$lib/api';
 	import { streamConsult, type RetrievalMode } from '$lib/consultStream';
 	import { toast } from '$lib/stores/toast';
-	import Spotlight from '$lib/components/Spotlight.svelte';
-	import Quiet from '$lib/components/Quiet.svelte';
 	import Select from '$lib/components/Select.svelte';
 	import TextField from '$lib/components/TextField.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import Chip from '$lib/components/Chip.svelte';
+	import Icon from '$lib/components/Icon.svelte';
 	import { renderAnswerHtml } from '$lib/markdown';
 
 	let { data } = $props();
 	let clientId = $state('');
+	let clientSearch = $state('');
+	const filteredClients = $derived(
+		(data.clients ?? []).filter((c: any) =>
+			c.name.toLowerCase().includes(clientSearch.trim().toLowerCase())
+		)
+	);
+	const selectedClient = $derived((data.clients ?? []).find((c: any) => c.id === clientId));
+
 	// The session this conversation continues — kept so a second "Ask"
 	// actually carries the first question's context forward instead of
 	// silently starting a brand-new session every time (specs/v4/04-known-
-	// issues.md#h4). Cleared whenever the practitioner switches clients.
+	// issues.md#h4). Cleared whenever the practitioner switches clients or
+	// starts a new chat.
 	let sessionId = $state('');
 	let turns = $state<any[]>([]);
 	let loadingHistory = $state(false);
+
+	// GPT/Claude-style history rail: every past consultation for the
+	// currently selected client, clickable to reload it into the thread.
+	let sessions = $state<any[]>([]);
+	let loadingSessions = $state(false);
+	async function loadSessions(id: string) {
+		if (!id) {
+			sessions = [];
+			return;
+		}
+		loadingSessions = true;
+		try {
+			sessions = await get(fetch, `/me/clients/${id}/sessions`);
+		} catch {
+			sessions = [];
+		} finally {
+			loadingSessions = false;
+		}
+	}
+
+	async function loadSession(id: string) {
+		if (!clientId || asking) return;
+		loadingHistory = true;
+		try {
+			const s = await get(fetch, `/me/clients/${clientId}/sessions/${id}`);
+			sessionId = s.id;
+			// Stored turns only have one timestamp (when the turn was written);
+			// live-asked turns below track ask vs. answer separately, but that
+			// distinction isn't in the database, so both map to the same value here.
+			turns = (s.turns ?? []).map((t: any) => ({ asked_at: t.created_at, answered_at: t.created_at, ...t }));
+		} catch {
+			toast('Could not load that conversation.', 'alert');
+		} finally {
+			loadingHistory = false;
+		}
+	}
+
+	function newChat() {
+		if (asking) return;
+		sessionId = '';
+		turns = [];
+		question = '';
+	}
 
 	onMount(async () => {
 		const qClient = page.url.searchParams.get('client');
 		const qSession = page.url.searchParams.get('session');
 		clientId = qClient ?? data.clients[0]?.id ?? '';
-		if (qSession && qClient) {
-			loadingHistory = true;
-			try {
-				const s = await get(fetch, `/me/clients/${qClient}/sessions/${qSession}`);
-				sessionId = s.id;
-				// Stored turns only have one timestamp (when the turn was written);
-				// live-asked turns above track ask vs. answer separately, but that
-				// distinction isn't in the database, so both map to the same value here.
-				turns = (s.turns ?? []).map((t: any) => ({ asked_at: t.created_at, answered_at: t.created_at, ...t }));
-			} catch {
-				/* the linked session no longer exists or isn't this practitioner's — start fresh */
-			} finally {
-				loadingHistory = false;
-			}
-		}
+		if (qSession && qClient) await loadSession(qSession);
 	});
 
-	// A client switch (button or the Select) always starts a new
-	// conversation — carrying the old session forward into a different
-	// client's context would be a real safety issue, not a nicety. Compares
-	// against the *previous* value rather than an "initialized" flag so this
-	// can't race onMount's async deep-link history fetch above (whichever
-	// finishes first, the very first observed clientId never counts as a
-	// "switch").
+	// A client switch always starts a new conversation — carrying the old
+	// session forward into a different client's context would be a real
+	// safety issue, not a nicety. Compares against the *previous* value
+	// rather than an "initialized" flag so this can't race onMount's async
+	// deep-link history fetch above (whichever finishes first, the very
+	// first observed clientId never counts as a "switch"). Also (re)loads
+	// this client's history list, including on that first run.
 	let lastClientId = '';
 	$effect(() => {
 		const id = clientId;
@@ -58,6 +95,7 @@
 			turns = [];
 		}
 		lastClientId = id;
+		loadSessions(id);
 	});
 
 	let question = $state('');
@@ -67,6 +105,10 @@
 	// other, not a replacement (app/retrieval/general_lookup.py).
 	let retrievalMode = $state<string>('deep_research');
 	let asking = $state(false);
+	// The question currently in flight, shown as its own chat bubble
+	// immediately (GPT/Claude both echo the user's message before the
+	// answer exists) instead of waiting for the SSE stream's `result` event.
+	let pendingQuestion = $state('');
 	let steps = $state<{ agent: string; status: 'running' | 'done' | 'error'; input_tokens?: number; output_tokens?: number; duration_s?: number; progress?: string }[]>([]);
 	// Aborts the in-flight fetch if the practitioner navigates away mid-consult
 	// — see the note in consultStream.ts on what this does and doesn't stop
@@ -108,11 +150,22 @@
 		steps = steps.map((s) => (s.status === 'running' ? { ...s, status: 'error' } : s));
 	}
 
+	// Chat thread auto-scrolls to the newest message/step the way GPT and
+	// Claude's own web UIs do — the composer stays pinned, the transcript
+	// above it scrolls, and it should follow along while streaming.
+	let threadEl: HTMLDivElement | undefined;
+	$effect(() => {
+		turns.length; asking; steps.length; pendingQuestion;
+		tick().then(() => threadEl?.scrollTo({ top: threadEl.scrollHeight, behavior: 'smooth' }));
+	});
+
 	async function ask(e: Event) {
 		e.preventDefault();
 		if (!clientId || !question.trim() || asking) return;
 		const askedQuestion = question;
 		const askedAt = new Date().toISOString();
+		pendingQuestion = askedQuestion;
+		question = '';
 		asking = true;
 		steps = [];
 		abortController = new AbortController();
@@ -141,7 +194,7 @@
 				} else if (ev.event === 'result') {
 					sessionId = ev.session_id;
 					turns = [...turns, { question: askedQuestion, asked_at: askedAt, answered_at: new Date().toISOString(), ...ev }];
-					question = '';
+					loadSessions(clientId);
 				} else if (ev.event === 'error') {
 					failRunningSteps();
 					toast(ev.message, 'alert');
@@ -152,6 +205,7 @@
 			if (err?.name !== 'AbortError') toast(err.message, 'alert');
 		} finally {
 			asking = false;
+			pendingQuestion = '';
 			abortController = null;
 		}
 	}
@@ -159,75 +213,66 @@
 
 <svelte:head><title>Consult — Practitioner portal</title></svelte:head>
 
-<div class="layout">
-	<Quiet title="Client">
-		<ul class="clientlist">
-			{#each data.clients as c (c.id)}
-				<li>
-					<button class:on={clientId === c.id} disabled={asking} onclick={() => (clientId = c.id)}>{c.name}</button>
-				</li>
-			{:else}
-				<li class="hint">No clients yet.</li>
-			{/each}
-		</ul>
-	</Quiet>
+{#snippet turnView(t: any)}
+	<div class="rh">
+		{#if t.check?.verdict}
+			<Chip tone={t.check.verdict === 'pass' ? 'ok' : 'warn'}>{t.check.verdict}</Chip>
+		{:else}
+			<Chip tone="neutral">not independently checked</Chip>
+		{/if}
+		{#if t.revised}<Chip tone="accent">revised</Chip>{/if}
+		{#if t.total_time_s}<Chip tone="neutral">{t.total_time_s}s total</Chip>{/if}
+		{#if t.answered_at}<span class="ts">{timeLabel(t.answered_at)}</span>{/if}
+	</div>
+	<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+	<div class="answer" onclick={onAnswerClick}>{@html answerHtml(t)}</div>
 
-	{#snippet turnView(t: any)}
-		<div class="rh">
-			{#if t.check?.verdict}
-				<Chip tone={t.check.verdict === 'pass' ? 'ok' : 'warn'}>{t.check.verdict}</Chip>
-			{:else}
-				<Chip tone="neutral">not independently checked</Chip>
-			{/if}
-			{#if t.revised}<Chip tone="accent">revised</Chip>{/if}
-			{#if t.total_time_s}<Chip tone="neutral">{t.total_time_s}s total</Chip>{/if}
-			{#if t.answered_at}<span class="ts">{timeLabel(t.answered_at)}</span>{/if}
+	{#if t.check?.unsupported?.length}
+		<div class="unsupported">
+			<strong>Claims the check could not verify:</strong>
+			<ul>{#each t.check.unsupported as u}<li>{u}</li>{/each}</ul>
 		</div>
-		<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-		<div class="answer" onclick={onAnswerClick}>{@html answerHtml(t)}</div>
+	{/if}
 
-		{#if t.check?.unsupported?.length}
-			<div class="unsupported">
-				<strong>Claims the check could not verify:</strong>
-				<ul>{#each t.check.unsupported as u}<li>{u}</li>{/each}</ul>
-			</div>
-		{/if}
+	{#if t.traversal}
+		<!-- specs/v5 replaced the Librarian-picks-then-traverses pipeline
+		     with graph traversal + per-hop pruning; this panel reads the
+		     new result shape (seed_search/traversal) instead of the
+		     retired `librarian` key. -->
+		<details class="librarian">
+			<summary>
+				How it searched
+				{#if t.seed_search}— seed query {JSON.stringify(t.seed_search.search_query)}, {t.seed_search.seed_count} seed node(s){/if},
+				traversal reached depth {t.traversal.depth_reached} ({t.traversal.stopped_reason.replaceAll('_', ' ')})
+			</summary>
+			{#if t.step_times}
+				<p class="hint">
+					{#each Object.entries(t.step_times) as [agent, seconds]}
+						{AGENT_LABELS[agent] ?? agent}: {seconds}s&nbsp;&nbsp;
+					{/each}
+				</p>
+			{/if}
+			{#if t.traversal.path?.length}
+				<ul class="list">
+					{#each t.traversal.path as p}
+						<li>
+							<Chip tone={p.relevant ? 'accent' : 'neutral'}>{p.relevant ? 'kept' : 'dropped'}</Chip>
+							hop {p.hop} — {p.label}
+							{#if p.reason}<span class="hint">— {p.reason}</span>{/if}
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</details>
+	{/if}
 
-		{#if t.traversal}
-			<!-- specs/v5 replaced the Librarian-picks-then-traverses pipeline
-			     with graph traversal + per-hop pruning; this panel reads the
-			     new result shape (seed_search/traversal) instead of the
-			     retired `librarian` key. -->
-			<details class="librarian">
-				<summary>
-					How it searched
-					{#if t.seed_search}— seed query {JSON.stringify(t.seed_search.search_query)}, {t.seed_search.seed_count} seed node(s){/if},
-					traversal reached depth {t.traversal.depth_reached} ({t.traversal.stopped_reason.replaceAll('_', ' ')})
-				</summary>
-				{#if t.step_times}
-					<p class="hint">
-						{#each Object.entries(t.step_times) as [agent, seconds]}
-							{AGENT_LABELS[agent] ?? agent}: {seconds}s&nbsp;&nbsp;
-						{/each}
-					</p>
-				{/if}
-				{#if t.traversal.path?.length}
-					<ul class="list">
-						{#each t.traversal.path as p}
-							<li>
-								<Chip tone={p.relevant ? 'accent' : 'neutral'}>{p.relevant ? 'kept' : 'dropped'}</Chip>
-								hop {p.hop} — {p.label}
-								{#if p.reason}<span class="hint">— {p.reason}</span>{/if}
-							</li>
-						{/each}
-					</ul>
-				{/if}
-			</details>
-		{/if}
-
-		{#if t.sources?.length}
+	{#if t.sources?.length}
+		<!-- Closed by default — the answer + citation buttons already jump into
+		     this list on click, so leaving it expanded for every turn was just
+		     scroll noise most of the time. -->
+		<details class="sources-acc">
+			<summary><Icon name="chevron" size={14} /> Sources ({t.sources.length})</summary>
 			<div class="sources">
-				<strong>Sources</strong>
 				{#each t.sources as s (s.label)}
 					<div class="source" id="source-{s.label}">
 						<div class="sh"><Chip tone="accent">{s.label}</Chip> {s.title} <span class="hint">{s.locator}</span></div>
@@ -235,81 +280,246 @@
 					</div>
 				{/each}
 			</div>
-		{/if}
-	{/snippet}
+		</details>
+	{/if}
+{/snippet}
 
-	<!-- Tier 1 + leafmark: the ask panel is the reason this page exists (specs/v4/03, kept from v3) -->
-	<Spotlight title="Ask about this client" leaf>
-		<form onsubmit={ask}>
-			<Select label="Client" bind:value={clientId} disabled={asking} options={data.clients.map((c: any) => ({ value: c.id, label: c.name }))} />
-			<Select
-				label="Mode"
-				bind:value={retrievalMode}
-				disabled={asking}
-				options={[
-					{ value: 'deep_research', label: 'Deep research — thorough, slower' },
-					{ value: 'general_lookup', label: 'General lookup — fast, less thorough' }
-				]}
-			/>
-			<TextField label="Question" type="textarea" bind:value={question} required placeholder="What would you like to know?" />
-			<Button type="submit" loading={asking}>Ask</Button>
+<div class="chat-shell">
+	<aside class="sidebar">
+		<div class="sidebar-block">
+			<div class="search-field">
+				<Icon name="search" size={15} />
+				<input type="search" placeholder="Search clients…" bind:value={clientSearch} disabled={asking} />
+			</div>
+			<ul class="clientlist">
+				{#each filteredClients as c (c.id)}
+					<li>
+						<button class:on={clientId === c.id} disabled={asking} onclick={() => (clientId = c.id)}>{c.name}</button>
+					</li>
+				{:else}
+					<li class="hint">No clients match.</li>
+				{/each}
+			</ul>
+		</div>
+
+		{#if selectedClient}
+			<div class="sidebar-block patient-widget">
+				<strong>{selectedClient.name}</strong>
+				<p class="hint">{selectedClient.email}</p>
+				<dl>
+					<div><dt>DOB</dt><dd>{selectedClient.dob ?? '—'}</dd></div>
+					<div><dt>Country</dt><dd>{selectedClient.country ?? '—'}</dd></div>
+				</dl>
+			</div>
+		{/if}
+
+		<div class="sidebar-block history-block">
+			<div class="history-head">
+				<strong>History</strong>
+				<button type="button" class="newchat" onclick={newChat} disabled={asking} title="New chat">
+					<Icon name="new-chat" size={15} />
+				</button>
+			</div>
+			<ul class="historylist">
+				{#each sessions as s (s.id)}
+					<li>
+						<button class:on={s.id === sessionId} disabled={asking} onclick={() => loadSession(s.id)}>
+							<span class="htitle">{s.title ?? s.last_question ?? 'Untitled'}</span>
+							<span class="hint">{s.turns} turn{s.turns === 1 ? '' : 's'}</span>
+						</button>
+					</li>
+				{:else}
+					<li class="hint">{loadingSessions ? 'Loading…' : 'No consultations yet.'}</li>
+				{/each}
+			</ul>
+		</div>
+	</aside>
+
+	<section class="chat-main">
+		<div class="chat-thread" bind:this={threadEl}>
+			{#if loadingHistory}
+				<p class="hint empty">Loading this consultation…</p>
+			{:else if !turns.length && !pendingQuestion}
+				<p class="hint empty">
+					{selectedClient ? `Ask a question about ${selectedClient.name} to get started.` : 'Pick a client to start a consultation.'}
+				</p>
+			{/if}
+
+			{#each turns as t, i (t.session_id ? `${t.session_id}-${i}` : i)}
+				<div class="turn">
+					<div class="bubble bubble-q">
+						<p class="question">{t.question}</p>
+						{#if t.asked_at}<span class="ts">{timeLabel(t.asked_at)}</span>{/if}
+					</div>
+					<div class="bubble bubble-a">
+						{@render turnView(t)}
+					</div>
+				</div>
+			{/each}
+
+			{#if pendingQuestion}
+				<div class="turn">
+					<div class="bubble bubble-q">
+						<p class="question">{pendingQuestion}</p>
+					</div>
+					{#if steps.length}
+						<div class="bubble bubble-a progress">
+							{#each steps as s (s.agent)}
+								<div class="step" class:done={s.status === 'done'} class:error={s.status === 'error'}>
+									{#if s.status === 'running'}
+										<span class="spin" aria-hidden="true"></span>
+									{:else}
+										<span class="dot" aria-hidden="true"></span>
+									{/if}
+									{AGENT_LABELS[s.agent] ?? s.agent}
+									{#if s.status === 'done'}
+										<Chip tone="neutral">{s.input_tokens}→{s.output_tokens} tok · {s.duration_s}s</Chip>
+									{:else if s.status === 'error'}
+										<span class="hint">failed</span>
+									{:else}
+										<span class="hint">{s.progress ?? 'running…'}</span>
+									{/if}
+								</div>
+							{/each}
+						</div>
+					{/if}
+				</div>
+			{/if}
+		</div>
+
+		<form class="composer" onsubmit={ask}>
+			<div class="composer-row">
+				<Select
+					label="Mode"
+					bind:value={retrievalMode}
+					disabled={asking}
+					options={[
+						{ value: 'deep_research', label: 'Deep research — thorough, slower' },
+						{ value: 'general_lookup', label: 'General lookup — fast, less thorough' }
+					]}
+				/>
+			</div>
+			<div class="composer-row input-row">
+				<TextField label="Question" type="textarea" bind:value={question} required disabled={!clientId} placeholder="Message…" />
+				<Button type="submit" loading={asking}>Send</Button>
+			</div>
 		</form>
-
-		{#if loadingHistory}
-			<p class="hint" style="margin-top: var(--space-4)">Loading this consultation…</p>
-		{/if}
-
-		{#if steps.length}
-			<div class="progress">
-				{#each steps as s (s.agent)}
-					<div class="step" class:done={s.status === 'done'} class:error={s.status === 'error'}>
-						{#if s.status === 'running'}
-							<span class="spin" aria-hidden="true"></span>
-						{:else}
-							<span class="dot" aria-hidden="true"></span>
-						{/if}
-						{AGENT_LABELS[s.agent] ?? s.agent}
-						{#if s.status === 'done'}
-							<Chip tone="neutral">{s.input_tokens}→{s.output_tokens} tok · {s.duration_s}s</Chip>
-						{:else if s.status === 'error'}
-							<span class="hint">failed</span>
-						{:else}
-							<span class="hint">{s.progress ?? 'running…'}</span>
-						{/if}
-					</div>
-				{/each}
-			</div>
-		{/if}
-
-		{#if turns.length}
-			<div class="thread">
-				{#each turns as t, i (t.session_id ? `${t.session_id}-${i}` : i)}
-					<div class="turn">
-						<div class="bubble bubble-q">
-							<p class="question">{t.question}</p>
-							{#if t.asked_at}<span class="ts">{timeLabel(t.asked_at)}</span>{/if}
-						</div>
-						<div class="bubble bubble-a">
-							{@render turnView(t)}
-						</div>
-					</div>
-				{/each}
-			</div>
-		{/if}
-	</Spotlight>
+	</section>
 </div>
 
 <style>
-	.layout { display: grid; grid-template-columns: 16rem 1fr; gap: var(--space-5); align-items: start; }
-	.clientlist { list-style: none; margin: 0; padding: 0; display: grid; gap: .25rem; }
+	.chat-shell {
+		display: grid; grid-template-columns: 18rem 1fr; gap: var(--space-5);
+		height: calc(100dvh - var(--space-6) * 2);
+	}
+
+	/* ── Sidebar ─────────────────────────────────────────────────────── */
+	.sidebar { display: grid; grid-template-rows: auto auto 1fr; gap: var(--space-4); min-height: 0; }
+	.sidebar-block {
+		background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r-lg);
+		padding: var(--space-3); display: flex; flex-direction: column; gap: .5rem; min-height: 0;
+	}
+	.search-field {
+		display: flex; align-items: center; gap: .4rem; padding: .4rem .6rem;
+		background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--r); color: var(--muted);
+	}
+	.search-field input {
+		border: none; background: none; flex: 1; font: inherit; color: var(--ink); min-width: 0;
+	}
+	.search-field input:focus { outline: none; }
+	.search-field :global(svg) { flex: none; }
+
+	.clientlist, .historylist { list-style: none; margin: 0; padding: 0; display: grid; gap: .2rem; overflow-y: auto; }
+	/* ~5 rows visible, the rest scroll — a growing client roster shouldn't
+	   push the patient widget and history rail off-screen. */
+	.clientlist { max-height: 12rem; }
 	.clientlist button {
 		width: 100%; text-align: left; border: none; background: none; padding: .5rem .6rem;
 		border-radius: var(--r); cursor: pointer; font: inherit;
 	}
 	.clientlist button.on { background: var(--accent-soft); color: var(--accent-ink); font-weight: 650; }
 	.clientlist button:disabled { opacity: .5; cursor: not-allowed; }
-	form { display: grid; gap: var(--space-3); }
-	.progress { margin-top: var(--space-4); display: grid; gap: .4rem; }
+	.clientlist li.hint, .historylist li.hint { padding: .4rem .6rem; }
+
+	.patient-widget strong { font-size: var(--text-base); }
+	.patient-widget .hint { margin: 0; }
+	.patient-widget dl { margin: .3rem 0 0; display: grid; gap: .2rem; font-size: var(--text-sm); }
+	.patient-widget dl div { display: flex; justify-content: space-between; gap: .5rem; }
+	.patient-widget dt { color: var(--muted); }
+	.patient-widget dd { margin: 0; font-weight: 550; }
+
+	.history-block { flex: 1 1 auto; }
+	.history-head { display: flex; align-items: center; justify-content: space-between; }
+	.newchat {
+		display: inline-flex; align-items: center; justify-content: center;
+		width: 1.8rem; height: 1.8rem; border-radius: 50%; border: 1px solid var(--line-2);
+		background: var(--panel); color: var(--accent-ink); cursor: pointer;
+	}
+	.newchat:hover:not(:disabled) { background: var(--accent-soft); }
+	.newchat:disabled { opacity: .5; cursor: not-allowed; }
+	.historylist button {
+		width: 100%; text-align: left; border: none; background: none; padding: .45rem .6rem;
+		border-radius: var(--r); cursor: pointer; font: inherit; display: flex; flex-direction: column; gap: .1rem;
+	}
+	.historylist button.on { background: var(--accent-soft); }
+	.historylist button:disabled { opacity: .6; cursor: not-allowed; }
+	.htitle {
+		font-size: var(--text-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+	}
+
+	/* ── Chat column ─────────────────────────────────────────────────── */
+	.chat-main {
+		display: flex; flex-direction: column; min-height: 0;
+		background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r-lg);
+	}
+	.chat-thread { flex: 1 1 auto; overflow-y: auto; padding: var(--space-5); display: grid; gap: var(--space-4); align-content: start; }
+	.empty { text-align: center; margin-top: var(--space-6); }
+
+	.turn { display: grid; gap: .4rem; }
+	.bubble { border-radius: var(--r-lg); padding: var(--space-3) var(--space-4); max-width: 85%; }
+	.bubble-q {
+		justify-self: end; background: var(--accent); color: #fff;
+		border-bottom-right-radius: 4px; display: flex; align-items: baseline; gap: .6rem;
+	}
+	.bubble-q .ts { color: rgba(255, 255, 255, .75); }
+	.bubble-a { justify-self: start; background: var(--panel); border: 1px solid var(--line); border-bottom-left-radius: 4px; max-width: 100%; }
+	.question { margin: 0; white-space: pre-wrap; }
+	.ts { font-size: var(--text-xs); color: var(--muted); white-space: nowrap; }
+	.rh { display: flex; align-items: center; gap: .5rem; margin-bottom: var(--space-2); }
+	.rh .ts { margin-left: auto; }
+	.answer :global(p) { margin: 0 0 .6em; }
+	.answer :global(p:last-child) { margin-bottom: 0; }
+	.answer :global(ul), .answer :global(ol) { margin: 0 0 .6em; padding-left: 1.2rem; }
+	.answer :global(h2) { font-size: var(--text-sm); text-transform: uppercase; letter-spacing: .03em; color: var(--muted); margin: 1em 0 .4em; }
+	.answer :global(h2:first-child) { margin-top: 0; }
+	.answer :global(code) { background: var(--panel-2); padding: .1em .3em; border-radius: 4px; font-size: .9em; }
+	.answer :global(.cite) {
+		font: inherit; font-weight: 650; color: var(--accent-ink); background: var(--accent-soft);
+		border: none; border-radius: 4px; padding: 0 .3rem; cursor: pointer;
+	}
+	.unsupported { margin-top: var(--space-3); padding: var(--space-3); border-radius: var(--r); background: var(--warn-soft); color: var(--warn); font-size: var(--text-sm); }
+	.unsupported ul { margin: .3rem 0 0; padding-left: 1.1rem; }
+	.librarian { margin-top: var(--space-4); font-size: var(--text-sm); }
+	.librarian summary { cursor: pointer; color: var(--muted); font-weight: 600; }
+
+	/* Sources: closed by default, chevron rotates open — the native
+	   <details> marker is suppressed in favor of the Icon so the rotation
+	   is consistent across browsers. */
+	.sources-acc { margin-top: var(--space-4); font-size: var(--text-sm); }
+	.sources-acc summary {
+		cursor: pointer; color: var(--muted); font-weight: 600; list-style: none;
+		display: inline-flex; align-items: center; gap: .3rem;
+	}
+	.sources-acc summary::-webkit-details-marker { display: none; }
+	.sources-acc summary :global(svg) { transition: transform .15s var(--ease); }
+	.sources-acc[open] summary :global(svg) { transform: rotate(90deg); }
+	.sources { margin-top: var(--space-3); display: grid; gap: var(--space-3); }
+	.source { padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--r); }
+	.sh { display: flex; align-items: center; gap: .4rem; font-weight: 600; font-size: var(--text-sm); }
+	.snippet { margin: .3rem 0 0; font-size: var(--text-sm); color: var(--muted); }
+	.list { margin: .3rem 0 0; padding-left: 1.1rem; font-size: var(--text-sm); }
+
+	.progress { display: grid; gap: .4rem; }
 	.step { display: flex; align-items: center; gap: .5rem; font-size: var(--text-sm); }
 	.step .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); animation: breathe 1s ease-in-out infinite; }
 	.step .spin {
@@ -321,37 +531,23 @@
 	.step.error .hint { color: var(--danger); }
 	@keyframes spin { to { transform: rotate(360deg); } }
 
-	.thread { display: grid; gap: var(--space-4); margin-top: var(--space-5); }
-	.turn { display: grid; gap: .4rem; padding-top: var(--space-4); border-top: 1px solid var(--glass-line); }
-	.bubble { border-radius: var(--r-lg); padding: var(--space-3) var(--space-4); max-width: 85%; }
-	.bubble-q {
-		justify-self: end; background: var(--accent); color: #fff;
-		border-bottom-right-radius: 4px; display: flex; align-items: baseline; gap: .6rem;
+	/* ── Composer, pinned to the bottom of the chat column ──────────── */
+	.composer { flex: none; border-top: 1px solid var(--line); padding: var(--space-3) var(--space-4) var(--space-4); display: grid; gap: .4rem; }
+	.composer-row { display: flex; align-items: flex-end; gap: var(--space-3); }
+	.composer-row :global(.field) { flex: 1; }
+	.input-row :global(textarea) { min-height: 2.75rem; max-height: 10rem; }
+	/* The field labels stay for screen readers, but a chat composer showing
+	   "Question"/"Mode" above each control reads as a form, not a chat box —
+	   visually hidden, same technique as a standard sr-only utility. */
+	.composer :global(.field label) {
+		position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+		overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
 	}
-	.bubble-q .ts { color: rgba(255, 255, 255, .75); }
-	.bubble-a { justify-self: start; background: var(--panel-2); border: 1px solid var(--line); border-bottom-left-radius: 4px; max-width: 100%; }
-	.question { margin: 0; }
-	.ts { font-size: var(--text-xs); color: var(--muted); white-space: nowrap; }
-	.rh { display: flex; align-items: center; gap: .5rem; margin-bottom: var(--space-2); }
-	.rh .ts { margin-left: auto; }
-	.answer :global(p) { margin: 0 0 .6em; }
-	.answer :global(p:last-child) { margin-bottom: 0; }
-	.answer :global(ul), .answer :global(ol) { margin: 0 0 .6em; padding-left: 1.2rem; }
-	.answer :global(h2) { font-size: var(--text-sm); text-transform: uppercase; letter-spacing: .03em; color: var(--muted); margin: 1em 0 .4em; }
-	.answer :global(h2:first-child) { margin-top: 0; }
-	.answer :global(code) { background: var(--panel); padding: .1em .3em; border-radius: 4px; font-size: .9em; }
-	.answer :global(.cite) {
-		font: inherit; font-weight: 650; color: var(--accent-ink); background: var(--accent-soft);
-		border: none; border-radius: 4px; padding: 0 .3rem; cursor: pointer;
+	.composer-row:first-child { max-width: 16rem; }
+
+	@media (max-width: 860px) {
+		.chat-shell { grid-template-columns: 1fr; height: auto; }
+		.sidebar { grid-template-rows: none; }
+		.chat-main { height: 70dvh; }
 	}
-	.unsupported { margin-top: var(--space-3); padding: var(--space-3); border-radius: var(--r); background: var(--warn-soft); color: var(--warn); font-size: var(--text-sm); }
-	.unsupported ul { margin: .3rem 0 0; padding-left: 1.1rem; }
-	.librarian { margin-top: var(--space-4); font-size: var(--text-sm); }
-	.librarian summary { cursor: pointer; color: var(--muted); font-weight: 600; }
-	.sources { margin-top: var(--space-4); display: grid; gap: var(--space-3); }
-	.source { padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--r); }
-	.sh { display: flex; align-items: center; gap: .4rem; font-weight: 600; font-size: var(--text-sm); }
-	.snippet { margin: .3rem 0 0; font-size: var(--text-sm); color: var(--muted); }
-	.list { margin: .3rem 0 0; padding-left: 1.1rem; font-size: var(--text-sm); }
-	@media (max-width: 860px) { .layout { grid-template-columns: 1fr; } }
 </style>
