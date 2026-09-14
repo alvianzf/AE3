@@ -26,11 +26,22 @@ on by default without the latency cost that got it turned off.
   — closest fit to HHEM's actual job at a fraction of the size — with
   the small-LLM judge as the true "last measure" if no local classifier
   clears the latency bar.
+- [**02 · MiniCheck prototype result — not adopted**](02-minicheck-prototype-result.md)
+  — `01`'s recommendation was prototyped the same day. Result: **worse**,
+  not better — 185.21s per real `check()` call (vs. HHEM's 28-77s) at a
+  comparable-to-worse 2.5GB peak RSS. Reverted, nothing shipped. Points
+  at CPU-only inference on this VPS as the real bottleneck, not model
+  choice — which weakens the case for `01`'s other two local-model
+  candidates too, and makes the small-LLM-as-judge fallback (offloads
+  inference off this VPS entirely) the more promising unprototyped path.
 
 ## What this does not change
 
-No code in `app/` was touched, no dependencies installed, no config
-changed. Research only, against the current `check()` contract in
+`app/reasoning/checker.py` and `app/config.py` remain on HHEM-2.1-Open —
+the MiniCheck prototype in `02` ran from an isolated scratch copy and
+was reverted, never landed on the live production file or its `.env`.
+`run_check` stays `false` by default. Research and one same-day
+prototype only, against the current `check()` contract in
 `app/reasoning/checker.py` and the `Role` pattern in
-`app/clients/llm_client.py` — written up for whoever decides which
-candidate to actually prototype.
+`app/clients/llm_client.py` — written up for whoever prototypes the
+small-LLM-judge fallback next.
