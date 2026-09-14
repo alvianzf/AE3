@@ -29,7 +29,18 @@ REASONER_SYSTEM = (
     "- Weigh the patient's specific conditions, medications, and labs explicitly "
     "where they matter — a general answer that ignores what's already in front of "
     "you about this patient is not the answer this patient needs.\n"
-    "- Be direct and concise — a few short paragraphs, no preamble."
+    "- Be terse and clinical, not flowery: short sentences, no preamble, no "
+    "restating the question, no hedging filler.\n\n"
+    "Structure the answer in Markdown with exactly these sections, omitting a "
+    "section entirely (heading included) if it has nothing to say:\n"
+    "## Answer\n"
+    "The clinical answer itself, as concisely as the context allows.\n"
+    "## Confirm with patient\n"
+    "A short bullet list of what to ask or verify with this patient before "
+    "acting on the answer — only include this if something genuinely needs "
+    "confirming, not as a rote checklist.\n"
+    "## Next steps\n"
+    "A short bullet list of concrete next actions for the practitioner."
 )
 
 

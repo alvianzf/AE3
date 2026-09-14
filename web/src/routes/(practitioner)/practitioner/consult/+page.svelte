@@ -10,6 +10,7 @@
 	import TextField from '$lib/components/TextField.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import Chip from '$lib/components/Chip.svelte';
+	import { renderAnswerHtml } from '$lib/markdown';
 
 	let { data } = $props();
 	let clientId = $state('');
@@ -30,7 +31,10 @@
 			try {
 				const s = await get(fetch, `/me/clients/${qClient}/sessions/${qSession}`);
 				sessionId = s.id;
-				turns = s.turns ?? [];
+				// Stored turns only have one timestamp (when the turn was written);
+				// live-asked turns above track ask vs. answer separately, but that
+				// distinction isn't in the database, so both map to the same value here.
+				turns = (s.turns ?? []).map((t: any) => ({ asked_at: t.created_at, answered_at: t.created_at, ...t }));
 			} catch {
 				/* the linked session no longer exists or isn't this practitioner's — start fresh */
 			} finally {
@@ -75,31 +79,25 @@
 		reasoner: 'Reasoner', checker: 'Checker'
 	};
 
-	// Splits the answer text on [S1]/[S2]… or [K1]/[K2]… markers so each one
-	// that matches a real source in `sources` renders as a clickable
-	// jump-to-citation button instead of inert text — the markers were
-	// previously rendered literally with nothing to click and no source
-	// panel to click into. Both prefixes are matched: the Reasoner
-	// (specs/v5) cites as [K1], but a session answered before that change
-	// may still have [S1]-style markers stored in its transcript.
-	function citationParts(text: string, sources: any[]) {
-		const labels = new Set((sources ?? []).map((s) => s.label));
-		const parts: { text?: string; cite?: string }[] = [];
-		const re = /\[([SK]\d+)\]/g;
-		let last = 0;
-		let m: RegExpExecArray | null;
-		while ((m = re.exec(text))) {
-			if (m.index > last) parts.push({ text: text.slice(last, m.index) });
-			if (labels.has(m[1])) parts.push({ cite: m[1] });
-			else parts.push({ text: m[0] });
-			last = re.lastIndex;
-		}
-		if (last < text.length) parts.push({ text: text.slice(last) });
-		return parts;
+	// The answer is rendered as sanitized Markdown ($lib/markdown.ts); [S1]/
+	// [K1]… citation markers become clickable buttons within that HTML, so a
+	// click on them is handled by delegation here rather than a Svelte
+	// onclick per part the way the old plain-text renderer did it.
+	function answerHtml(t: any) {
+		const labels = new Set<string>((t.sources ?? []).map((s: any) => s.label));
+		return renderAnswerHtml(t.answer, labels);
 	}
 
-	function jumpToSource(label: string) {
-		document.getElementById(`source-${label}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+	function onAnswerClick(e: MouseEvent) {
+		const btn = (e.target as HTMLElement).closest('.cite') as HTMLElement | null;
+		if (!btn) return;
+		document.getElementById(`source-${btn.dataset.cite}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+	}
+
+	function timeLabel(iso: string | number | undefined) {
+		if (!iso) return '';
+		const d = new Date(iso);
+		return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 	}
 
 	function failRunningSteps() {
@@ -114,6 +112,7 @@
 		e.preventDefault();
 		if (!clientId || !question.trim() || asking) return;
 		const askedQuestion = question;
+		const askedAt = new Date().toISOString();
 		asking = true;
 		steps = [];
 		abortController = new AbortController();
@@ -141,7 +140,7 @@
 					);
 				} else if (ev.event === 'result') {
 					sessionId = ev.session_id;
-					turns = [...turns, { question: askedQuestion, ...ev }];
+					turns = [...turns, { question: askedQuestion, asked_at: askedAt, answered_at: new Date().toISOString(), ...ev }];
 					question = '';
 				} else if (ev.event === 'error') {
 					failRunningSteps();
@@ -182,12 +181,10 @@
 			{/if}
 			{#if t.revised}<Chip tone="accent">revised</Chip>{/if}
 			{#if t.total_time_s}<Chip tone="neutral">{t.total_time_s}s total</Chip>{/if}
+			{#if t.answered_at}<span class="ts">{timeLabel(t.answered_at)}</span>{/if}
 		</div>
-		<p>
-			{#each citationParts(t.answer, t.sources) as part}
-				{#if part.cite}<button type="button" class="cite" onclick={() => jumpToSource(part.cite as string)}>[{part.cite}]</button>{:else}{part.text}{/if}
-			{/each}
-		</p>
+		<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+		<div class="answer" onclick={onAnswerClick}>{@html answerHtml(t)}</div>
 
 		{#if t.check?.unsupported?.length}
 			<div class="unsupported">
@@ -266,7 +263,11 @@
 			<div class="progress">
 				{#each steps as s (s.agent)}
 					<div class="step" class:done={s.status === 'done'} class:error={s.status === 'error'}>
-						<span class="dot" aria-hidden="true"></span>
+						{#if s.status === 'running'}
+							<span class="spin" aria-hidden="true"></span>
+						{:else}
+							<span class="dot" aria-hidden="true"></span>
+						{/if}
 						{AGENT_LABELS[s.agent] ?? s.agent}
 						{#if s.status === 'done'}
 							<Chip tone="neutral">{s.input_tokens}→{s.output_tokens} tok · {s.duration_s}s</Chip>
@@ -284,8 +285,13 @@
 			<div class="thread">
 				{#each turns as t, i (t.session_id ? `${t.session_id}-${i}` : i)}
 					<div class="turn">
-						<p class="question">{t.question}</p>
-						{@render turnView(t)}
+						<div class="bubble bubble-q">
+							<p class="question">{t.question}</p>
+							{#if t.asked_at}<span class="ts">{timeLabel(t.asked_at)}</span>{/if}
+						</div>
+						<div class="bubble bubble-a">
+							{@render turnView(t)}
+						</div>
 					</div>
 				{/each}
 			</div>
@@ -306,14 +312,35 @@
 	.progress { margin-top: var(--space-4); display: grid; gap: .4rem; }
 	.step { display: flex; align-items: center; gap: .5rem; font-size: var(--text-sm); }
 	.step .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); animation: breathe 1s ease-in-out infinite; }
+	.step .spin {
+		width: .8rem; height: .8rem; border-radius: 50%; border: 2px solid var(--warn);
+		border-top-color: transparent; animation: spin .7s linear infinite; flex: none;
+	}
 	.step.done .dot { background: var(--ok); animation: none; }
 	.step.error .dot { background: var(--danger); animation: none; }
 	.step.error .hint { color: var(--danger); }
-	.thread { display: grid; gap: var(--space-5); margin-top: var(--space-5); }
-	.turn { padding-top: var(--space-4); border-top: 1px solid var(--glass-line); }
-	.question { font-weight: 650; margin: 0 0 var(--space-2); }
-	.rh { display: flex; gap: .5rem; margin-bottom: var(--space-2); }
-	.cite {
+	@keyframes spin { to { transform: rotate(360deg); } }
+
+	.thread { display: grid; gap: var(--space-4); margin-top: var(--space-5); }
+	.turn { display: grid; gap: .4rem; padding-top: var(--space-4); border-top: 1px solid var(--glass-line); }
+	.bubble { border-radius: var(--r-lg); padding: var(--space-3) var(--space-4); max-width: 85%; }
+	.bubble-q {
+		justify-self: end; background: var(--accent); color: #fff;
+		border-bottom-right-radius: 4px; display: flex; align-items: baseline; gap: .6rem;
+	}
+	.bubble-q .ts { color: rgba(255, 255, 255, .75); }
+	.bubble-a { justify-self: start; background: var(--panel-2); border: 1px solid var(--line); border-bottom-left-radius: 4px; max-width: 100%; }
+	.question { margin: 0; }
+	.ts { font-size: var(--text-xs); color: var(--muted); white-space: nowrap; }
+	.rh { display: flex; align-items: center; gap: .5rem; margin-bottom: var(--space-2); }
+	.rh .ts { margin-left: auto; }
+	.answer :global(p) { margin: 0 0 .6em; }
+	.answer :global(p:last-child) { margin-bottom: 0; }
+	.answer :global(ul), .answer :global(ol) { margin: 0 0 .6em; padding-left: 1.2rem; }
+	.answer :global(h2) { font-size: var(--text-sm); text-transform: uppercase; letter-spacing: .03em; color: var(--muted); margin: 1em 0 .4em; }
+	.answer :global(h2:first-child) { margin-top: 0; }
+	.answer :global(code) { background: var(--panel); padding: .1em .3em; border-radius: 4px; font-size: .9em; }
+	.answer :global(.cite) {
 		font: inherit; font-weight: 650; color: var(--accent-ink); background: var(--accent-soft);
 		border: none; border-radius: 4px; padding: 0 .3rem; cursor: pointer;
 	}
