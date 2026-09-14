@@ -48,7 +48,10 @@
 </div>
 
 <style>
-	.wrap { padding: var(--space-6) var(--space-5); max-width: 26rem; }
+	.wrap {
+		padding: var(--space-6) var(--space-5); max-width: 26rem;
+		min-height: 70dvh; display: flex; flex-direction: column; justify-content: center;
+	}
 	form { display: grid; gap: var(--space-3); }
 	.error { color: var(--danger); font-size: var(--text-sm); }
 </style>
