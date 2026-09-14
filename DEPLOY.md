@@ -137,6 +137,36 @@ Easy to lose in a rewrite and each breaks a core feature silently:
   `chunkedUpload.ts` is ever raised, raise this alongside it or a chunk
   upload from a slow connection will time out server-side.
 
+### One systemd setting this app depends on: `MemoryMax`
+
+`/etc/systemd/system/clinic.service`'s `MemoryMax` is **4G**, not the
+original 500M. **Without headroom here, the Checker (HHEM, `app/reasoning/
+checker.py`) OOM-kills the whole app**, not just its own request — found
+live, 2026-09-14, repeatedly, against production. `run_check` defaults to
+`true` (`app/main.py`'s `MeConsult`), so this isn't an edge case: it's
+what the very first real consult with checking enabled does on a fresh
+boot. Two distinct causes, both fixed, but the memory ceiling itself
+still needs to stay raised:
+1. HHEM's first-ever model download (via HuggingFace's `xet` chunked
+   transfer) prefetches multi-hundred-MB blocks into memory before
+   writing to disk — a one-time cold-start cost. Not a problem once the
+   model is cached on disk (`/opt/clinic/.cache/huggingface/`, ~420 MB),
+   but the *very first* consult with checking enabled on a brand new
+   deploy target will pay it.
+2. `checker.check()` used to batch *every* (evidence, answer-sentence)
+   pair into one `model.predict()` call, with no cap on individual text
+   length or total batch size — a real consult's ~10 evidence chunks (at
+   `config.py`'s `chunk_size=1200` chars) times a longer answer's
+   sentence count routinely built 100+ pairs per call, each potentially
+   600-700+ tokens against HHEM's real 512-token limit, and the model's
+   `trust_remote_code=True` forward pass doesn't truncate gracefully —
+   it costs multiple GB instead of erroring. Fixed in code (per-text
+   truncation + fixed-size sub-batching, both in `checker.py`), verified
+   live at 1.3-1.6 GB peak even under a deliberately larger-than-real
+   stress test — but the fix means "stays comfortably under 4G," not
+   "would be fine at 500M," so the raised ceiling is still load-bearing,
+   not a temporary workaround to revert.
+
 ## Postgres (specs/v6 — replaces the old per-file SQLite stores)
 
 **One-time setup on the server**, alongside the existing Neo4j install:
