@@ -68,10 +68,26 @@ def _sentences(text: str) -> list[str]:
     return [s.strip() for s in _SENTENCE_SPLIT.split(text) if s.strip()]
 
 
+# HHEM-2.1-Open's real max sequence length is 512 tokens (its own config;
+# see the HHEMv2Config warning this class emits otherwise). A full chunk
+# (config.py's chunk_size=1200 chars) plus an answer sentence routinely
+# tokenizes to 600-700+ tokens — found live, 2026-09-14: the model's
+# trust_remote_code=True forward pass doesn't truncate gracefully at that
+# point, it silently costs multiple GB per over-length pair instead of
+# erroring, and a real consult batches 10+ evidence texts x 5-10 answer
+# sentences into *one* predict() call — enough over-length pairs at once
+# to OOM-kill the whole process (repeatedly reproduced against
+# production). 700 chars is conservative headroom under 512 tokens for
+# English clinical prose even after adding a sentence on top.
+_MAX_EVIDENCE_CHARS = 700
+
+
 def _node_text(node: dict) -> str:
     if store.is_chunk(node):
-        return node["text"]
-    return f"{node.get('name', '')} ({store.node_type(node)})"
+        text = node["text"]
+    else:
+        text = f"{node.get('name', '')} ({store.node_type(node)})"
+    return text[:_MAX_EVIDENCE_CHARS]
 
 
 def check(question: str, reasoned: ReasonedAnswer, patient_context_text: str) -> dict:
@@ -94,18 +110,28 @@ def check(question: str, reasoned: ReasonedAnswer, patient_context_text: str) ->
     don't mention this patient at all — would flag it "unsupported" on
     essentially every consult that cites anything.
     """
-    evidence_texts = [_node_text(n) for n in reasoned.citations] + [patient_context_text]
+    evidence_texts = [_node_text(n) for n in reasoned.citations] + [patient_context_text[:_MAX_EVIDENCE_CHARS]]
     model = _get_checker_model()
     sentences = _sentences(reasoned.text)
     if not sentences:
         return {"verdict": "pass", "unsupported": [], "note": "Nothing to check."}
 
-    # One batched predict() call for every (evidence, sentence) pair
-    # rather than one call per sentence (or per sentence-per-citation) —
-    # keeps this cheap regardless of how many sources were cited.
-    pairs = [(ev, s) for s in sentences for ev in evidence_texts]
-    scores = model.predict(pairs)
+    # One (evidence, sentence) pair per combination — batched, not one
+    # predict() call per sentence, to keep this cheap regardless of how
+    # many sources were cited. But *not* all in a single predict() call:
+    # found live, 2026-09-14 — peak memory for this model scales worse
+    # than linearly with total batch size (a real answer's sentence count
+    # is unbounded, and 10-ish evidence texts x a longer answer's
+    # sentences repeatedly OOM-killed production at up to 4GB even after
+    # truncating each individual text). Chunking into fixed-size
+    # sub-batches bounds peak memory to whatever one sub-batch costs,
+    # independent of how large the real total ever gets.
     per_evidence = len(evidence_texts)
+    pairs = [(ev, s) for s in sentences for ev in evidence_texts]
+    _SUB_BATCH = 40
+    scores: list[float] = []
+    for i in range(0, len(pairs), _SUB_BATCH):
+        scores.extend(model.predict(pairs[i:i + _SUB_BATCH]))
 
     unsupported: list[str] = []
     for i, sentence in enumerate(sentences):
