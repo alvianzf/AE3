@@ -51,14 +51,23 @@ class PatientContext:
             lines.append(f"DOB: {self.dob}")
         lines.append(f"Active conditions: {', '.join(self.conditions) or 'none recorded'}")
         lines.append(f"Current medications: {', '.join(self.medications) or 'none recorded'}")
+        # Always stated, never omitted when empty — same as conditions/
+        # medications above. An omitted line reads as "not checked"; an
+        # explicit "none recorded" gives the Reasoner real grounds to say
+        # so plainly instead of writing a placeholder like "[lab results]"
+        # for a gap it can't otherwise tell apart from data that just
+        # wasn't looked at (found live, 2026-09-14).
         if self.recent_labs:
             labs = "; ".join(f"{l['content']} ({l['date']})" for l in self.recent_labs)
             lines.append(f"Recent labs: {labs}")
+        else:
+            lines.append("Recent labs: none recorded")
         if self.legacy_notes:
             legacy = "; ".join(f"[{n['kind']}] {n['content']}" for n in self.legacy_notes)
             lines.append(f"Other recorded history/notes: {legacy}")
-        if self.questionnaire_summary:
-            lines.append(f"Questionnaire responses: {self.questionnaire_summary}")
+        else:
+            lines.append("Other recorded history/notes: none recorded")
+        lines.append(f"Questionnaire responses: {self.questionnaire_summary or 'none recorded'}")
         return "\n".join(lines)
 
 

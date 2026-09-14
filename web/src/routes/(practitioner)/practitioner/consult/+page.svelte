@@ -190,6 +190,8 @@
 		asking = true;
 		steps = [];
 		abortController = new AbortController();
+		let gotResult = false;
+		let gotError = false;
 		try {
 			// Client switching is disabled while `asking` (see the disabled
 			// bindings below), so clientId/sessionId can't change out from
@@ -213,12 +215,30 @@
 							: s
 					);
 				} else if (ev.event === 'result') {
+					gotResult = true;
 					sessionId = ev.session_id;
 					turns = [...turns, { question: askedQuestion, asked_at: askedAt, answered_at: new Date().toISOString(), ...ev }];
 					loadSessions(clientId);
 				} else if (ev.event === 'error') {
+					gotError = true;
 					failRunningSteps();
 					toast(ev.message, 'alert');
+				}
+			}
+			// Found live: the stream sometimes ends with neither a `result`
+			// nor an `error` event — the backend had actually finished and
+			// saved the turn, but the last SSE frame never reached the
+			// client, so the answer only appeared after a manual page
+			// refresh. Recover the same way a refresh would: reload the
+			// session (or, for a brand-new one, the practitioner's now-
+			// current history list) from the server instead of leaving the
+			// UI stuck showing nothing.
+			if (!gotResult && !gotError) {
+				if (sessionId) {
+					await loadSession(sessionId);
+				} else {
+					await loadSessions(clientId);
+					if (sessions[0]) await loadSession(sessions[0].id);
 				}
 			}
 		} catch (err: any) {
@@ -250,7 +270,11 @@
 
 	{#if t.check?.unsupported?.length}
 		<div class="unsupported">
-			<strong>Claims the check could not verify:</strong>
+			<!-- These are no longer in the answer above — app/main.py's
+			     _strip_unsupported() cuts an unverified claim out of the
+			     text rather than shipping it alongside this warning. Kept
+			     here for transparency about what was removed and why. -->
+			<strong>Removed — the check could not verify these claims:</strong>
 			<ul>{#each t.check.unsupported as u}<li>{u}</li>{/each}</ul>
 		</div>
 	{/if}

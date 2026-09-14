@@ -1,5 +1,29 @@
 # Specs changelog
 
+## v6.4 — 2026-09-14 (consult page as a chat interface; hallucination fix)
+
+Consult page rebuilt as a GPT/Claude-style chat interface — persistent
+sidebar (searchable clients, calendar-badge conversation history, a
+patient info widget), a bottom-pinned composer, markdown rendering, a
+closed-by-default sources accordion, a mode toggle. Two live UI bugs
+found and fixed along the way (a CSS grid/flex overflow, 0-turn ghost
+sessions in the history list).
+
+Also a real hallucination bug, found live: a question about bloating
+got an answer built from topic-adjacent context that never actually
+covered it. Fixed in the Reasoner's system prompt (explicit: topic-
+adjacent isn't "covers the question"), verified live. Also fixed two
+citation-parsing bugs found while verifying it — an inflated `sources`
+list, and grouped citation brackets (`[K1, K3]`) silently missed by
+both the server- and client-side citation matchers. See
+[`specs/v6.4`](v6.4/README.md).
+
+Same day, separate change: the Checker got a small-LLM-as-judge
+alternative (`app/reasoning/llm_checker.py`), replacing the local HHEM
+classifier as the default — 1.2-6.5s/call verified live, versus HHEM's
+28-77s. `run_check` is back to `true` by default. See
+[`specs/v6.3`](v6.3/README.md).
+
 ## v4.2 — 2026-09-09 (library directory browse; ingest modal; Library/Staged tabs; full-document grading)
 
 Same day as `v4.1` below, later still — a run of follow-ups to the
