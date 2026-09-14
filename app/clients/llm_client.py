@@ -38,6 +38,10 @@ class Role(str, Enum):
     EMBEDDER = "embedder"
     ANSWER_ENGINE = "answer_engine"
     REASONER = "reasoner"
+    # LLM-as-judge Checker (app/reasoning/llm_checker.py) — distinct from
+    # the local HF-classifier Checker (app/reasoning/checker.py, cfg.
+    # checker_model/checker_threshold), which isn't a chat role at all.
+    CHECKER = "checker_llm"
 
 
 @dataclass(frozen=True)
@@ -58,6 +62,7 @@ def _role_config(role: Role) -> RoleConfig:
         Role.EMBEDDER: (cfg.embedder_model, cfg.embedder_base_url, cfg.embedder_api_key),
         Role.ANSWER_ENGINE: (cfg.retrieval_model, cfg.retrieval_base_url, cfg.retrieval_api_key),
         Role.REASONER: (cfg.reasoner_model, cfg.reasoner_base_url, cfg.reasoner_api_key),
+        Role.CHECKER: (cfg.checker_llm_model, cfg.checker_llm_base_url, cfg.checker_llm_api_key),
     }[role]
     return RoleConfig(model=model, base_url=base_url, api_key=api_key)
 

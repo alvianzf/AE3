@@ -83,6 +83,17 @@ class Config:
     retrieval_api_key = os.getenv("RETRIEVAL_API_KEY", nebius_api_key)
     reasoner_base_url = os.getenv("REASONER_BASE_URL", nebius_base_url)
     reasoner_api_key = os.getenv("REASONER_API_KEY", nebius_api_key)
+    # LLM-as-judge Checker (app/reasoning/llm_checker.py, specs/v6.3/02) —
+    # the "last measure" fallback: HHEM (checker_model below) costs
+    # 28-77s/call on this VPS's CPU, and a smaller local classifier
+    # (MiniCheck) was *worse* (185s), pointing at CPU-only inference
+    # itself as the bottleneck, not model choice. This offloads scoring
+    # to Nebius instead. Defaults to the same model already proven fast
+    # and reliable for batched strict-JSON judgments (traversal.py's
+    # relevance judge uses it too).
+    checker_llm_model = os.getenv("CHECKER_LLM_MODEL", "Qwen/Qwen3-30B-A3B-Instruct-2507")
+    checker_llm_base_url = os.getenv("CHECKER_LLM_BASE_URL", nebius_base_url)
+    checker_llm_api_key = os.getenv("CHECKER_LLM_API_KEY", nebius_api_key)
     # Not a chat model — a hallucination-detection classifier run directly
     # via transformers, not through the Nebius chat endpoint. Default is
     # HHEM-2.1-Open's real Hugging Face repo id, not a Nebius catalog name.
