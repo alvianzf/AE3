@@ -11,6 +11,7 @@ relationships in the graph, idempotent on content_hash.
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 from ..clients.llm_client import Role, get_client
 from ..graph import store
@@ -253,17 +254,31 @@ def ingest(*, text: str, filename: str, kind: str, origin: str,
     # Caught per-passage, not around the whole loop, matching
     # app/main.py's inline copy of this same flow (_ingest_pages) — a
     # transient extraction error here used to abort the whole ingest.
-    entities_per_passage: list[list[dict]] = []
+    #
+    # Run concurrently — each passage's extract_graph() call is fully
+    # independent (no shared state, no ordering dependency), and this
+    # used to run one call, wait, next call: live-timed at ~26s for 10
+    # passages, ~44% of a real ingest's total time (specs/v6.1/01).
+    # max_workers=8 is a plain default, not tuned against a real Nebius
+    # rate limit — lower it if a large document ever triggers 429s.
+    entities_per_passage: list[list[dict] | None] = [None] * len(passages)
     all_relationships: list[dict] = []
-    for p in passages:
+
+    def _extract(i: int, text: str) -> tuple[int, list[dict], list[dict]]:
         try:
-            graph = extract_graph(p["text"])
-            entities_per_passage.append(graph["entities"])
-            all_relationships.extend(graph["relationships"])
+            graph = extract_graph(text)
+            return i, graph["entities"], graph["relationships"]
         except Exception as exc:
             logging.warning("knowledge-graph extraction failed for a passage of %s: %s",
                             filename, exc)
-            entities_per_passage.append([])
+            return i, [], []
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futures = [pool.submit(_extract, i, p["text"]) for i, p in enumerate(passages)]
+        for future in futures:
+            i, entities, rels = future.result()
+            entities_per_passage[i] = entities
+            all_relationships.extend(rels)
 
     return store.ingest_document(
         title=card["title"], filename=filename, kind=kind, origin=origin,

@@ -1,5 +1,19 @@
 # 01 · Ingestion latency audit
 
+**Update, same day:** the user asked directly which of this doc's two
+proposed levers was worth doing on performance *and* accuracy grounds.
+Answer given: parallelizing wins outright — it's real wall-clock
+improvement with zero accuracy risk (same calls, same model, just
+concurrent), where streaming progress is a UX fix with zero effect on
+either axis. **Graph-builder parallelization is now implemented**
+(`ThreadPoolExecutor(max_workers=8)`, both `app/main.py`'s
+`_ingest_pages` — the actual live path — and `app/ingestion/pipeline.py`'s
+`ingest()`, kept consistent though it has no callers). See "Update,
+same day" under "What's actually slow" and a new "Re-tested" section
+below for the real before/after numbers and an important variance
+finding from re-testing. Streaming progress remains undone, still a
+live option if this comes up again.
+
 Produced 2026-09-14, prompted directly by the two reasoning-token
 latency bugs found and fixed the same day in the retrieval/reasoning
 path (`RETRIEVAL_MODEL` breaking strict JSON output, `REASONER_MODEL`
@@ -34,19 +48,38 @@ linear**: the real "cureus-0015-00000044493.pdf" already in production
 3x this test's Graph-builder time — on the order of 80-90s just for
 that one stage, serialized.
 
-**Embedder is the single biggest cost, and it isn't chunk-count-driven
-the way Graph-builder is** — a lone-text `embed()` call took **9.5s**,
-and a 10-text batched call took **28.4s** (not 10x — there's real batching
-efficiency, but a large fixed-per-call latency dominates either way).
-This is `Qwen/Qwen3-Embedding-8B` on Nebius's infra; not a reasoning-token
-issue (embeddings don't have that field at all), and not something this
-audit found a lever for the way `chat_text`'s new `extra_body` passthrough
-(commit found in `app/clients/llm_client.py` as of this audit, same day)
-gives the Reasoner. Whether it's a cold-start cost per call, a queueing
-effect, or genuinely the model's real throughput on this infra wasn't
-distinguished here — worth a follow-up if ingestion latency becomes a
-product priority, but out of scope for what this audit could establish
-from the client side alone.
+**Update, same day — parallelized and re-tested.** Same 10-passage
+shape, `ThreadPoolExecutor(max_workers=8)` instead of a sequential
+loop:
+
+| Run | Sequential (this audit) | Parallel (same day, after fix) |
+|---|---|---|
+| 1 | 26.4s | 12.5s |
+| 2 | — | 7.5s |
+| 3 (anomalous) | — | 62.0s |
+
+Run 3's spike wasn't a concurrency-throttling artifact — the *sequential*
+Embedder call timed in the same run also spiked (8.59s vs. a typical
+3.63s, see below), meaning that run hit a general Nebius-side load
+event affecting every call, not something the added concurrency itself
+caused. Typical case is a genuine **~2-3x** improvement; occasional
+shared-infra variance can still spike any individual run, parallel or
+not — inherent to a third-party dependency, not a flaw in this fix.
+
+**Embedder — re-tested, original 9.5s/28.4s numbers do not reproduce
+reliably.** Re-run same day, fresh processes each time: a single-text
+call measured **1.65-2.03s** across 3 runs (not 9.5s), and a 10-text
+batch measured **3.63s** in one run and **8.59s** in another (not a
+stable 28.4s). This confirms real latency here, but the magnitude in
+the original table looks like it landed on an unlucky, higher-than-
+typical sample rather than Embedder's steady-state cost — the
+underlying cause (cold-start, queueing, or real throughput on
+`Qwen/Qwen3-Embedding-8B`'s Nebius infra) still isn't distinguished
+from the client side, and the *variance itself* (roughly 2x run to run)
+is now the more clearly established finding than any single fixed
+number. Not worth a code change on this evidence — nothing here
+points at an app-side inefficiency to fix (batching is already
+correct: one call for all passages, not one per passage).
 
 ## What this means for the product today
 
@@ -63,24 +96,29 @@ day for exactly this "long-and-silent" UX problem) — `POST /api/sources`
 and the chunked-upload completion route are still one blocking call from
 the admin's perspective, start to finish.
 
-## Not done here, deliberately
+## Done and not done, same day
 
-This is an audit, not a fix — per the task this was scoped under,
-matching how today's earlier `RETRIEVAL_MODEL`/`REASONER_MODEL` finds
-were each their own explicit, separately-decided change. Two concrete
-levers exist if ingestion latency becomes worth spending effort on:
+This started as an audit, not a fix — per the task it was scoped under,
+matching how the `RETRIEVAL_MODEL`/`REASONER_MODEL` finds earlier the
+same day were each their own explicit, separately-decided change. Two
+concrete levers were identified; one is now implemented:
 
-1. **Parallelize the Graph-builder loop.** Passages are independent —
-   nothing in `extract_graph()` depends on another passage's result — so
-   this is a straightforward concurrent-calls change (e.g.
-   `concurrent.futures.ThreadPoolExecutor`), not a redesign. Failure
-   handling would need to stay per-passage (already true today, per
-   `ingest()`'s own comment on why the try/except is inside the loop).
-2. **Stream ingestion progress**, the same shape as `retrieve_streaming()`
-   — "chunk 4/30 extracted" — so a long ingest reads as working, not
-   stuck, the same fix already applied to consult traversal today for
-   the identical underlying complaint shape ("it's slow, did it hang?").
+1. **Parallelize the Graph-builder loop — done.** Passages are
+   independent — nothing in `extract_graph()` depends on another
+   passage's result — so this was a straightforward concurrent-calls
+   change (`concurrent.futures.ThreadPoolExecutor(max_workers=8)`), not
+   a redesign. Failure handling stayed per-passage (unchanged from
+   before — one passage's failure still can't blank out the others).
+   Applied to both `app/main.py`'s `_ingest_pages` (the actual live
+   path) and `app/ingestion/pipeline.py`'s `ingest()` (unused today,
+   kept consistent since the two have always mirrored each other).
+2. **Stream ingestion progress** — still undone. The same shape as
+   `retrieve_streaming()` ("chunk 4/30 extracted") so a long ingest
+   reads as working, not stuck, the same fix already applied to consult
+   traversal the same day for the identical underlying complaint shape
+   ("it's slow, did it hang?"). Still a live option, not ruled out —
+   just not what the performance/accuracy comparison favored today.
 
-Neither was implemented or decided here — both are product/effort calls,
-consistent with how every model/latency change today was made with the
-user, not silently.
+Embedder's latency (above) was re-investigated but not acted on — no
+app-side lever was found, and the variance finding argues against
+tuning around a single number.

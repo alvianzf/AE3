@@ -28,11 +28,14 @@ export type ConsultEvent =
 	  }
 	| { event: 'error'; message: string };
 
+export type RetrievalMode = 'deep_research' | 'general_lookup';
+
 export async function* streamConsult(
 	clientId: string,
 	question: string,
 	sessionId?: string,
-	signal?: AbortSignal
+	signal?: AbortSignal,
+	retrievalMode: RetrievalMode = 'deep_research'
 ): AsyncGenerator<ConsultEvent> {
 	// `signal` lets the caller stop reading (e.g. on navigating away) so the
 	// browser closes the connection — the backend's StreamingResponse then
@@ -45,7 +48,12 @@ export async function* streamConsult(
 		method: 'POST',
 		credentials: 'include',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ client_id: clientId, question, session_id: sessionId || undefined }),
+		body: JSON.stringify({
+			client_id: clientId,
+			question,
+			session_id: sessionId || undefined,
+			retrieval_mode: retrievalMode
+		}),
 		signal
 	});
 	if (!res.ok || !res.body) {
