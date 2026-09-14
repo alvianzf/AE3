@@ -180,6 +180,19 @@
 		tick().then(() => threadEl?.scrollTo({ top: threadEl.scrollHeight, behavior: 'smooth' }));
 	});
 
+	// Recovers from a stream that never delivered its final `result`/`error`
+	// event — reload from the server the same way a manual page refresh
+	// would, whether the connection quietly ended with nothing or had to be
+	// aborted after going stale.
+	async function recoverMissingResult() {
+		if (sessionId) {
+			await loadSession(sessionId);
+		} else {
+			await loadSessions(clientId);
+			if (sessions[0]) await loadSession(sessions[0].id);
+		}
+	}
+
 	async function ask(e: Event) {
 		e.preventDefault();
 		if (!clientId || !question.trim() || asking) return;
@@ -192,12 +205,30 @@
 		abortController = new AbortController();
 		let gotResult = false;
 		let gotError = false;
+		let stalled = false;
+		// Found live, deep research mode specifically: sometimes the
+		// connection doesn't cleanly end at all — it just stops delivering
+		// events partway through (most likely something upstream of this
+		// app buffering/dropping the tail of a long-running response) and
+		// the browser's fetch() sits open indefinitely, so the "stream
+		// ended with nothing" recovery below never even runs. A watchdog
+		// catches that case too: if too long passes with no event at all,
+		// treat it as stuck and abort proactively rather than wait forever.
+		let lastEventAt = Date.now();
+		const STALL_MS = 110_000; // safely above _CHAT_TIMEOUT_SECONDS (90s), the longest a single real step should ever take
+		const stallWatch = setInterval(() => {
+			if (Date.now() - lastEventAt > STALL_MS) {
+				stalled = true;
+				abortController?.abort();
+			}
+		}, 5000);
 		try {
 			// Client switching is disabled while `asking` (see the disabled
 			// bindings below), so clientId/sessionId can't change out from
 			// under this request — no separate "which client was this for"
 			// tracking needed the way a mid-flight switch would otherwise require.
 			for await (const ev of streamConsult(clientId, askedQuestion, sessionId, abortController.signal, retrievalMode as RetrievalMode)) {
+				lastEventAt = Date.now();
 				if (ev.event === 'agent_start') {
 					steps = [...steps, { agent: ev.agent, status: 'running' }];
 				} else if (ev.event === 'agent_progress') {
@@ -233,18 +264,20 @@
 			// session (or, for a brand-new one, the practitioner's now-
 			// current history list) from the server instead of leaving the
 			// UI stuck showing nothing.
-			if (!gotResult && !gotError) {
-				if (sessionId) {
-					await loadSession(sessionId);
-				} else {
-					await loadSessions(clientId);
-					if (sessions[0]) await loadSession(sessions[0].id);
-				}
-			}
+			if (!gotResult && !gotError) await recoverMissingResult();
 		} catch (err: any) {
-			failRunningSteps();
-			if (err?.name !== 'AbortError') toast(err.message, 'alert');
+			if (stalled) {
+				// The watchdog aborted a connection that had gone quiet too
+				// long — same recovery as the "stream ended with nothing"
+				// case above, just reached via an explicit abort instead of
+				// the loop exiting on its own.
+				await recoverMissingResult();
+			} else {
+				failRunningSteps();
+				if (err?.name !== 'AbortError') toast(err.message, 'alert');
+			}
 		} finally {
+			clearInterval(stallWatch);
 			asking = false;
 			pendingQuestion = '';
 			abortController = null;
@@ -269,14 +302,15 @@
 	<div class="answer" onclick={onAnswerClick}>{@html answerHtml(t)}</div>
 
 	{#if t.check?.unsupported?.length}
-		<div class="unsupported">
-			<!-- These are no longer in the answer above — app/main.py's
-			     _strip_unsupported() cuts an unverified claim out of the
-			     text rather than shipping it alongside this warning. Kept
-			     here for transparency about what was removed and why. -->
-			<strong>Removed — the check could not verify these claims:</strong>
+		<!-- These are no longer in the answer above — app/main.py's
+		     _strip_unsupported() cuts an unverified claim out of the text
+		     rather than shipping it alongside this warning. Collapsed by
+		     default, same treatment as Sources below — transparency about
+		     what was removed shouldn't take up space unasked. -->
+		<details class="unsupported-acc">
+			<summary><Icon name="chevron" size={14} /> Removed — {t.check.unsupported.length} unverified claim{t.check.unsupported.length === 1 ? '' : 's'}</summary>
 			<ul>{#each t.check.unsupported as u}<li>{u}</li>{/each}</ul>
-		</div>
+		</details>
 	{/if}
 
 	{#if t.traversal}
@@ -389,6 +423,10 @@
 					<div><dt><Icon name="calendar" size={13} /> DOB</dt><dd>{selectedClient.dob ?? '—'}</dd></div>
 					<div><dt><Icon name="globe" size={13} /> Country</dt><dd>{selectedClient.country ?? '—'}</dd></div>
 				</dl>
+				<!-- Conditions/medications/labs shape every answer this pipeline
+				     gives (app/patient/context.py) but are edited on the client's
+				     own page, not here — this is a jump-to, not a duplicate form. -->
+				<a class="record-link" href="/practitioner/clients/{selectedClient.id}">Edit patient record →</a>
 			</div>
 		{/if}
 	</aside>
@@ -520,6 +558,7 @@
 	.patient-widget dl div { display: flex; justify-content: space-between; align-items: center; gap: .5rem; }
 	.patient-widget dt { display: flex; align-items: center; gap: .35rem; color: var(--muted); }
 	.patient-widget dd { margin: 0; font-weight: 550; }
+	.record-link { display: inline-block; margin-top: var(--space-3); font-size: var(--text-sm); font-weight: 600; }
 
 	.history-block { flex: 1 1 auto; }
 	.history-head { display: flex; align-items: center; justify-content: space-between; }
@@ -594,8 +633,15 @@
 		font: inherit; font-weight: 650; color: var(--accent-ink); background: var(--accent-soft);
 		border: none; border-radius: 4px; padding: 0 .3rem; cursor: pointer;
 	}
-	.unsupported { margin-top: var(--space-3); padding: var(--space-3); border-radius: var(--r); background: var(--warn-soft); color: var(--warn); font-size: var(--text-sm); }
-	.unsupported ul { margin: .3rem 0 0; padding-left: 1.1rem; }
+	.unsupported-acc { margin-top: var(--space-3); font-size: var(--text-sm); color: var(--warn); }
+	.unsupported-acc summary {
+		cursor: pointer; font-weight: 600; list-style: none;
+		display: inline-flex; align-items: center; gap: .3rem;
+	}
+	.unsupported-acc summary::-webkit-details-marker { display: none; }
+	.unsupported-acc summary :global(svg) { transition: transform .15s var(--ease); }
+	.unsupported-acc[open] summary :global(svg) { transform: rotate(90deg); }
+	.unsupported-acc ul { margin: .3rem 0 0; padding: var(--space-3); padding-left: 1.6rem; border-radius: var(--r); background: var(--warn-soft); }
 	.librarian { margin-top: var(--space-4); font-size: var(--text-sm); }
 	.librarian summary { cursor: pointer; color: var(--muted); font-weight: 600; }
 
