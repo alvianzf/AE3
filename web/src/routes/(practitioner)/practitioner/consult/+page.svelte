@@ -40,7 +40,13 @@
 		}
 		loadingSessions = true;
 		try {
-			sessions = await get(fetch, `/me/clients/${id}/sessions`);
+			// A session is created as soon as a question is sent (app/main.py's
+			// /api/me/consult) but only gets a turn once the stream actually
+			// finishes — an aborted request or a mid-stream crash leaves a real
+			// 0-turn session row behind. Nothing to resume there, and it read
+			// as broken/duplicated entries in the history list (found live) —
+			// filtered out rather than shown.
+			sessions = (await get(fetch, `/me/clients/${id}/sessions`)).filter((s: any) => s.turns > 0);
 		} catch {
 			sessions = [];
 		} finally {
@@ -442,13 +448,20 @@
 
 <style>
 	.chat-shell {
-		display: grid; grid-template-columns: 18rem 1fr; gap: var(--space-5);
+		display: grid; grid-template-columns: 18rem minmax(0, 1fr); gap: var(--space-5);
 		height: calc(100dvh - var(--space-6) * 2);
 	}
 
 	/* ── Sidebar ─────────────────────────────────────────────────────── */
-	.sidebar { display: grid; grid-template-rows: auto 1fr auto; gap: var(--space-4); min-height: 0; }
+	/* min-width: 0 on every grid/flex item below is load-bearing, not
+	   defensive boilerplate — grid/flex items default to min-width: auto,
+	   which lets a long unbroken title/date string force its column wider
+	   than the fixed 18rem track instead of respecting it, pushing the
+	   whole sidebar into the chat column next to it (found live: the
+	   composer rendered overlapping the history list). */
+	.sidebar { display: grid; grid-template-rows: auto 1fr auto; gap: var(--space-4); min-height: 0; min-width: 0; }
 	.sidebar-block {
+		min-width: 0;
 		background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r-lg);
 		padding: var(--space-3); display: flex; flex-direction: column; gap: .5rem; min-height: 0;
 	}
@@ -494,8 +507,9 @@
 	.newchat:hover:not(:disabled) { background: var(--accent-soft); }
 	.newchat:disabled { opacity: .5; cursor: not-allowed; }
 	.historylist button {
-		width: 100%; text-align: left; border: none; background: none; padding: .4rem .5rem;
-		border-radius: var(--r); cursor: pointer; font: inherit; display: flex; align-items: center; gap: .55rem;
+		width: 100%; min-width: 0; box-sizing: border-box; text-align: left; border: none; background: none;
+		padding: .4rem .5rem; border-radius: var(--r); cursor: pointer; font: inherit;
+		display: flex; align-items: center; gap: .55rem;
 	}
 	.historylist button.on { background: var(--accent-soft); }
 	.historylist button:disabled { opacity: .6; cursor: not-allowed; }
@@ -521,7 +535,7 @@
 
 	/* ── Chat column ─────────────────────────────────────────────────── */
 	.chat-main {
-		display: flex; flex-direction: column; min-height: 0;
+		display: flex; flex-direction: column; min-height: 0; min-width: 0;
 		background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r-lg);
 	}
 	.chat-thread { flex: 1 1 auto; overflow-y: auto; padding: var(--space-5); display: grid; gap: var(--space-4); align-content: start; }
