@@ -2,7 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { page } from '$app/state';
 	import { get } from '$lib/api';
-	import { streamConsult } from '$lib/consultStream';
+	import { streamConsult, type RetrievalMode } from '$lib/consultStream';
 	import { toast } from '$lib/stores/toast';
 	import Spotlight from '$lib/components/Spotlight.svelte';
 	import Quiet from '$lib/components/Quiet.svelte';
@@ -57,6 +57,11 @@
 	});
 
 	let question = $state('');
+	// Deep research (default): seed search + LLM-judged graph traversal —
+	// thorough, slower. General lookup: one pgvector similarity query, no
+	// traversal, no Neo4j round-trip — fast, less thorough. Alongside each
+	// other, not a replacement (app/retrieval/general_lookup.py).
+	let retrievalMode = $state<string>('deep_research');
 	let asking = $state(false);
 	let steps = $state<{ agent: string; status: 'running' | 'done' | 'error'; input_tokens?: number; output_tokens?: number; progress?: string }[]>([]);
 	// Aborts the in-flight fetch if the practitioner navigates away mid-consult
@@ -66,7 +71,8 @@
 	onDestroy(() => abortController?.abort());
 
 	const AGENT_LABELS: Record<string, string> = {
-		librarian: 'Librarian', specialist: 'Specialist', checker: 'Checker'
+		seed_search: 'Seed search', traversal: 'Graph traversal', lookup: 'Lookup',
+		reasoner: 'Reasoner', checker: 'Checker'
 	};
 
 	// Splits the answer text on [S1]/[S2]… or [K1]/[K2]… markers so each one
@@ -116,7 +122,7 @@
 			// bindings below), so clientId/sessionId can't change out from
 			// under this request — no separate "which client was this for"
 			// tracking needed the way a mid-flight switch would otherwise require.
-			for await (const ev of streamConsult(clientId, askedQuestion, sessionId, abortController.signal)) {
+			for await (const ev of streamConsult(clientId, askedQuestion, sessionId, abortController.signal, retrievalMode as RetrievalMode)) {
 				if (ev.event === 'agent_start') {
 					steps = [...steps, { agent: ev.agent, status: 'running' }];
 				} else if (ev.event === 'agent_progress') {
@@ -231,6 +237,15 @@
 	<Spotlight title="Ask about this client" leaf>
 		<form onsubmit={ask}>
 			<Select label="Client" bind:value={clientId} disabled={asking} options={data.clients.map((c: any) => ({ value: c.id, label: c.name }))} />
+			<Select
+				label="Mode"
+				bind:value={retrievalMode}
+				disabled={asking}
+				options={[
+					{ value: 'deep_research', label: 'Deep research — thorough, slower' },
+					{ value: 'general_lookup', label: 'General lookup — fast, less thorough' }
+				]}
+			/>
 			<TextField label="Question" type="textarea" bind:value={question} required placeholder="What would you like to know?" />
 			<Button type="submit" loading={asking}>Ask</Button>
 		</form>

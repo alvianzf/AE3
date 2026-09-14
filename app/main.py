@@ -40,7 +40,7 @@ from .graph import store
 from .ingestion import pipeline as ingestion_pipeline
 from .patient.context import get_patient_context
 from .reasoning import checker, reasoner
-from .retrieval import seed_search
+from .retrieval import general_lookup, pgvector_store, seed_search
 from .retrieval.traversal import GraphTraversalRetriever
 
 cfg = get_config()
@@ -83,6 +83,9 @@ async def lifespan(app: FastAPI):
             await asyncio.sleep(2)
     if last is not None:
         raise RuntimeError(f"Postgres unreachable after 60s: {last}")
+    # No separate retry loop — Postgres reachability is already confirmed
+    # by core_store.ensure_schema()'s retry above.
+    pgvector_store.ensure_schema()
     auth.ensure_bootstrap_admin()
     # vault.ensure_schema() is what applies schema migrations (e.g. the
     # password_set column added in v2.6) — it only ran automatically for a
@@ -406,7 +409,7 @@ def _ingest_pages(
             relationships.extend(rels)
 
     try:
-        return store.ingest_document(
+        result = store.ingest_document(
             title=card["title"], filename=filename, kind=kind, origin=origin,
             grade=card["suggested_grade"], source_card_summary=card["summary"],
             topics=card["topics"], passages=passages,
@@ -422,6 +425,25 @@ def _ingest_pages(
                        "Nothing was added.",
             "duplicate_of": None,
         })
+
+    # Mirror into the pgvector store for the "general lookup" fast-RAG
+    # path (app/retrieval/pgvector_store.py) — same chunk ids Neo4j just
+    # used (f"{document_id}:{i}"), so a source deleted from one side via
+    # the matching id is trivial to also remove from the other. Additive,
+    # not load-bearing: the Neo4j write above already succeeded and is
+    # the source of truth, so a failure here shouldn't fail the whole
+    # ingest — logged, not raised.
+    try:
+        pgvector_store.save_chunk_embeddings(
+            document_id=result["id"], document_title=result["title"],
+            grade=result["grade"],
+            chunks=[{"id": f"{result['id']}:{i}", **p} for i, p in enumerate(passages)],
+        )
+    except Exception:
+        logging.exception("pgvector mirror failed for %s (Neo4j write already succeeded)",
+                          result["id"])
+
+    return result
 
 
 @app.post("/api/sources")
@@ -864,6 +886,7 @@ def regrade(source_id: str, body: GradeUpdate,
 @app.delete("/api/sources/{source_id}")
 def remove_source(source_id: str, _admin: dict = Depends(auth.require_admin)) -> dict:
     store.delete_document(source_id)
+    pgvector_store.delete_document(source_id)
     return {"deleted": source_id}
 
 
@@ -1428,6 +1451,13 @@ class MeConsult(BaseModel):
     min_grade: int = cfg.min_grade
     run_check: bool = True
     session_id: str | None = None
+    # "deep_research" (default, unchanged) = seed search + LLM-judged
+    # graph traversal (app/retrieval/traversal.py). "general_lookup" =
+    # a single pgvector similarity query, no traversal, no Neo4j round-
+    # trip (app/retrieval/general_lookup.py) — trades breadth for speed,
+    # a practitioner opts in per question, alongside deep_research, not
+    # replacing it.
+    retrieval_mode: str = "deep_research"
 
 
 @app.post("/api/me/consult")
@@ -1496,32 +1526,45 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
             total_output_tokens += usage["output_tokens"]
 
         try:
-            yield _sse({"event": "agent_start", "agent": "seed_search"})
-            seed_result = seed_search.seed(question, patient, body.min_grade, weights=weights)
-            _track(seed_result.usage)
-            yield _sse({"event": "agent_done", "agent": "seed_search", **seed_result.usage})
+            if body.retrieval_mode == "general_lookup":
+                # One pgvector query, no Neo4j round-trip — see
+                # app/retrieval/general_lookup.py's module docstring for
+                # why this deliberately skips the query-forming LLM call
+                # deep_research's seed_search stage makes.
+                yield _sse({"event": "agent_start", "agent": "lookup"})
+                traversal = general_lookup.lookup(question, patient, body.min_grade)
+                _track(traversal.usage)
+                yield _sse({"event": "agent_done", "agent": "lookup", **traversal.usage,
+                           "accumulated": len(traversal.accumulated)})
+                search_query_repr = question
+            else:
+                yield _sse({"event": "agent_start", "agent": "seed_search"})
+                seed_result = seed_search.seed(question, patient, body.min_grade, weights=weights)
+                _track(seed_result.usage)
+                yield _sse({"event": "agent_done", "agent": "seed_search", **seed_result.usage})
+                search_query_repr = seed_result.search_query
 
-            yield _sse({"event": "agent_start", "agent": "traversal"})
-            retriever = GraphTraversalRetriever(min_grade=body.min_grade, weights=weights)
-            traversal = None
-            # A broad question can legitimately run every hop up to
-            # max_depth, each a full LLM round-trip — retrieve_streaming()
-            # reports progress after each one instead of leaving the UI
-            # showing "running..." indistinguishably from actually stuck
-            # for the whole span (specs/v5, live: 90-100s+ on one question).
-            for hop_event, hop_payload in retriever.retrieve_streaming(question, patient, seed_result):
-                if hop_event == "hop":
-                    yield _sse({"event": "agent_progress", "agent": "traversal",
-                               "hop": hop_payload.hop, "max_depth": hop_payload.max_depth,
-                               "candidates": hop_payload.candidates,
-                               "relevant": hop_payload.relevant,
-                               "accumulated": hop_payload.accumulated})
-                else:
-                    traversal = hop_payload
-            _track(traversal.usage)
-            yield _sse({"event": "agent_done", "agent": "traversal", **traversal.usage,
-                       "depth": traversal.depth_reached, "stopped": traversal.stopped_reason,
-                       "accumulated": len(traversal.accumulated)})
+                yield _sse({"event": "agent_start", "agent": "traversal"})
+                retriever = GraphTraversalRetriever(min_grade=body.min_grade, weights=weights)
+                traversal = None
+                # A broad question can legitimately run every hop up to
+                # max_depth, each a full LLM round-trip — retrieve_streaming()
+                # reports progress after each one instead of leaving the UI
+                # showing "running..." indistinguishably from actually stuck
+                # for the whole span (specs/v5, live: 90-100s+ on one question).
+                for hop_event, hop_payload in retriever.retrieve_streaming(question, patient, seed_result):
+                    if hop_event == "hop":
+                        yield _sse({"event": "agent_progress", "agent": "traversal",
+                                   "hop": hop_payload.hop, "max_depth": hop_payload.max_depth,
+                                   "candidates": hop_payload.candidates,
+                                   "relevant": hop_payload.relevant,
+                                   "accumulated": hop_payload.accumulated})
+                    else:
+                        traversal = hop_payload
+                _track(traversal.usage)
+                yield _sse({"event": "agent_done", "agent": "traversal", **traversal.usage,
+                           "depth": traversal.depth_reached, "stopped": traversal.stopped_reason,
+                           "accumulated": len(traversal.accumulated)})
 
             verdict = None
             revised = False
@@ -1530,7 +1573,7 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
                 answer_text = (
                     "No source in the library answers this question, so I have nothing to "
                     "base an answer on and will not guess.\n\n"
-                    f"Seed search query: {seed_result.search_query!r} found nothing usable at "
+                    f"Seed search query: {search_query_repr!r} found nothing usable at "
                     f"grade ≥ {body.min_grade}. Either lower the grade threshold, or add a "
                     "source covering this topic to the library."
                 )
@@ -1594,8 +1637,14 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
             "revised": revised,
             "total_input_tokens": total_input_tokens,
             "total_output_tokens": total_output_tokens,
-            "seed_search": {"search_query": seed_result.search_query,
-                           "seed_count": len(seed_result.seed_chunk_ids) + len(seed_result.seed_entity_ids)},
+            "retrieval_mode": body.retrieval_mode,
+            "seed_search": {
+                "search_query": search_query_repr,
+                "seed_count": (
+                    len(seed_result.seed_chunk_ids) + len(seed_result.seed_entity_ids)
+                    if body.retrieval_mode != "general_lookup" else len(traversal.accumulated)
+                ),
+            },
             "traversal": {"depth_reached": traversal.depth_reached,
                          "stopped_reason": traversal.stopped_reason,
                          # The full per-hop log — what was expanded, what was
