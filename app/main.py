@@ -314,6 +314,23 @@ def _locator(p: dict) -> str:
     return f"passage {chunk_index + 1}"
 
 
+def _strip_unsupported(text: str, unsupported: list[str]) -> str:
+    """Cuts sentences the Checker couldn't ground in evidence out of the
+    final answer, rather than shipping them in the answer text alongside a
+    separate warning — an unverified claim shouldn't stay in the answer
+    just because it's flagged elsewhere. `unsupported` entries are exact
+    sentence strings from the same split the Checker itself used
+    (app/reasoning/llm_checker.py's _sentences()), so a plain substring
+    removal finds them; the cleanup after just collapses the blank
+    lines/bullets a removed sentence can leave behind."""
+    for sentence in unsupported:
+        text = text.replace(sentence, "")
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    text = re.sub(r"\n[ \t]*\n[ \t]*\n+", "\n\n", text)
+    lines = [ln for ln in text.split("\n") if ln.strip() not in ("", "-", "*")]
+    return "\n".join(lines).strip()
+
+
 def _ingest_pages(
     pages: list[tuple[int | None, str]], filename: str, kind: str, origin: str,
     replaces: str, original: tuple[bytes | Path, str, str] | None,
@@ -1650,6 +1667,13 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
                         if (revised_verdict["verdict"] == "pass"
                                 or len(revised_verdict["unsupported"]) < len(verdict["unsupported"])):
                             answer_text, verdict, revised = revised_reasoned.text, revised_verdict, True
+                    # Whatever's left unsupported after the retry above (or
+                    # immediately, if the retry didn't help) gets cut from
+                    # the answer rather than shipped alongside a warning —
+                    # an unverified claim shouldn't stay in the answer text
+                    # just because it's flagged elsewhere.
+                    if verdict["unsupported"]:
+                        answer_text = _strip_unsupported(answer_text, verdict["unsupported"])
         except openai.APIError:
             yield _sse({"event": "error",
                        "message": "The AI service is temporarily unavailable. Try again shortly."})
