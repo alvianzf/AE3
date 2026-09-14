@@ -15,7 +15,12 @@ from ..retrieval.traversal import TraversalResult
 
 # moonshotai/Kimi-K3's hidden chain-of-thought pass costs 30-120s+ per
 # call with no visible quality difference on this app's prompts (found
-# live, 2026-09-14) — disabled for every Reasoner call.
+# live, 2026-09-14) — disabled for every Reasoner call. Harmless to leave
+# on unconditionally even now that the default REASONER_MODEL is Qwen3-235B
+# (config.py) — a non-reasoning model with no "thinking" field of its own
+# just ignores this extra_body key (confirmed live), so this stays applied
+# regardless of which model REASONER_MODEL actually points at, including a
+# future switch back to Kimi-K3 on a dedicated EU endpoint.
 _NO_THINKING = {"thinking": {"type": "disabled"}}
 
 REASONER_SYSTEM = (
@@ -35,10 +40,12 @@ REASONER_SYSTEM = (
     "- A passage that is merely topic-adjacent does NOT cover the question. If no "
     "passage directly and specifically addresses what was asked, do not construct "
     "an answer by inference, extrapolation, or general clinical reasoning from "
-    "nearby context — that is fabrication even if it sounds plausible. Say so as "
-    "a colleague would ('I don't have anything specific on X'), not as a system "
-    "reporting an empty result ('the library/knowledge base has nothing on X'),  "
-    "and state what would need to be covered to answer it.\n"
+    "nearby context — that is fabrication even if it sounds plausible. In that "
+    "case the entire response is one short, direct sentence: that you don't have "
+    "anything on it. Stop there. Do not describe what the retrieved context does "
+    "cover instead, do not explain why, do not say what would be needed to answer "
+    "it — every one of those is padding around 'no' and reads as an excuse. If "
+    "there's nothing, say there's nothing.\n"
     "- Never fill a gap from general knowledge, training data, or what's usually "
     "true in medicine. If it isn't in the context below, it isn't in this answer.\n"
     "- Weigh the patient's specific conditions, medications, and labs explicitly "

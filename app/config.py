@@ -66,7 +66,14 @@ class Config:
     graph_builder_model = os.getenv("GRAPH_BUILDER_MODEL", "Qwen/Qwen3-235B-A22B-Instruct-2507")
     embedder_model = os.getenv("EMBEDDER_MODEL", "Qwen/Qwen3-Embedding-8B")
     retrieval_model = os.getenv("RETRIEVAL_MODEL", "Qwen/Qwen3-30B-A3B-Instruct-2507")
-    reasoner_model = os.getenv("REASONER_MODEL", "moonshotai/Kimi-K3")
+    # Kimi-K3 (with thinking disabled, app/reasoning/reasoner.py) was tried
+    # and reverted 2026-09-14 — even with thinking off, it was consistently
+    # slower than Qwen3-235B on identical prompts (paired live trials: 5-23s
+    # slower every time, no exceptions). Kimi-K3 is also, for now, the only
+    # model Nebius's EU-west2 region serves at all; REASONER_BASE_URL is the
+    # lever to move the Reasoner there again once real EU coverage exists
+    # for the other roles too (a dedicated endpoint is being set up).
+    reasoner_model = os.getenv("REASONER_MODEL", "Qwen/Qwen3-235B-A22B-Instruct-2507")
 
     # Per-role base_url/api_key overrides (app/clients/llm_client.py). Every
     # role defaults to the shared Nebius endpoint above — set a role's own
