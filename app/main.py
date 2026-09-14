@@ -1449,7 +1449,13 @@ class MeConsult(BaseModel):
     client_id: str
     question: str
     min_grade: int = cfg.min_grade
-    run_check: bool = True
+    # Off by default for now, 2026-09-14 — the Checker (app/reasoning/
+    # checker.py) is real and no longer crashes the app (that bug is
+    # fixed separately), but a realistic deep-research context still
+    # takes 30-80s+ to check (audited live), on top of an already-slow
+    # Reasoner step. Left in the code, reachable by explicitly passing
+    # run_check=true — this default is a product call, not a removal.
+    run_check: bool = False
     session_id: str | None = None
     # "deep_research" (default, unchanged) = seed search + LLM-judged
     # graph traversal (app/retrieval/traversal.py). "general_lookup" =
@@ -1525,6 +1531,20 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
             total_input_tokens += usage["input_tokens"]
             total_output_tokens += usage["output_tokens"]
 
+        step_times: dict[str, float] = {}
+
+        def _timed_done(event: dict, t0: float) -> dict:
+            # Real wall-clock per step, not just token counts — found
+            # live, 2026-09-14: a practitioner watching "running..." has
+            # no way to tell a genuinely-slow-but-working step (a large
+            # deep-research context legitimately taking 30-80s) from an
+            # actually-stuck one without this. Recorded by agent name so
+            # the final result can carry a full step-by-step breakdown,
+            # not just each event's own instant.
+            dt = round(time.monotonic() - t0, 2)
+            step_times[event["agent"]] = step_times.get(event["agent"], 0) + dt
+            return {**event, "duration_s": dt}
+
         try:
             if body.retrieval_mode == "general_lookup":
                 # One pgvector query, no Neo4j round-trip — see
@@ -1532,19 +1552,22 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
                 # why this deliberately skips the query-forming LLM call
                 # deep_research's seed_search stage makes.
                 yield _sse({"event": "agent_start", "agent": "lookup"})
+                t0 = time.monotonic()
                 traversal = general_lookup.lookup(question, patient, body.min_grade)
                 _track(traversal.usage)
-                yield _sse({"event": "agent_done", "agent": "lookup", **traversal.usage,
-                           "accumulated": len(traversal.accumulated)})
+                yield _sse(_timed_done({"event": "agent_done", "agent": "lookup", **traversal.usage,
+                           "accumulated": len(traversal.accumulated)}, t0))
                 search_query_repr = question
             else:
                 yield _sse({"event": "agent_start", "agent": "seed_search"})
+                t0 = time.monotonic()
                 seed_result = seed_search.seed(question, patient, body.min_grade, weights=weights)
                 _track(seed_result.usage)
-                yield _sse({"event": "agent_done", "agent": "seed_search", **seed_result.usage})
+                yield _sse(_timed_done({"event": "agent_done", "agent": "seed_search", **seed_result.usage}, t0))
                 search_query_repr = seed_result.search_query
 
                 yield _sse({"event": "agent_start", "agent": "traversal"})
+                t0 = time.monotonic()
                 retriever = GraphTraversalRetriever(min_grade=body.min_grade, weights=weights)
                 traversal = None
                 # A broad question can legitimately run every hop up to
@@ -1552,19 +1575,23 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
                 # reports progress after each one instead of leaving the UI
                 # showing "running..." indistinguishably from actually stuck
                 # for the whole span (specs/v5, live: 90-100s+ on one question).
+                hop_t0 = time.monotonic()
                 for hop_event, hop_payload in retriever.retrieve_streaming(question, patient, seed_result):
                     if hop_event == "hop":
+                        hop_dt = round(time.monotonic() - hop_t0, 2)
+                        hop_t0 = time.monotonic()
                         yield _sse({"event": "agent_progress", "agent": "traversal",
                                    "hop": hop_payload.hop, "max_depth": hop_payload.max_depth,
                                    "candidates": hop_payload.candidates,
                                    "relevant": hop_payload.relevant,
-                                   "accumulated": hop_payload.accumulated})
+                                   "accumulated": hop_payload.accumulated,
+                                   "duration_s": hop_dt})
                     else:
                         traversal = hop_payload
                 _track(traversal.usage)
-                yield _sse({"event": "agent_done", "agent": "traversal", **traversal.usage,
+                yield _sse(_timed_done({"event": "agent_done", "agent": "traversal", **traversal.usage,
                            "depth": traversal.depth_reached, "stopped": traversal.stopped_reason,
-                           "accumulated": len(traversal.accumulated)})
+                           "accumulated": len(traversal.accumulated)}, t0))
 
             verdict = None
             revised = False
@@ -1579,31 +1606,35 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
                 )
             else:
                 yield _sse({"event": "agent_start", "agent": "reasoner"})
+                t0 = time.monotonic()
                 reasoned = reasoner.answer(question, patient, traversal)
                 _track(reasoned.usage)
-                yield _sse({"event": "agent_done", "agent": "reasoner", **reasoned.usage})
+                yield _sse(_timed_done({"event": "agent_done", "agent": "reasoner", **reasoned.usage}, t0))
                 answer_text = reasoned.text
                 if body.run_check:
                     yield _sse({"event": "agent_start", "agent": "checker"})
+                    t0 = time.monotonic()
                     verdict = checker.check(question, reasoned, patient.as_query_text())
-                    yield _sse({"event": "agent_done", "agent": "checker",
-                               "input_tokens": 0, "output_tokens": 0})
+                    yield _sse(_timed_done({"event": "agent_done", "agent": "checker",
+                               "input_tokens": 0, "output_tokens": 0}, t0))
                     # Bounded retry, hard-capped at one attempt, same pattern
                     # as the pre-existing Checker retry: a "weak" verdict
                     # gets one revision with the same accumulated context
                     # and the Checker's own unsupported-sentence list.
                     if verdict["verdict"] == "weak":
                         yield _sse({"event": "agent_start", "agent": "reasoner", "retry": True})
+                        t0 = time.monotonic()
                         revised_reasoned = reasoner.answer(
                             question, patient, traversal, unsupported=verdict["unsupported"])
                         _track(revised_reasoned.usage)
-                        yield _sse({"event": "agent_done", "agent": "reasoner",
-                                   "retry": True, **revised_reasoned.usage})
+                        yield _sse(_timed_done({"event": "agent_done", "agent": "reasoner",
+                                   "retry": True, **revised_reasoned.usage}, t0))
                         yield _sse({"event": "agent_start", "agent": "checker", "retry": True})
+                        t0 = time.monotonic()
                         revised_verdict = checker.check(
                             question, revised_reasoned, patient.as_query_text())
-                        yield _sse({"event": "agent_done", "agent": "checker", "retry": True,
-                                   "input_tokens": 0, "output_tokens": 0})
+                        yield _sse(_timed_done({"event": "agent_done", "agent": "checker", "retry": True,
+                                   "input_tokens": 0, "output_tokens": 0}, t0))
                         if (revised_verdict["verdict"] == "pass"
                                 or len(revised_verdict["unsupported"]) < len(verdict["unsupported"])):
                             answer_text, verdict, revised = revised_reasoned.text, revised_verdict, True
@@ -1637,6 +1668,8 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
             "revised": revised,
             "total_input_tokens": total_input_tokens,
             "total_output_tokens": total_output_tokens,
+            "step_times": step_times,
+            "total_time_s": round(sum(step_times.values()), 2),
             "retrieval_mode": body.retrieval_mode,
             "seed_search": {
                 "search_query": search_query_repr,

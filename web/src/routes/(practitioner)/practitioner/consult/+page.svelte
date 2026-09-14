@@ -63,7 +63,7 @@
 	// other, not a replacement (app/retrieval/general_lookup.py).
 	let retrievalMode = $state<string>('deep_research');
 	let asking = $state(false);
-	let steps = $state<{ agent: string; status: 'running' | 'done' | 'error'; input_tokens?: number; output_tokens?: number; progress?: string }[]>([]);
+	let steps = $state<{ agent: string; status: 'running' | 'done' | 'error'; input_tokens?: number; output_tokens?: number; duration_s?: number; progress?: string }[]>([]);
 	// Aborts the in-flight fetch if the practitioner navigates away mid-consult
 	// — see the note in consultStream.ts on what this does and doesn't stop
 	// server-side (specs/v4/04-known-issues.md#m4).
@@ -129,14 +129,14 @@
 					// A traversal hop is a real ~60-100s round-trip each — without
 					// this, "running…" sat unchanged for the whole multi-minute
 					// span, indistinguishable from the request actually being stuck.
-					const progress = `hop ${ev.hop}/${ev.max_depth} · ${ev.relevant}/${ev.candidates} relevant`;
+					const progress = `hop ${ev.hop}/${ev.max_depth} · ${ev.relevant}/${ev.candidates} relevant · ${ev.duration_s}s`;
 					steps = steps.map((s) =>
 						s.agent === ev.agent && s.status === 'running' ? { ...s, progress } : s
 					);
 				} else if (ev.event === 'agent_done') {
 					steps = steps.map((s) =>
 						s.agent === ev.agent && s.status === 'running'
-							? { ...s, status: 'done', input_tokens: ev.input_tokens, output_tokens: ev.output_tokens }
+							? { ...s, status: 'done', input_tokens: ev.input_tokens, output_tokens: ev.output_tokens, duration_s: ev.duration_s }
 							: s
 					);
 				} else if (ev.event === 'result') {
@@ -181,6 +181,7 @@
 				<Chip tone="neutral">not independently checked</Chip>
 			{/if}
 			{#if t.revised}<Chip tone="accent">revised</Chip>{/if}
+			{#if t.total_time_s}<Chip tone="neutral">{t.total_time_s}s total</Chip>{/if}
 		</div>
 		<p>
 			{#each citationParts(t.answer, t.sources) as part}
@@ -206,6 +207,13 @@
 					{#if t.seed_search}— seed query {JSON.stringify(t.seed_search.search_query)}, {t.seed_search.seed_count} seed node(s){/if},
 					traversal reached depth {t.traversal.depth_reached} ({t.traversal.stopped_reason.replaceAll('_', ' ')})
 				</summary>
+				{#if t.step_times}
+					<p class="hint">
+						{#each Object.entries(t.step_times) as [agent, seconds]}
+							{AGENT_LABELS[agent] ?? agent}: {seconds}s&nbsp;&nbsp;
+						{/each}
+					</p>
+				{/if}
 				{#if t.traversal.path?.length}
 					<ul class="list">
 						{#each t.traversal.path as p}
@@ -261,7 +269,7 @@
 						<span class="dot" aria-hidden="true"></span>
 						{AGENT_LABELS[s.agent] ?? s.agent}
 						{#if s.status === 'done'}
-							<Chip tone="neutral">{s.input_tokens}→{s.output_tokens} tok</Chip>
+							<Chip tone="neutral">{s.input_tokens}→{s.output_tokens} tok · {s.duration_s}s</Chip>
 						{:else if s.status === 'error'}
 							<span class="hint">failed</span>
 						{:else}
