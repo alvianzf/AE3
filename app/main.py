@@ -13,6 +13,7 @@ import json
 import logging
 import mimetypes
 import os
+import re
 import resource
 import shutil
 import sys
@@ -1669,6 +1670,7 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
             f"traversal stopped: {traversal.stopped_reason}, grade ≥{body.min_grade}",
             body.client_id,
         )
+        cited_k = {int(n) for n in re.findall(r"K(\d+)", answer_text)}
         result = {
             "event": "result",
             "session_id": session_id,
@@ -1700,6 +1702,14 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
                               "relevant": e.relevant, "reason": e.reason}
                              for e in traversal.path_log
                          ]},
+            # Only nodes the answer actually cites — traversal.accumulated is
+            # everything the pipeline retrieved and kept, not everything the
+            # Reasoner ended up using. Listing the whole accumulated set as
+            # "Sources" implied every one of them backed the answer, which
+            # wasn't true and looked like padding (found live, 2026-09-14).
+            # Extracted as bare K-numbers, not whole "[K1]" substrings — the
+            # model sometimes groups several into one bracket ("[K1, K3]"),
+            # which a literal "[K1]" substring check would miss entirely.
             "sources": [
                 {
                     "label": f"K{i + 1}",
@@ -1711,6 +1721,7 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
                     "locator": _locator(node),
                 }
                 for i, node in enumerate(traversal.accumulated)
+                if (i + 1) in cited_k
             ],
         }
         vault.add_turn(practitioner_id, session_id, body.question, answer_text,

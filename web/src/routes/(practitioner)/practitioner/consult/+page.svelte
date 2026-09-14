@@ -4,7 +4,6 @@
 	import { get } from '$lib/api';
 	import { streamConsult, type RetrievalMode } from '$lib/consultStream';
 	import { toast } from '$lib/stores/toast';
-	import Select from '$lib/components/Select.svelte';
 	import TextField from '$lib/components/TextField.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import Chip from '$lib/components/Chip.svelte';
@@ -41,7 +40,13 @@
 		}
 		loadingSessions = true;
 		try {
-			sessions = await get(fetch, `/me/clients/${id}/sessions`);
+			// A session is created as soon as a question is sent (app/main.py's
+			// /api/me/consult) but only gets a turn once the stream actually
+			// finishes — an aborted request or a mid-stream crash leaves a real
+			// 0-turn session row behind. Nothing to resume there, and it read
+			// as broken/duplicated entries in the history list (found live) —
+			// filtered out rather than shown.
+			sessions = (await get(fetch, `/me/clients/${id}/sessions`)).filter((s: any) => s.turns > 0);
 		} catch {
 			sessions = [];
 		} finally {
@@ -121,6 +126,10 @@
 		reasoner: 'Reasoner', checker: 'Checker'
 	};
 
+	const MODE_LABELS: Record<string, string> = {
+		deep_research: 'Deep research', general_lookup: 'General lookup'
+	};
+
 	// The answer is rendered as sanitized Markdown ($lib/markdown.ts); [S1]/
 	// [K1]… citation markers become clickable buttons within that HTML, so a
 	// click on them is handled by delegation here rather than a Svelte
@@ -140,6 +149,18 @@
 		if (!iso) return '';
 		const d = new Date(iso);
 		return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+	}
+
+	function calDay(iso: string | undefined) {
+		if (!iso) return '–';
+		const d = new Date(iso);
+		return Number.isNaN(d.getTime()) ? '–' : String(d.getDate());
+	}
+
+	function calMonth(iso: string | undefined) {
+		if (!iso) return '';
+		const d = new Date(iso);
+		return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString([], { month: 'short' });
 	}
 
 	function failRunningSteps() {
@@ -287,6 +308,7 @@
 <div class="chat-shell">
 	<aside class="sidebar">
 		<div class="sidebar-block">
+			<div class="block-head"><Icon name="users" size={15} /><strong>Clients</strong></div>
 			<div class="search-field">
 				<Icon name="search" size={15} />
 				<input type="search" placeholder="Search clients…" bind:value={clientSearch} disabled={asking} />
@@ -302,30 +324,30 @@
 			</ul>
 		</div>
 
-		{#if selectedClient}
-			<div class="sidebar-block patient-widget">
-				<strong>{selectedClient.name}</strong>
-				<p class="hint">{selectedClient.email}</p>
-				<dl>
-					<div><dt>DOB</dt><dd>{selectedClient.dob ?? '—'}</dd></div>
-					<div><dt>Country</dt><dd>{selectedClient.country ?? '—'}</dd></div>
-				</dl>
-			</div>
-		{/if}
-
 		<div class="sidebar-block history-block">
 			<div class="history-head">
-				<strong>History</strong>
-				<button type="button" class="newchat" onclick={newChat} disabled={asking} title="New chat">
+				<div class="block-head"><Icon name="history" size={15} /><strong>History</strong></div>
+				<button type="button" class="newchat" onclick={newChat} disabled={asking} title="New session">
 					<Icon name="new-chat" size={15} />
+					New session
 				</button>
 			</div>
 			<ul class="historylist">
 				{#each sessions as s (s.id)}
 					<li>
+						<!-- Clicking a past session loads its full transcript and keeps
+						     its session_id, so the next "Ask" continues it rather than
+						     starting a new one — same continuation behavior the deep-link
+						     from the client detail page already relied on. -->
 						<button class:on={s.id === sessionId} disabled={asking} onclick={() => loadSession(s.id)}>
-							<span class="htitle">{s.title ?? s.last_question ?? 'Untitled'}</span>
-							<span class="hint">{s.turns} turn{s.turns === 1 ? '' : 's'}</span>
+							<span class="cal" aria-hidden="true">
+								<span class="cal-day">{calDay(s.started_at)}</span>
+								<span class="cal-month">{calMonth(s.started_at)}</span>
+							</span>
+							<span class="hinfo">
+								<span class="htitle">{s.title ?? s.last_question ?? 'Untitled'}</span>
+								<span class="hint">{s.turns} turn{s.turns === 1 ? '' : 's'}</span>
+							</span>
 						</button>
 					</li>
 				{:else}
@@ -333,6 +355,18 @@
 				{/each}
 			</ul>
 		</div>
+
+		{#if selectedClient}
+			<div class="sidebar-block patient-widget">
+				<div class="block-head"><Icon name="user-card" size={15} /><strong>Patient</strong></div>
+				<p class="pname">{selectedClient.name}</p>
+				<p class="hint"><Icon name="mail" size={13} />{selectedClient.email}</p>
+				<dl>
+					<div><dt><Icon name="calendar" size={13} /> DOB</dt><dd>{selectedClient.dob ?? '—'}</dd></div>
+					<div><dt><Icon name="globe" size={13} /> Country</dt><dd>{selectedClient.country ?? '—'}</dd></div>
+				</dl>
+			</div>
+		{/if}
 	</aside>
 
 	<section class="chat-main">
@@ -349,10 +383,14 @@
 				<div class="turn">
 					<div class="bubble bubble-q">
 						<p class="question">{t.question}</p>
-						{#if t.asked_at}<span class="ts">{timeLabel(t.asked_at)}</span>{/if}
+						<div class="meta">
+							{#if t.retrieval_mode}<span class="mode-tag">{MODE_LABELS[t.retrieval_mode] ?? t.retrieval_mode}</span>{/if}
+							{#if t.asked_at}<span class="ts">{timeLabel(t.asked_at)}</span>{/if}
+						</div>
 					</div>
 					<div class="bubble bubble-a">
 						{@render turnView(t)}
+						{#if t.retrieval_mode}<div class="meta"><span class="mode-tag">{MODE_LABELS[t.retrieval_mode] ?? t.retrieval_mode}</span></div>{/if}
 					</div>
 				</div>
 			{/each}
@@ -389,19 +427,20 @@
 
 		<form class="composer" onsubmit={ask}>
 			<div class="composer-row">
-				<Select
-					label="Mode"
-					bind:value={retrievalMode}
-					disabled={asking}
-					options={[
-						{ value: 'deep_research', label: 'Deep research — thorough, slower' },
-						{ value: 'general_lookup', label: 'General lookup — fast, less thorough' }
-					]}
-				/>
+				<div class="mode-toggle" role="group" aria-label="Search mode">
+					<button
+						type="button" class:on={retrievalMode === 'deep_research'} disabled={asking}
+						onclick={() => (retrievalMode = 'deep_research')} title="Thorough graph traversal — slower"
+					><Icon name="book" size={14} /> Deep research</button>
+					<button
+						type="button" class:on={retrievalMode === 'general_lookup'} disabled={asking}
+						onclick={() => (retrievalMode = 'general_lookup')} title="One fast similarity lookup — less thorough"
+					><Icon name="bolt" size={14} /> General lookup</button>
+				</div>
 			</div>
 			<div class="composer-row input-row">
 				<TextField label="Question" type="textarea" bind:value={question} required disabled={!clientId} placeholder="Message…" />
-				<Button type="submit" loading={asking}>Send</Button>
+				<Button type="submit" loading={asking}>{#if !asking}<Icon name="send" size={15} />{/if} Send</Button>
 			</div>
 		</form>
 	</section>
@@ -409,13 +448,20 @@
 
 <style>
 	.chat-shell {
-		display: grid; grid-template-columns: 18rem 1fr; gap: var(--space-5);
+		display: grid; grid-template-columns: 18rem minmax(0, 1fr); gap: var(--space-5);
 		height: calc(100dvh - var(--space-6) * 2);
 	}
 
 	/* ── Sidebar ─────────────────────────────────────────────────────── */
-	.sidebar { display: grid; grid-template-rows: auto auto 1fr; gap: var(--space-4); min-height: 0; }
+	/* min-width: 0 on every grid/flex item below is load-bearing, not
+	   defensive boilerplate — grid/flex items default to min-width: auto,
+	   which lets a long unbroken title/date string force its column wider
+	   than the fixed 18rem track instead of respecting it, pushing the
+	   whole sidebar into the chat column next to it (found live: the
+	   composer rendered overlapping the history list). */
+	.sidebar { display: grid; grid-template-rows: auto 1fr auto; gap: var(--space-4); min-height: 0; min-width: 0; }
 	.sidebar-block {
+		min-width: 0;
 		background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r-lg);
 		padding: var(--space-3); display: flex; flex-direction: column; gap: .5rem; min-height: 0;
 	}
@@ -429,6 +475,9 @@
 	.search-field input:focus { outline: none; }
 	.search-field :global(svg) { flex: none; }
 
+	.block-head { display: flex; align-items: center; gap: .4rem; color: var(--muted); }
+	.block-head strong { color: var(--ink); font-size: var(--text-sm); }
+
 	.clientlist, .historylist { list-style: none; margin: 0; padding: 0; display: grid; gap: .2rem; overflow-y: auto; }
 	/* ~5 rows visible, the rest scroll — a growing client roster shouldn't
 	   push the patient widget and history rail off-screen. */
@@ -441,35 +490,52 @@
 	.clientlist button:disabled { opacity: .5; cursor: not-allowed; }
 	.clientlist li.hint, .historylist li.hint { padding: .4rem .6rem; }
 
-	.patient-widget strong { font-size: var(--text-base); }
-	.patient-widget .hint { margin: 0; }
-	.patient-widget dl { margin: .3rem 0 0; display: grid; gap: .2rem; font-size: var(--text-sm); }
-	.patient-widget dl div { display: flex; justify-content: space-between; gap: .5rem; }
-	.patient-widget dt { color: var(--muted); }
+	.pname { margin: 0; font-weight: 650; font-size: var(--text-base); }
+	.patient-widget .hint { margin: 0; display: flex; align-items: center; gap: .35rem; }
+	.patient-widget dl { margin: .3rem 0 0; display: grid; gap: .3rem; font-size: var(--text-sm); }
+	.patient-widget dl div { display: flex; justify-content: space-between; align-items: center; gap: .5rem; }
+	.patient-widget dt { display: flex; align-items: center; gap: .35rem; color: var(--muted); }
 	.patient-widget dd { margin: 0; font-weight: 550; }
 
 	.history-block { flex: 1 1 auto; }
 	.history-head { display: flex; align-items: center; justify-content: space-between; }
 	.newchat {
-		display: inline-flex; align-items: center; justify-content: center;
-		width: 1.8rem; height: 1.8rem; border-radius: 50%; border: 1px solid var(--line-2);
-		background: var(--panel); color: var(--accent-ink); cursor: pointer;
+		display: inline-flex; align-items: center; gap: .3rem;
+		padding: .3rem .6rem; border-radius: 99px; border: 1px solid var(--line-2);
+		background: var(--panel); color: var(--accent-ink); cursor: pointer; font-size: var(--text-xs); font-weight: 650;
 	}
 	.newchat:hover:not(:disabled) { background: var(--accent-soft); }
 	.newchat:disabled { opacity: .5; cursor: not-allowed; }
 	.historylist button {
-		width: 100%; text-align: left; border: none; background: none; padding: .45rem .6rem;
-		border-radius: var(--r); cursor: pointer; font: inherit; display: flex; flex-direction: column; gap: .1rem;
+		width: 100%; min-width: 0; box-sizing: border-box; text-align: left; border: none; background: none;
+		padding: .4rem .5rem; border-radius: var(--r); cursor: pointer; font: inherit;
+		display: flex; align-items: center; gap: .55rem;
 	}
 	.historylist button.on { background: var(--accent-soft); }
 	.historylist button:disabled { opacity: .6; cursor: not-allowed; }
+	/* A calendar-app-icon-style date badge (think the iOS Calendar app: a
+	   rounded square, a big bold date number, a short label) — the date on
+	   a session is scannable at a glance without reading its title. Day on
+	   top and big, 3-letter month underneath, every history row. */
+	.cal {
+		flex: none; width: 2.6rem; height: 2.6rem;
+		display: flex; flex-direction: column; align-items: center; justify-content: center;
+		border-radius: .65rem; background: var(--panel);
+		box-shadow: 0 1px 2px rgba(0, 0, 0, .08), inset 0 0 0 1px var(--line-2);
+	}
+	.cal-day { font-size: 1.3rem; font-weight: 800; line-height: 1; color: var(--accent); }
+	.cal-month {
+		font-size: .6rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+		color: var(--muted); margin-top: .1rem;
+	}
+	.hinfo { min-width: 0; display: flex; flex-direction: column; gap: .1rem; }
 	.htitle {
 		font-size: var(--text-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 	}
 
 	/* ── Chat column ─────────────────────────────────────────────────── */
 	.chat-main {
-		display: flex; flex-direction: column; min-height: 0;
+		display: flex; flex-direction: column; min-height: 0; min-width: 0;
 		background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r-lg);
 	}
 	.chat-thread { flex: 1 1 auto; overflow-y: auto; padding: var(--space-5); display: grid; gap: var(--space-4); align-content: start; }
@@ -477,14 +543,21 @@
 
 	.turn { display: grid; gap: .4rem; }
 	.bubble { border-radius: var(--r-lg); padding: var(--space-3) var(--space-4); max-width: 85%; }
-	.bubble-q {
-		justify-self: end; background: var(--accent); color: #fff;
-		border-bottom-right-radius: 4px; display: flex; align-items: baseline; gap: .6rem;
-	}
-	.bubble-q .ts { color: rgba(255, 255, 255, .75); }
+	.bubble-q { justify-self: end; background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
 	.bubble-a { justify-self: start; background: var(--panel); border: 1px solid var(--line); border-bottom-left-radius: 4px; max-width: 100%; }
 	.question { margin: 0; white-space: pre-wrap; }
 	.ts { font-size: var(--text-xs); color: var(--muted); white-space: nowrap; }
+	/* Small label row under each bubble — which mode answered this turn,
+	   plus a timestamp on the question side — not part of the message
+	   content itself. */
+	.meta { display: flex; align-items: center; gap: .5rem; margin-top: .4rem; }
+	.bubble-q .meta { color: rgba(255, 255, 255, .75); }
+	.bubble-a > .meta { margin-top: var(--space-3); padding-top: var(--space-2); border-top: 1px solid var(--line); }
+	.mode-tag {
+		font-size: var(--text-xs); font-weight: 650; text-transform: uppercase; letter-spacing: .03em;
+		color: var(--muted);
+	}
+	.bubble-q .mode-tag { color: rgba(255, 255, 255, .85); }
 	.rh { display: flex; align-items: center; gap: .5rem; margin-bottom: var(--space-2); }
 	.rh .ts { margin-left: auto; }
 	.answer :global(p) { margin: 0 0 .6em; }
@@ -543,7 +616,18 @@
 		position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
 		overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
 	}
-	.composer-row:first-child { max-width: 16rem; }
+
+	.mode-toggle {
+		display: inline-flex; border: 1px solid var(--line-2); border-radius: 99px; padding: .15rem;
+		background: var(--panel); gap: .15rem;
+	}
+	.mode-toggle button {
+		display: inline-flex; align-items: center; gap: .35rem;
+		border: none; background: none; padding: .35rem .8rem; border-radius: 99px; cursor: pointer;
+		font: inherit; font-size: var(--text-sm); font-weight: 600; color: var(--muted);
+	}
+	.mode-toggle button.on { background: var(--accent); color: #fff; }
+	.mode-toggle button:disabled { opacity: .6; cursor: not-allowed; }
 
 	@media (max-width: 860px) {
 		.chat-shell { grid-template-columns: 1fr; height: auto; }
