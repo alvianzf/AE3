@@ -36,9 +36,8 @@ RELEVANCE_SCHEMA = {
                 "properties": {
                     "id": {"type": "string", "description": "The candidate's id, verbatim."},
                     "relevant": {"type": "boolean"},
-                    "reason": {"type": "string", "description": "One short sentence."},
                 },
-                "required": ["id", "relevant", "reason"],
+                "required": ["id", "relevant"],
                 "additionalProperties": False,
             },
         },

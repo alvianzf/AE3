@@ -142,7 +142,7 @@ class Config:
     traversal_max_depth = int(os.getenv("TRAVERSAL_MAX_DEPTH", "5"))
     # Candidates fetched per hop, before LLM judgment — bounds one hop's
     # Cypher result size and the batch size of the per-hop relevance call.
-    traversal_max_candidates_per_hop = int(os.getenv("TRAVERSAL_MAX_CANDIDATES_PER_HOP", "20"))
+    traversal_max_candidates_per_hop = int(os.getenv("TRAVERSAL_MAX_CANDIDATES_PER_HOP", "5"))
     # Seed chunks pulled by the initial vector (+ full-text) search, before
     # traversal ever starts expanding.
     traversal_seed_top_k = int(os.getenv("TRAVERSAL_SEED_TOP_K", "10"))
