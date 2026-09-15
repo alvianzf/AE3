@@ -15,7 +15,13 @@ marked.setOptions({ breaks: true, gfm: true });
 // citation's letter).
 const CITE_GROUP = /\[([SK]\d+(?:\s*,\s*[SK]?\d+)*)\]/g;
 
-export function renderAnswerHtml(text: string, sourceLabels: Set<string>): string {
+// Bare number only ("[K12]" -> "12"), not the full label — a citation
+// marker reads as academic-style superscript now, not a source-panel
+// label; the K/S letter is an internal implementation detail (which
+// accumulated-node index this is), not something worth showing inline.
+const TITLE_TRUNCATE = 12;
+
+export function renderAnswerHtml(text: string, sourceTitles: Map<string, string>): string {
 	const html = DOMPurify.sanitize(marked.parse(text, { async: false }) as string);
 	return html.replace(CITE_GROUP, (_match, group: string) => {
 		let lastPrefix = 'K';
@@ -26,9 +32,10 @@ export function renderAnswerHtml(text: string, sourceLabels: Set<string>): strin
 				if (!m) return raw;
 				lastPrefix = m[1] ?? lastPrefix;
 				const label = `${lastPrefix}${m[2]}`;
-				return sourceLabels.has(label)
-					? `<button type="button" class="cite" data-cite="${label}">[${label}]</button>`
-					: `[${label}]`;
+				const title = sourceTitles.get(label);
+				if (title === undefined) return `[${m[2]}]`;
+				const truncated = title.length > TITLE_TRUNCATE ? title.slice(0, TITLE_TRUNCATE) + '…' : title;
+				return `<sup><button type="button" class="cite" data-cite="${label}">[${m[2]} ${truncated}]</button></sup>`;
 			})
 			.join(' ');
 	});

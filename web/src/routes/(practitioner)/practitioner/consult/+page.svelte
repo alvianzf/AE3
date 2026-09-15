@@ -176,8 +176,8 @@
 	// click on them is handled by delegation here rather than a Svelte
 	// onclick per part the way the old plain-text renderer did it.
 	function answerHtml(t: any) {
-		const labels = new Set<string>((t.sources ?? []).map((s: any) => s.label));
-		return renderAnswerHtml(t.answer, labels);
+		const titles = new Map<string, string>((t.sources ?? []).map((s: any) => [s.label, s.title]));
+		return renderAnswerHtml(t.answer, titles);
 	}
 
 	function onAnswerClick(e: MouseEvent) {
@@ -721,9 +721,13 @@
 	.answer :global(h2) { font-size: var(--text-sm); text-transform: uppercase; letter-spacing: .03em; color: var(--muted); margin: 1em 0 .4em; }
 	.answer :global(h2:first-child) { margin-top: 0; }
 	.answer :global(code) { background: var(--panel-2); padding: .1em .3em; border-radius: 4px; font-size: .9em; }
+	/* Superscript, not inline-sized — an academic-paper-style citation
+	   marker (number + a short title snippet), not a full-size inline
+	   token, so it reads as a reference rather than part of the sentence. */
+	.answer :global(sup) { line-height: 0; }
 	.answer :global(.cite) {
 		font: inherit; font-weight: 650; color: var(--accent-ink); background: var(--accent-soft);
-		border: none; border-radius: 4px; padding: 0 .3rem; cursor: pointer;
+		border: none; border-radius: 4px; padding: 0 .25rem; cursor: pointer; white-space: nowrap;
 	}
 	.unsupported-acc { margin-top: var(--space-3); font-size: var(--text-sm); color: var(--warn); }
 	.unsupported-acc summary {
