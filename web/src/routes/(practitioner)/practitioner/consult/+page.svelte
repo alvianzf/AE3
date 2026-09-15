@@ -225,12 +225,37 @@
 	// event — reload from the server the same way a manual page refresh
 	// would, whether the connection quietly ended with nothing or had to be
 	// aborted after going stale.
+	//
+	// Found live, 2026-09-15: a single immediate attempt often ran *before*
+	// the backend had actually finished — the checker's bounded-retry path
+	// (reasoner -> checker -> retry-reasoner -> retry-checker, up to 4
+	// sequential LLM calls before the stream's own `result` event) can
+	// still be mid-flight when the stall watchdog fires, so the very first
+	// recovery fetch found nothing and gave up, reading as "nothing
+	// happened" even though the backend was seconds from finishing. Now
+	// polls: the backend's own per-call ceiling (_CHAT_TIMEOUT_SECONDS,
+	// app/clients/llm_client.py) is 90s, so if it hasn't produced a result
+	// within a healthy margin past that, it isn't going to.
+	const RECOVERY_POLL_MS = 5_000;
+	const RECOVERY_MAX_MS = 90_000;
 	async function recoverMissingResult() {
-		if (sessionId) {
-			await loadSession(sessionId);
-		} else {
-			await loadSessions(clientId);
-			if (sessions[0]) await loadSession(sessions[0].id);
+		const priorTurnCount = turns.length;
+		const priorSessionIds = new Set(sessions.map((s) => s.id));
+		const deadline = Date.now() + RECOVERY_MAX_MS;
+		for (;;) {
+			if (sessionId) {
+				await loadSession(sessionId);
+				if (turns.length > priorTurnCount) return;
+			} else {
+				await loadSessions(clientId);
+				const found = sessions.find((s) => !priorSessionIds.has(s.id));
+				if (found) {
+					await loadSession(found.id);
+					return;
+				}
+			}
+			if (Date.now() >= deadline) return;
+			await new Promise((r) => setTimeout(r, RECOVERY_POLL_MS));
 		}
 	}
 
@@ -256,7 +281,16 @@
 		// catches that case too: if too long passes with no event at all,
 		// treat it as stuck and abort proactively rather than wait forever.
 		let lastEventAt = Date.now();
-		const STALL_MS = 110_000; // safely above _CHAT_TIMEOUT_SECONDS (90s), the longest a single real step should ever take
+		// 220s, not 110s — found live: the checker's bounded-retry path
+		// (reasoner -> checker -> retry-reasoner -> retry-checker, up to 4
+		// sequential LLM calls before the stream's own `result` event) hit
+		// 117.88s end to end under real latency variance, with one single
+		// phase alone spiking to 99.37s — too close to the old 110s
+		// threshold for comfort. 220s stays comfortably above the worst
+		// real case seen so far while still catching a genuinely dead
+		// connection well before a practitioner would give up waiting on
+		// their own.
+		const STALL_MS = 220_000;
 		const stallWatch = setInterval(() => {
 			if (Date.now() - lastEventAt > STALL_MS) {
 				stalled = true;
