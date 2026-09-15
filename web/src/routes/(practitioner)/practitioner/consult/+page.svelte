@@ -714,6 +714,7 @@
 	.bubble-q .mode-tag { color: rgba(255, 255, 255, .85); }
 	.rh { display: flex; align-items: center; gap: .5rem; margin-bottom: var(--space-2); }
 	.rh .ts { margin-left: auto; }
+	.answer { color: var(--ink-2); }
 	.answer :global(p) { margin: 0 0 .6em; }
 	.answer :global(p:last-child) { margin-bottom: 0; }
 	.answer :global(ul), .answer :global(ol) { margin: 0 0 .6em; padding-left: 1.2rem; }
