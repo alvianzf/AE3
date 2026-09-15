@@ -31,6 +31,15 @@ cfg = get_config()
 # stall into a clean, fast openai.APIError instead of an indefinite hang.
 _CHAT_TIMEOUT_SECONDS = 90.0
 
+# moonshotai/Kimi-K3's hidden chain-of-thought pass costs 30-120s+ per call
+# with no visible quality difference on this app's prompts (found live,
+# 2026-09-14, originally for the Reasoner) — the same cost applies to any
+# other role a deployment points at Kimi-K3, so this is shared rather than
+# redefined per module. Harmless extra_body noise for a non-reasoning
+# model (confirmed live: Qwen ignores it), so callers can pass it
+# unconditionally regardless of which model the role actually resolves to.
+NO_THINKING = {"thinking": {"type": "disabled"}}
+
 
 class Role(str, Enum):
     READER = "reader"
@@ -81,7 +90,7 @@ class LLMClient:
         self._client = OpenAI(base_url=self._rc.base_url, api_key=self._rc.api_key)
 
     def chat_json(self, system: str, prompt: str, schema: dict,
-                  max_tokens: int = 100_000) -> tuple[dict, dict]:
+                  max_tokens: int = 100_000, extra_body: dict | None = None) -> tuple[dict, dict]:
         """One structured-output call. Returns (parsed_dict, usage).
 
         Retries once on a broken response — found live against Nebius, two
@@ -116,6 +125,7 @@ class LLMClient:
                     "type": "json_schema",
                     "json_schema": {"name": "response", "schema": schema, "strict": True},
                 },
+                extra_body=extra_body,
             )
             return response.choices[0].message.content, response
 

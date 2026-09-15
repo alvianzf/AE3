@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 from concurrent.futures import ThreadPoolExecutor
 
-from ..clients.llm_client import Role, get_client
+from ..clients.llm_client import NO_THINKING, Role, get_client
 from ..graph import store
 
 READER_SCHEMA = {
@@ -127,7 +127,8 @@ def read_source(text: str, filename: str, kind: str, origin: str,
         f"Filename: {filename}\nKind: {kind}\nStated origin: {origin}\n\n"
         f"Source text:\n---\n{text}\n---"
     )
-    card, _usage = get_client(Role.READER).chat_json(READER_SYSTEM, prompt, READER_SCHEMA)
+    card, _usage = get_client(Role.READER).chat_json(
+        READER_SYSTEM, prompt, READER_SCHEMA, extra_body=NO_THINKING)
     card["suggested_grade"] = max(1, min(10, int(card["suggested_grade"])))
     card["topics"] = [t.strip().lower() for t in card["topics"] if t.strip()][:4]
     for f in ("author", "published", "reference"):
@@ -156,6 +157,7 @@ def extract_article(stripped_text: str, url: str) -> str:
         EXTRACT_ARTICLE_SYSTEM,
         f"URL: {url}\n\nPage text:\n---\n{stripped_text[:40000]}\n---",
         max_tokens=100_000,
+        extra_body=NO_THINKING,
     )
     return text
 
