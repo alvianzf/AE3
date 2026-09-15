@@ -149,25 +149,98 @@ EXTRACT_ARTICLE_SYSTEM = (
 )
 
 
-def extract_article(stripped_text: str, url: str) -> str:
-    """Plain-text output, not a JSON-schema call — the output *is* the
-    document body. Role.READER — a bounded extraction task, not one that
-    needs a stronger model."""
+# Ceiling math for one extract_article() call: the dedicated Qwen3-32B
+# deployment Reader runs on caps max_model_len at 40_960 tokens, input +
+# output combined, and hard-errors (openai.BadRequestError) above it —
+# same trap chat_json() hit, see app/clients/llm_client.py. max_tokens is
+# fixed at 20_000 (comfortably covers reproducing even a full chunk
+# verbatim — this extraction never summarizes, so output is never larger
+# than input), which leaves ~20_960 tokens of headroom for input + system
+# prompt. Using a conservative 3 chars/token (worse than English prose's
+# typical ~4, same spirit as checker.py's _MAX_EVIDENCE_CHARS headroom
+# choice), 40_000 input chars is only ~13,334 tokens — plus the ~150-token
+# system prompt and 20_000 max_tokens, that's ~33,500 of the 40_960
+# ceiling, leaving real margin for tokenizer variance. 40_000 chars is
+# also the exact size this function's single-call path already ran at
+# safely in production before this fix (it used to hard-truncate to
+# exactly this), so it's a doubly-verified safe chunk size, not just a
+# fresh estimate.
+_SAFE_INPUT_CHARS = 40_000
+
+
+def _chunk_text(text: str, max_chars: int = _SAFE_INPUT_CHARS) -> list[str]:
+    """Split text into pieces no larger than max_chars, for the chunk-
+    and-stitch fallback below. Pure and network-free so the "should this
+    input be chunked, and into how many pieces" decision is unit-testable
+    without hitting the LLM.
+
+    Prefers to break at a paragraph boundary, then a sentence boundary,
+    only falling back to a hard character cut if neither exists near the
+    target size — scraper.py's _strip_text() already joins block-level
+    page content with '\\n', so a paragraph break is almost always a real
+    content edge, not a mid-sentence cut. Deliberately no overlap between
+    chunks: extract_article() reproduces kept content verbatim rather
+    than summarizing across a boundary, so overlapping text would just
+    get reproduced by both calls and show up twice in the stitched
+    result — splitting cleanly at a real edge avoids the mid-sentence-cut
+    problem overlap exists to solve, without that duplication risk.
+    """
+    if len(text) <= max_chars:
+        return [text]
+    chunks = []
+    while len(text) > max_chars:
+        window = text[:max_chars]
+        split_at = window.rfind("\n\n")
+        if split_at < max_chars // 2:
+            split_at = window.rfind("\n")
+        if split_at < max_chars // 2:
+            split_at = window.rfind(". ")
+            if split_at != -1:
+                split_at += 1  # keep the period with the sentence it ends
+        if split_at < max_chars // 2:
+            split_at = max_chars  # nothing reasonable nearby — hard cut
+        chunks.append(text[:split_at])
+        text = text[split_at:]  # keep the boundary chars so chunks reconstruct exactly
+    if text:
+        chunks.append(text)
+    return chunks
+
+
+def _extract_chunk(chunk_text: str, url: str) -> str:
+    """One extract_article() call over one chunk. Split out so both the
+    single-call path and the multi-chunk fallback share identical prompt
+    wiring — a chunked extraction must behave exactly like the unchunked
+    one, just run more than once."""
     text, _usage = get_client(Role.READER).chat_text(
         EXTRACT_ARTICLE_SYSTEM,
-        f"URL: {url}\n\nPage text:\n---\n{stripped_text[:40000]}\n---",
-        # 20_000, not 100_000 — the dedicated Qwen3-32B deployment Reader
-        # now runs on caps max_tokens at 40_960 and hard-errors above it
-        # (same trap chat_json() hit, app/clients/llm_client.py). Found
-        # live: a real scrape's extract_article() call failed outright
-        # ("The AI service is temporarily unavailable") because of this.
-        # 20_000 output tokens comfortably covers reproducing even the
-        # full 40,000-char input verbatim (this extraction never
-        # summarizes, so output is never larger than input).
+        f"URL: {url}\n\nPage text:\n---\n{chunk_text}\n---",
         max_tokens=20_000,
         extra_body=NO_THINKING,
     )
     return text
+
+
+def extract_article(stripped_text: str, url: str) -> str:
+    """Plain-text output, not a JSON-schema call — the output *is* the
+    document body. Role.READER — a bounded extraction task, not one that
+    needs a stronger model.
+
+    Single call for anything that fits in one (the common case, unchanged
+    behavior/latency from before this fix). Only when stripped_text is
+    long enough to blow the real token ceiling (see _SAFE_INPUT_CHARS
+    above) does it split into sequential chunks and run one call per
+    chunk in parallel — safe because this extraction is verbatim, not
+    summarization: each chunk's kept content stands on its own, so there's
+    no cross-chunk meaning to merge, just text to stitch back in order.
+    Same ThreadPoolExecutor convention as ingest()'s extract_graph() fan-
+    out below.
+    """
+    chunks = _chunk_text(stripped_text)
+    if len(chunks) == 1:
+        return _extract_chunk(chunks[0], url)
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(lambda c: _extract_chunk(c, url), chunks))
+    return "".join(results)
 
 
 def extract_graph(passage_text: str) -> dict:
