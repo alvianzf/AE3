@@ -491,31 +491,37 @@
 						<p class="question">{pendingQuestion}</p>
 					</div>
 					{#if steps.length}
+						{@const s = steps[steps.length - 1]}
+						<!-- One line, not a growing list — a finished step is
+						     replaced by whatever's running next rather than
+						     stacking underneath it (found live: the full
+						     history of steps read as clutter while waiting). -->
 						<div class="bubble bubble-a progress">
-							{#each steps as s (s.agent)}
-								<div class="step" class:done={s.status === 'done'} class:error={s.status === 'error'}>
-									{#if s.status === 'running'}
-										<span class="spin" aria-hidden="true"></span>
-									{:else}
-										<span class="dot" aria-hidden="true"></span>
-									{/if}
-									{AGENT_LABELS[s.agent] ?? s.agent}
-									{#if s.status === 'done'}
-										<Chip tone="neutral">{s.input_tokens}→{s.output_tokens} tok · {s.duration_s}s</Chip>
-									{:else if s.status === 'error'}
-										<span class="hint">failed</span>
-									{:else}
-										<span class="hint">{s.progress ?? 'running…'}</span>
-									{/if}
-								</div>
-							{/each}
+							<div class="step" class:done={s.status === 'done'} class:error={s.status === 'error'}>
+								{#if s.status === 'running'}
+									<span class="spin" aria-hidden="true"></span>
+								{:else}
+									<span class="dot" aria-hidden="true"></span>
+								{/if}
+								{AGENT_LABELS[s.agent] ?? s.agent}
+								{#if s.status === 'done'}
+									<Chip tone="neutral">{s.input_tokens}→{s.output_tokens} tok · {s.duration_s}s</Chip>
+								{:else if s.status === 'error'}
+									<span class="hint">failed</span>
+								{:else}
+									<span class="hint">{s.progress ?? 'running…'}</span>
+								{/if}
+							</div>
 						</div>
 					{/if}
 				</div>
 			{/if}
 		</div>
 
-		<form class="composer" onsubmit={ask}>
+		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+		<form class="composer" onsubmit={ask} onkeydown={(e) => {
+			if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); ask(e); }
+		}}>
 			<div class="composer-row">
 				<div class="mode-toggle" role="group" aria-label="Search mode">
 					<button
