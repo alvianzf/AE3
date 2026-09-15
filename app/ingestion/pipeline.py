@@ -167,7 +167,7 @@ def extract_graph(passage_text: str) -> dict:
     in the shape store.ingest_document() expects."""
     prompt = f"Passage:\n---\n{passage_text}\n---"
     result, _usage = get_client(Role.GRAPH_BUILDER).chat_json(
-        KG_BUILDER_SYSTEM, prompt, KG_BUILDER_SCHEMA, max_tokens=100_000)
+        KG_BUILDER_SYSTEM, prompt, KG_BUILDER_SCHEMA, extra_body=NO_THINKING)
     return result
 
 
@@ -215,7 +215,7 @@ def suggest_entity_merges(names: list[str]) -> list[dict]:
         return []
     result, _usage = get_client(Role.GRAPH_BUILDER).chat_json(
         MERGE_SYSTEM, "Entity names in use:\n" + "\n".join(f"- {n}" for n in sorted(names)),
-        MERGE_SCHEMA, max_tokens=100_000,
+        MERGE_SCHEMA, extra_body=NO_THINKING,
     )
     groups = []
     for g in result["groups"]:
