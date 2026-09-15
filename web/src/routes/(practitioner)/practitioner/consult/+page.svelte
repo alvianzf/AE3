@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy, tick } from 'svelte';
 	import { page } from '$app/state';
+	import { replaceState } from '$app/navigation';
 	import { get } from '$lib/api';
 	import { streamConsult, type RetrievalMode } from '$lib/consultStream';
 	import { toast } from '$lib/stores/toast';
@@ -81,7 +82,13 @@
 	onMount(async () => {
 		const qClient = page.url.searchParams.get('client');
 		const qSession = page.url.searchParams.get('session');
-		clientId = qClient ?? data.clients[0]?.id ?? '';
+		// No auto-picking the first client in the list — landing here should
+		// require an explicit choice, not silently open whoever happens to
+		// sort first (found live: this looked like the page "chose" a
+		// patient on your behalf, which for clinical data should never be
+		// implicit). Only a real deep link (a URL that already names a
+		// client) restores a selection.
+		clientId = qClient ?? '';
 		if (qSession && qClient) await loadSession(qSession);
 	});
 
@@ -101,6 +108,20 @@
 		}
 		lastClientId = id;
 		loadSessions(id);
+	});
+
+	// Keeps the URL in sync with which client/session is open, so a refresh
+	// (or a copy-pasted link) lands back on the same conversation instead of
+	// reverting to the unselected default — found live: refreshing mid-
+	// conversation silently dropped back to "pick a client." replaceState,
+	// not goto — this reflects state in the URL bar without a navigation or
+	// reload of its own.
+	$effect(() => {
+		const params = new URLSearchParams();
+		if (clientId) params.set('client', clientId);
+		if (sessionId) params.set('session', sessionId);
+		const qs = params.toString();
+		replaceState(qs ? `?${qs}` : page.url.pathname, {});
 	});
 
 	let question = $state('');
@@ -438,10 +459,14 @@
 		<div class="chat-thread" bind:this={threadEl}>
 			{#if loadingHistory}
 				<p class="hint empty">Loading this consultation…</p>
+			{:else if !clientId}
+				<div class="empty-state">
+					<Icon name="users" size={28} />
+					<p>Pick a client to continue</p>
+					<p class="hint">Choose one from the list on the left to start or resume a consultation.</p>
+				</div>
 			{:else if !turns.length && !pendingQuestion}
-				<p class="hint empty">
-					{selectedClient ? `Ask a question about ${selectedClient.name} to get started.` : 'Pick a client to start a consultation.'}
-				</p>
+				<p class="hint empty">Ask a question about {selectedClient?.name} to get started.</p>
 			{/if}
 
 			{#each turns as t, i (t.session_id ? `${t.session_id}-${i}` : i)}
@@ -606,6 +631,12 @@
 	}
 	.chat-thread { flex: 1 1 auto; overflow-y: auto; padding: var(--space-5); display: grid; gap: var(--space-4); align-content: start; }
 	.empty { text-align: center; margin-top: var(--space-6); }
+	.empty-state {
+		display: flex; flex-direction: column; align-items: center; gap: .4rem;
+		margin: var(--space-7) auto 0; color: var(--muted); text-align: center; max-width: 22rem;
+	}
+	.empty-state p { margin: 0; }
+	.empty-state p:first-of-type { color: var(--ink); font-weight: 650; font-size: var(--text-base); }
 
 	.turn { display: grid; gap: .4rem; }
 	.bubble { border-radius: var(--r-lg); padding: var(--space-3) var(--space-4); max-width: 85%; }
