@@ -31,14 +31,23 @@ cfg = get_config()
 # stall into a clean, fast openai.APIError instead of an indefinite hang.
 _CHAT_TIMEOUT_SECONDS = 90.0
 
-# moonshotai/Kimi-K3's hidden chain-of-thought pass costs 30-120s+ per call
-# with no visible quality difference on this app's prompts (found live,
-# 2026-09-14, originally for the Reasoner) — the same cost applies to any
-# other role a deployment points at Kimi-K3, so this is shared rather than
-# redefined per module. Harmless extra_body noise for a non-reasoning
-# model (confirmed live: Qwen ignores it), so callers can pass it
-# unconditionally regardless of which model the role actually resolves to.
-NO_THINKING = {"thinking": {"type": "disabled"}}
+# Disables hidden reasoning for every model family this app has hit so
+# far — moonshotai/Kimi-K3's "thinking" costs 30-120s+ per call with no
+# visible quality difference on this app's prompts (found live,
+# 2026-09-14); a dedicated Qwen3 deployment (Qwen3-32B-Ckn0Os, found
+# live 2026-09-15) turned out to default to thinking-on too, but is
+# controlled by a *different* key (chat_template_kwargs.enable_thinking)
+# and — unlike Kimi — inlines the <think>...</think> block directly in
+# the message content instead of a separate reasoning_tokens field,
+# which would silently break chat_json()'s strict JSON parsing, not
+# just add latency. Both keys are included so this one constant works
+# regardless of which model a role resolves to — confirmed live that
+# each family ignores the other's key harmlessly rather than erroring,
+# so there's no need to branch on model name per call site.
+NO_THINKING = {
+    "thinking": {"type": "disabled"},
+    "chat_template_kwargs": {"enable_thinking": False},
+}
 
 
 class Role(str, Enum):
@@ -90,8 +99,16 @@ class LLMClient:
         self._client = OpenAI(base_url=self._rc.base_url, api_key=self._rc.api_key)
 
     def chat_json(self, system: str, prompt: str, schema: dict,
-                  max_tokens: int = 100_000, extra_body: dict | None = None) -> tuple[dict, dict]:
+                  max_tokens: int = 20_000, extra_body: dict | None = None) -> tuple[dict, dict]:
         """One structured-output call. Returns (parsed_dict, usage).
+
+        max_tokens defaults to 20_000, not 100_000 — a dedicated Qwen3-32B
+        deployment (Qwen3-32B-Ckn0Os, found live 2026-09-15) caps
+        max_tokens at 40_960 and rejects anything higher outright (a
+        BadRequestError, not a truncation), so a ceiling that has to work
+        across every role's model can't assume a huge shared-catalog
+        context window. 20_000 is still far above any real response shape
+        this app's chat_json() schemas produce.
 
         Retries once on a broken response — found live against Nebius, two
         distinct failure shapes from otherwise-healthy models on a strict
