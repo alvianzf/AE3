@@ -1576,7 +1576,13 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
                 _track(traversal.usage)
                 yield _sse(_timed_done({"event": "agent_done", "agent": "lookup", **traversal.usage,
                            "accumulated": len(traversal.accumulated)}, t0))
-                search_query_repr = question
+                # body.question, not `question` — the latter has the entire
+                # multi-turn history block prepended for the embedding call
+                # above, and showing that raw in "How it searched" dumped
+                # the whole conversation transcript into the seed-query
+                # display instead of what the practitioner actually typed
+                # (found live, 2026-09-15).
+                search_query_repr = body.question
             else:
                 yield _sse({"event": "agent_start", "agent": "seed_search"})
                 t0 = time.monotonic()
