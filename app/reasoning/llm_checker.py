@@ -32,9 +32,14 @@ CHECK_SCHEMA = {
                 "type": "object",
                 "properties": {
                     "sentence_index": {"type": "integer", "description": "The sentence's [N] index, verbatim."},
-                    "supported": {"type": "boolean"},
+                    "supporting_evidence_index": {
+                        "type": "integer",
+                        "description": "The single [E#] index of the ONE evidence passage that, alone, "
+                                       "states this sentence's claim — verbatim number, no brackets. "
+                                       "-1 if no single passage does.",
+                    },
                 },
-                "required": ["sentence_index", "supported"],
+                "required": ["sentence_index", "supporting_evidence_index"],
                 "additionalProperties": False,
             },
         },
@@ -45,13 +50,22 @@ CHECK_SCHEMA = {
 
 CHECK_SYSTEM = (
     "You are a strict fact-checker for a clinical answer. You are given "
-    "numbered evidence passages and numbered answer sentences. For each "
-    "sentence, judge whether it is directly supported by at least one "
-    "evidence passage — not by general medical knowledge, not by "
-    "plausibility, only by what a passage actually states. A sentence "
-    "that draws a reasonable inference the evidence doesn't state is NOT "
-    "supported. Judge every sentence independently and return exactly "
-    "one judgment per sentence index given."
+    "numbered evidence passages and numbered answer sentences.\n\n"
+    "For each sentence, check it against each evidence passage ONE AT A "
+    "TIME, independently — never combine partial support from several "
+    "passages into one judgment. A sentence is supported only if a SINGLE "
+    "individual passage, alone, directly states its claim. Report that "
+    "one passage's index. If passage A states half the claim and passage "
+    "B states the other half, but neither states the whole claim on its "
+    "own, the sentence is NOT supported — report -1.\n\n"
+    "This matters because a pile of topically-related passages can make a "
+    "claim look supported at a glance even when no single one of them "
+    "actually backs it — you are checking for that specific failure, not "
+    "just general relevance. Not by general medical knowledge, not by "
+    "plausibility, not by a reasonable inference the evidence doesn't "
+    "itself state — only by what one individual passage actually says.\n\n"
+    "Judge every sentence independently and return exactly one judgment "
+    "per sentence index given."
 )
 
 
@@ -118,7 +132,15 @@ def check(question: str, reasoned: ReasonedAnswer, patient_context_text: str) ->
 
     result, usage = get_client(Role.CHECKER).chat_json(
         CHECK_SYSTEM, prompt, CHECK_SCHEMA, max_tokens=20_000, extra_body=NO_THINKING)
-    by_index = {j["sentence_index"]: j["supported"] for j in result["judgments"]}
+    # supported = a real single evidence index was given, not just "true" —
+    # mirrors the HHEM path's own per-(evidence, sentence)-pair scoring
+    # (app/reasoning/checker.py): a claim only passes if one individual
+    # passage backs it alone, never a same-side synthesis across several
+    # passages that are each merely topic-adjacent.
+    by_index = {
+        j["sentence_index"]: 0 <= j.get("supporting_evidence_index", -1) < len(evidence_texts)
+        for j in result["judgments"]
+    }
     # A sentence the model drops from its response is treated as
     # unsupported, not silently passed — fail-closed, same rule the HHEM
     # path's max()-below-threshold check enforces implicitly.
