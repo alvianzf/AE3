@@ -116,12 +116,29 @@
 	// conversation silently dropped back to "pick a client." replaceState,
 	// not goto — this reflects state in the URL bar without a navigation or
 	// reload of its own.
+	//
+	// Found live, 2026-09-15: on the very first arrival at this page (never
+	// on a later in-app remount), the whole sidebar went unclickable —
+	// every button rendered fine but did nothing. Root cause: this effect
+	// ran (and called replaceState) while SvelteKit's router was still
+	// mid-transition into the page; replaceState can throw in that window,
+	// and an uncaught error inside a $effect breaks reactivity for the rest
+	// of the component, not just this effect — which reads as "nothing is
+	// clickable" with no visible error. try/catch makes this a non-fatal
+	// nicety instead of a page-breaking one; building an absolute URL via
+	// `new URL` (instead of a bare relative string) is also the more
+	// correct way to call replaceState regardless.
 	$effect(() => {
 		const params = new URLSearchParams();
 		if (clientId) params.set('client', clientId);
 		if (sessionId) params.set('session', sessionId);
-		const qs = params.toString();
-		replaceState(qs ? `?${qs}` : page.url.pathname, {});
+		try {
+			const url = new URL(page.url);
+			url.search = params.toString();
+			replaceState(url, {});
+		} catch {
+			/* URL sync is a nicety — must never take the rest of the page down with it */
+		}
 	});
 
 	let question = $state('');
