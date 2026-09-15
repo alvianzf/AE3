@@ -18,7 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Callable
 
-from ..clients.llm_client import Role, get_client
+from ..clients.llm_client import NO_THINKING, Role, get_client
 from ..config import get_config
 from ..graph import store
 from ..patient.context import PatientContext
@@ -100,7 +100,7 @@ def llm_judge_relevance(question: str, patient: PatientContext,
         f"New candidates to judge:\n{candidates_text}"
     )
     result, usage = get_client(Role.ANSWER_ENGINE).chat_json(
-        RELEVANCE_SYSTEM, prompt, RELEVANCE_SCHEMA, max_tokens=100_000)
+        RELEVANCE_SYSTEM, prompt, RELEVANCE_SCHEMA, max_tokens=100_000, extra_body=NO_THINKING)
     by_id = {j["id"]: j for j in result["judgments"]}
     # A model that drops an id from its response is treated as "not
     # relevant, no reason given" rather than crashing the hop — a partial

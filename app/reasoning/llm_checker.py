@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import re
 
-from ..clients.llm_client import Role, get_client
+from ..clients.llm_client import NO_THINKING, Role, get_client
 from ..graph import store
 from .reasoner import ReasonedAnswer
 
@@ -116,7 +116,8 @@ def check(question: str, reasoned: ReasonedAnswer, patient_context_text: str) ->
     sentence_block = "\n".join(f"[{i}] {s}" for i, s in enumerate(sentences))
     prompt = f"Evidence:\n{evidence_block}\n\nAnswer sentences to check:\n{sentence_block}"
 
-    result, usage = get_client(Role.CHECKER).chat_json(CHECK_SYSTEM, prompt, CHECK_SCHEMA, max_tokens=20_000)
+    result, usage = get_client(Role.CHECKER).chat_json(
+        CHECK_SYSTEM, prompt, CHECK_SCHEMA, max_tokens=20_000, extra_body=NO_THINKING)
     by_index = {j["sentence_index"]: j["supported"] for j in result["judgments"]}
     # A sentence the model drops from its response is treated as
     # unsupported, not silently passed — fail-closed, same rule the HHEM
