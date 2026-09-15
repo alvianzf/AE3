@@ -1,5 +1,33 @@
 # Specs changelog
 
+## v6.5 — 2026-09-15 (lab intake; three-deployment model routing; consult page hardening)
+
+Lab intake: practitioners and clients can both record patient data
+(labs, conditions, medications, notes, history) — `get_patient_context()`
+had read these fields since it was written, nothing ever wrote them.
+Privacy-scoped: a client only ever sees/deletes their own self-reported
+entries, never a practitioner's private notes about them.
+
+Model routing spread across three deployments: a dedicated Qwen3-32B
+endpoint (Reader/Graph-builder/Checker-LLM), Kimi-K3 routed to Nebius's
+EU-west2 region (Reasoner/Answer Engine — the only model that region
+serves at all), a dedicated Qwen3-Embedding-8B endpoint. Two real
+compatibility bugs found and fixed: the dedicated Qwen3 deployment
+needs a different thinking-disable mechanism than Kimi (and inlines
+its `<think>` block in a way that would've broken strict JSON parsing
+outright), and its `max_tokens` ceiling is far lower than the shared
+catalog's. Kimi-K3 confirmed consistently slower than Qwen3-235B in
+paired live trials — a deliberate residency-vs-speed tradeoff, not an
+oversight.
+
+Three consult-page bugs found and fixed live: `general_lookup`'s "How
+it searched" dumping the full conversation history instead of the
+actual question; auto-selecting the first client and losing the
+selection on refresh; and a real regression from fixing that —
+the sidebar going entirely unclickable on first arrival, caused by an
+uncaught error inside a `$effect` breaking the rest of the component's
+reactivity. See [`specs/v6.5`](v6.5/README.md).
+
 ## v6.4 — 2026-09-14 (consult page as a chat interface; hallucination fix)
 
 Consult page rebuilt as a GPT/Claude-style chat interface — persistent
