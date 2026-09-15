@@ -167,6 +167,30 @@ still needs to stay raised:
    "would be fine at 500M," so the raised ceiling is still load-bearing,
    not a temporary workaround to revert.
 
+### The scraper's headless-browser fallback (Playwright)
+
+`app/scraper.py`'s URL-ingest path falls back to a real headless
+Chromium (via Playwright) when a plain HTTP fetch gets bot-blocked
+(Cloudflare-style challenges return 401/403/429 to a plain client but
+pass a real browser executing JS) or when a page returns 200 with no
+visible text (a JS-only SPA — plain HTTP never executes anything).
+`pip install -r requirements.txt` (already part of every deploy)
+installs the `playwright` Python package, but **not** the actual
+browser binary — that's a separate, one-time step, deliberately left
+out of the automated deploy workflow so it doesn't add apt/download
+overhead to every single push:
+
+```bash
+sudo -u clinic /opt/clinic/.venv/bin/playwright install chromium
+playwright install-deps chromium   # as root — installs system libs (fonts, libnss3, etc.)
+```
+
+Chromium only (not Firefox/WebKit too) to keep this to ~300MB, not
+Playwright's full ~1GB three-browser default. Re-run this manually
+whenever the pinned `playwright` version in `requirements.txt`
+changes — the browser binary is version-tied to the Python package,
+and a mismatch fails at request time, not at deploy time.
+
 ## Postgres (specs/v6 — replaces the old per-file SQLite stores)
 
 **One-time setup on the server**, alongside the existing Neo4j install:
