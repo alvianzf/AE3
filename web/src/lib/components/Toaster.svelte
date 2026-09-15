@@ -1,8 +1,27 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { toasts } from '$lib/stores/toast';
+
+	// A toast fired while a <dialog> (Dialog.svelte, e.g. the ingest modal)
+	// is open used to render behind it — found live: an error toast from
+	// inside the scrape/paste flow never appeared. A native <dialog>'s
+	// content renders in the browser's top layer, which always wins over
+	// any regular position:fixed/z-index element no matter how high, so no
+	// z-index value could ever fix this. The popover API promotes this
+	// container to the top layer too; "manual" (not "auto") means it never
+	// light-dismisses on its own — shown once here and left open for the
+	// app's lifetime, individual toasts still added/removed by the normal
+	// reactive list below. Top-layer elements stack by show order, so as
+	// long as this is (re-)shown after a dialog opens, it wins — see the
+	// $effect below.
+	let container = $state<HTMLDivElement>();
+	onMount(() => container?.showPopover?.());
+	$effect(() => {
+		if ($toasts.length) container?.showPopover?.();
+	});
 </script>
 
-<div class="toasts" aria-live="polite">
+<div class="toasts" popover="manual" bind:this={container} aria-live="polite">
 	{#each $toasts as t (t.id)}
 		<div class="toast {t.kind}">
 			{#if t.kind === 'ok'}
@@ -16,7 +35,14 @@
 </div>
 
 <style>
-	.toasts { position: fixed; right: var(--space-5); bottom: var(--space-5); z-index: 200; display: flex; flex-direction: column; gap: .5rem; }
+	/* [popover] carries its own UA-default box (inset:0, centered margin,
+	   a border, Canvas background) meant for dialog-like popovers — all
+	   reset here since this is just a positioned toast stack, not that. */
+	.toasts {
+		position: fixed; inset: auto var(--space-5) var(--space-5) auto; margin: 0; border: none;
+		padding: 0; background: none; color: inherit; overflow: visible;
+		z-index: 200; display: flex; flex-direction: column; gap: .5rem;
+	}
 	.toast {
 		display: flex; align-items: center; gap: .5rem; padding: .7rem 1rem; border-radius: var(--r);
 		background: var(--ink); color: #fff; box-shadow: var(--shadow-lg); font-size: var(--text-sm);

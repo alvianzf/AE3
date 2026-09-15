@@ -40,7 +40,7 @@ from .graph import schema as graph_schema
 from .graph import store
 from .ingestion import pipeline as ingestion_pipeline
 from .patient.context import get_patient_context
-from .reasoning import checker, llm_checker, reasoner
+from .reasoning import checker, reasoner
 from .retrieval import general_lookup, pgvector_store, seed_search
 from .retrieval.traversal import GraphTraversalRetriever
 
@@ -149,7 +149,7 @@ _AI_TEAM_ROLES = (
     (LLMRole.EMBEDDER, "Embeds knowledge-base chunks for seed search"),
     (LLMRole.ANSWER_ENGINE, "Forms the seed search query; judges relevance per traversal hop"),
     (LLMRole.REASONER, "Writes the final grounded answer"),
-    (LLMRole.CHECKER, "LLM-as-judge anti-hallucination check (specs/v6.3/02 fallback)"),
+    (LLMRole.CHECKER, "LLM-as-judge anti-hallucination check — fallback, not the active path (see 'checker' below)"),
 )
 
 
@@ -1637,20 +1637,23 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
                 yield _sse(_timed_done({"event": "agent_done", "agent": "reasoner", **reasoned.usage}, t0))
                 answer_text = reasoned.text
                 if body.run_check:
-                    # LLM-as-judge Checker (app/reasoning/llm_checker.py,
-                    # specs/v6.3/02), not the local HHEM classifier
-                    # (app/reasoning/checker.py) — HHEM costs 28-77s/call
-                    # on this VPS's CPU and a smaller local model tried
-                    # in its place was *worse* (185s/call), so scoring is
-                    # offloaded to Nebius instead. Still trying this out
-                    # ("for now") rather than a settled choice — the
-                    # HHEM path is untouched and easy to switch back to.
+                    # Local HHEM-2.1-Open classifier (app/reasoning/
+                    # checker.py), not the LLM-as-judge (app/reasoning/
+                    # llm_checker.py, specs/v6.3/02) — switched back
+                    # 2026-09-15: a purpose-built classifier is a stronger
+                    # guarantee than an LLM judging another LLM's output,
+                    # and re-measured live, the latency tradeoff (roughly
+                    # 6-105s/call depending on answer length, no longer
+                    # OOM-risking since the truncation/sub-batch fix) was
+                    # judged acceptable. Not an LLM call, so no token
+                    # usage to track — zeros, same as before the LLM-
+                    # judge swap. llm_checker.py is untouched and still
+                    # selectable by swapping this import back.
                     yield _sse({"event": "agent_start", "agent": "checker"})
                     t0 = time.monotonic()
-                    verdict = llm_checker.check(question, reasoned, patient.as_query_text())
-                    _track(verdict["usage"])
+                    verdict = checker.check(question, reasoned, patient.as_query_text())
                     yield _sse(_timed_done({"event": "agent_done", "agent": "checker",
-                               **verdict["usage"]}, t0))
+                               "input_tokens": 0, "output_tokens": 0}, t0))
                     # Bounded retry, hard-capped at one attempt, same pattern
                     # as the pre-existing Checker retry: a "weak" verdict
                     # gets one revision with the same accumulated context
@@ -1665,11 +1668,10 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
                                    "retry": True, **revised_reasoned.usage}, t0))
                         yield _sse({"event": "agent_start", "agent": "checker", "retry": True})
                         t0 = time.monotonic()
-                        revised_verdict = llm_checker.check(
+                        revised_verdict = checker.check(
                             question, revised_reasoned, patient.as_query_text())
-                        _track(revised_verdict["usage"])
                         yield _sse(_timed_done({"event": "agent_done", "agent": "checker", "retry": True,
-                                   **revised_verdict["usage"]}, t0))
+                                   "input_tokens": 0, "output_tokens": 0}, t0))
                         if (revised_verdict["verdict"] == "pass"
                                 or len(revised_verdict["unsupported"]) < len(verdict["unsupported"])):
                             answer_text, verdict, revised = revised_reasoned.text, revised_verdict, True
