@@ -156,7 +156,15 @@ def extract_article(stripped_text: str, url: str) -> str:
     text, _usage = get_client(Role.READER).chat_text(
         EXTRACT_ARTICLE_SYSTEM,
         f"URL: {url}\n\nPage text:\n---\n{stripped_text[:40000]}\n---",
-        max_tokens=100_000,
+        # 20_000, not 100_000 — the dedicated Qwen3-32B deployment Reader
+        # now runs on caps max_tokens at 40_960 and hard-errors above it
+        # (same trap chat_json() hit, app/clients/llm_client.py). Found
+        # live: a real scrape's extract_article() call failed outright
+        # ("The AI service is temporarily unavailable") because of this.
+        # 20_000 output tokens comfortably covers reproducing even the
+        # full 40,000-char input verbatim (this extraction never
+        # summarizes, so output is never larger than input).
+        max_tokens=20_000,
         extra_body=NO_THINKING,
     )
     return text
