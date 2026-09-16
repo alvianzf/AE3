@@ -9,6 +9,7 @@
 	import Button from '$lib/components/Button.svelte';
 	import Dialog from '$lib/components/Dialog.svelte';
 	import TextField from '$lib/components/TextField.svelte';
+	import Icon from '$lib/components/Icon.svelte';
 
 	let { data } = $props();
 	let active = $state('practitioners');
@@ -192,7 +193,7 @@
 				bind:value={practitionerQuery}
 				aria-label="Search practitioners"
 			/>
-			<Button variant="filled" onclick={() => (openNew = true)}>New practitioner</Button>
+			<Button variant="filled" onclick={() => (openNew = true)}><Icon name="plus" size={15} />New practitioner</Button>
 		</div>
 		<DataTable
 			columns={[{ key: 'name', label: 'Name', sortable: true }, { key: 'email', label: 'Email' }, { key: 'status', label: 'Status' }, { key: 'plan', label: 'Plan' }, { key: 'clients', label: 'Clients' }, { key: 'actions', label: '' }]}
@@ -212,12 +213,12 @@
 				<td>{p.clients ?? '—'}</td>
 				<td class="actions">
 					{#if p.status === 'pending'}
-						<Button variant="text" onclick={() => approve(p.id as string)}>Approve</Button>
-						<Button variant="text" onclick={() => askConfirm(p.id as string, p.name as string, 'reject')}>Reject</Button>
+						<Button variant="text" onclick={() => approve(p.id as string)}><Icon name="check" size={15} />Approve</Button>
+						<Button variant="text" onclick={() => askConfirm(p.id as string, p.name as string, 'reject')}><Icon name="x" size={15} />Reject</Button>
 					{:else if p.status === 'approved'}
-						<Button variant="text" onclick={() => askConfirm(p.id as string, p.name as string, 'suspend')}>Suspend</Button>
+						<Button variant="text" onclick={() => askConfirm(p.id as string, p.name as string, 'suspend')}><Icon name="pause" size={15} />Suspend</Button>
 					{:else}
-						<Button variant="text" onclick={() => approve(p.id as string)}>Re-approve</Button>
+						<Button variant="text" onclick={() => approve(p.id as string)}><Icon name="refresh" size={15} />Re-approve</Button>
 					{/if}
 				</td>
 			{/snippet}
@@ -225,7 +226,7 @@
 	{:else if active === 'admins'}
 		{#if isSuperadmin}
 			<div class="toolbar">
-				<Button variant="filled" onclick={() => (openNewAdmin = true)}>New admin</Button>
+				<Button variant="filled" onclick={() => (openNewAdmin = true)}><Icon name="plus" size={15} />New admin</Button>
 			</div>
 		{/if}
 		<DataTable
@@ -250,9 +251,9 @@
 				<td class="actions">
 					{#if isSuperadmin}
 						{#if a.is_active}
-							<Button variant="text" onclick={() => askAdminConfirm(a.id as string, a.name as string, 'suspend')}>Suspend</Button>
+							<Button variant="text" onclick={() => askAdminConfirm(a.id as string, a.name as string, 'suspend')}><Icon name="pause" size={15} />Suspend</Button>
 						{:else}
-							<Button variant="text" onclick={() => askAdminConfirm(a.id as string, a.name as string, 'reactivate')}>Reactivate</Button>
+							<Button variant="text" onclick={() => askAdminConfirm(a.id as string, a.name as string, 'reactivate')}><Icon name="play" size={15} />Reactivate</Button>
 						{/if}
 					{/if}
 				</td>
@@ -271,9 +272,9 @@
 				<td><Chip tone={c.active ? 'ok' : 'danger'}>{c.active ? 'active' : 'suspended'}</Chip></td>
 				<td class="actions">
 					{#if c.active}
-						<Button variant="text" onclick={() => askClientConfirm(c, 'suspend')}>Suspend</Button>
+						<Button variant="text" onclick={() => askClientConfirm(c, 'suspend')}><Icon name="pause" size={15} />Suspend</Button>
 					{:else}
-						<Button variant="text" onclick={() => askClientConfirm(c, 'reactivate')}>Reactivate</Button>
+						<Button variant="text" onclick={() => askClientConfirm(c, 'reactivate')}><Icon name="play" size={15} />Reactivate</Button>
 					{/if}
 				</td>
 			{/snippet}

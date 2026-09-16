@@ -8,6 +8,7 @@
 	import TextField from '$lib/components/TextField.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import Chip from '$lib/components/Chip.svelte';
+	import Icon from '$lib/components/Icon.svelte';
 
 	// core_store.QUESTION_TYPES (app/core_store.py) — the client portal
 	// (web/src/routes/(client)/client/questionnaire/+page.svelte) already
@@ -111,7 +112,7 @@
 
 <Spotlight title="Questionnaires">
 	{#snippet actions()}
-		<Button variant="filled" onclick={openCreate}>New questionnaire</Button>
+		<Button variant="filled" onclick={openCreate}><Icon name="plus" size={15} />New questionnaire</Button>
 	{/snippet}
 	<DataTable
 		columns={[{ key: 'title', label: 'Title', sortable: true }, { key: 'version', label: 'Version' }, { key: 'is_active', label: 'Active' }, { key: 'actions', label: '' }]}
@@ -122,7 +123,7 @@
 			<td>{q.title}</td>
 			<td>{q.version}</td>
 			<td>{#if q.is_active}<Chip tone="ok">Active</Chip>{:else}No{/if}</td>
-			<td><button class="edit" onclick={() => openEdit(q.id)}>Edit</button></td>
+			<td><button class="edit" onclick={() => openEdit(q.id)}><Icon name="edit" size={14} />Edit</button></td>
 		{/snippet}
 	</DataTable>
 </Spotlight>
@@ -170,6 +171,7 @@
 
 <style>
 	.edit {
+		display: inline-flex; align-items: center; gap: .35rem;
 		font: inherit; font-size: var(--text-sm); font-weight: 650; cursor: pointer;
 		border: 1px solid var(--line); background: var(--panel); color: var(--accent-ink);
 		border-radius: var(--r); padding: .3rem .7rem;
