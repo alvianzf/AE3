@@ -13,11 +13,117 @@
 	let { data } = $props();
 	let active = $state('practitioners');
 	let openNew = $state(false);
+	// Admin-account management (create/role-change/suspend) is
+	// superadmin-only on the backend (auth.require_superadmin) — a plain
+	// admin can reach this tab (the layout guard only checks role==='admin')
+	// so the controls themselves must be gated too, or a non-superadmin
+	// sees fully-interactive buttons that 403 on every click.
+	const isSuperadmin = $derived(data.session?.admin_role === 'superadmin');
+
+	// Practitioner search — same client-side-filter-over-an-already-loaded
+	// list approach the Library page's search box uses.
+	let practitionerQuery = $state('');
+	const filteredPractitioners = $derived.by(() => {
+		const needle = practitionerQuery.trim().toLowerCase();
+		if (!needle) return data.practitioners;
+		return data.practitioners.filter((p: any) =>
+			[p.name, p.email].some((v) => (v ?? '').toLowerCase().includes(needle))
+		);
+	});
 
 	let name = $state('');
 	let email = $state('');
 	let password = $state('');
 	let submitting = $state(false);
+
+	// --- Admins tab: mirrors the Practitioners tab's create/confirm/toast
+	// pattern above, wired to the four superadmin routes that already
+	// existed on the backend with no UI (app/main.py:1115-1156).
+	let openNewAdmin = $state(false);
+	let adminName = $state('');
+	let adminEmail = $state('');
+	let adminPassword = $state('');
+	let adminRole = $state('admin');
+	let submittingAdmin = $state(false);
+
+	async function createAdmin(e: Event) {
+		e.preventDefault();
+		submittingAdmin = true;
+		try {
+			await post(fetch, '/superadmin/admins', {
+				name: adminName, email: adminEmail, password: adminPassword, role: adminRole
+			});
+			toast('Admin created.');
+			openNewAdmin = false;
+			adminName = adminEmail = adminPassword = '';
+			adminRole = 'admin';
+			await invalidateAll();
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		} finally {
+			submittingAdmin = false;
+		}
+	}
+
+	async function setAdminRole(id: string, role: string) {
+		try {
+			await put(fetch, `/superadmin/admins/${id}/role`, { role });
+			toast('Role updated.');
+			await invalidateAll();
+		} catch (err: any) {
+			// The backend refuses to demote the last active superadmin (400) —
+			// surface that message rather than swallowing it.
+			toast(err.message, 'alert');
+			await invalidateAll();
+		}
+	}
+
+	let confirmingAdmin = $state<{ id: string; name: string; kind: 'suspend' | 'reactivate' } | null>(null);
+	let confirmAdminOpen = $state(false);
+
+	function askAdminConfirm(id: string, name: string, kind: 'suspend' | 'reactivate') {
+		confirmingAdmin = { id, name, kind };
+		confirmAdminOpen = true;
+	}
+
+	async function runAdminConfirmed() {
+		if (!confirmingAdmin) return;
+		const { id, kind } = confirmingAdmin;
+		confirmAdminOpen = false;
+		try {
+			await post(fetch, `/superadmin/admins/${id}/${kind}`);
+			toast(kind === 'suspend' ? 'Admin suspended.' : 'Admin reactivated.');
+			await invalidateAll();
+		} catch (err: any) {
+			// Same last-active-superadmin guardrail as setAdminRole above.
+			toast(err.message, 'alert');
+		}
+	}
+
+	// --- Clients tab: read-only listing across every Pro practitioner's
+	// vault, plus a suspend/reactivate action (app/vault.py's new `active`
+	// column — the same pattern as practitioner/admin suspension, not a
+	// separate mechanism).
+	let confirmingClient = $state<{ practitioner_id: string; id: string; name: string; kind: 'suspend' | 'reactivate' } | null>(null);
+	let confirmClientOpen = $state(false);
+
+	function askClientConfirm(c: any, kind: 'suspend' | 'reactivate') {
+		confirmingClient = { practitioner_id: c.practitioner_id, id: c.id, name: c.name, kind };
+		confirmClientOpen = true;
+	}
+
+	async function runClientConfirmed() {
+		if (!confirmingClient) return;
+		const { practitioner_id, id, kind } = confirmingClient;
+		confirmClientOpen = false;
+		try {
+			await post(fetch, `/admin/clients/${practitioner_id}/${id}/${kind}`);
+			toast(kind === 'suspend' ? 'Client suspended.' : 'Client reactivated.');
+			await invalidateAll();
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		}
+	}
 
 	async function approve(id: string) {
 		try { await post(fetch, `/admin/practitioners/${id}/approve`); await invalidateAll(); }
@@ -75,15 +181,22 @@
 <!-- specs/v4/03: Tier 2 on this screen — a datatable an admin revisits many
      times a day doesn't need the red band's attention-getting weight. -->
 <Quiet title="Users">
-	<Tabs bind:active tabs={[{ id: 'practitioners', label: 'Practitioners' }, { id: 'admins', label: 'Admins' }]} />
+	<Tabs bind:active tabs={[{ id: 'practitioners', label: 'Practitioners' }, { id: 'admins', label: 'Admins' }, { id: 'clients', label: 'Clients' }]} />
 
 	{#if active === 'practitioners'}
 		<div class="toolbar">
+			<input
+				class="search"
+				type="search"
+				placeholder="Search name or email…"
+				bind:value={practitionerQuery}
+				aria-label="Search practitioners"
+			/>
 			<Button variant="filled" onclick={() => (openNew = true)}>New practitioner</Button>
 		</div>
 		<DataTable
-			columns={[{ key: 'name', label: 'Name', sortable: true }, { key: 'email', label: 'Email' }, { key: 'status', label: 'Status' }, { key: 'plan', label: 'Plan' }, { key: 'actions', label: '' }]}
-			rows={data.practitioners}
+			columns={[{ key: 'name', label: 'Name', sortable: true }, { key: 'email', label: 'Email' }, { key: 'status', label: 'Status' }, { key: 'plan', label: 'Plan' }, { key: 'clients', label: 'Clients' }, { key: 'actions', label: '' }]}
+			rows={filteredPractitioners}
 			empty="No practitioners yet."
 		>
 			{#snippet row(p)}
@@ -96,6 +209,7 @@
 						<option value="pro">Pro</option>
 					</select>
 				</td>
+				<td>{p.clients ?? '—'}</td>
 				<td class="actions">
 					{#if p.status === 'pending'}
 						<Button variant="text" onclick={() => approve(p.id as string)}>Approve</Button>
@@ -108,16 +222,60 @@
 				</td>
 			{/snippet}
 		</DataTable>
-	{:else}
+	{:else if active === 'admins'}
+		{#if isSuperadmin}
+			<div class="toolbar">
+				<Button variant="filled" onclick={() => (openNewAdmin = true)}>New admin</Button>
+			</div>
+		{/if}
 		<DataTable
-			columns={[{ key: 'name', label: 'Name' }, { key: 'email', label: 'Email' }, { key: 'role', label: 'Role' }]}
+			columns={[{ key: 'name', label: 'Name' }, { key: 'email', label: 'Email' }, { key: 'role', label: 'Role' }, { key: 'is_active', label: 'Status' }, { key: 'actions', label: '' }]}
 			rows={data.admins}
 			empty="No admins yet."
 		>
 			{#snippet row(a)}
 				<td>{a.name}</td>
 				<td>{a.email}</td>
-				<td><Chip tone="neutral">{a.role}</Chip></td>
+				<td>
+					{#if isSuperadmin}
+						<select value={a.role} onchange={(e) => setAdminRole(a.id as string, (e.target as HTMLSelectElement).value)}>
+							<option value="admin">Admin</option>
+							<option value="superadmin">Superadmin</option>
+						</select>
+					{:else}
+						{a.role}
+					{/if}
+				</td>
+				<td><Chip tone={a.is_active ? 'ok' : 'danger'}>{a.is_active ? 'active' : 'suspended'}</Chip></td>
+				<td class="actions">
+					{#if isSuperadmin}
+						{#if a.is_active}
+							<Button variant="text" onclick={() => askAdminConfirm(a.id as string, a.name as string, 'suspend')}>Suspend</Button>
+						{:else}
+							<Button variant="text" onclick={() => askAdminConfirm(a.id as string, a.name as string, 'reactivate')}>Reactivate</Button>
+						{/if}
+					{/if}
+				</td>
+			{/snippet}
+		</DataTable>
+	{:else}
+		<DataTable
+			columns={[{ key: 'name', label: 'Name' }, { key: 'email', label: 'Email' }, { key: 'practitioner_name', label: 'Practitioner' }, { key: 'active', label: 'Status' }, { key: 'actions', label: '' }]}
+			rows={data.clients}
+			empty="No clients yet."
+		>
+			{#snippet row(c)}
+				<td>{c.name}</td>
+				<td>{c.email}</td>
+				<td>{c.practitioner_name}</td>
+				<td><Chip tone={c.active ? 'ok' : 'danger'}>{c.active ? 'active' : 'suspended'}</Chip></td>
+				<td class="actions">
+					{#if c.active}
+						<Button variant="text" onclick={() => askClientConfirm(c, 'suspend')}>Suspend</Button>
+					{:else}
+						<Button variant="text" onclick={() => askClientConfirm(c, 'reactivate')}>Reactivate</Button>
+					{/if}
+				</td>
 			{/snippet}
 		</DataTable>
 	{/if}
@@ -149,8 +307,61 @@
 	{/snippet}
 </Dialog>
 
+<Dialog bind:open={openNewAdmin} title="New admin">
+	<form onsubmit={createAdmin} id="na-form">
+		<TextField label="Name" bind:value={adminName} required />
+		<TextField label="Email" type="email" bind:value={adminEmail} required />
+		<TextField label="Temporary password" type="password" bind:value={adminPassword} required />
+		<div class="field">
+			<label for="na-role">Role</label>
+			<select id="na-role" bind:value={adminRole}>
+				<option value="admin">Admin</option>
+				<option value="superadmin">Superadmin</option>
+			</select>
+		</div>
+	</form>
+	{#snippet footer()}
+		<Button variant="ghost" onclick={() => (openNewAdmin = false)}>Cancel</Button>
+		<Button onclick={createAdmin} loading={submittingAdmin}>Create</Button>
+	{/snippet}
+</Dialog>
+
+<Dialog bind:open={confirmAdminOpen} title={confirmingAdmin?.kind === 'suspend' ? 'Suspend admin' : 'Reactivate admin'}>
+	{#if confirmingAdmin}
+		<p>
+			{confirmingAdmin.kind === 'suspend'
+				? `Suspend "${confirmingAdmin.name}"? They will immediately lose portal access.`
+				: `Reactivate "${confirmingAdmin.name}"?`}
+		</p>
+	{/if}
+	{#snippet footer()}
+		<Button variant="ghost" onclick={() => (confirmAdminOpen = false)}>Cancel</Button>
+		<Button variant="danger" onclick={runAdminConfirmed}>{confirmingAdmin?.kind === 'suspend' ? 'Suspend' : 'Reactivate'}</Button>
+	{/snippet}
+</Dialog>
+
+<Dialog bind:open={confirmClientOpen} title={confirmingClient?.kind === 'suspend' ? 'Suspend client' : 'Reactivate client'}>
+	{#if confirmingClient}
+		<p>
+			{confirmingClient.kind === 'suspend'
+				? `Suspend "${confirmingClient.name}"?`
+				: `Reactivate "${confirmingClient.name}"?`}
+		</p>
+	{/if}
+	{#snippet footer()}
+		<Button variant="ghost" onclick={() => (confirmClientOpen = false)}>Cancel</Button>
+		<Button variant="danger" onclick={runClientConfirmed}>{confirmingClient?.kind === 'suspend' ? 'Suspend' : 'Reactivate'}</Button>
+	{/snippet}
+</Dialog>
+
 <style>
-	.toolbar { display: flex; justify-content: flex-end; margin: var(--space-3) 0; }
+	.toolbar { display: flex; justify-content: flex-end; align-items: center; gap: var(--space-3); margin: var(--space-3) 0; }
 	.actions { display: flex; gap: .25rem; }
 	select { border: 1px solid var(--line-2); border-radius: var(--r); padding: .3rem .5rem; }
+	.field { display: flex; flex-direction: column; gap: .35rem; }
+	.search {
+		flex: 1 1 auto; max-width: 20rem; font-size: var(--text-sm); padding: .5rem .8rem;
+		border: 1px solid var(--line-2); border-radius: var(--r); background: var(--panel); color: var(--ink);
+	}
+	.search:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 </style>

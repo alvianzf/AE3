@@ -183,6 +183,24 @@ def log(actor: str, action: str, detail: str) -> None:
         )
 
 
+def list_audit_events(limit: int = 50, offset: int = 0) -> list[dict]:
+    """Read back what log() writes — practitioner/admin-management events
+    (approvals, plan changes, admin created/role-changed/suspended,
+    questionnaire edits). Distinct from the Neo4j library-only audit trail
+    store.audit() covers (GET /api/audit) — see that route's docstring."""
+    with core_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM audit_events ORDER BY ts DESC LIMIT %s OFFSET %s",
+            (limit, offset),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def count_audit_events() -> int:
+    with core_connection() as conn:
+        return conn.execute("SELECT count(*) AS n FROM audit_events").fetchone()["n"]
+
+
 # --- Admins --------------------------------------------------------------
 
 ADMIN_ROLES = ("admin", "superadmin")
