@@ -751,14 +751,26 @@ def get_questionnaire(questionnaire_id: str) -> dict | None:
     return {**dict(row), "questions": [_decode_question(q) for q in questions]}
 
 
-def list_questionnaires(practitioner_id: str | None = None) -> list[dict]:
+def list_questionnaires(
+    practitioner_id: str | None = None, include_admin_default: bool = False,
+) -> list[dict]:
     """With no practitioner_id: the admin listing, every questionnaire in
-    every scope. With one: only that practitioner's own — never the admin
-    default or another practitioner's."""
+    every scope. With one: only that practitioner's own — never another
+    practitioner's — plus the admin default too if include_admin_default
+    (view-only on the caller's side; this function doesn't enforce that,
+    the route layer does by never wiring edit/activate/deactivate to a
+    questionnaire outside the caller's own scope)."""
     with core_connection() as conn:
         if practitioner_id is None:
             rows = conn.execute(
                 "SELECT * FROM questionnaires ORDER BY created_at DESC"
+            ).fetchall()
+        elif include_admin_default:
+            rows = conn.execute(
+                "SELECT * FROM questionnaires "
+                "WHERE practitioner_id = %s OR practitioner_id IS NULL "
+                "ORDER BY created_at DESC",
+                (practitioner_id,),
             ).fetchall()
         else:
             rows = conn.execute(

@@ -1520,9 +1520,24 @@ def me_set_source_weight(source_id: str, body: SourceWeightIn,
 def _own_questionnaire_or_404(practitioner_id: str, questionnaire_id: str) -> dict:
     """404 (not 403) if the questionnaire isn't this practitioner's own —
     don't confirm existence of another practitioner's questionnaire, or the
-    admin default."""
+    admin default. Used by edit/activate/deactivate — a practitioner can
+    view the admin default (see _own_or_admin_default_questionnaire_or_404)
+    but never modify it."""
     questionnaire = core_store.get_questionnaire(questionnaire_id)
     if questionnaire is None or questionnaire["practitioner_id"] != practitioner_id:
+        raise HTTPException(404, "no such questionnaire")
+    return questionnaire
+
+
+def _own_or_admin_default_questionnaire_or_404(
+    practitioner_id: str, questionnaire_id: str,
+) -> dict:
+    """Like _own_questionnaire_or_404, but also allows the admin default
+    (practitioner_id IS NULL) — a practitioner can see what it asks before
+    deciding whether to build their own, same as the admin builder's
+    Preview isn't a separate action, just GET. Never used for a write."""
+    questionnaire = core_store.get_questionnaire(questionnaire_id)
+    if questionnaire is None or questionnaire["practitioner_id"] not in (practitioner_id, None):
         raise HTTPException(404, "no such questionnaire")
     return questionnaire
 
@@ -1531,14 +1546,14 @@ def _own_questionnaire_or_404(practitioner_id: str, questionnaire_id: str) -> di
 def me_list_questionnaires(
     session: dict = Depends(auth.require_pro_practitioner),
 ) -> list[dict]:
-    return core_store.list_questionnaires(session["id"])
+    return core_store.list_questionnaires(session["id"], include_admin_default=True)
 
 
 @app.get("/api/me/questionnaires/{questionnaire_id}")
 def me_get_questionnaire(
     questionnaire_id: str, session: dict = Depends(auth.require_pro_practitioner),
 ) -> dict:
-    return _own_questionnaire_or_404(session["id"], questionnaire_id)
+    return _own_or_admin_default_questionnaire_or_404(session["id"], questionnaire_id)
 
 
 @app.post("/api/me/questionnaires")
