@@ -31,7 +31,7 @@
 </script>
 
 <header class="topbar">
-	<div class="inner container-wide">
+	<div class="inner container">
 		<a href="/" class="brand">
 			<Sprig size={22} />
 			<span class="wordmark">Clinic</span>

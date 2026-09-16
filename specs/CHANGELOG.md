@@ -1,5 +1,55 @@
 # Specs changelog
 
+## v6.6 — 2026-09-16 (client and superadmin portal audits; public-page layout)
+
+Two structured "act as a real user" audits run against the live app.
+
+Client-portal audit: the wearables page showed a plain "Connected" chip
+and a "N connected" dashboard count indistinguishable from a real
+integration, even though `app/wearables.py`'s own docstring says
+post-connect data is fixture, not a live vendor pull — fixed with an
+honest "Coming soon" state (backend OAuth plumbing untouched). The
+questionnaire page ignored its own typed schema (text/number/date/
+choice/multi_choice, options, theme) and rendered every question as a
+plain textarea — fixed with type-aware inputs, theme grouping, and a
+progress bar. One finding left open, pending a product decision: a
+client has no visibility at all into what their practitioner discussed
+or decided via the AI consult tool.
+
+Superadmin-portal audit: a real Postgres `audit_events` trail was being
+written on every sensitive admin action (practitioner approve/reject/
+suspend, admin create/role-change/suspend) with no endpoint or page
+ever reading it back — fixed with a paginated read endpoint and a
+second Audit-page section. Admin-account and client-account management
+both existed on the backend with zero UI — both fixed, the Admins tab
+now also gated to `session.admin_role === 'superadmin'` on the
+frontend since a plain admin could otherwise see fully-interactive
+controls that just 403'd. **A real auth-enforcement gap was found while
+wiring up client suspension**: `app/auth.py`'s client login path and
+`require_client` never checked any active/suspended flag for the
+client themselves (only for their practitioner) — a suspended client
+could still log in, and an already-logged-in one kept full access
+until their session cookie expired. Fixed with a live DB check on every
+request, the same pattern already used for admin role enforcement.
+Also fixed: a questionnaire-builder bug that silently flattened typed/
+themed questions to plain text on every edit; a missing health-status
+panel on the admin dashboard; a practitioner-table search box and
+client-count column; UI triggers for the previously curl-only
+`/api/relink` and `/api/consolidate` maintenance routes.
+
+A separate, unrelated fix — the public navbar and practitioner-
+directory grid were capped at the same 78rem reading-width used for
+actual body text, reading as dead margins on wide screens — was shipped
+same day, then reverted at user request a few hours later. The
+implementation approach (and a CSS-specificity pitfall hit and fixed
+along the way) is kept in `v6.6/03` for reuse if wanted again; the live
+site is unchanged from before this entry on that specific point.
+
+**Why:** both audits were requested directly ("act as a user/client...
+identify the gaps", then the same for superadmin) rather than found
+incidentally — a deliberate sweep for gaps neither user-reported bugs
+nor code review had surfaced yet.
+
 ## v6.5 — 2026-09-15 (lab intake; three-deployment model routing; consult page hardening)
 
 Lab intake: practitioners and clients can both record patient data
