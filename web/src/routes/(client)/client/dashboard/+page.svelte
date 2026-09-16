@@ -17,6 +17,12 @@
 		href="/client/questionnaire"
 	/>
 	<StatTile
+		label="Health record"
+		value={data.entries?.length ? `${data.entries.length} entries` : 'Add an entry'}
+		icon="user-card"
+		href="/client/record"
+	/>
+	<StatTile
 		label="Files"
 		value={data.files?.length ? `${data.files.length} uploaded` : 'Upload'}
 		icon="folder"

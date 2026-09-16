@@ -45,6 +45,7 @@
 {/if}
 
 <div class="grid-auto tiles">
+	<StatTile label="Clients" value={data.clients?.length ?? 0} icon="users" href="/practitioner/clients" />
 	<StatTile label="New contacts" value={data.notifications.new_contacts ?? 0} icon="mail" href="/practitioner/contacts" />
 	<StatTile label="Unviewed intake" value={data.notifications.unviewed_intake ?? 0} icon="clipboard" href="/practitioner/clients" />
 	<StatTile label="Consults logged" value={data.recentSessions?.length ?? 0} icon="message" href="/practitioner/consult" />

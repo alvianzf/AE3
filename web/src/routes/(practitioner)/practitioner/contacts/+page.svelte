@@ -6,6 +6,7 @@
 	import DataTable from '$lib/components/DataTable.svelte';
 	import Chip from '$lib/components/Chip.svelte';
 	import Button from '$lib/components/Button.svelte';
+	import Icon from '$lib/components/Icon.svelte';
 
 	// specs/v4.1/03 H5 — converting a contact into a client used to mean
 	// retyping the name/email it already contains into a separate dialog.
@@ -40,7 +41,7 @@
 			<td><Chip tone={c.status === 'new' ? 'accent' : 'neutral'}>{c.status}</Chip></td>
 			<td>
 				{#if c.status === 'new'}
-					<Button variant="text" onclick={() => setStatus(c.id as string, 'handled')}>Mark handled</Button>
+					<Button variant="text" onclick={() => setStatus(c.id as string, 'handled')}><Icon name="check" size={15} />Mark handled</Button>
 				{/if}
 			</td>
 		{/snippet}

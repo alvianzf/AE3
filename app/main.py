@@ -844,7 +844,7 @@ def get_source(source_id: str, _admin: dict = Depends(auth.require_admin)) -> di
 
 
 @app.get("/api/sources/{source_id}/text")
-def read_source(source_id: str, _admin: dict = Depends(auth.require_admin)) -> dict:
+def read_source(source_id: str, _caller: dict = Depends(auth.require_admin_or_pro_practitioner)) -> dict:
     """The source as ingested, so the original stays readable in the library."""
     source = store.document_text(source_id)
     if source is None:
@@ -855,7 +855,7 @@ def read_source(source_id: str, _admin: dict = Depends(auth.require_admin)) -> d
 
 
 @app.get("/api/sources/{source_id}/original")
-def download_source(source_id: str, _admin: dict = Depends(auth.require_admin)) -> FileResponse:
+def download_source(source_id: str, _caller: dict = Depends(auth.require_admin_or_pro_practitioner)) -> FileResponse:
     """The uploaded file itself — what the passages were extracted *from*.
 
     404 when no original was kept: pasted text, a source ingested before the file
@@ -1355,7 +1355,16 @@ class QuestionnaireIn(BaseModel):
 
 @app.get("/api/admin/questionnaires")
 def admin_list_questionnaires(_admin: dict = Depends(auth.require_admin)) -> list[dict]:
-    return core_store.list_questionnaires()
+    # Multiple rows can legitimately show "Active" at once now (one per
+    # scope: the admin default, plus each practitioner's own) — tag each
+    # with who it belongs to so the admin table can show that, not just a
+    # bare Active/No chip that used to be unambiguous when only one
+    # questionnaire, ever, could be active (found in review).
+    names = {p["id"]: p["name"] for p in core_store.list_practitioners()}
+    rows = core_store.list_questionnaires()
+    for r in rows:
+        r["owner_name"] = names.get(r.get("practitioner_id")) if r.get("practitioner_id") else None
+    return rows
 
 
 @app.get("/api/admin/questionnaires/{questionnaire_id}")
@@ -1379,6 +1388,26 @@ def admin_edit_questionnaire(questionnaire_id: str, body: QuestionnaireIn,
     try:
         return core_store.edit_questionnaire(
             questionnaire_id, body.title, body.questions, admin["id"])
+    except ValueError:
+        raise HTTPException(404, "no such questionnaire")
+
+
+@app.post("/api/admin/questionnaires/{questionnaire_id}/activate")
+def admin_activate_questionnaire(
+    questionnaire_id: str, _admin: dict = Depends(auth.require_admin),
+) -> dict:
+    try:
+        return core_store.set_questionnaire_active(questionnaire_id, True)
+    except ValueError:
+        raise HTTPException(404, "no such questionnaire")
+
+
+@app.post("/api/admin/questionnaires/{questionnaire_id}/deactivate")
+def admin_deactivate_questionnaire(
+    questionnaire_id: str, _admin: dict = Depends(auth.require_admin),
+) -> dict:
+    try:
+        return core_store.set_questionnaire_active(questionnaire_id, False)
     except ValueError:
         raise HTTPException(404, "no such questionnaire")
 
@@ -1484,6 +1513,66 @@ def me_set_source_weight(source_id: str, body: SourceWeightIn,
         return vault.set_source_weight(session["id"], source_id, body.weight)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
+
+
+# --- Practitioner portal: own questionnaires (Pro only) --------------------------
+
+def _own_questionnaire_or_404(practitioner_id: str, questionnaire_id: str) -> dict:
+    """404 (not 403) if the questionnaire isn't this practitioner's own —
+    don't confirm existence of another practitioner's questionnaire, or the
+    admin default."""
+    questionnaire = core_store.get_questionnaire(questionnaire_id)
+    if questionnaire is None or questionnaire["practitioner_id"] != practitioner_id:
+        raise HTTPException(404, "no such questionnaire")
+    return questionnaire
+
+
+@app.get("/api/me/questionnaires")
+def me_list_questionnaires(
+    session: dict = Depends(auth.require_pro_practitioner),
+) -> list[dict]:
+    return core_store.list_questionnaires(session["id"])
+
+
+@app.get("/api/me/questionnaires/{questionnaire_id}")
+def me_get_questionnaire(
+    questionnaire_id: str, session: dict = Depends(auth.require_pro_practitioner),
+) -> dict:
+    return _own_questionnaire_or_404(session["id"], questionnaire_id)
+
+
+@app.post("/api/me/questionnaires")
+def me_create_questionnaire(
+    body: QuestionnaireIn, session: dict = Depends(auth.require_pro_practitioner),
+) -> dict:
+    return core_store.create_questionnaire(
+        body.title, body.questions, session["id"], practitioner_id=session["id"])
+
+
+@app.post("/api/me/questionnaires/{questionnaire_id}/edit")
+def me_edit_questionnaire(
+    questionnaire_id: str, body: QuestionnaireIn,
+    session: dict = Depends(auth.require_pro_practitioner),
+) -> dict:
+    _own_questionnaire_or_404(session["id"], questionnaire_id)
+    return core_store.edit_questionnaire(
+        questionnaire_id, body.title, body.questions, session["id"])
+
+
+@app.post("/api/me/questionnaires/{questionnaire_id}/activate")
+def me_activate_questionnaire(
+    questionnaire_id: str, session: dict = Depends(auth.require_pro_practitioner),
+) -> dict:
+    _own_questionnaire_or_404(session["id"], questionnaire_id)
+    return core_store.set_questionnaire_active(questionnaire_id, True)
+
+
+@app.post("/api/me/questionnaires/{questionnaire_id}/deactivate")
+def me_deactivate_questionnaire(
+    questionnaire_id: str, session: dict = Depends(auth.require_pro_practitioner),
+) -> dict:
+    _own_questionnaire_or_404(session["id"], questionnaire_id)
+    return core_store.set_questionnaire_active(questionnaire_id, False)
 
 
 # --- Practitioner portal: Pro clients + consultation -----------------------------
@@ -2077,7 +2166,7 @@ def me_delete_own_entry(entry_id: str, session: dict = Depends(auth.require_clie
 
 @app.get("/api/me/questionnaire")
 def me_active_questionnaire(session: dict = Depends(auth.require_client)) -> dict | None:
-    return core_store.get_active_questionnaire()
+    return core_store.get_active_questionnaire(session["practitioner_id"])
 
 
 class QuestionnaireResponseIn(BaseModel):

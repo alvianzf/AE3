@@ -559,7 +559,8 @@ def catalogue(min_grade: int) -> list[dict]:
             RETURN doc.id AS id, doc.title AS title, doc.source_card_summary AS summary,
                    doc.grade AS grade, doc.origin AS origin, doc.kind AS kind,
                    doc.author AS author, doc.published AS published,
-                   doc.topics AS topics, count(DISTINCT c) AS passages
+                   doc.topics AS topics, doc.original_name AS original_name,
+                   count(DISTINCT c) AS passages
             ORDER BY doc.grade DESC, doc.title
             """,
             min_grade=min_grade,

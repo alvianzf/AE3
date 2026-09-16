@@ -297,7 +297,14 @@ def list_clients(practitioner_id: str) -> list[dict]:
                    (SELECT count(*) FROM sessions s WHERE s.client_id = c.id)
                        AS sessions,
                    (SELECT count(*) FROM record_entries e WHERE e.client_id = c.id)
-                       AS entries
+                       AS entries,
+                   EXISTS (
+                       SELECT 1 FROM questionnaire_responses qr
+                       WHERE qr.client_id = c.id AND qr.viewed_at IS NULL
+                         AND qr.submitted_at = (
+                             SELECT max(qr2.submitted_at) FROM questionnaire_responses qr2
+                             WHERE qr2.client_id = qr.client_id)
+                   ) AS has_unviewed_intake
             FROM clients c ORDER BY c.created_at DESC
             """
         ).fetchall()

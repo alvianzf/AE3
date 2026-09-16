@@ -127,6 +127,23 @@ def require_pro_practitioner(session: dict = Depends(require_practitioner)) -> d
     return session
 
 
+def require_admin_or_pro_practitioner(request: Request) -> dict:
+    """Library source content (GET /api/sources/{id}/text, /original) is
+    shared/admin-curated but a Pro practitioner already reads it implicitly
+    via their own consults and per-source weighting — viewing it directly
+    isn't a new exposure for them. Pro-only, not every practitioner: a Basic
+    account has no consults and no weighting page (both require_pro_practitioner-
+    gated), so nothing about that reasoning extends to them — found in review,
+    the first version of this let any non-suspended practitioner (including
+    Basic, and even 'pending'/'rejected' status) hit these routes directly."""
+    session = current_session(request)
+    if session is not None and session["role"] == "admin":
+        return require_admin(request)
+    if session is not None and session["role"] == "practitioner":
+        return require_pro_practitioner(require_practitioner(request))
+    raise HTTPException(status_code=401, detail="Admin or practitioner login required.")
+
+
 def require_client(request: Request) -> dict:
     session = current_session(request)
     if session is None or session["role"] != "client":

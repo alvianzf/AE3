@@ -18,12 +18,12 @@
 	     client portal's identity; practitioner and admin override them on
 	     their own .shell instead. -->
 	<AppRail {items} portalLabel="Client portal" userLabel={data.session?.name} />
-	<main class="container">
+	<main>
 		{@render children()}
 	</main>
 </div>
 
 <style>
 	.shell { display: flex; align-items: flex-start; min-height: 100dvh; }
-	main { flex: 1 1 auto; padding: var(--space-6) var(--space-5); }
+	main { flex: 1 1 auto; min-width: 0; padding: var(--space-6) var(--space-5); }
 </style>

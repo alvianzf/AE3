@@ -10,9 +10,11 @@
 	import Chip from '$lib/components/Chip.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 
-	// core_store.QUESTION_TYPES (app/core_store.py) — the client portal
-	// (web/src/routes/(client)/client/questionnaire/+page.svelte) already
-	// renders all five; this builder used to only ever write 'text'.
+	// Mirrors the admin builder (../../../(admin)/admin/questionnaires) —
+	// same core_store.QUESTION_TYPES, same question editor — but scoped to
+	// this practitioner's own questionnaires via /api/me/questionnaires*
+	// instead of /api/admin/questionnaires*. Only a Pro practitioner ever
+	// has clients to send one to (require_pro_practitioner).
 	const QUESTION_TYPES = ['text', 'number', 'date', 'choice', 'multi_choice'] as const;
 
 	type Question = {
@@ -27,13 +29,9 @@
 	let open = $state(false);
 	// Set when editing an existing questionnaire; null means "New
 	// questionnaire". Editing always creates a new version rather than
-	// mutating in place (core_store.edit_questionnaire) — and, same as a
-	// fresh create, that new version immediately becomes the active one
-	// *within its own scope* (the admin default, or one practitioner's own
-	// set), replacing whatever was active in that scope before
-	// (core_store._insert_questionnaire's deactivation is now scoped by
-	// practitioner_id, not global — a practitioner's own questionnaires and
-	// the admin default deactivate independently of each other).
+	// mutating in place (core_store.edit_questionnaire) — the new version
+	// keeps the version it replaces' active state untouched, since
+	// activation is now a separate explicit action.
 	let editingId = $state<string | null>(null);
 	let title = $state('');
 	let questions = $state<Question[]>([]);
@@ -52,13 +50,9 @@
 
 	async function openEdit(id: string) {
 		try {
-			const q = await get(fetch, `/admin/questionnaires/${id}`);
+			const q = await get(fetch, `/me/questionnaires/${id}`);
 			editingId = id;
 			title = q.title;
-			// Round-trips every field the backend carries — input_type,
-			// options, theme — instead of flattening to prompt-only text,
-			// which used to silently downgrade an already-typed/themed
-			// questionnaire to plain text on resave.
 			questions = (q.questions ?? []).map((qq: any) => ({
 				key: crypto.randomUUID(),
 				prompt: qq.prompt,
@@ -81,16 +75,6 @@
 		questions = questions.filter((q) => q.key !== key);
 	}
 
-	async function setActive(id: string, active: boolean) {
-		try {
-			await post(fetch, `/admin/questionnaires/${id}/${active ? 'activate' : 'deactivate'}`);
-			toast(active ? 'Questionnaire activated.' : 'Questionnaire deactivated.');
-			await invalidateAll();
-		} catch (err: any) {
-			toast(err.message, 'alert');
-		}
-	}
-
 	async function save(e: Event) {
 		e.preventDefault();
 		submitting = true;
@@ -106,11 +90,11 @@
 						: []
 			}));
 		try {
-			await post(fetch, editingId ? `/admin/questionnaires/${editingId}` : '/admin/questionnaires', {
+			await post(fetch, editingId ? `/me/questionnaires/${editingId}/edit` : '/me/questionnaires', {
 				title,
 				questions: payload
 			});
-			toast(editingId ? 'New version saved and made active.' : 'Questionnaire created.');
+			toast(editingId ? 'New version saved.' : 'Questionnaire created.');
 			open = false;
 			await invalidateAll();
 		} catch (err: any) {
@@ -119,22 +103,35 @@
 			submitting = false;
 		}
 	}
+
+	async function setActive(id: string, active: boolean) {
+		try {
+			await post(fetch, `/me/questionnaires/${id}/${active ? 'activate' : 'deactivate'}`);
+			toast(active ? 'Questionnaire activated.' : 'Questionnaire deactivated.');
+			await invalidateAll();
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		}
+	}
 </script>
 
-<svelte:head><title>Questionnaires — Admin portal</title></svelte:head>
+<svelte:head><title>Questionnaires — Practitioner portal</title></svelte:head>
 
 <Spotlight title="Questionnaires">
 	{#snippet actions()}
 		<Button variant="filled" onclick={openCreate}><Icon name="plus" size={15} />New questionnaire</Button>
 	{/snippet}
+	<p class="hint">
+		Your active questionnaire goes to your own clients instead of the site default. Deactivate
+		it any time to fall back to the default.
+	</p>
 	<DataTable
-		columns={[{ key: 'title', label: 'Title', sortable: true }, { key: 'owner', label: 'Owner' }, { key: 'version', label: 'Version' }, { key: 'is_active', label: 'Active' }, { key: 'actions', label: '' }]}
+		columns={[{ key: 'title', label: 'Title', sortable: true }, { key: 'version', label: 'Version' }, { key: 'is_active', label: 'Active' }, { key: 'actions', label: '' }]}
 		rows={data.questionnaires}
-		empty="No questionnaires yet."
+		empty="You haven't created a questionnaire yet — your clients see the site default until you do."
 	>
 		{#snippet row(q: any)}
 			<td>{q.title}</td>
-			<td>{q.owner_name ? `Practitioner: ${q.owner_name}` : 'Admin default'}</td>
 			<td>{q.version}</td>
 			<td>{#if q.is_active}<Chip tone="ok">Active</Chip>{:else}No{/if}</td>
 			<td class="actions">
@@ -181,7 +178,7 @@
 		<Button type="button" variant="outlined" onclick={addQuestion}>+ Add question</Button>
 
 		{#if editingId}
-			<p class="hint">Saving creates a new version and makes it the active questionnaire — clients will answer this one from now on.</p>
+			<p class="hint">Saving creates a new version. Activate it from the list once you're ready for clients to see it.</p>
 		{/if}
 	</form>
 	{#snippet footer()}
