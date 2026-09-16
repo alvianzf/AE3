@@ -5,6 +5,7 @@
 	import TextField from '$lib/components/TextField.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import Sprig from '$lib/components/Sprig.svelte';
+	import Seo from '$lib/components/Seo.svelte';
 
 	let email = $state('');
 	let password = $state('');
@@ -32,7 +33,7 @@
 	}
 </script>
 
-<svelte:head><title>Log in — Clinic</title></svelte:head>
+<Seo title="Log in — Clinic" description="Log in to your Clinic account." path="/login" noindex />
 
 <div class="container wrap">
 	<section class="card-panel">

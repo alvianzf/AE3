@@ -1,6 +1,24 @@
 <script lang="ts">
+	import { PUBLIC_SITE_URL } from '$env/static/public';
 	import Sprig from '$lib/components/Sprig.svelte';
 	import Chip from '$lib/components/Chip.svelte';
+	import Seo from '$lib/components/Seo.svelte';
+	import { jsonLdScript } from '$lib/seo';
+
+	const description =
+		"Clinic gives independent practitioners an AI assistant grounded in their own curated library — every answer cited, independently checked, and never sourced from the open internet.";
+
+	// Organization schema — the baseline structured-data signal search
+	// engines and AI answer engines (GEO) both use to understand what the
+	// site/company actually is, independent of page copy.
+	const orgJsonLd = {
+		'@context': 'https://schema.org',
+		'@type': 'Organization',
+		name: 'Clinic',
+		url: PUBLIC_SITE_URL,
+		description,
+		logo: `${PUBLIC_SITE_URL}/favicon.svg`
+	};
 
 	const pillars = [
 		{
@@ -22,7 +40,14 @@
 	];
 </script>
 
-<svelte:head><title>Clinic — grounded, cited AI for independent practitioners</title></svelte:head>
+<Seo
+	title="Clinic — grounded, cited AI for independent practitioners"
+	{description}
+	path="/"
+/>
+<svelte:head>
+	{@html jsonLdScript(orgJsonLd)}
+</svelte:head>
 
 <!-- specs/v4.1/01 — the root used to be the practitioner directory, with no
      product information anywhere upstream of it (that content lived on
