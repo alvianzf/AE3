@@ -5,7 +5,7 @@
 	import Sprig from './Sprig.svelte';
 	import Icon from './Icon.svelte';
 
-	interface NavItem { href: string; label: string; icon: string; locked?: boolean }
+	interface NavItem { href: string; label: string; icon: string; locked?: boolean; badge?: number }
 	let { items, portalLabel, userLabel }: { items: NavItem[]; portalLabel: string; userLabel?: string } = $props();
 
 	// specs/v4.1/02 — one visual identity per user type. Colors come from
@@ -39,6 +39,7 @@
 					<span class="ic">
 						<Icon name={it.icon} />
 						{#if it.locked}<span class="lock" aria-hidden="true">★</span>{/if}
+						{#if it.badge}<span class="badge">{it.badge > 99 ? '99+' : it.badge}</span>{/if}
 					</span>
 					<span class="lbl">{it.label}{#if it.locked} <span class="pro">Pro</span>{/if}</span>
 				</a>
@@ -75,6 +76,12 @@
 	.lock {
 		position: absolute; top: -.35rem; right: -.5rem; font-size: .55rem; line-height: 1;
 		color: #ffd76b;
+	}
+	.badge {
+		position: absolute; top: -.4rem; right: -.55rem; min-width: 1.05rem; height: 1.05rem;
+		padding: 0 .25rem; border-radius: 99px; background: var(--danger, #b13434);
+		color: #fff; font-size: .6rem; font-weight: 700; line-height: 1.05rem; text-align: center;
+		box-shadow: 0 0 0 2px var(--rail-top, transparent);
 	}
 	.pro {
 		font-size: .65rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;

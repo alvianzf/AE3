@@ -6,6 +6,7 @@
 	import TextField from '$lib/components/TextField.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import Chip from '$lib/components/Chip.svelte';
+	import Icon from '$lib/components/Icon.svelte';
 
 	let { data } = $props();
 
@@ -71,7 +72,7 @@
 			options={Object.entries(KIND_LABELS).map(([value, label]) => ({ value, label }))} />
 		<TextField label="Details" type="textarea" bind:value={entryContent} required disabled={adding}
 			placeholder="e.g. Fasting glucose 92 mg/dL, 2026-09-14" />
-		<Button type="submit" loading={adding}>Add to my record</Button>
+		<Button type="submit" loading={adding}><Icon name="plus" size={15} />Add to my record</Button>
 	</form>
 
 	{#if entries.length}

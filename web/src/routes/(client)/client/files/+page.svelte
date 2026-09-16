@@ -6,6 +6,7 @@
 	import Spotlight from '$lib/components/Spotlight.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import Button from '$lib/components/Button.svelte';
+	import Icon from '$lib/components/Icon.svelte';
 
 	let { data } = $props();
 	let uploading = $state(false);
@@ -44,7 +45,7 @@
 	<div class="uploader">
 		<div class="uploader-row">
 			<input type="file" bind:this={fileInput} />
-			<Button onclick={upload} loading={uploading}>Upload</Button>
+			<Button onclick={upload} loading={uploading}><Icon name="plus" size={15} />Upload</Button>
 		</div>
 		<p class="hint">Up to 200 MB.</p>
 		{#if uploadProgress}

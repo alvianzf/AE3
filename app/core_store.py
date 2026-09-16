@@ -97,6 +97,13 @@ def ensure_schema() -> None:
                 created_by TEXT NOT NULL,
                 created_at TEXT NOT NULL
             );
+            -- CREATE TABLE IF NOT EXISTS above is a no-op for a table that
+            -- already existed before practitioner-owned questionnaires were
+            -- added, same gap app/vault.py's `active` column has for
+            -- `clients` — so apply it explicitly for a pre-existing table
+            -- too. NULL means the admin-curated global default.
+            ALTER TABLE questionnaires ADD COLUMN IF NOT EXISTS
+                practitioner_id TEXT REFERENCES practitioners(id);
 
             CREATE TABLE IF NOT EXISTS questionnaire_questions (
                 id TEXT PRIMARY KEY,
@@ -577,7 +584,20 @@ def site_stats() -> dict:
         contacts = conn.execute(
             "SELECT count(*) AS n FROM contact_form_submissions"
         ).fetchone()["n"]
-    return {"total_views": views, "total_contacts": contacts}
+        new_contacts = conn.execute(
+            "SELECT count(*) AS n FROM contact_form_submissions WHERE status = 'new'"
+        ).fetchone()["n"]
+        pending_practitioners = conn.execute(
+            "SELECT count(*) AS n FROM practitioners WHERE status = 'pending'"
+        ).fetchone()["n"]
+        approved_practitioners = conn.execute(
+            "SELECT count(*) AS n FROM practitioners WHERE status = 'approved'"
+        ).fetchone()["n"]
+    return {
+        "total_views": views, "total_contacts": contacts, "new_contacts": new_contacts,
+        "pending_practitioners": pending_practitioners,
+        "approved_practitioners": approved_practitioners,
+    }
 
 
 def practitioner_stats(practitioner_id: str) -> dict:
@@ -607,19 +627,27 @@ def _decode_question(row: dict) -> dict:
 
 def _insert_questionnaire(
     title: str, version: int, created_by: str, questions: list[dict],
+    practitioner_id: str | None = None,
 ) -> str:
-    """Insert a new questionnaire version and deactivate every other one —
-    only one questionnaire is active at a time."""
+    """Insert a new questionnaire version and deactivate every other one in
+    the same scope — one active questionnaire per practitioner_id (NULL
+    being the admin-curated global default), not one active questionnaire
+    globally."""
     for q in questions:
         if q["input_type"] not in QUESTION_TYPES:
             raise ValueError(f"unknown question type: {q['input_type']}")
     questionnaire_id = str(uuid.uuid4())
     with core_connection() as conn:
-        conn.execute("UPDATE questionnaires SET is_active = FALSE")
+        conn.execute(
+            "UPDATE questionnaires SET is_active = FALSE "
+            "WHERE practitioner_id IS NOT DISTINCT FROM %s",
+            (practitioner_id,),
+        )
         conn.execute(
             "INSERT INTO questionnaires (id, title, version, is_active, "
-            "created_by, created_at) VALUES (%s, %s, %s, TRUE, %s, %s)",
-            (questionnaire_id, title, version, created_by, _now()),
+            "created_by, created_at, practitioner_id) "
+            "VALUES (%s, %s, %s, TRUE, %s, %s, %s)",
+            (questionnaire_id, title, version, created_by, _now(), practitioner_id),
         )
         for ordinal, q in enumerate(questions):
             conn.execute(
@@ -633,8 +661,12 @@ def _insert_questionnaire(
     return questionnaire_id
 
 
-def create_questionnaire(title: str, questions: list[dict], created_by: str) -> dict:
-    questionnaire_id = _insert_questionnaire(title, 1, created_by, questions)
+def create_questionnaire(
+    title: str, questions: list[dict], created_by: str,
+    practitioner_id: str | None = None,
+) -> dict:
+    questionnaire_id = _insert_questionnaire(
+        title, 1, created_by, questions, practitioner_id)
     log(created_by, "questionnaire created", questionnaire_id)
     return get_questionnaire(questionnaire_id)
 
@@ -644,24 +676,63 @@ def edit_questionnaire(
 ) -> dict:
     """Create a new version rather than mutate the one clients already
     answered against; _insert_questionnaire flips the old version's
-    is_active off as part of the single-active-version invariant."""
+    is_active off as part of the single-active-version invariant. The new
+    version stays in the same practitioner_id scope as the version it
+    replaces."""
     with core_connection() as conn:
         old = conn.execute(
-            "SELECT version FROM questionnaires WHERE id = %s",
+            "SELECT version, practitioner_id FROM questionnaires WHERE id = %s",
             (questionnaire_id,),
         ).fetchone()
     if old is None:
         raise ValueError(f"unknown questionnaire: {questionnaire_id}")
-    new_id = _insert_questionnaire(title, old["version"] + 1, created_by, questions)
+    new_id = _insert_questionnaire(
+        title, old["version"] + 1, created_by, questions, old["practitioner_id"])
     log(created_by, "questionnaire edited", f"{questionnaire_id} -> {new_id}")
     return get_questionnaire(new_id)
 
 
-def get_active_questionnaire() -> dict | None:
+def set_questionnaire_active(questionnaire_id: str, active: bool) -> dict:
+    """Explicit activate/deactivate, independent of creating a new version.
+    Activating deactivates every other questionnaire in the same
+    practitioner_id scope (reusing the same IS NOT DISTINCT FROM scoping as
+    _insert_questionnaire); deactivating just flips this one row off."""
     with core_connection() as conn:
         row = conn.execute(
-            "SELECT id FROM questionnaires WHERE is_active = TRUE"
+            "SELECT practitioner_id FROM questionnaires WHERE id = %s",
+            (questionnaire_id,),
         ).fetchone()
+        if row is None:
+            raise ValueError(f"unknown questionnaire: {questionnaire_id}")
+        if active:
+            conn.execute(
+                "UPDATE questionnaires SET is_active = FALSE "
+                "WHERE practitioner_id IS NOT DISTINCT FROM %s",
+                (row["practitioner_id"],),
+            )
+        conn.execute(
+            "UPDATE questionnaires SET is_active = %s WHERE id = %s",
+            (active, questionnaire_id),
+        )
+    return get_questionnaire(questionnaire_id)
+
+
+def get_active_questionnaire(practitioner_id: str | None = None) -> dict | None:
+    """A client sees their own practitioner's active questionnaire if one
+    exists, else falls back to the admin-curated global default."""
+    with core_connection() as conn:
+        row = None
+        if practitioner_id is not None:
+            row = conn.execute(
+                "SELECT id FROM questionnaires "
+                "WHERE practitioner_id = %s AND is_active = TRUE",
+                (practitioner_id,),
+            ).fetchone()
+        if row is None:
+            row = conn.execute(
+                "SELECT id FROM questionnaires "
+                "WHERE practitioner_id IS NULL AND is_active = TRUE"
+            ).fetchone()
     return get_questionnaire(row["id"]) if row else None
 
 
@@ -680,11 +751,21 @@ def get_questionnaire(questionnaire_id: str) -> dict | None:
     return {**dict(row), "questions": [_decode_question(q) for q in questions]}
 
 
-def list_questionnaires() -> list[dict]:
+def list_questionnaires(practitioner_id: str | None = None) -> list[dict]:
+    """With no practitioner_id: the admin listing, every questionnaire in
+    every scope. With one: only that practitioner's own — never the admin
+    default or another practitioner's."""
     with core_connection() as conn:
-        rows = conn.execute(
-            "SELECT * FROM questionnaires ORDER BY created_at DESC"
-        ).fetchall()
+        if practitioner_id is None:
+            rows = conn.execute(
+                "SELECT * FROM questionnaires ORDER BY created_at DESC"
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM questionnaires WHERE practitioner_id = %s "
+                "ORDER BY created_at DESC",
+                (practitioner_id,),
+            ).fetchall()
     return [dict(r) for r in rows]
 
 

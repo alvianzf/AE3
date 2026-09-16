@@ -9,6 +9,7 @@
 	import Button from '$lib/components/Button.svelte';
 	import Dialog from '$lib/components/Dialog.svelte';
 	import TextField from '$lib/components/TextField.svelte';
+	import Icon from '$lib/components/Icon.svelte';
 
 	let { data } = $props();
 	let open = $state(false);
@@ -75,7 +76,7 @@
 
 <Spotlight title="Clients">
 	{#snippet actions()}
-		<Button variant="filled" onclick={() => (open = true)}>Add client</Button>
+		<Button variant="filled" onclick={() => (open = true)}><Icon name="plus" size={15} />Add client</Button>
 	{/snippet}
 	<DataTable
 		columns={[{ key: 'name', label: 'Name', sortable: true }, { key: 'email', label: 'Email', sortable: true }, { key: 'country', label: 'Country' }, { key: 'actions', label: '' }]}
@@ -83,10 +84,13 @@
 		empty="No clients yet — add your first one."
 	>
 		{#snippet row(c)}
-			<td><a href="/practitioner/clients/{c.id}">{c.name}</a></td>
+			<td>
+				<a href="/practitioner/clients/{c.id}">{c.name}</a>
+				{#if c.has_unviewed_intake}<sup class="new-badge" title="New intake response">●</sup>{/if}
+			</td>
 			<td>{c.email}</td>
 			<td>{c.country ?? ''}</td>
-			<td><Button variant="text" onclick={() => { removeTarget = { id: c.id as string, name: c.name as string }; removeOpen = true; }}>Remove</Button></td>
+			<td><Button variant="text" onclick={() => { removeTarget = { id: c.id as string, name: c.name as string }; removeOpen = true; }}><Icon name="trash" size={15} />Remove</Button></td>
 		{/snippet}
 	</DataTable>
 </Spotlight>
@@ -111,3 +115,7 @@
 		<Button variant="filled" onclick={confirmRemove} loading={removing}>Remove</Button>
 	{/snippet}
 </Dialog>
+
+<style>
+	.new-badge { color: var(--danger); font-size: .6rem; margin-left: .3rem; }
+</style>

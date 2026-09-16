@@ -9,10 +9,11 @@ export async function load({ fetch }) {
 	// awaits here doubled every practitioner-portal navigation's critical
 	// path. Both only need the already-attached session cookie, not each
 	// other's result — running them together halves that.
-	const [session, profile] = await Promise.all([
+	const [session, profile, notifications] = await Promise.all([
 		get(fetch, '/auth/me').catch(() => null),
-		get(fetch, '/me/profile').catch(() => null)
+		get(fetch, '/me/profile').catch(() => null),
+		get(fetch, '/me/notifications').catch(() => ({ new_contacts: 0, unviewed_intake: 0 }))
 	]);
 	if (!session || session.role !== 'practitioner') throw redirect(303, '/login');
-	return { session, profile };
+	return { session, profile, notifications };
 }

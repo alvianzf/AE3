@@ -9,21 +9,13 @@
 	// clicking in and hitting the error toast (specs/v4/04-known-issues.md#m15).
 	const isPro = $derived(data.profile?.plan === 'pro');
 
-	// The consult page is a chat app, not a prose-width form/list page like
-	// the rest of this portal — .container's 78rem cap (app.css, tuned for
-	// the public site's prose pages) left it with wide empty gutters on
-	// anything wider than a laptop, found live. Same opt-out the admin
-	// Library page already makes for the same reason (see that layout's
-	// own comment) — scoped to just this one route rather than removing
-	// the cap portal-wide, since Dashboard/Clients/Profile are exactly the
-	// narrower list/form pages .container is meant for.
-	const isFullWidth = $derived(page.url.pathname.startsWith('/practitioner/consult'));
 	const items = $derived([
 		{ href: '/practitioner/dashboard', label: 'Dashboard', icon: 'home' },
-		{ href: '/practitioner/clients', label: 'Clients', icon: 'users', locked: !isPro },
+		{ href: '/practitioner/clients', label: 'Clients', icon: 'users', locked: !isPro, badge: data.notifications?.unviewed_intake },
 		{ href: '/practitioner/consult', label: 'Consult', icon: 'message', locked: !isPro },
-		{ href: '/practitioner/contacts', label: 'Contacts', icon: 'mail' },
+		{ href: '/practitioner/contacts', label: 'Contacts', icon: 'mail', badge: data.notifications?.new_contacts },
 		{ href: '/practitioner/knowledge', label: 'Library weights', icon: 'book', locked: !isPro },
+		{ href: '/practitioner/questionnaires', label: 'Questionnaires', icon: 'clipboard', locked: !isPro },
 		{ href: '/practitioner/profile', label: 'Profile', icon: 'settings' },
 		{ href: '/practitioner/upgrade', label: 'Upgrade', icon: 'star' }
 	]);
@@ -31,7 +23,7 @@
 
 <div class="shell">
 	<AppRail {items} portalLabel="Practitioner portal" userLabel={data.profile?.name} />
-	<main class:container={!isFullWidth}>
+	<main>
 		{@render children()}
 	</main>
 </div>

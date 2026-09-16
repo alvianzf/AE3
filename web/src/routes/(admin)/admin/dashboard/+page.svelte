@@ -5,6 +5,14 @@
 	let { data } = $props();
 	const s = $derived(data.stats ?? {});
 	const health = $derived(data.health);
+	// Fields site_stats() (app/core_store.py) doesn't have a dedicated tile
+	// for below — rendered generically so a future stat added there doesn't
+	// need a matching frontend change to show up somewhere.
+	const KNOWN_STATS = new Set([
+		'total_views', 'total_contacts', 'new_contacts',
+		'pending_practitioners', 'approved_practitioners',
+	]);
+	const otherStats = $derived(Object.entries(s).filter(([k]) => !KNOWN_STATS.has(k)));
 
 	// GET /api/health already reports neo4j/postgres + per-role AI-team
 	// status (reader/graph_builder/embedder/reasoner/checker) — nothing
@@ -30,7 +38,30 @@
 <p class="hint">A quick read on the whole platform.</p>
 
 <div class="grid-auto tiles">
-	{#each Object.entries(s) as [key, value] (key)}
+	<StatTile
+		label="Pending applications"
+		value={s.pending_practitioners ?? 0}
+		icon="clipboard"
+		href="/admin/users"
+	/>
+	<StatTile
+		label="Approved practitioners"
+		value={s.approved_practitioners ?? 0}
+		icon="users"
+		href="/admin/users"
+	/>
+	<StatTile
+		label="New contact submissions"
+		value={s.new_contacts ?? 0}
+		icon="mail"
+		href="/admin/users"
+	/>
+	<StatTile
+		label="Total profile views"
+		value={s.total_views ?? 0}
+		icon="eye"
+	/>
+	{#each otherStats as [key, value] (key)}
 		<StatTile label={key.replaceAll('_', ' ')} value={String(value)} />
 	{/each}
 </div>
