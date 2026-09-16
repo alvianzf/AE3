@@ -2244,7 +2244,10 @@ app.mount("/static", StaticFiles(directory=STATIC), name="static")
 app.mount("/_app", StaticFiles(directory=WEB_BUILD / "_app"), name="web-assets")
 
 # Legacy URL, kept as a redirect — the directory is the site root now.
-_WEB_ROOT_FILES = {"robots.txt", "favicon.svg", "favicon.png", "favicon.ico"}
+_WEB_ROOT_FILES = {
+    "robots.txt", "favicon.svg", "favicon.png", "favicon.ico",
+    "sitemap.xml", "llms.txt", "og-image.png",
+}
 
 
 @app.get("/directory")
