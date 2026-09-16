@@ -3,6 +3,7 @@
 	import { get } from '$lib/api';
 	import Sprig from '$lib/components/Sprig.svelte';
 	import Chip from '$lib/components/Chip.svelte';
+	import Seo from '$lib/components/Seo.svelte';
 
 	let { data } = $props();
 	// This page is prerendered at build time (specs/v4/01) — practitioners
@@ -35,7 +36,11 @@
 	);
 </script>
 
-<svelte:head><title>Find a practitioner — Clinic</title></svelte:head>
+<Seo
+	title="Find a practitioner — Clinic"
+	description="Browse independent practitioners using Clinic's grounded, cited AI knowledge base — filter by specialty and language, no account needed to look."
+	path="/practitioners"
+/>
 
 <!-- Redesigned per specs/v4/03: the discovery surface comes out of a boxed
      card entirely and becomes a full-width hero band + open grid.

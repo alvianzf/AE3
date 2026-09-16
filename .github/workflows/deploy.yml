@@ -51,6 +51,7 @@ jobs:
           # dev-local only per web/.env.example).
           PUBLIC_API_BASE: ''
           PUBLIC_API_BASE_BUILD: https://functionalhealthcollab.com
+          PUBLIC_SITE_URL: https://functionalhealthcollab.com
         run: |
           npm ci
           npm run check
@@ -78,6 +79,7 @@ jobs:
           # coach/[id] entries against the real, currently-live backend
           # (web/.env.example's own documented reasoning).
           PUBLIC_API_BASE_BUILD: https://functionalhealthcollab.com
+          PUBLIC_SITE_URL: https://functionalhealthcollab.com
         run: |
           npm ci
           npm run build

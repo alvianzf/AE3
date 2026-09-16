@@ -4,6 +4,7 @@
 	import TextField from '$lib/components/TextField.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import Sprig from '$lib/components/Sprig.svelte';
+	import Seo from '$lib/components/Seo.svelte';
 
 	let name = $state('');
 	let email = $state('');
@@ -46,7 +47,11 @@
 	}
 </script>
 
-<svelte:head><title>Join as a practitioner — Clinic</title></svelte:head>
+<Seo
+	title="Join as a practitioner — Clinic"
+	description="Apply to bring your practice onto Clinic: a grounded, cited AI knowledge base you curate and grade yourself, with an independent check on every answer before a client ever sees it."
+	path="/join"
+/>
 
 <div class="container wrap">
 	<section class="card-panel leafmark">

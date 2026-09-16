@@ -7,6 +7,7 @@
 	import Select from '$lib/components/Select.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import Sprig from '$lib/components/Sprig.svelte';
+	import Seo from '$lib/components/Seo.svelte';
 
 	let name = $state('');
 	let email = $state('');
@@ -65,7 +66,7 @@
 	}
 </script>
 
-<svelte:head><title>Create your account — Clinic</title></svelte:head>
+<Seo title="Create your account — Clinic" description="Create your client account on Clinic." path="/signup" noindex />
 
 <div class="container wrap">
 	<section class="card-panel">

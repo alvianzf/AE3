@@ -1,3 +1,25 @@
 # allow crawling everything by default
 User-agent: *
 Disallow:
+
+# Explicit allow for AI answer-engine/assistant crawlers (GEO) — the
+# blanket rule above already permits these, but naming them is the
+# documented convention these crawlers themselves look for.
+User-agent: GPTBot
+Disallow:
+User-agent: ChatGPT-User
+Disallow:
+User-agent: ClaudeBot
+Disallow:
+User-agent: Claude-User
+Disallow:
+User-agent: anthropic-ai
+Disallow:
+User-agent: PerplexityBot
+Disallow:
+User-agent: Google-Extended
+Disallow:
+User-agent: CCBot
+Disallow:
+
+Sitemap: https://functionalhealthcollab.com/sitemap.xml

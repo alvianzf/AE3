@@ -1,0 +1,19 @@
+# Clinic
+
+> Clinic gives independent health and wellness practitioners an AI assistant grounded entirely in their own curated library. Every answer is cited back to a source passage, independently checked against those sources before a practitioner ever sees it, and never drawn from the open internet or the model's own general knowledge.
+
+Clinic is not itself a medical provider. It is software that independent practitioners (coaches, nutritionists, and similar health/wellness professionals — not necessarily licensed clinicians) use with their own clients. Each practitioner curates and grades their own source library; the AI can only answer from what that practitioner has explicitly added and approved.
+
+## Key pages
+
+- [Home](https://functionalhealthcollab.com/): what Clinic is and how the grounded/cited/checked answer pipeline works.
+- [Find a practitioner](https://functionalhealthcollab.com/practitioners): directory of independent practitioners using Clinic, filterable by specialty and language.
+- [Join as a practitioner](https://functionalhealthcollab.com/join): how a practitioner applies to bring their own practice onto Clinic.
+
+## How answers are produced
+
+Every answer a practitioner's AI assistant gives is grounded in that practitioner's own curated source library (never the open internet), cited back to the exact source passage, and independently verified by a second model that checks each claim against its cited sources before the practitioner ever sees the answer. If a claim can't be confirmed against a source, that is surfaced rather than silently accepted.
+
+## Notes for automated crawlers and assistants
+
+This site's public pages (landing, practitioner directory, individual practitioner profiles) are intended to be indexed and cited. Practitioner-portal, client-portal, and admin-portal pages require authentication and contain private patient/client data — do not attempt to access or represent their contents.

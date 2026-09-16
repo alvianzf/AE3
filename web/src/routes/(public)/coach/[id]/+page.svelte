@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { PUBLIC_SITE_URL } from '$env/static/public';
 	import { post } from '$lib/api';
 	import { toast } from '$lib/stores/toast';
 	import Chip from '$lib/components/Chip.svelte';
@@ -6,9 +7,32 @@
 	import Spotlight from '$lib/components/Spotlight.svelte';
 	import TextField from '$lib/components/TextField.svelte';
 	import Button from '$lib/components/Button.svelte';
+	import Seo from '$lib/components/Seo.svelte';
+	import { jsonLdScript } from '$lib/seo';
 
 	let { data } = $props();
 	const p = $derived(data.practitioner);
+
+	const description = $derived(
+		p.bio?.trim()
+			? p.bio.slice(0, 200)
+			: `${p.name} on Clinic — an AI-assisted, cited knowledge base independent practitioners use with their clients.`
+	);
+	// Person, not ProfessionalService — a coach profile here is an
+	// individual practitioner's page, not a business listing (specialties
+	// map loosely to knowsAbout, not to Schema.org's medical-specific
+	// types, since this app is explicitly non-clinical coaching, not
+	// licensed medical practice).
+	const personJsonLd = $derived({
+		'@context': 'https://schema.org',
+		'@type': 'Person',
+		name: p.name,
+		description,
+		url: `${PUBLIC_SITE_URL}/coach/${p.id}`,
+		...(p.photo_path ? { image: p.photo_path } : {}),
+		...(p.specialties?.length ? { knowsAbout: p.specialties } : {}),
+		...(p.languages?.length ? { knowsLanguage: p.languages } : {})
+	});
 
 	let name = $state('');
 	let email = $state('');
@@ -30,7 +54,10 @@
 	}
 </script>
 
-<svelte:head><title>{p.name} — Clinic</title></svelte:head>
+<Seo title="{p.name} — Clinic" {description} path="/coach/{p.id}" image={p.photo_path || undefined} type="profile" />
+<svelte:head>
+	{@html jsonLdScript(personJsonLd)}
+</svelte:head>
 
 <div class="container coach">
 	<!-- Tier 2: the profile is context, not the reason someone's here (specs/v4/03) -->

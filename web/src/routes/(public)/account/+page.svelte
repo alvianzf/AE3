@@ -4,6 +4,7 @@
 	import TextField from '$lib/components/TextField.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import Sprig from '$lib/components/Sprig.svelte';
+	import Seo from '$lib/components/Seo.svelte';
 
 	let { data } = $props();
 	let current_password = $state('');
@@ -26,7 +27,7 @@
 	}
 </script>
 
-<svelte:head><title>Your account — Clinic</title></svelte:head>
+<Seo title="Your account — Clinic" description="Manage your Clinic account." path="/account" noindex />
 
 <div class="container wrap">
 	<section class="card-panel">

@@ -1,8 +1,14 @@
 <script lang="ts">
 	import Sprig from '$lib/components/Sprig.svelte';
+	import Seo from '$lib/components/Seo.svelte';
 </script>
 
-<svelte:head><title>Application received — Clinic</title></svelte:head>
+<Seo
+	title="Application received — Clinic"
+	description="Your practitioner application has been received."
+	path="/join/submitted"
+	noindex
+/>
 
 <div class="container wrap">
 	<section class="card-panel leafmark">
