@@ -1,67 +1,31 @@
 <script lang="ts">
-	import { invalidateAll } from '$app/navigation';
-	import { post, del } from '$lib/api';
-	import { toast } from '$lib/stores/toast';
 	import Spotlight from '$lib/components/Spotlight.svelte';
-	import Chip from '$lib/components/Chip.svelte';
-	import Button from '$lib/components/Button.svelte';
-
-	let { data } = $props();
-	const providers = ['oura', 'whoop', 'garmin'];
-	let disconnecting = $state<string | null>(null);
-
-	function connected(provider: string) {
-		return data.connections.some((c: any) => c.provider === provider);
-	}
-
-	async function connect(provider: string) {
-		try {
-			const res = await post(fetch, `/me/wearables/${provider}/connect`);
-			if (res?.url) location.href = res.url;
-		} catch (err: any) {
-			toast(err.message, 'alert');
-		}
-	}
-
-	// Connect-only, no way to undo the wrong provider account, previously
-	// (specs/v4/04-known-issues.md#m6).
-	async function disconnect(provider: string) {
-		disconnecting = provider;
-		try {
-			await del(fetch, `/me/wearables/${provider}`);
-			toast(`${provider} disconnected.`);
-			await invalidateAll();
-		} catch (err: any) {
-			toast(err.message, 'alert');
-		} finally {
-			disconnecting = null;
-		}
-	}
+	import Sprig from '$lib/components/Sprig.svelte';
 </script>
 
 <svelte:head><title>Wearables — Client portal</title></svelte:head>
 
 <Spotlight title="Connect a wearable">
-	<div class="providers">
-		{#each providers as p (p)}
-			<div class="row">
-				<span class="pname">{p}</span>
-				{#if connected(p)}
-					<div class="connected">
-						<Chip tone="ok">Connected</Chip>
-						<Button variant="text" onclick={() => disconnect(p)} loading={disconnecting === p}>Disconnect</Button>
-					</div>
-				{:else}
-					<Button variant="outlined" onclick={() => connect(p)}>Connect</Button>
-				{/if}
-			</div>
-		{/each}
+	<!-- Wearable OAuth connect is real (app/wearables.py) but what happens after
+	     is fixture data, not a live vendor pull (see that module's docstring).
+	     Showing a working "Connect" button here would let a client believe
+	     their real Oura/Whoop/Garmin data reaches their practitioner when it
+	     doesn't — so until the real data pull ships, this page says so plainly
+	     instead of offering the flow. -->
+	<div class="soon">
+		<Sprig size={24} />
+		<h3>Coming soon</h3>
+		<p class="hint">
+			Wearable syncing isn't available yet. When it launches, you'll be able to
+			connect Oura, Whoop, or Garmin here and share your data with your practitioner.
+		</p>
 	</div>
 </Spotlight>
 
 <style>
-	.providers { display: grid; gap: var(--space-3); }
-	.row { display: flex; align-items: center; justify-content: space-between; padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--r); }
-	.pname { text-transform: capitalize; font-weight: 650; }
-	.connected { display: flex; align-items: center; gap: .5rem; }
+	.soon {
+		display: flex; flex-direction: column; align-items: center; text-align: center;
+		gap: var(--space-2); padding: var(--space-6) var(--space-4); color: var(--muted);
+	}
+	.soon h3 { color: var(--ink); font-size: var(--text-base); }
 </style>

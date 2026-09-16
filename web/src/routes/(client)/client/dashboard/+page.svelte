@@ -24,7 +24,7 @@
 	/>
 	<StatTile
 		label="Wearables"
-		value={data.connections?.length ? `${data.connections.length} connected` : 'Connect'}
+		value="Coming soon"
 		icon="watch"
 		href="/client/wearables"
 	/>
