@@ -1,5 +1,54 @@
 # Specs changelog
 
+## v6.7 — 2026-09-16 (SEO/GEO; practitioner-owned questionnaires; portal UX batch)
+
+Same day as `v6.6`'s audits, a run of direct feature/UX requests.
+
+SEO/GEO: the public pages had only a bare `<title>` — no meta
+description, canonical, Open Graph/Twitter tags, structured data,
+sitemap, or llms.txt. Added a shared `Seo.svelte` (indexable content
+pages get real descriptions; pure utility pages are `noindex`),
+`Organization`/`Person` JSON-LD, a branded OG image, `sitemap.xml`
+(prerendered, enumerating every practitioner), and `robots.txt`/
+`llms.txt` for GEO (explicitly naming GPTBot/ClaudeBot/PerplexityBot/
+etc., since that's the convention those crawlers look for even though
+the existing blanket allow already covered them). Found and fixed the
+same day: the three new root-level static files were being served as
+the SPA shell instead of their real content — `app/main.py`'s
+`_WEB_ROOT_FILES` allowlist didn't know about them.
+
+Practitioner-owned questionnaires: previously one global admin-curated
+questionnaire, shared by every practitioner's clients. Added
+`questionnaires.practitioner_id` (NULL = admin default), scoped the
+"only one active" invariant per-owner instead of globally, and added
+explicit activate/deactivate (previously only implicit via creating a
+new version). New practitioner-facing builder (Pro-only), mirroring the
+admin one. Same-day follow-up request: practitioners can view the site
+default (read-only) alongside their own, not just their own. A
+`/code-review` pass before shipping caught a real gap: the auth check
+backing the new practitioner library-source viewer (below) initially
+let *any* practitioner through, not just Pro accounts — tightened
+before merge.
+
+Portal UX batch: notification badges on the practitioner nav (unviewed
+intake, new contacts — both already tracked server-side, just not
+surfaced) and a per-client marker on the Clients list; practitioner and
+client portals drop their `.container` width cap (public pages
+untouched, consistent with `v6.6/03`'s gutter-fix-then-revert there);
+practitioners gain a real library-source viewer (text or original PDF),
+not just weight adjustment; admin/practitioner/client dashboards gain
+real quick-action tiles instead of raw stat dumps or static copy
+(client dashboard's Health record tile didn't exist before — that
+feature, `v6.5`, had no dashboard entry point at all); icons extended
+from admin-only (`v6.6/03`) to practitioner and client action buttons
+too.
+
+**Why:** all of this was requested directly by the user across a single
+session, not found incidentally — SEO/GEO, then questionnaire ownership,
+then a rapid sequence of portal-polish requests (badges, width, library
+viewer, dashboards, icons) that landed together since several touch the
+same practitioner-layout file.
+
 ## v6.6 — 2026-09-16 (client and superadmin portal audits; public-page layout)
 
 Two structured "act as a real user" audits run against the live app.
