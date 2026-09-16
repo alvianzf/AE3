@@ -131,11 +131,17 @@ def require_client(request: Request) -> dict:
     session = current_session(request)
     if session is None or session["role"] != "client":
         raise HTTPException(status_code=401, detail="Client login required.")
-    # A client's access is meaningless once their practitioner is
-    # suspended — there's no separate "suspend a client" action, so this is
-    # the only lever that matters for a client's own portal access.
+    # Live DB check on every request, not a cached session claim — same
+    # reasoning as require_admin/require_superadmin: a suspension (of the
+    # client directly, via app/vault.py's set_client_active, or of their
+    # practitioner) must take effect immediately rather than after the
+    # session cookie's own expiry.
     practitioner = core_store.get_practitioner(session["practitioner_id"])
     if practitioner is None or practitioner["status"] == "suspended":
+        raise HTTPException(status_code=401, detail="Client login required.")
+    from . import vault
+    client = vault.get_client(session["practitioner_id"], session["id"])
+    if client is None or not client["active"]:
         raise HTTPException(status_code=401, detail="Client login required.")
     return session
 
@@ -227,7 +233,7 @@ def register(app: FastAPI) -> None:
             from . import vault
 
             client = vault.get_client(directory_entry["practitioner_id"], directory_entry["client_id"])
-            if client is not None and verify_password(password, client["password_hash"]):
+            if client is not None and client["active"] and verify_password(password, client["password_hash"]):
                 # A client's own vault is sharded by practitioner (app/vault.py),
                 # so the session has to carry practitioner_id too, not just role
                 # and id — every client-scoped route needs it to know which

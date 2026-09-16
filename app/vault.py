@@ -71,8 +71,14 @@ _SCHEMA_DDL = """
                 password_set BOOLEAN NOT NULL DEFAULT TRUE,
                 dob TEXT,
                 country TEXT,
+                active BOOLEAN NOT NULL DEFAULT TRUE,
                 created_at TEXT NOT NULL
             );
+            -- CREATE TABLE IF NOT EXISTS above is a no-op for a vault schema
+            -- that already existed before `active` was added, same gap this
+            -- module's own docstring already calls out for password_set —
+            -- so apply it explicitly for every vault, new or old.
+            ALTER TABLE clients ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE;
             CREATE TABLE IF NOT EXISTS record_entries (
                 id TEXT PRIMARY KEY,
                 client_id TEXT NOT NULL REFERENCES clients(id),
@@ -296,6 +302,20 @@ def list_clients(practitioner_id: str) -> list[dict]:
             """
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def set_client_active(practitioner_id: str, client_id: str, active: bool) -> dict | None:
+    with vault_connection(practitioner_id) as conn:
+        exists = conn.execute(
+            "SELECT 1 FROM clients WHERE id = %s", (client_id,)
+        ).fetchone()
+        if not exists:
+            return None
+        conn.execute(
+            "UPDATE clients SET active = %s WHERE id = %s", (active, client_id)
+        )
+        row = conn.execute("SELECT * FROM clients WHERE id = %s", (client_id,)).fetchone()
+    return dict(row)
 
 
 def delete_client(practitioner_id: str, client_id: str) -> bool:

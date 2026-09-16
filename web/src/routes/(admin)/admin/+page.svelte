@@ -13,6 +13,34 @@
 	import Icon from '$lib/components/Icon.svelte';
 
 	let { data } = $props();
+
+	// Graph maintenance: POST /api/relink and /api/consolidate existed with
+	// no UI trigger anywhere — curl-only. Maintenance ops, not everyday
+	// actions, so a confirm dialog first rather than a bare button.
+	let maintenanceKind = $state<'relink' | 'consolidate' | null>(null);
+	let maintenanceOpen = $state(false);
+	let maintenanceRunning = $state(false);
+
+	async function runMaintenance() {
+		if (!maintenanceKind) return;
+		const kind = maintenanceKind;
+		maintenanceOpen = false;
+		maintenanceRunning = true;
+		try {
+			const res = await post(fetch, `/${kind}`, {});
+			toast(
+				kind === 'relink'
+					? `Linked ${res.linked?.length ?? 0} source(s), ${res.failed?.length ?? 0} failed.`
+					: `Merged ${res.entity?.absorbed ?? 0} entit${res.entity?.absorbed === 1 ? 'y' : 'ies'}.`
+			);
+			await invalidateAll();
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		} finally {
+			maintenanceRunning = false;
+		}
+	}
+
 	let ingestOpen = $state(false);
 	let ingestTab = $state('upload');
 	let mainTab = $state('library');
@@ -450,8 +478,22 @@
 </Spotlight>
 
 {#snippet libraryActions()}
+	<Button variant="outlined" onclick={() => { maintenanceKind = 'relink'; maintenanceOpen = true; }}>Relink</Button>
+	<Button variant="outlined" onclick={() => { maintenanceKind = 'consolidate'; maintenanceOpen = true; }}>Consolidate</Button>
 	<Button onclick={() => (ingestOpen = true)}>+ Add resources</Button>
 {/snippet}
+
+<Dialog bind:open={maintenanceOpen} title={maintenanceKind === 'relink' ? 'Relink unlinked sources' : 'Consolidate entities'}>
+	<p>
+		{maintenanceKind === 'relink'
+			? 'Build the knowledge graph for any ingested sources that have none yet. This can take a while for a large backlog.'
+			: 'Let the model suggest entity merges, then rewrite the graph to match. Requires Neo4j APOC.'}
+	</p>
+	{#snippet footer()}
+		<Button variant="ghost" onclick={() => (maintenanceOpen = false)}>Cancel</Button>
+		<Button onclick={runMaintenance} loading={maintenanceRunning}>Run</Button>
+	{/snippet}
+</Dialog>
 
 <Dialog bind:open={ingestOpen} title="Add resources" wide>
 	<Tabs bind:active={ingestTab} tabs={[{ id: 'upload', label: 'Upload a document' }, { id: 'text', label: 'Paste text' }, { id: 'url', label: 'Enter URL' }]} />

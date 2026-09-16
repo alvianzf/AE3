@@ -1162,6 +1162,29 @@ def superadmin_reactivate_admin(admin_id: str,
     return _public(admin)
 
 
+@app.get("/api/superadmin/audit-log")
+def superadmin_audit_log(
+    page: int = 1, per_page: int = 50, _: dict = Depends(auth.require_superadmin),
+) -> dict:
+    """Read path for core_store.log() — practitioner approvals/rejections/
+    suspensions, plan changes, admin created/role-changed/suspended,
+    questionnaire created/edited (core_store.py's call sites). Distinct
+    from GET /api/audit, which is the Neo4j library-only event log
+    (store.audit()) — that endpoint's docstring already explains the two
+    trails don't mix; this is the other one, previously unreadable through
+    any route.
+
+    Paginated rather than dumping the whole table — this trail grows with
+    every sensitive admin action, unlike the library's own.
+    """
+    per_page = max(1, min(per_page, 200))
+    page = max(1, page)
+    offset = (page - 1) * per_page
+    events = core_store.list_audit_events(limit=per_page, offset=offset)
+    return {"events": events, "total": core_store.count_audit_events(),
+            "page": page, "per_page": per_page}
+
+
 # --- Admin: practitioner management ---------------------------------------------
 
 @app.get("/api/admin/notifications")
@@ -1277,6 +1300,52 @@ def admin_client_count(practitioner_id: str, _admin: dict = Depends(auth.require
     count = len(vault.list_clients(practitioner_id)) if practitioner["plan"] == "pro" else 0
     return {"practitioner_id": practitioner_id, "clients": count,
             **core_store.practitioner_stats(practitioner_id)}
+
+
+@app.get("/api/admin/clients")
+def admin_list_clients(_admin: dict = Depends(auth.require_admin)) -> list[dict]:
+    """Clients across every Pro practitioner's vault, for the admin Users
+    page's Clients tab. Each client lives entirely inside their own
+    practitioner's vault schema (app/vault.py) — there's no shared clients
+    table to query directly — so this fans out per pro practitioner and
+    tags each row with which practitioner it came from. Only Pro
+    practitioners have a vault at all (Basic never calls activate_pro),
+    same check admin_client_count above already makes.
+    """
+    out: list[dict] = []
+    for p in core_store.list_practitioners():
+        if p["plan"] != "pro":
+            continue
+        for c in vault.list_clients(p["id"]):
+            out.append({
+                "id": c["id"], "name": c["name"], "email": c["email"],
+                "active": c["active"], "created_at": c["created_at"],
+                "sessions": c["sessions"], "entries": c["entries"],
+                "practitioner_id": p["id"], "practitioner_name": p["name"],
+            })
+    return out
+
+
+@app.post("/api/admin/clients/{practitioner_id}/{client_id}/suspend")
+def admin_suspend_client(
+    practitioner_id: str, client_id: str, _admin: dict = Depends(auth.require_admin),
+) -> dict:
+    client = vault.set_client_active(practitioner_id, client_id, False)
+    if client is None:
+        raise HTTPException(404, "no such client")
+    core_store.log("admin", "client suspended", f"{client_id} ({practitioner_id})")
+    return {"id": client["id"], "active": client["active"]}
+
+
+@app.post("/api/admin/clients/{practitioner_id}/{client_id}/reactivate")
+def admin_reactivate_client(
+    practitioner_id: str, client_id: str, _admin: dict = Depends(auth.require_admin),
+) -> dict:
+    client = vault.set_client_active(practitioner_id, client_id, True)
+    if client is None:
+        raise HTTPException(404, "no such client")
+    core_store.log("admin", "client reactivated", f"{client_id} ({practitioner_id})")
+    return {"id": client["id"], "active": client["active"]}
 
 
 class QuestionnaireIn(BaseModel):
