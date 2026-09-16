@@ -33,9 +33,18 @@
 	// keeps the version it replaces' active state untouched, since
 	// activation is now a separate explicit action.
 	let editingId = $state<string | null>(null);
+	// A practitioner can see the site default (GET /api/me/questionnaires
+	// now includes it, per direct request) but never modify it — edit/
+	// activate/deactivate all 404 on it server-side regardless, this just
+	// keeps the UI from offering actions that would fail.
+	let viewOnly = $state(false);
 	let title = $state('');
 	let questions = $state<Question[]>([]);
 	let submitting = $state(false);
+
+	function isMine(q: any) {
+		return q.practitioner_id != null;
+	}
 
 	function blankQuestion(): Question {
 		return { key: crypto.randomUUID(), prompt: '', input_type: 'text', options: '', theme: 'General' };
@@ -43,17 +52,19 @@
 
 	function openCreate() {
 		editingId = null;
+		viewOnly = false;
 		title = '';
 		questions = [blankQuestion()];
 		open = true;
 	}
 
-	async function openEdit(id: string) {
+	async function openEdit(q: any) {
+		viewOnly = !isMine(q);
 		try {
-			const q = await get(fetch, `/me/questionnaires/${id}`);
-			editingId = id;
-			title = q.title;
-			questions = (q.questions ?? []).map((qq: any) => ({
+			const full = await get(fetch, `/me/questionnaires/${q.id}`);
+			editingId = full.id;
+			title = full.title;
+			questions = (full.questions ?? []).map((qq: any) => ({
 				key: crypto.randomUUID(),
 				prompt: qq.prompt,
 				input_type: qq.input_type ?? 'text',
@@ -126,64 +137,80 @@
 		it any time to fall back to the default.
 	</p>
 	<DataTable
-		columns={[{ key: 'title', label: 'Title', sortable: true }, { key: 'version', label: 'Version' }, { key: 'is_active', label: 'Active' }, { key: 'actions', label: '' }]}
+		columns={[{ key: 'title', label: 'Title', sortable: true }, { key: 'owner', label: 'Owner' }, { key: 'version', label: 'Version' }, { key: 'is_active', label: 'Active' }, { key: 'actions', label: '' }]}
 		rows={data.questionnaires}
 		empty="You haven't created a questionnaire yet — your clients see the site default until you do."
 	>
 		{#snippet row(q: any)}
 			<td>{q.title}</td>
+			<td>{isMine(q) ? 'Yours' : 'Site default'}</td>
 			<td>{q.version}</td>
 			<td>{#if q.is_active}<Chip tone="ok">Active</Chip>{:else}No{/if}</td>
 			<td class="actions">
-				<button class="edit" onclick={() => openEdit(q.id)}><Icon name="edit" size={14} />Edit</button>
-				{#if q.is_active}
-					<Button variant="text" onclick={() => setActive(q.id, false)}><Icon name="pause" size={15} />Deactivate</Button>
+				{#if isMine(q)}
+					<button class="edit" onclick={() => openEdit(q)}><Icon name="edit" size={14} />Edit</button>
+					{#if q.is_active}
+						<Button variant="text" onclick={() => setActive(q.id, false)}><Icon name="pause" size={15} />Deactivate</Button>
+					{:else}
+						<Button variant="text" onclick={() => setActive(q.id, true)}><Icon name="play" size={15} />Activate</Button>
+					{/if}
 				{:else}
-					<Button variant="text" onclick={() => setActive(q.id, true)}><Icon name="play" size={15} />Activate</Button>
+					<button class="edit" onclick={() => openEdit(q)}><Icon name="eye" size={14} />View</button>
 				{/if}
 			</td>
 		{/snippet}
 	</DataTable>
 </Spotlight>
 
-<Dialog bind:open title={editingId ? 'Edit questionnaire' : 'New questionnaire'} wide>
-	<form onsubmit={save} id="qn-form">
-		<TextField label="Title" bind:value={title} required />
+<Dialog bind:open title={viewOnly ? title : editingId ? 'Edit questionnaire' : 'New questionnaire'} wide>
+	{#if viewOnly}
+		<p class="hint">The site default — read-only. Create your own above to override it for your clients.</p>
+	{/if}
+	<form onsubmit={save} id="qn-form" inert={viewOnly}>
+		<TextField label="Title" bind:value={title} required disabled={viewOnly} />
 
 		<div class="questions">
 			{#each questions as q, i (q.key)}
 				<div class="question-row">
 					<div class="question-head">
 						<span class="num">{i + 1}</span>
-						<button type="button" class="remove" onclick={() => removeQuestion(q.key)} disabled={questions.length === 1} aria-label="Remove question">&times;</button>
+						{#if !viewOnly}
+							<button type="button" class="remove" onclick={() => removeQuestion(q.key)} disabled={questions.length === 1} aria-label="Remove question">&times;</button>
+						{/if}
 					</div>
-					<TextField label="Prompt" bind:value={q.prompt} required />
+					<TextField label="Prompt" bind:value={q.prompt} required disabled={viewOnly} />
 					<div class="question-fields">
 						<div class="field">
 							<label for="type-{q.key}">Type</label>
-							<select id="type-{q.key}" bind:value={q.input_type}>
+							<select id="type-{q.key}" bind:value={q.input_type} disabled={viewOnly}>
 								{#each QUESTION_TYPES as t (t)}
 									<option value={t}>{t.replaceAll('_', ' ')}</option>
 								{/each}
 							</select>
 						</div>
-						<TextField label="Theme" bind:value={q.theme} hint="Groups questions on the client's page." />
+						<TextField label="Theme" bind:value={q.theme} hint="Groups questions on the client's page." disabled={viewOnly} />
 					</div>
 					{#if q.input_type === 'choice' || q.input_type === 'multi_choice'}
-						<TextField label="Options" bind:value={q.options} hint="Comma-separated, e.g. Never, Sometimes, Often" />
+						<TextField label="Options" bind:value={q.options} hint="Comma-separated, e.g. Never, Sometimes, Often" disabled={viewOnly} />
 					{/if}
 				</div>
 			{/each}
 		</div>
-		<Button type="button" variant="outlined" onclick={addQuestion}>+ Add question</Button>
+		{#if !viewOnly}
+			<Button type="button" variant="outlined" onclick={addQuestion}>+ Add question</Button>
+		{/if}
 
-		{#if editingId}
+		{#if editingId && !viewOnly}
 			<p class="hint">Saving creates a new version. Activate it from the list once you're ready for clients to see it.</p>
 		{/if}
 	</form>
 	{#snippet footer()}
-		<Button variant="ghost" onclick={() => (open = false)}>Cancel</Button>
-		<Button onclick={save} loading={submitting}>{editingId ? 'Save new version' : 'Create'}</Button>
+		{#if viewOnly}
+			<Button variant="ghost" onclick={() => (open = false)}>Close</Button>
+		{:else}
+			<Button variant="ghost" onclick={() => (open = false)}>Cancel</Button>
+			<Button onclick={save} loading={submitting}>{editingId ? 'Save new version' : 'Create'}</Button>
+		{/if}
 	{/snippet}
 </Dialog>
 
