@@ -50,7 +50,7 @@
 	</div>
 </section>
 
-<div class="container">
+<div class="container-wide">
 	<div class="filters">
 		<input type="search" placeholder="Search by name or focus…" bind:value={q} aria-label="Search practitioners" />
 		<select bind:value={specialty} aria-label="Filter by specialty">
