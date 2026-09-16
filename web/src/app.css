@@ -131,6 +131,13 @@ label { font-size: var(--text-sm); font-weight: 600; color: var(--ink-2); }
 }
 
 .container { max-width: 78rem; margin: 0 auto; padding: 0 var(--space-5); }
+/* Same centering/padding as .container, no reading-width cap — for spots
+   that have nothing narrower of their own to fall back on (the public
+   navbar's inner row, the practitioner-directory results grid), where
+   .container's 78rem cap just reads as dead gutters on a wide screen.
+   Content that also needs an actual reading-width cap (forms, hero/pitch
+   text) keeps using plain .container plus its own narrower local class. */
+.container-wide { max-width: 100%; margin: 0 auto; padding: 0 var(--space-5); }
 .grid-auto { display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); }
 /* A narrow rail + a wide main column — several portal screens (admin
    Knowledge, practitioner Dashboard/Consult/client-detail) stack a
