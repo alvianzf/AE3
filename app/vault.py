@@ -16,7 +16,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .db import schema_connection, vault_connection
+from .db import schema_connection, vault_connection, vault_connection_creating_schema
 
 KINDS = ("lab", "history", "note", "session_summary", "condition", "medication")
 # "condition"/"medication" added for app/patient/context.py — structured
@@ -200,7 +200,7 @@ _SCHEMA_DDL = """
 
 
 def ensure_schema(practitioner_id: str) -> None:
-    with vault_connection(practitioner_id) as conn:
+    with vault_connection_creating_schema(practitioner_id) as conn:
         conn.executescript(_SCHEMA_DDL)
 
 

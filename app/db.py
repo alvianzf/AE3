@@ -136,6 +136,25 @@ def vault_schema_name(practitioner_id: str) -> str:
 
 
 def vault_connection(practitioner_id: str):
+    """The hot path — every vault read/write in app/vault.py but
+    ensure_schema() itself goes through this. Schema creation is
+    deliberately NOT here: a `CREATE SCHEMA IF NOT EXISTS` still touches
+    the system catalog on every single call even when it's a no-op, and
+    by the time any of these 25+ call sites run, the caller's vault
+    schema is already guaranteed to exist (every route that reaches them
+    is require_pro_practitioner-gated, which only holds once
+    vault.ensure_schema() has already run for that practitioner — found
+    while auditing for backend/DB optimization opportunities). Use
+    vault_connection_creating_schema() for the one caller that actually
+    needs to create it."""
+    schema = vault_schema_name(practitioner_id)
+    return _pooled_connection(f'SET search_path TO "{schema}", public')
+
+
+def vault_connection_creating_schema(practitioner_id: str):
+    """Like vault_connection(), but also creates the schema if it
+    doesn't exist yet — for vault.ensure_schema() only (new-practitioner
+    activation, and the boot-time repair loop over list_vault_schemas())."""
     schema = vault_schema_name(practitioner_id)
     return _pooled_connection(
         f'CREATE SCHEMA IF NOT EXISTS "{schema}"; SET search_path TO "{schema}", public'
