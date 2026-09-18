@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
 	import { PUBLIC_API_BASE } from '$env/static/public';
-	import { get, post, patch, del } from '$lib/api';
+	import { get, post, patch, del, ApiError } from '$lib/api';
 	import { chunkedUpload } from '$lib/chunkedUpload';
 	import { toast } from '$lib/stores/toast';
 	import Spotlight from '$lib/components/Spotlight.svelte';
@@ -269,11 +269,48 @@
 		q = activeTopic = activeKind = '';
 	}
 
+	// Duplicate-on-ingest: _ingest_pages() (app/main.py) 409s with
+	// duplicate_of when the staged body hashes to an already-ingested
+	// document, rather than silently filing a second copy under a fresh
+	// Reader-generated title/grade. Surfaced here instead of a plain toast
+	// so the admin can choose to replace the old version or discard the
+	// redundant staged item.
+	let duplicateStagedId = $state<string | null>(null);
+	let duplicateOf = $state<string | null>(null);
+	let duplicateMessage = $state('');
+	let duplicateOpen = $state(false);
+
 	async function ingestOne(id: string) {
 		promotingId = id;
 		try {
 			await post(fetch, `/staged/${id}/ingest`, {});
 			toast('Ingested into the library.');
+			clearFiltersAfterIngest();
+			await invalidateAll();
+		} catch (err: any) {
+			const detail = err instanceof ApiError ? (err.detail as any) : null;
+			if (err instanceof ApiError && err.status === 409 && detail?.duplicate_of) {
+				duplicateStagedId = id;
+				duplicateOf = detail.duplicate_of;
+				duplicateMessage = detail.message;
+				duplicateOpen = true;
+			} else {
+				toast(err.message, 'alert');
+			}
+		} finally {
+			promotingId = null;
+		}
+	}
+
+	async function replaceDuplicate() {
+		if (!duplicateStagedId || !duplicateOf) return;
+		const id = duplicateStagedId;
+		const replaces = duplicateOf;
+		duplicateOpen = false;
+		promotingId = id;
+		try {
+			await post(fetch, `/staged/${id}/ingest`, { replaces });
+			toast('Replaced the existing version.');
 			clearFiltersAfterIngest();
 			await invalidateAll();
 		} catch (err: any) {
@@ -283,17 +320,29 @@
 		}
 	}
 
+	async function discardDuplicate() {
+		if (!duplicateStagedId) return;
+		const id = duplicateStagedId;
+		duplicateOpen = false;
+		await discardStaged(id);
+	}
+
 	async function ingestSelected() {
 		if (!selected.size) return;
 		promotingBatch = true;
 		try {
 			const res = await post(fetch, '/staged/ingest', { ids: [...selected] });
-			toast(
-				res.failed?.length
-					? `${res.ingested.length} ingested, ${res.failed.length} failed.`
-					: `${res.ingested.length} source(s) ingested.`,
-				res.failed?.length ? 'alert' : undefined
-			);
+			// Duplicates found mid-batch don't block the rest (app/main.py's
+			// promote_staged_batch keeps going and reports each failure) —
+			// called out separately here since they're resolvable one at a
+			// time via the single-item Ingest button above, unlike a genuine
+			// failure.
+			const dupes = (res.failed ?? []).filter((f: any) => f.error?.duplicate_of);
+			const otherFailed = (res.failed?.length ?? 0) - dupes.length;
+			let msg = `${res.ingested.length} ingested`;
+			if (dupes.length) msg += `, ${dupes.length} duplicate(s) skipped (resolve individually)`;
+			if (otherFailed) msg += `, ${otherFailed} failed`;
+			toast(msg + '.', res.failed?.length ? 'alert' : undefined);
 			selected = new Set();
 			clearFiltersAfterIngest();
 			await invalidateAll();
@@ -560,6 +609,15 @@
 	{#snippet footer()}
 		<button class="view" onclick={() => (confirmingDelete = false)}>Keep</button>
 		<button class="view danger" onclick={confirmDelete}>Remove</button>
+	{/snippet}
+</Dialog>
+
+<Dialog bind:open={duplicateOpen} title="Already in the library">
+	<p>{duplicateMessage}</p>
+	{#snippet footer()}
+		<button class="view" onclick={() => (duplicateOpen = false)}>Cancel</button>
+		<button class="view danger" onclick={discardDuplicate}>Discard staged item</button>
+		<button class="view" onclick={replaceDuplicate}>Replace old version</button>
 	{/snippet}
 </Dialog>
 
