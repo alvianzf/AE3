@@ -1,6 +1,16 @@
 # Web
 fastapi==0.139.2
 uvicorn==0.51.0
+# Production process manager — bare uvicorn has no graceful-reload signal
+# (SIGHUP does nothing), so every deploy did a hard `systemctl restart`:
+# the listening socket closes, nginx gets connection-refused for however
+# long the old process takes to exit, and any in-flight request (a slow
+# Reader/consult call included) is killed outright. Real incident, not
+# hypothetical: a user's ingest attempt landed a 502 mid-deploy, twice, on
+# the same day (2026-09-18). gunicorn's master keeps the socket open across
+# a SIGHUP reload and hands off to a freshly-booted worker before killing
+# the old one — see DEPLOY.md and the systemd unit's ExecReload.
+gunicorn==23.0.0
 python-multipart==0.0.32
 python-dotenv==1.2.2
 

@@ -13,7 +13,8 @@ domain doesn't.
 **Pushing to `main` deploys automatically** via
 [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) — GitHub
 Actions builds the SvelteKit frontend, `rsync`s `app/` and the build output
-to the server, reinstalls Python deps, and restarts `clinic.service`, gated
+to the server, reinstalls Python deps, and gracefully reloads
+`clinic.service` (see "Zero-downtime reload" below), gated
 behind a `check` job (Python syntax check + `npm run check`) that must pass
 first. Auth is a dedicated ed25519 deploy key (repo secret
 `DEPLOY_SSH_KEY`, restricted to no-pty/no-forwarding), not a password.
@@ -98,7 +99,7 @@ no longer gates anything once v2 is deployed.
 | Piece | Detail |
 |---|---|
 | App | `/opt/clinic`, venv at `/opt/clinic/.venv`, systemd unit `clinic` |
-| Uvicorn | `127.0.0.1:8000`, `--proxy-headers`, `MemoryMax=500M` |
+| App server | gunicorn (1 `uvicorn.workers.UvicornWorker`) on `127.0.0.1:8000`, `MemoryMax=4G` — see "Zero-downtime reload" below |
 | NGINX | `/etc/nginx/sites-available/clinic` (80 + 443, plus a `default_server` catch-all — see "TLS today" above), shared body in `snippets/clinic-proxy.conf` |
 | Origin TLS | real Let's Encrypt cert (certbot), `/etc/letsencrypt/live/functionalhealthcollab.com/` — the old self-signed one at `/etc/nginx/origin-tls/` is no longer referenced by any server block, left on disk unused |
 | Real client IP | `/etc/nginx/conf.d/cloudflare-realip.conf` still exists but is now vestigial — nothing is Cloudflare-proxied anymore, so it never matches |
@@ -166,6 +167,50 @@ still needs to stay raised:
    stress test — but the fix means "stays comfortably under 4G," not
    "would be fine at 500M," so the raised ceiling is still load-bearing,
    not a temporary workaround to revert.
+
+### Zero-downtime reload (gunicorn)
+
+Every deploy used to run `systemctl restart clinic` — a hard restart:
+the listening socket closes, NGINX gets connection-refused for however
+long the old process takes to exit, and any in-flight request (a slow
+Reader/consult call included) is killed outright, not just delayed.
+Real incident, not hypothetical: a user's ingest attempt landed a 502
+mid-deploy, twice, the same day (2026-09-18) — the second time, the old
+uvicorn process took over 90 seconds to shut down (systemd's
+`stop-sigterm` timed out and SIGKILLed it), a window where every
+request against the app failed.
+
+Fixed by switching the app server from bare `uvicorn` to
+**gunicorn running one `uvicorn.workers.UvicornWorker`**
+(`/etc/systemd/system/clinic.service`):
+
+```
+ExecStart=/opt/clinic/.venv/bin/gunicorn app.main:app --worker-class uvicorn.workers.UvicornWorker --workers 1 --bind 127.0.0.1:8000 --forwarded-allow-ips=127.0.0.1 --timeout 300 --graceful-timeout 180
+ExecReload=/bin/kill -s HUP $MAINPID
+```
+
+`SIGHUP` to gunicorn's master (`systemctl reload clinic`, or
+`reload-or-restart` — what the deploy workflow now uses, since it falls
+back to a hard restart if the service isn't already running) makes it
+boot a *new* worker on the **same already-open listening socket**
+before gracefully draining and killing the old one — NGINX's single
+upstream connection never sees a refusal, because something is always
+listening on `127.0.0.1:8000` throughout. `--graceful-timeout 180`
+gives the old worker up to 3 minutes to finish in-flight requests
+before a reload force-kills it (matching `proxy_read_timeout 300s`'s
+own generosity for a slow consult); `--timeout 300` is gunicorn's
+worker-silent-timeout, effectively moot for an async `UvicornWorker`
+(its event loop keeps heartbeating independently of how long any single
+request takes) but set to match anyway rather than leaning on that
+distinction.
+
+Steady-state resource usage is unchanged from bare uvicorn — one worker
+process, not a worker pool — a reload briefly runs two processes only
+for the few seconds of the old-to-new handoff.
+
+**Verified live** (2026-09-18): 400 concurrent requests against
+`/api/health` while triggering a real `SIGHUP` mid-stream — 400/400
+returned 200, master PID unchanged, worker PID cleanly replaced.
 
 ### The scraper's headless-browser fallback (Playwright)
 
