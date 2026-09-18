@@ -118,6 +118,38 @@ KG_BUILDER_SYSTEM = (
 )
 
 
+def _reader_sample(text: str, budget: int = 40_000) -> str:
+    """Beginning + middle + end slices, not a plain head-truncate — Reader
+    writes a title/summary/grade for the *whole* document, so a source
+    whose substance is concentrated past the first `budget` characters
+    (an abstract-then-appendices paper, a long transcript) would
+    otherwise get graded/summarized on its intro alone. Still bounded,
+    unlike full chunk-and-stitch (extract_article) — that exists because
+    verbatim reproduction can't skip anything; Reader's job is already a
+    lossy summary, so a representative sample is honest, not a shortcut.
+    40_000 matches _SAFE_INPUT_CHARS below (same conservative chars/token
+    math, verified safe there) — kept as a literal default here rather
+    than importing that name forward, since it's defined later in this
+    module and Reader's own max_tokens=2_000 leaves even more headroom
+    than extract_article's 20_000 does anyway.
+
+    Found live: a real ~39K-token document still exceeded the dedicated
+    Reader deployment's 40_960 ceiling even after max_tokens was cut to
+    2_000 (input alone left ~1 token of headroom) — the input itself has
+    to be bounded, not just the requested output.
+    """
+    if len(text) <= budget:
+        return text
+    third = budget // 3
+    start, mid_point = text[:third], len(text) // 2
+    middle = text[mid_point - third // 2: mid_point + third // 2]
+    end = text[-third:]
+    return (
+        f"{start}\n\n[... middle of document ...]\n\n{middle}"
+        f"\n\n[... end of document ...]\n\n{end}"
+    )
+
+
 def read_source(text: str, filename: str, kind: str, origin: str,
                 known_topics: list[str] | None = None) -> dict:
     shelves = known_topics or []
@@ -125,7 +157,7 @@ def read_source(text: str, filename: str, kind: str, origin: str,
         f"Topics already used in this library (reuse where one fits):\n"
         f"{', '.join(sorted(shelves)) or '(the library is empty)'}\n\n"
         f"Filename: {filename}\nKind: {kind}\nStated origin: {origin}\n\n"
-        f"Source text:\n---\n{text}\n---"
+        f"Source text:\n---\n{_reader_sample(text)}\n---"
     )
     # max_tokens=2_000, not chat_json()'s 20_000 default: READER_SCHEMA's
     # output (a title, 2-3 sentence summary, up to 4 topics, a grade) never
