@@ -574,7 +574,10 @@ def _staged_owner_filter(caller: dict) -> str | None:
     return None if caller["role"] == "admin" else caller["id"]
 
 
-def _promote_staged(staged_id: str, kind: str, origin: str, owner: str | None = None) -> dict:
+def _promote_staged(
+    staged_id: str, kind: str, origin: str, owner: str | None = None,
+    replaces: str = "",
+) -> dict:
     staged = core_store.get_staged_source(staged_id, owner)
     if staged is None:
         raise HTTPException(404, f"no such staged item: {staged_id}")
@@ -589,7 +592,7 @@ def _promote_staged(staged_id: str, kind: str, origin: str, owner: str | None = 
     # _ingest_pages() archives its own copy of the file under the *new*
     # source's id (originals.save_from_path) — the staged copy under the
     # staged id is redundant the moment that succeeds, dropped below.
-    result = _ingest_pages(pages, filename, kind, origin, "", original)
+    result = _ingest_pages(pages, filename, kind, origin, replaces, original)
     core_store.delete_staged_source(staged_id, owner)
     if staged["kind"] == "file":
         originals.delete(staged_id)
@@ -736,6 +739,7 @@ def discard_staged(
 class StagedIngestBody(BaseModel):
     kind: str = "article"
     origin: str = "unspecified"
+    replaces: str = ""
 
 
 @app.post("/api/staged/{staged_id}/ingest")
@@ -743,7 +747,8 @@ def promote_staged(
     staged_id: str, body: StagedIngestBody,
     _caller: dict = Depends(auth.require_admin_or_upload_permitted_practitioner),
 ) -> dict:
-    return _promote_staged(staged_id, body.kind, body.origin, _staged_owner_filter(_caller))
+    return _promote_staged(staged_id, body.kind, body.origin,
+                            _staged_owner_filter(_caller), body.replaces)
 
 
 class StagedBatchIngestBody(BaseModel):

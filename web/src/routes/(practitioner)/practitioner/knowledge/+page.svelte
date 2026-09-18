@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
 	import { PUBLIC_API_BASE } from '$env/static/public';
-	import { get, put, post, del } from '$lib/api';
+	import { get, put, post, del, ApiError } from '$lib/api';
 	import { chunkedUpload } from '$lib/chunkedUpload';
 	import { toast } from '$lib/stores/toast';
 	import Spotlight from '$lib/components/Spotlight.svelte';
@@ -93,6 +93,16 @@
 		}
 	}
 
+	// Duplicate-on-ingest: _ingest_pages() (app/main.py) 409s with
+	// duplicate_of when the staged body hashes to an already-ingested
+	// document, rather than silently filing a second copy under a fresh
+	// Reader-generated title/grade. Surfaced here so the practitioner can
+	// choose to replace the old version or discard the redundant staged item.
+	let duplicateStagedId = $state<string | null>(null);
+	let duplicateOf = $state<string | null>(null);
+	let duplicateMessage = $state('');
+	let duplicateOpen = $state(false);
+
 	async function ingestOne(id: string) {
 		promotingId = id;
 		try {
@@ -100,10 +110,42 @@
 			toast('Ingested into the library.');
 			await invalidateAll();
 		} catch (err: any) {
+			const detail = err instanceof ApiError ? (err.detail as any) : null;
+			if (err instanceof ApiError && err.status === 409 && detail?.duplicate_of) {
+				duplicateStagedId = id;
+				duplicateOf = detail.duplicate_of;
+				duplicateMessage = detail.message;
+				duplicateOpen = true;
+			} else {
+				toast(err.message, 'alert');
+			}
+		} finally {
+			promotingId = null;
+		}
+	}
+
+	async function replaceDuplicate() {
+		if (!duplicateStagedId || !duplicateOf) return;
+		const id = duplicateStagedId;
+		const replaces = duplicateOf;
+		duplicateOpen = false;
+		promotingId = id;
+		try {
+			await post(fetch, `/staged/${id}/ingest`, { replaces });
+			toast('Replaced the existing version.');
+			await invalidateAll();
+		} catch (err: any) {
 			toast(err.message, 'alert');
 		} finally {
 			promotingId = null;
 		}
+	}
+
+	async function discardDuplicate() {
+		if (!duplicateStagedId) return;
+		const id = duplicateStagedId;
+		duplicateOpen = false;
+		await discardStaged(id);
 	}
 
 	async function discardStaged(id: string) {
@@ -283,6 +325,15 @@
 			</form>
 		{/if}
 	</div>
+</Dialog>
+
+<Dialog bind:open={duplicateOpen} title="Already in the library">
+	<p>{duplicateMessage}</p>
+	{#snippet footer()}
+		<button class="view" onclick={() => (duplicateOpen = false)}>Cancel</button>
+		<button class="view danger" onclick={discardDuplicate}>Discard staged item</button>
+		<button class="view" onclick={replaceDuplicate}>Replace old version</button>
+	{/snippet}
 </Dialog>
 
 <Dialog bind:open={viewing} title={viewTitle} wide>
