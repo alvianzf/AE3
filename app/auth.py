@@ -144,6 +144,43 @@ def require_admin_or_pro_practitioner(request: Request) -> dict:
     raise HTTPException(status_code=401, detail="Admin or practitioner login required.")
 
 
+def require_admin_or_upload_permitted_practitioner(request: Request) -> dict:
+    """Library upload/staging routes (POST /api/staged, the chunked upload
+    routes, the ingest routes) default to admin-only, same as the rest of
+    library curation — but a superadmin/admin can grant individual
+    practitioners write access too (core_store.can_upload_library), an
+    explicit per-practitioner toggle rather than a blanket Pro perk. Unlike
+    require_admin_or_pro_practitioner's read-only reasoning (a Pro
+    practitioner already implicitly reads the library via consults/
+    weighting), writing to the shared library is new exposure for every
+    practitioner regardless of plan, so Pro-in-good-standing is necessary
+    but not sufficient here — the explicit grant is what actually decides
+    it, checked live rather than cached on the session so a revoked grant
+    takes effect immediately."""
+    session = current_session(request)
+    if session is not None and session["role"] == "admin":
+        return require_admin(request)
+    if session is not None and session["role"] == "practitioner":
+        # One fetch doing both the Pro-status check and the upload-grant
+        # check, not require_pro_practitioner() (its own separate fetch)
+        # followed by a second one here — this dependency runs once per
+        # chunk on the chunked-upload routes, so a large file's upload
+        # would otherwise triple its auth-related DB round trips for no
+        # reason (found in review). Duplicates require_pro_practitioner's
+        # condition rather than changing its return shape, which 30+ other
+        # routes depend on as {"role", "id"}, not a full practitioner row.
+        session = require_practitioner(request)
+        practitioner = core_store.get_practitioner(session["id"])
+        if practitioner is None or practitioner["status"] != "approved" or \
+                practitioner["plan"] != "pro" or \
+                practitioner.get("stripe_status") in ("past_due", "blocked"):
+            raise HTTPException(status_code=403, detail="A Pro plan in good standing is required.")
+        if not practitioner["can_upload_library"]:
+            raise HTTPException(status_code=403, detail="Library upload permission required.")
+        return session
+    raise HTTPException(status_code=401, detail="Admin or practitioner login required.")
+
+
 def require_client(request: Request) -> dict:
     session = current_session(request)
     if session is None or session["role"] != "client":

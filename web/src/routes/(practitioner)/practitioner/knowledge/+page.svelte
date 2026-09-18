@@ -1,14 +1,120 @@
 <script lang="ts">
+	import { invalidateAll } from '$app/navigation';
 	import { PUBLIC_API_BASE } from '$env/static/public';
-	import { get, put } from '$lib/api';
+	import { get, put, post, del } from '$lib/api';
+	import { chunkedUpload } from '$lib/chunkedUpload';
 	import { toast } from '$lib/stores/toast';
 	import Spotlight from '$lib/components/Spotlight.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import Chip from '$lib/components/Chip.svelte';
 	import Dialog from '$lib/components/Dialog.svelte';
+	import Tabs from '$lib/components/Tabs.svelte';
+	import TextField from '$lib/components/TextField.svelte';
+	import Button from '$lib/components/Button.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 
 	let { data } = $props();
+
+	// --- Upload — only reachable at all when data.canUploadLibrary is true
+	// (backend: app/auth.py's require_admin_or_upload_permitted_practitioner);
+	// this is a deliberate duplicate of the admin Library page's own
+	// upload/staged-list UI (file + paste-text only, not scrape-URL) rather
+	// than a shared component — the first practitioner-facing copy of it. ---
+	let ingestOpen = $state(false);
+	let ingestTab = $state('upload');
+	let text = $state('');
+	let fileInput = $state<HTMLInputElement>();
+	let staging = $state(false);
+	let stageProgress = $state<{ sent: number; total: number } | null>(null);
+	let dragOver = $state(false);
+	let selectedFile = $state<File | null>(null);
+	let previewUrl = $state<string | null>(null);
+	let promotingId = $state<string | null>(null);
+
+	function pickFile(file: File | null) {
+		if (previewUrl) URL.revokeObjectURL(previewUrl);
+		selectedFile = file;
+		previewUrl = file ? URL.createObjectURL(file) : null;
+	}
+
+	function onDrop(e: DragEvent) {
+		e.preventDefault();
+		dragOver = false;
+		pickFile(e.dataTransfer?.files?.[0] ?? null);
+	}
+
+	function onFileInputChange(e: Event) {
+		pickFile((e.target as HTMLInputElement).files?.[0] ?? null);
+	}
+
+	function stagedFileUrl(item: any) {
+		return `${PUBLIC_API_BASE}/api/staged/${item.id}/file#toolbar=0&navpanes=0&scrollbar=0`;
+	}
+
+	async function stageFile() {
+		if (!selectedFile) return;
+		staging = true;
+		stageProgress = null;
+		try {
+			await chunkedUpload('/sources', selectedFile, {}, (p) => (stageProgress = p), 'stage');
+			toast('Added to your staged list.');
+			pickFile(null);
+			if (fileInput) fileInput.value = '';
+			ingestOpen = false;
+			await invalidateAll();
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		} finally {
+			staging = false;
+			stageProgress = null;
+		}
+	}
+
+	async function stageText(e: Event) {
+		e.preventDefault();
+		if (!text.trim()) return;
+		staging = true;
+		try {
+			const fd = new FormData();
+			fd.set('text', text);
+			const res = await fetch(`${PUBLIC_API_BASE}/api/staged`, { method: 'POST', credentials: 'include', body: fd });
+			if (!res.ok) {
+				const body = await res.json().catch(() => ({}));
+				throw new Error(body?.detail?.message || body?.detail || 'Staging failed.');
+			}
+			toast('Added to your staged list.');
+			text = '';
+			ingestOpen = false;
+			await invalidateAll();
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		} finally {
+			staging = false;
+		}
+	}
+
+	async function ingestOne(id: string) {
+		promotingId = id;
+		try {
+			await post(fetch, `/staged/${id}/ingest`, {});
+			toast('Ingested into the library.');
+			await invalidateAll();
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		} finally {
+			promotingId = null;
+		}
+	}
+
+	async function discardStaged(id: string) {
+		try {
+			await del(fetch, `/staged/${id}`);
+			toast('Discarded.');
+			await invalidateAll();
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		}
+	}
 
 	// Same viewer as the admin Library page (web/src/routes/(admin)/admin/
 	// +page.svelte) — library content is shared/admin-curated, and a
@@ -72,8 +178,37 @@
 
 <svelte:head><title>Library weights — Practitioner portal</title></svelte:head>
 
-<Spotlight title="Your knowledge weighting">
+<Spotlight title="Your knowledge weighting" actions={data.canUploadLibrary ? uploadActions : undefined}>
 	<p class="hint">Boost or dampen how much each shared library source counts when your consults run.</p>
+
+	{#if data.canUploadLibrary && data.staged?.length}
+		<div class="staged">
+			<strong>{data.staged.length} of your uploads not yet in the library</strong>
+			<ul class="staged-list">
+				{#each data.staged as item (item.id)}
+					<li class="staged-item">
+						<div class="staged-body">
+							<div class="staged-title">
+								{item.filename ?? 'Pasted text'}
+								<Chip tone="neutral">{item.kind}</Chip>
+								{#if item.page_count}<span class="hint">{item.page_count} page(s)</span>{/if}
+							</div>
+							<p class="staged-preview">{item.preview}{item.preview?.length >= 280 ? '…' : ''}</p>
+						</div>
+						<div class="staged-actions">
+							{#if item.kind === 'file'}
+								<a class="view" href={stagedFileUrl(item)} target="_blank" rel="noopener">View</a>
+							{/if}
+							<button class="view" onclick={() => ingestOne(item.id)} disabled={promotingId === item.id}>
+								{promotingId === item.id ? 'Ingesting…' : 'Ingest'}
+							</button>
+							<button class="view danger" onclick={() => discardStaged(item.id)}>Discard</button>
+						</div>
+					</li>
+				{/each}
+			</ul>
+		</div>
+	{/if}
 	<input class="search" type="search" placeholder="Search by title…" bind:value={q} aria-label="Search library sources" />
 	<DataTable
 		columns={[{ key: 'title', label: 'Source', sortable: true }, { key: 'grade', label: 'Grade' }, { key: 'weight', label: 'Your weight' }, { key: 'actions', label: '' }]}
@@ -97,6 +232,58 @@
 		</div>
 	{/if}
 </Spotlight>
+
+{#snippet uploadActions()}
+	<Button onclick={() => (ingestOpen = true)}>+ Add resources</Button>
+{/snippet}
+
+<Dialog bind:open={ingestOpen} title="Add resources" wide>
+	<Tabs bind:active={ingestTab} tabs={[{ id: 'upload', label: 'Upload a document' }, { id: 'text', label: 'Paste text' }]} />
+
+	<div class="ingest-panel">
+		{#if ingestTab === 'upload'}
+			<input id="file" type="file" bind:this={fileInput} onchange={onFileInputChange} hidden />
+			<div
+				class="dropzone"
+				class:dragover={dragOver}
+				class:has-file={!!selectedFile}
+				role="button"
+				tabindex="0"
+				ondragover={(e) => { e.preventDefault(); dragOver = true; }}
+				ondragleave={() => (dragOver = false)}
+				ondrop={onDrop}
+				onclick={() => fileInput?.click()}
+				onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput?.click(); } }}
+			>
+				{#if !selectedFile}
+					<p class="dz-title">Drag a file here, or click to browse</p>
+					<p class="hint">Up to 200 MB.</p>
+				{:else if previewUrl && selectedFile.type === 'application/pdf'}
+					<embed src="{previewUrl}#toolbar=0&navpanes=0&scrollbar=0" type="application/pdf" class="pdf-preview" aria-label="{selectedFile.name} preview" />
+					<p class="dz-filename">{selectedFile.name}</p>
+				{:else}
+					<p class="dz-title">{selectedFile.name}</p>
+					<p class="hint">{Math.round(selectedFile.size / 1024)} KB</p>
+				{/if}
+			</div>
+			{#if stageProgress}
+				<div class="upload-progress">
+					<div class="bar" style="width: {Math.round((stageProgress.sent / stageProgress.total) * 100)}%"></div>
+					<span class="hint">{Math.round(stageProgress.sent / 1024 / 1024)} / {Math.round(stageProgress.total / 1024 / 1024)} MB</span>
+				</div>
+			{/if}
+			<div class="dz-actions">
+				{#if selectedFile}<Button variant="ghost" onclick={() => pickFile(null)}>Clear</Button>{/if}
+				<Button onclick={stageFile} loading={staging} disabled={!selectedFile}>Add to staged list</Button>
+			</div>
+		{:else if ingestTab === 'text'}
+			<form onsubmit={stageText} class="ingest">
+				<TextField label="Paste text" type="textarea" bind:value={text} placeholder="Paste an article, note, or transcript…" />
+				<Button type="submit" loading={staging}>Add to staged list</Button>
+			</form>
+		{/if}
+	</div>
+</Dialog>
 
 <Dialog bind:open={viewing} title={viewTitle} wide>
 	{#if viewOriginalUrl}
@@ -132,4 +319,41 @@
 	.doc-body { white-space: pre-wrap; font-size: var(--text-sm); line-height: 1.6; max-height: 60vh; overflow-y: auto; }
 	.doc-frame { width: 100%; height: 75vh; border: none; border-radius: var(--r); }
 	.pager button:disabled { opacity: .5; cursor: default; }
+	.staged { display: grid; gap: var(--space-3); margin-bottom: var(--space-4); }
+	.staged-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+	.staged-item { display: flex; gap: var(--space-3); align-items: flex-start; padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--r); }
+	.staged-body { flex: 1 1 auto; min-width: 0; }
+	.staged-title { display: flex; align-items: center; gap: .4rem; font-weight: 650; flex-wrap: wrap; }
+	.staged-preview { margin: .3rem 0 0; font-size: var(--text-sm); color: var(--muted); overflow-wrap: anywhere; }
+	.staged-actions { display: flex; gap: .35rem; flex: 0 0 auto; flex-wrap: wrap; }
+	.view {
+		font: inherit; font-size: var(--text-sm); font-weight: 650; cursor: pointer;
+		border: 1px solid var(--line); background: var(--panel); color: var(--accent-ink);
+		border-radius: var(--r); padding: .3rem .7rem;
+	}
+	.view:hover { border-color: var(--accent); background: var(--accent-soft); }
+	.view.danger { color: var(--danger); }
+	.view.danger:hover { border-color: var(--danger); background: var(--danger-soft); }
+	.view:disabled { opacity: .5; cursor: not-allowed; }
+	.ingest { display: grid; gap: var(--space-3); }
+	.ingest-panel { margin-top: var(--space-4); display: grid; gap: var(--space-3); }
+	.dropzone {
+		display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .3rem;
+		min-height: 8rem; padding: var(--space-4); text-align: center; cursor: pointer;
+		border: 2px dashed var(--line-2); border-radius: var(--r-lg); background: var(--panel-2);
+		transition: border-color .15s var(--ease), background .15s var(--ease);
+	}
+	.dropzone:hover, .dropzone:focus-visible { border-color: var(--accent); outline: none; }
+	.dropzone.dragover { border-color: var(--accent); background: var(--accent-soft); }
+	.dropzone.has-file { cursor: default; padding: var(--space-3); }
+	.dz-title { font-weight: 650; }
+	.dz-filename { font-weight: 650; font-size: var(--text-sm); margin-top: .3rem; }
+	.dz-actions { display: flex; justify-content: flex-end; gap: var(--space-2); }
+	.pdf-preview { width: 100%; height: 20rem; border: none; border-radius: var(--r); }
+	.upload-progress {
+		display: flex; align-items: center; gap: var(--space-3);
+		background: var(--panel-2); border-radius: 99px; padding: .35rem .35rem .35rem .1rem;
+	}
+	.upload-progress .bar { flex: 1 1 auto; height: 6px; border-radius: 99px; background: var(--accent); transition: width .2s var(--ease); margin-left: .25rem; }
+	.upload-progress .hint { flex: 0 0 auto; padding-right: .5rem; white-space: nowrap; }
 </style>

@@ -511,16 +511,20 @@ class SourceUploadInit(BaseModel):
 
 
 @app.post("/api/sources/upload/init")
-def source_upload_init(body: SourceUploadInit,
-                       _admin: dict = Depends(auth.require_admin)) -> dict:
+def source_upload_init(
+    body: SourceUploadInit,
+    _caller: dict = Depends(auth.require_admin_or_upload_permitted_practitioner),
+) -> dict:
     return uploads.start(body.total_size, {
         "filename": body.filename, "content_type": body.content_type,
     })
 
 
 @app.post("/api/sources/upload/{upload_id}/chunk")
-async def source_upload_chunk(upload_id: str, chunk: UploadFile,
-                              _admin: dict = Depends(auth.require_admin)) -> dict:
+async def source_upload_chunk(
+    upload_id: str, chunk: UploadFile,
+    _caller: dict = Depends(auth.require_admin_or_upload_permitted_practitioner),
+) -> dict:
     return await uploads.append_chunk(upload_id, chunk)
 
 
@@ -531,8 +535,10 @@ class SourceUploadComplete(BaseModel):
 
 
 @app.post("/api/sources/upload/{upload_id}/complete")
-def source_upload_complete(upload_id: str, body: SourceUploadComplete,
-                           _admin: dict = Depends(auth.require_admin)) -> dict:
+def source_upload_complete(
+    upload_id: str, body: SourceUploadComplete,
+    _caller: dict = Depends(auth.require_admin_or_upload_permitted_practitioner),
+) -> dict:
     path, meta = uploads.finish(upload_id)
     filename = meta["filename"]
     try:
@@ -560,8 +566,16 @@ def source_upload_complete(upload_id: str, body: SourceUploadComplete,
 # up, then promote a chosen subset — the "stack the resources... ingest all
 # to the KB, or one at a time" flow.
 
-def _promote_staged(staged_id: str, kind: str, origin: str) -> dict:
-    staged = core_store.get_staged_source(staged_id)
+def _staged_owner_filter(caller: dict) -> str | None:
+    """None (admin's own reach: everything) vs. the caller's own id (a
+    permitted practitioner) — threaded through every staged_sources lookup
+    below so a practitioner can never list, view, discard, or ingest another
+    practitioner's (or admin's) staged item, only their own."""
+    return None if caller["role"] == "admin" else caller["id"]
+
+
+def _promote_staged(staged_id: str, kind: str, origin: str, owner: str | None = None) -> dict:
+    staged = core_store.get_staged_source(staged_id, owner)
     if staged is None:
         raise HTTPException(404, f"no such staged item: {staged_id}")
     pages = core_store.get_staged_pages(staged_id)
@@ -576,7 +590,7 @@ def _promote_staged(staged_id: str, kind: str, origin: str) -> dict:
     # source's id (originals.save_from_path) — the staged copy under the
     # staged id is redundant the moment that succeeds, dropped below.
     result = _ingest_pages(pages, filename, kind, origin, "", original)
-    core_store.delete_staged_source(staged_id)
+    core_store.delete_staged_source(staged_id, owner)
     if staged["kind"] == "file":
         originals.delete(staged_id)
     return result
@@ -586,7 +600,7 @@ def _promote_staged(staged_id: str, kind: str, origin: str) -> dict:
 async def stage_source(
     file: UploadFile | None = None,
     text: str = Form(""),
-    _admin: dict = Depends(auth.require_admin),
+    _caller: dict = Depends(auth.require_admin_or_upload_permitted_practitioner),
 ) -> dict:
     """Stage a small file or pasted text — no Reader call, no Neo4j write
     yet. For anything that might exceed _MAX_SOURCE_UPLOAD_BYTES, use the
@@ -610,17 +624,20 @@ async def stage_source(
                 400,
                 "No text could be read from this source. If it is a scanned PDF, "
                 "the pages are images and would need OCR before it can be staged.")
-        staged = core_store.create_staged_source("file", filename, media_type, pages, _admin["id"])
+        staged = core_store.create_staged_source("file", filename, media_type, pages, _caller["id"])
         originals.save(staged["id"], raw, filename)
         return staged
     if text.strip():
-        staged = core_store.create_staged_source("text", None, None, [(None, text)], _admin["id"])
+        staged = core_store.create_staged_source("text", None, None, [(None, text)], _caller["id"])
         return staged
     raise HTTPException(400, "Provide a file or text.")
 
 
 @app.post("/api/sources/upload/{upload_id}/stage")
-def source_upload_stage(upload_id: str, _admin: dict = Depends(auth.require_admin)) -> dict:
+def source_upload_stage(
+    upload_id: str,
+    _caller: dict = Depends(auth.require_admin_or_upload_permitted_practitioner),
+) -> dict:
     """Chunked-upload counterpart to POST /api/staged's file branch — the
     complete step for a large file that should sit reviewable instead of
     ingesting immediately."""
@@ -637,7 +654,7 @@ def source_upload_stage(upload_id: str, _admin: dict = Depends(auth.require_admi
                 "No text could be read from this source. If it is a scanned PDF, "
                 "the pages are images and would need OCR before it can be staged.")
         media_type = meta["content_type"] or _media_type(filename)
-        staged = core_store.create_staged_source("file", filename, media_type, pages, _admin["id"])
+        staged = core_store.create_staged_source("file", filename, media_type, pages, _caller["id"])
         originals.save_from_path(staged["id"], path, filename)
         return staged
     finally:
@@ -672,13 +689,18 @@ def scrape_url(body: ScrapeBody, _admin: dict = Depends(auth.require_admin)) -> 
 
 
 @app.get("/api/staged")
-def list_staged(_admin: dict = Depends(auth.require_admin)) -> list[dict]:
-    return core_store.list_staged_sources()
+def list_staged(
+    _caller: dict = Depends(auth.require_admin_or_upload_permitted_practitioner),
+) -> list[dict]:
+    return core_store.list_staged_sources(_staged_owner_filter(_caller))
 
 
 @app.get("/api/staged/{staged_id}/file")
-def staged_file(staged_id: str, _admin: dict = Depends(auth.require_admin)) -> FileResponse:
-    staged = core_store.get_staged_source(staged_id)
+def staged_file(
+    staged_id: str,
+    _caller: dict = Depends(auth.require_admin_or_upload_permitted_practitioner),
+) -> FileResponse:
+    staged = core_store.get_staged_source(staged_id, _staged_owner_filter(_caller))
     if staged is None or staged["kind"] != "file" or not staged["filename"]:
         raise HTTPException(404, "no such staged file")
     path = originals.path(staged_id, staged["filename"])
@@ -697,11 +719,15 @@ def staged_file(staged_id: str, _admin: dict = Depends(auth.require_admin)) -> F
 
 
 @app.delete("/api/staged/{staged_id}")
-def discard_staged(staged_id: str, _admin: dict = Depends(auth.require_admin)) -> dict:
-    staged = core_store.get_staged_source(staged_id)
+def discard_staged(
+    staged_id: str,
+    _caller: dict = Depends(auth.require_admin_or_upload_permitted_practitioner),
+) -> dict:
+    owner = _staged_owner_filter(_caller)
+    staged = core_store.get_staged_source(staged_id, owner)
     if staged is None:
         raise HTTPException(404, "no such staged item")
-    core_store.delete_staged_source(staged_id)
+    core_store.delete_staged_source(staged_id, owner)
     if staged["kind"] == "file":
         originals.delete(staged_id)
     return {"deleted": staged_id}
@@ -713,9 +739,11 @@ class StagedIngestBody(BaseModel):
 
 
 @app.post("/api/staged/{staged_id}/ingest")
-def promote_staged(staged_id: str, body: StagedIngestBody,
-                   _admin: dict = Depends(auth.require_admin)) -> dict:
-    return _promote_staged(staged_id, body.kind, body.origin)
+def promote_staged(
+    staged_id: str, body: StagedIngestBody,
+    _caller: dict = Depends(auth.require_admin_or_upload_permitted_practitioner),
+) -> dict:
+    return _promote_staged(staged_id, body.kind, body.origin, _staged_owner_filter(_caller))
 
 
 class StagedBatchIngestBody(BaseModel):
@@ -725,12 +753,15 @@ class StagedBatchIngestBody(BaseModel):
 
 
 @app.post("/api/staged/ingest")
-def promote_staged_batch(body: StagedBatchIngestBody,
-                         _admin: dict = Depends(auth.require_admin)) -> dict:
+def promote_staged_batch(
+    body: StagedBatchIngestBody,
+    _caller: dict = Depends(auth.require_admin_or_upload_permitted_practitioner),
+) -> dict:
+    owner = _staged_owner_filter(_caller)
     done, failed = [], []
     for staged_id in body.ids:
         try:
-            done.append(_promote_staged(staged_id, body.kind, body.origin))
+            done.append(_promote_staged(staged_id, body.kind, body.origin, owner))
         except HTTPException as exc:
             failed.append({"id": staged_id, "error": exc.detail})
     return {"ingested": done, "failed": failed}
@@ -1282,6 +1313,34 @@ def admin_set_plan(practitioner_id: str, body: PlanUpdate,
         except ValueError:
             raise HTTPException(404, "no such practitioner")
     practitioner = core_store.set_plan(practitioner_id, body.plan)
+    if practitioner is None:
+        raise HTTPException(404, "no such practitioner")
+    return _public(practitioner)
+
+
+class CanUploadLibraryUpdate(BaseModel):
+    allowed: bool
+
+
+@app.post("/api/admin/practitioners/{practitioner_id}/can-upload-library")
+def admin_set_can_upload_library(
+    practitioner_id: str, body: CanUploadLibraryUpdate,
+    _admin: dict = Depends(auth.require_admin),
+) -> dict:
+    # Granting only makes sense for a Pro practitioner in good standing —
+    # require_admin_or_upload_permitted_practitioner (app/auth.py) checks
+    # Pro status too, so granting it to a Basic/pending practitioner would
+    # set a flag that silently does nothing until their plan changes,
+    # discovered confusingly later by the practitioner rather than here
+    # (found in review). Revoking is always allowed regardless of plan.
+    if body.allowed:
+        target = core_store.get_practitioner(practitioner_id)
+        if target is None:
+            raise HTTPException(404, "no such practitioner")
+        if target["status"] != "approved" or target["plan"] != "pro":
+            raise HTTPException(
+                400, "Library upload can only be granted to an approved Pro practitioner.")
+    practitioner = core_store.set_can_upload_library(practitioner_id, body.allowed)
     if practitioner is None:
         raise HTTPException(404, "no such practitioner")
     return _public(practitioner)
