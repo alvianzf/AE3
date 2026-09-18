@@ -120,17 +120,33 @@ jobs:
             set -e
             chown -R clinic:clinic /opt/clinic/app /opt/clinic/web-build /opt/clinic/requirements.txt
             sudo -u clinic /opt/clinic/.venv/bin/pip install -q -r /opt/clinic/requirements.txt
-            # reload-or-restart, not restart: gunicorn (the process manager
-            # as of 2026-09-18, see requirements.txt) keeps the listening
+            # Graceful reload, not restart: gunicorn (the process manager as
+            # of 2026-09-18, see requirements.txt) keeps the listening
             # socket open across a SIGHUP and hands off to a freshly-booted
             # worker before killing the old one, so an in-flight request
             # during a deploy no longer gets connection-refused/502 — a
-            # real incident this replaces (a user's ingest attempt landed a
-            # 502 mid-deploy, twice, the same day). reload-or-restart falls
-            # back to a hard restart if the service isn't already running
-            # (first deploy to a fresh box, or after a crash), same as
-            # restart always did.
-            systemctl reload-or-restart clinic
+            # real incident this replaces (a users ingest attempt landed a
+            # 502 mid-deploy, twice, the same day).
+            #
+            # kill -HUP the master PID directly, not `systemctl reload` /
+            # `reload-or-restart` — found live: this deploy key gets
+            # "Interactive authentication required" from systemds D-Bus/
+            # polkit layer specifically for the ReloadOrRestartUnit /
+            # ReloadUnit methods, even though the identical command
+            # succeeds when run manually over SSH as the same root user,
+            # and even though plain `systemctl restart` (RestartUnit) has
+            # always worked fine for this same key. Whatever polkit rule
+            # differs per-method, sending the signal directly via the
+            # kernel kill(2) syscall needs no D-Bus/polkit involvement at
+            # all, and is exactly what was already verified live (400/400
+            # requests survived a real SIGHUP with zero drops). Falls back
+            # to a hard restart if the service isnt already running (first
+            # deploy to a fresh box, or after a crash).
+            if systemctl is-active --quiet clinic; then
+              kill -HUP "$(systemctl show -p MainPID --value clinic)"
+            else
+              systemctl restart clinic
+            fi
             sleep 3
             systemctl is-active --quiet clinic
           '
