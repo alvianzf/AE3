@@ -127,8 +127,15 @@ def read_source(text: str, filename: str, kind: str, origin: str,
         f"Filename: {filename}\nKind: {kind}\nStated origin: {origin}\n\n"
         f"Source text:\n---\n{text}\n---"
     )
+    # max_tokens=2_000, not chat_json()'s 20_000 default: READER_SCHEMA's
+    # output (a title, 2-3 sentence summary, up to 4 topics, a grade) never
+    # needs anywhere near that, and the default reserving 20_000 output
+    # tokens on top of a large source's real input was enough on its own to
+    # exceed the dedicated Reader deployment's 40_960 total-token ceiling —
+    # a real BadRequestError hit live on a real staged document (~21K input
+    # tokens), not a hypothetical.
     card, _usage = get_client(Role.READER).chat_json(
-        READER_SYSTEM, prompt, READER_SCHEMA, extra_body=NO_THINKING)
+        READER_SYSTEM, prompt, READER_SCHEMA, max_tokens=2_000, extra_body=NO_THINKING)
     card["suggested_grade"] = max(1, min(10, int(card["suggested_grade"])))
     card["topics"] = [t.strip().lower() for t in card["topics"] if t.strip()][:4]
     for f in ("author", "published", "reference"):
