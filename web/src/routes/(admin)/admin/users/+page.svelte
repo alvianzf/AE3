@@ -10,6 +10,7 @@
 	import Dialog from '$lib/components/Dialog.svelte';
 	import TextField from '$lib/components/TextField.svelte';
 	import Icon from '$lib/components/Icon.svelte';
+	import Toggle from '$lib/components/Toggle.svelte';
 
 	let { data } = $props();
 	let active = $state('practitioners');
@@ -227,16 +228,21 @@
 					{#if p.status === 'pending'}
 						<Button variant="text" onclick={() => approve(p.id as string)}><Icon name="check" size={15} />Approve</Button>
 						<Button variant="text" onclick={() => askConfirm(p.id as string, p.name as string, 'reject')}><Icon name="x" size={15} />Reject</Button>
-					{:else if p.status === 'approved'}
-						<Button variant="text" onclick={() => askConfirm(p.id as string, p.name as string, 'suspend')}><Icon name="pause" size={15} />Suspend</Button>
 					{:else}
-						<Button variant="text" onclick={() => approve(p.id as string)}><Icon name="refresh" size={15} />Re-approve</Button>
+						<Toggle
+							checked={p.status === 'approved'}
+							onchange={(next) => (next ? approve(p.id as string) : askConfirm(p.id as string, p.name as string, 'suspend'))}
+							label="Approved status for {p.name}"
+						/>
 					{/if}
-					{#if p.can_upload_library}
-						<Button variant="text" onclick={() => setCanUploadLibrary(p.id as string, false)}><Icon name="book" size={15} />Revoke library upload</Button>
-					{:else}
-						<Button variant="text" onclick={() => setCanUploadLibrary(p.id as string, true)}><Icon name="book" size={15} />Allow library upload</Button>
-					{/if}
+					<span class="toggle-row">
+						<Toggle
+							checked={!!p.can_upload_library}
+							onchange={(next) => setCanUploadLibrary(p.id as string, next)}
+							label="Library upload for {p.name}"
+						/>
+						<span class="hint">Library upload</span>
+					</span>
 				</td>
 			{/snippet}
 		</DataTable>
@@ -267,11 +273,11 @@
 				<td><Chip tone={a.is_active ? 'ok' : 'danger'}>{a.is_active ? 'active' : 'suspended'}</Chip></td>
 				<td class="actions">
 					{#if isSuperadmin}
-						{#if a.is_active}
-							<Button variant="text" onclick={() => askAdminConfirm(a.id as string, a.name as string, 'suspend')}><Icon name="pause" size={15} />Suspend</Button>
-						{:else}
-							<Button variant="text" onclick={() => askAdminConfirm(a.id as string, a.name as string, 'reactivate')}><Icon name="play" size={15} />Reactivate</Button>
-						{/if}
+						<Toggle
+							checked={!!a.is_active}
+							onchange={(next) => askAdminConfirm(a.id as string, a.name as string, next ? 'reactivate' : 'suspend')}
+							label="Active status for {a.name}"
+						/>
 					{/if}
 				</td>
 			{/snippet}
@@ -288,11 +294,11 @@
 				<td>{c.practitioner_name}</td>
 				<td><Chip tone={c.active ? 'ok' : 'danger'}>{c.active ? 'active' : 'suspended'}</Chip></td>
 				<td class="actions">
-					{#if c.active}
-						<Button variant="text" onclick={() => askClientConfirm(c, 'suspend')}><Icon name="pause" size={15} />Suspend</Button>
-					{:else}
-						<Button variant="text" onclick={() => askClientConfirm(c, 'reactivate')}><Icon name="play" size={15} />Reactivate</Button>
-					{/if}
+					<Toggle
+						checked={!!c.active}
+						onchange={(next) => askClientConfirm(c, next ? 'reactivate' : 'suspend')}
+						label="Active status for {c.name}"
+					/>
 				</td>
 			{/snippet}
 		</DataTable>
@@ -374,7 +380,8 @@
 
 <style>
 	.toolbar { display: flex; justify-content: flex-end; align-items: center; gap: var(--space-3); margin: var(--space-3) 0; }
-	.actions { display: flex; gap: .25rem; }
+	.actions { display: flex; align-items: center; gap: .6rem; }
+	.toggle-row { display: inline-flex; align-items: center; gap: .5rem; }
 	select { border: 1px solid var(--line-2); border-radius: var(--r); padding: .3rem .5rem; }
 	.field { display: flex; flex-direction: column; gap: .35rem; }
 	.search {
