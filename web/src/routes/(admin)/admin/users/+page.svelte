@@ -160,6 +160,18 @@
 		try { await put(fetch, `/admin/practitioners/${id}/plan`, { plan }); toast('Plan updated.'); await invalidateAll(); }
 		catch (err: any) { toast(err.message, 'alert'); }
 	}
+	// Library upload is an explicit per-practitioner grant, not a plan perk
+	// (a superadmin/admin decides WHICH practitioners get it) — separate
+	// toggle from the Basic/Pro plan select above.
+	async function setCanUploadLibrary(id: string, allowed: boolean) {
+		try {
+			await post(fetch, `/admin/practitioners/${id}/can-upload-library`, { allowed });
+			toast(allowed ? 'Library upload allowed.' : 'Library upload revoked.');
+			await invalidateAll();
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		}
+	}
 	async function createPractitioner(e: Event) {
 		e.preventDefault();
 		submitting = true;
@@ -219,6 +231,11 @@
 						<Button variant="text" onclick={() => askConfirm(p.id as string, p.name as string, 'suspend')}><Icon name="pause" size={15} />Suspend</Button>
 					{:else}
 						<Button variant="text" onclick={() => approve(p.id as string)}><Icon name="refresh" size={15} />Re-approve</Button>
+					{/if}
+					{#if p.can_upload_library}
+						<Button variant="text" onclick={() => setCanUploadLibrary(p.id as string, false)}><Icon name="book" size={15} />Revoke library upload</Button>
+					{:else}
+						<Button variant="text" onclick={() => setCanUploadLibrary(p.id as string, true)}><Icon name="book" size={15} />Allow library upload</Button>
 					{/if}
 				</td>
 			{/snippet}

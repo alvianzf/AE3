@@ -120,7 +120,17 @@ jobs:
             set -e
             chown -R clinic:clinic /opt/clinic/app /opt/clinic/web-build /opt/clinic/requirements.txt
             sudo -u clinic /opt/clinic/.venv/bin/pip install -q -r /opt/clinic/requirements.txt
-            systemctl restart clinic
+            # reload-or-restart, not restart: gunicorn (the process manager
+            # as of 2026-09-18, see requirements.txt) keeps the listening
+            # socket open across a SIGHUP and hands off to a freshly-booted
+            # worker before killing the old one, so an in-flight request
+            # during a deploy no longer gets connection-refused/502 — a
+            # real incident this replaces (a user's ingest attempt landed a
+            # 502 mid-deploy, twice, the same day). reload-or-restart falls
+            # back to a hard restart if the service isn't already running
+            # (first deploy to a fresh box, or after a crash), same as
+            # restart always did.
+            systemctl reload-or-restart clinic
             sleep 3
             systemctl is-active --quiet clinic
           '

@@ -68,6 +68,14 @@ def ensure_schema() -> None:
             );
             CREATE INDEX IF NOT EXISTS practitioners_by_status
                 ON practitioners(status);
+            -- CREATE TABLE IF NOT EXISTS above is a no-op for a table that
+            -- already existed before per-practitioner library upload was
+            -- added, same gap questionnaires.practitioner_id and
+            -- vault.py's clients.active had — apply it explicitly too.
+            -- An explicit per-practitioner grant, not a blanket Pro-plan
+            -- perk: a superadmin/admin decides WHICH practitioners get it.
+            ALTER TABLE practitioners ADD COLUMN IF NOT EXISTS
+                can_upload_library BOOLEAN NOT NULL DEFAULT FALSE;
 
             -- Routing only: which vault schema a client's login belongs
             -- to. No clinical content — that lives in the vault itself.
@@ -419,6 +427,22 @@ def set_plan(practitioner_id: str, plan: str) -> dict | None:
             (plan, practitioner_id),
         )
     log("admin", "practitioner plan changed", f"{practitioner_id} -> {plan}")
+    return get_practitioner(practitioner_id)
+
+
+def set_can_upload_library(practitioner_id: str, allowed: bool) -> dict | None:
+    with core_connection() as conn:
+        exists = conn.execute(
+            "SELECT 1 FROM practitioners WHERE id = %s", (practitioner_id,)
+        ).fetchone()
+        if not exists:
+            return None
+        conn.execute(
+            "UPDATE practitioners SET can_upload_library = %s WHERE id = %s",
+            (allowed, practitioner_id),
+        )
+    log("admin", "practitioner library-upload permission changed",
+        f"{practitioner_id} -> {allowed}")
     return get_practitioner(practitioner_id)
 
 
@@ -844,19 +868,29 @@ def create_staged_source(
     return get_staged_source(staged_id)
 
 
-def list_staged_sources() -> list[dict]:
+def list_staged_sources(created_by: str | None = None) -> list[dict]:
+    """created_by=None is the admin view — every staged item, as today.
+    A permitted practitioner passes their own id so they only ever see what
+    they themselves staged, never another practitioner's or admin's."""
+    query = "SELECT * FROM staged_sources"
+    params: tuple = ()
+    if created_by is not None:
+        query += " WHERE created_by = %s"
+        params = (created_by,)
+    query += " ORDER BY created_at DESC"
     with core_connection() as conn:
-        rows = conn.execute(
-            "SELECT * FROM staged_sources ORDER BY created_at DESC"
-        ).fetchall()
+        rows = conn.execute(query, params).fetchall()
     return [_decode_staged(r) for r in rows]
 
 
-def get_staged_source(staged_id: str) -> dict | None:
+def get_staged_source(staged_id: str, created_by: str | None = None) -> dict | None:
+    query = "SELECT * FROM staged_sources WHERE id = %s"
+    params: tuple = (staged_id,)
+    if created_by is not None:
+        query += " AND created_by = %s"
+        params = (staged_id, created_by)
     with core_connection() as conn:
-        row = conn.execute(
-            "SELECT * FROM staged_sources WHERE id = %s", (staged_id,)
-        ).fetchone()
+        row = conn.execute(query, params).fetchone()
     return _decode_staged(row) if row else None
 
 
@@ -872,7 +906,12 @@ def get_staged_pages(staged_id: str) -> list[list] | None:
     return json.loads(row["pages_json"]) if row else None
 
 
-def delete_staged_source(staged_id: str) -> bool:
+def delete_staged_source(staged_id: str, created_by: str | None = None) -> bool:
+    query = "DELETE FROM staged_sources WHERE id = %s"
+    params: tuple = (staged_id,)
+    if created_by is not None:
+        query += " AND created_by = %s"
+        params = (staged_id, created_by)
     with core_connection() as conn:
-        cur = conn.execute("DELETE FROM staged_sources WHERE id = %s", (staged_id,))
+        cur = conn.execute(query, params)
     return cur.rowcount > 0
