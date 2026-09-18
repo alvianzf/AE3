@@ -14,10 +14,26 @@
 	// reactive list below. Top-layer elements stack by show order, so as
 	// long as this is (re-)shown after a dialog opens, it wins — see the
 	// $effect below.
+	// showPopover() throws InvalidStateError if the popover is already
+	// showing — found live: once onMount's first call opened it, every
+	// later re-promotion attempt below silently threw and did nothing, so
+	// a dialog opened *after* the first toast ever fired always ended up
+	// above the toaster in the top-layer stack (top-layer elements stack
+	// by show order, and the toaster's "show" never actually re-happened).
+	// hide-then-show unconditionally bumps it back to the top regardless
+	// of current state, without needing to check :popover-open first.
 	let container = $state<HTMLDivElement>();
-	onMount(() => container?.showPopover?.());
+	function bringToFront() {
+		if (!container) return;
+		// hidePopover() itself throws if it's NOT currently showing (the
+		// very first call, pre-mount-popover-state) — :popover-open is the
+		// safe, exception-free way to check first.
+		if (container.matches(':popover-open')) container.hidePopover?.();
+		container.showPopover?.();
+	}
+	onMount(bringToFront);
 	$effect(() => {
-		if ($toasts.length) container?.showPopover?.();
+		if ($toasts.length) bringToFront();
 	});
 </script>
 
