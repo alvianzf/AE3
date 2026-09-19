@@ -164,6 +164,29 @@ def ensure_schema() -> None:
             );
             CREATE INDEX IF NOT EXISTS staged_sources_by_created
                 ON staged_sources(created_at);
+
+            -- A backgrounded promotion of a staged item into the real
+            -- knowledge graph (main.py's _run_staged_ingest_job) — split out
+            -- of the request/response cycle because a large document's
+            -- Reader/embed/graph-extraction/Neo4j-write chain can run past
+            -- nginx's proxy_read_timeout. One row per in-flight (or
+            -- finished) promotion so a client can poll it, and so progress
+            -- survives a page reload instead of living only in memory.
+            CREATE TABLE IF NOT EXISTS ingestion_jobs (
+                id TEXT PRIMARY KEY,
+                staged_id TEXT NOT NULL,
+                owner TEXT,              -- practitioner_id; NULL = admin-initiated
+                filename TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'running',   -- running | done | error
+                step TEXT NOT NULL DEFAULT 'queued',      -- queued | reading | chunking | embedding | extracting_graph | writing | done | error
+                step_detail TEXT,        -- e.g. "7 of 42 passages" during extracting_graph
+                error_message TEXT,
+                result_document_id TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS ingestion_jobs_by_staged ON ingestion_jobs(staged_id);
+            CREATE INDEX IF NOT EXISTS ingestion_jobs_by_owner ON ingestion_jobs(owner, created_at);
             """
         )
         # Every deployment needs at least one superadmin able to manage
@@ -895,7 +918,7 @@ def get_staged_source(staged_id: str, created_by: str | None = None) -> dict | N
 
 
 def get_staged_pages(staged_id: str) -> list[list] | None:
-    """The real page text, for promotion (main.py's _promote_staged) —
+    """The real page text, for promotion (main.py's _promote_staged_async) —
     kept separate from get_staged_source()/list_staged_sources() so an
     admin's checklist view never has to pull every staged document's full
     body over the wire just to render a list."""
@@ -915,3 +938,95 @@ def delete_staged_source(staged_id: str, created_by: str | None = None) -> bool:
     with core_connection() as conn:
         cur = conn.execute(query, params)
     return cur.rowcount > 0
+
+
+# --- Ingestion jobs: backgrounded staged-source promotion (main.py's
+# _run_staged_ingest_job) ----------------------------------------------------
+
+def create_ingestion_job(staged_id: str, owner: str | None, filename: str) -> dict:
+    job_id = str(uuid.uuid4())
+    now = _now()
+    row = {
+        "id": job_id, "staged_id": staged_id, "owner": owner, "filename": filename,
+        "status": "running", "step": "queued", "step_detail": None,
+        "error_message": None, "result_document_id": None,
+        "created_at": now, "updated_at": now,
+    }
+    with core_connection() as conn:
+        conn.execute(
+            "INSERT INTO ingestion_jobs (id, staged_id, owner, filename, status, step, "
+            "step_detail, error_message, result_document_id, created_at, updated_at) VALUES "
+            "(%(id)s, %(staged_id)s, %(owner)s, %(filename)s, %(status)s, %(step)s, "
+            "%(step_detail)s, %(error_message)s, %(result_document_id)s, %(created_at)s, "
+            "%(updated_at)s)",
+            row,
+        )
+    return get_ingestion_job(job_id)
+
+
+_INGESTION_JOB_FIELDS = ("status", "step", "step_detail", "error_message", "result_document_id")
+
+
+def update_ingestion_job(job_id: str, **fields) -> None:
+    """Called throughout the backgrounded portion of ingestion as each stage
+    completes (queued -> reading -> chunking -> embedding ->
+    extracting_graph -> writing -> done/error), so a client polling
+    GET /api/ingestion-jobs/{id} sees live progress instead of a single
+    running -> done jump. `updated_at` is stamped here rather than left to
+    the caller so every write moves it forward."""
+    unknown = set(fields) - set(_INGESTION_JOB_FIELDS)
+    if unknown:
+        raise ValueError(f"unknown ingestion_jobs field(s): {unknown}")
+    if not fields:
+        return
+    fields = {**fields, "updated_at": _now()}
+    set_clause = ", ".join(f"{k} = %({k})s" for k in fields)
+    with core_connection() as conn:
+        conn.execute(
+            f"UPDATE ingestion_jobs SET {set_clause} WHERE id = %(id)s",
+            {**fields, "id": job_id},
+        )
+
+
+def get_ingestion_job(job_id: str) -> dict | None:
+    with core_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM ingestion_jobs WHERE id = %s", (job_id,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def fail_orphaned_ingestion_jobs() -> int:
+    """Called once at boot (app/main.py's lifespan). A job's background
+    thread lives inside one worker process — a SIGHUP graceful reload
+    (app/db.py's ExecReload, or the equally-hard restart before it) can
+    outlast a large ingest's --graceful-timeout and kill the old worker
+    mid-job, and the new worker has no way to resume a thread that died
+    with it. Without this, that job's row stays 'running' forever: GET
+    /api/ingestion-jobs/active keeps surfacing it, and its progress bar is
+    stuck with no way to ever resolve or retry through the UI (found in
+    review, right after the graceful-reload deploy work landed)."""
+    with core_connection() as conn:
+        cur = conn.execute(
+            "UPDATE ingestion_jobs SET status = 'error', step = 'error', "
+            "error_message = 'Interrupted by a server restart — please retry.', "
+            "updated_at = %s WHERE status = 'running'",
+            (_now(),),
+        )
+        return cur.rowcount
+
+
+def list_active_ingestion_jobs(owner: str | None = None) -> list[dict]:
+    """owner=None (admin) sees every running job; a practitioner's own id
+    scopes to just their own — same owner semantics as list_staged_sources.
+    Lets the frontend reattach to an in-progress job after a page reload
+    without the client having to remember a job id anywhere itself."""
+    query = "SELECT * FROM ingestion_jobs WHERE status = 'running'"
+    params: tuple = ()
+    if owner is not None:
+        query += " AND owner = %s"
+        params = (owner,)
+    query += " ORDER BY created_at DESC"
+    with core_connection() as conn:
+        rows = conn.execute(query, params).fetchall()
+    return [dict(r) for r in rows]
