@@ -419,9 +419,19 @@
 
 	async function ingestSelected() {
 		if (!selected.size) return;
+		// An item already mid-ingest (single-item Ingest, or resumed from a
+		// prior page load) can still be sitting in `selected` from before its
+		// job started — the checkbox disables once jobsByStagedId picks it
+		// up, but that doesn't retroactively uncheck one already selected,
+		// so filter here rather than trust the UI state alone.
+		const ids = [...selected].filter((id) => jobsByStagedId[id]?.status !== 'running');
+		if (!ids.length) {
+			toast('Everything selected is already being ingested.', 'alert');
+			return;
+		}
 		promotingBatch = true;
 		try {
-			const res = await post(fetch, '/staged/ingest', { ids: [...selected] });
+			const res = await post(fetch, '/staged/ingest', { ids });
 			// Each id either got its own background job (jobs) or 409'd as a
 			// duplicate (duplicates, resolvable individually via the single-item
 			// Ingest button above, same as before) — nothing here has actually
@@ -429,10 +439,12 @@
 			for (const j of res.jobs ?? []) watchJob(j.staged_id, j.job_id);
 			const dupes = res.duplicates ?? [];
 			const failed = res.failed ?? [];
+			const alreadyRunning = selected.size - ids.length;
 			let msg = `${res.jobs?.length ?? 0} started`;
+			if (alreadyRunning) msg += `, ${alreadyRunning} already ingesting (skipped)`;
 			if (dupes.length) msg += `, ${dupes.length} duplicate(s) skipped (resolve individually)`;
 			if (failed.length) msg += `, ${failed.length} failed`;
-			toast(msg + '.', dupes.length || failed.length ? 'alert' : undefined);
+			toast(msg + '.', dupes.length || failed.length || alreadyRunning ? 'alert' : undefined);
 			selected = new Set();
 			clearFiltersAfterIngest();
 		} catch (err: any) {
@@ -583,6 +595,7 @@
 								type="checkbox"
 								checked={selected.has(item.id)}
 								onchange={() => toggleSelected(item.id)}
+								disabled={jobsByStagedId[item.id]?.status === 'running'}
 								aria-label="Select {item.filename ?? 'pasted text'}"
 							/>
 							<div class="staged-body">
