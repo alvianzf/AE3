@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onDestroy } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { PUBLIC_API_BASE } from '$env/static/public';
 	import { get, put, post, del, ApiError } from '$lib/api';
@@ -30,6 +31,85 @@
 	let selectedFile = $state<File | null>(null);
 	let previewUrl = $state<string | null>(null);
 	let promotingId = $state<string | null>(null);
+
+	// Ingestion jobs: same backgrounded-promotion scheme as the admin
+	// Library page (web/src/routes/(admin)/admin/+page.svelte) — promoting a
+	// staged item returns a job id immediately (app/main.py's POST
+	// /api/staged/{id}/ingest) instead of the finished document, polled
+	// here by staged_id, and resumed on load from GET
+	// /api/ingestion-jobs/active (+page.ts) so progress survives a reload.
+	let jobsByStagedId = $state<Record<string, any>>({});
+	const pollTimers: Record<string, ReturnType<typeof setInterval>> = {};
+
+	function jobLabel(job: any): string {
+		if (job.status === 'error') return `Failed: ${job.error_message ?? 'unknown error'}`;
+		switch (job.step) {
+			case 'queued': return 'Queued…';
+			case 'reading': return 'Reading document…';
+			case 'chunking': return 'Splitting into passages…';
+			case 'embedding': return 'Embedding chunks…';
+			case 'extracting_graph': return `Extracting knowledge graph (${job.step_detail ?? '…'})…`;
+			case 'writing': return 'Writing to library…';
+			default: return 'Ingesting…';
+		}
+	}
+
+	const JOB_STEPS = ['queued', 'reading', 'chunking', 'embedding', 'extracting_graph', 'writing', 'done'];
+
+	function jobProgressPercent(job: any): number {
+		const idx = Math.max(0, JOB_STEPS.indexOf(job.step));
+		const stepSpan = 1 / (JOB_STEPS.length - 1);
+		let within = 0;
+		if (job.step === 'extracting_graph' && job.step_detail) {
+			const m = /^(\d+) of (\d+)/.exec(job.step_detail);
+			if (m) within = Number(m[1]) / Math.max(1, Number(m[2]));
+		}
+		return Math.min(100, Math.round((idx * stepSpan + within * stepSpan) * 100));
+	}
+
+	function watchJob(stagedId: string, jobId: string) {
+		if (pollTimers[stagedId]) clearInterval(pollTimers[stagedId]);
+		// Set synchronously, before the first poll's network round-trip
+		// resolves — same reasoning as the admin Library page's watchJob:
+		// without this, ingestOne's `finally` clears promotingId right
+		// after calling watchJob, leaving a window where the Ingest button
+		// is neither disabled nor labeled "Ingesting…" even though a job is
+		// already running server-side.
+		jobsByStagedId = { ...jobsByStagedId, [stagedId]: { status: 'running', step: 'queued' } };
+		const poll = async () => {
+			try {
+				const job = await get(fetch, `/ingestion-jobs/${jobId}`);
+				jobsByStagedId = { ...jobsByStagedId, [stagedId]: job };
+				if (job.status === 'done') {
+					clearInterval(pollTimers[stagedId]);
+					delete pollTimers[stagedId];
+					toast('Ingested into the library.');
+					await invalidateAll();
+				} else if (job.status === 'error') {
+					clearInterval(pollTimers[stagedId]);
+					delete pollTimers[stagedId];
+					toast(job.error_message ?? 'Ingestion failed.', 'alert');
+				}
+			} catch (err: any) {
+				clearInterval(pollTimers[stagedId]);
+				delete pollTimers[stagedId];
+				toast(err.message, 'alert');
+			}
+		};
+		poll();
+		pollTimers[stagedId] = setInterval(poll, 2000);
+	}
+
+	for (const job of data.activeJobs ?? []) {
+		jobsByStagedId = { ...jobsByStagedId, [job.staged_id]: job };
+		watchJob(job.staged_id, job.id);
+	}
+
+	// Same leak fix as the admin Library page: without this, leaving the
+	// page while a job is running leaves its 2s poll loop running forever.
+	onDestroy(() => {
+		for (const t of Object.values(pollTimers)) clearInterval(t);
+	});
 
 	function pickFile(file: File | null) {
 		if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -106,9 +186,8 @@
 	async function ingestOne(id: string) {
 		promotingId = id;
 		try {
-			await post(fetch, `/staged/${id}/ingest`, {});
-			toast('Ingested into the library.');
-			await invalidateAll();
+			const res = await post(fetch, `/staged/${id}/ingest`, {});
+			watchJob(id, res.job_id);
 		} catch (err: any) {
 			const detail = err instanceof ApiError ? (err.detail as any) : null;
 			if (err instanceof ApiError && err.status === 409 && detail?.duplicate_of) {
@@ -131,9 +210,8 @@
 		duplicateOpen = false;
 		promotingId = id;
 		try {
-			await post(fetch, `/staged/${id}/ingest`, { replaces });
-			toast('Replaced the existing version.');
-			await invalidateAll();
+			const res = await post(fetch, `/staged/${id}/ingest`, { replaces });
+			watchJob(id, res.job_id);
 		} catch (err: any) {
 			toast(err.message, 'alert');
 		} finally {
@@ -236,15 +314,32 @@
 								{#if item.page_count}<span class="hint">{item.page_count} page(s)</span>{/if}
 							</div>
 							<p class="staged-preview">{item.preview}{item.preview?.length >= 280 ? '…' : ''}</p>
+							{#if jobsByStagedId[item.id] && jobsByStagedId[item.id].status !== 'error'}
+								<div class="job-progress">
+									<div class="track"><div class="fill" style="width: {jobProgressPercent(jobsByStagedId[item.id])}%"></div></div>
+									<span class="hint">{jobLabel(jobsByStagedId[item.id])}</span>
+								</div>
+							{:else if jobsByStagedId[item.id]}
+								<p class="hint job-error">{jobLabel(jobsByStagedId[item.id])}</p>
+							{/if}
 						</div>
 						<div class="staged-actions">
 							{#if item.kind === 'file'}
 								<a class="view" href={stagedFileUrl(item)} target="_blank" rel="noopener">View</a>
 							{/if}
-							<button class="view" onclick={() => ingestOne(item.id)} disabled={promotingId === item.id}>
-								{promotingId === item.id ? 'Ingesting…' : 'Ingest'}
+							<button
+								class="view"
+								onclick={() => ingestOne(item.id)}
+								disabled={promotingId === item.id || jobsByStagedId[item.id]?.status === 'running'}
+							>
+								{jobsByStagedId[item.id]?.status === 'running' ? 'Ingesting…' : 'Ingest'}
 							</button>
-							<button class="view danger" onclick={() => discardStaged(item.id)}>Discard</button>
+							<button
+							class="view danger"
+							onclick={() => discardStaged(item.id)}
+							disabled={jobsByStagedId[item.id]?.status === 'running'}
+							title={jobsByStagedId[item.id]?.status === 'running' ? 'Ingestion is already running for this item' : undefined}
+						>Discard</button>
 						</div>
 					</li>
 				{/each}
@@ -407,4 +502,8 @@
 	}
 	.upload-progress .bar { flex: 1 1 auto; height: 6px; border-radius: 99px; background: var(--accent); transition: width .2s var(--ease); margin-left: .25rem; }
 	.upload-progress .hint { flex: 0 0 auto; padding-right: .5rem; white-space: nowrap; }
+	.job-progress { margin-top: .4rem; display: grid; gap: .25rem; }
+	.job-progress .track { height: 6px; border-radius: 99px; background: var(--panel-2); overflow: hidden; }
+	.job-progress .fill { height: 100%; border-radius: 99px; background: var(--accent); transition: width .3s var(--ease); }
+	.job-error { color: var(--danger); margin-top: .4rem; }
 </style>

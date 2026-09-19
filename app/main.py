@@ -19,13 +19,13 @@ import shutil
 import sys
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 import openai
 import neo4j.exceptions
-from fastapi import Depends, FastAPI, Form, HTTPException, Request, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
@@ -107,6 +107,12 @@ async def lifespan(app: FastAPI):
         vault.ensure_schema(practitioner["id"])
     for schema_name in db.list_vault_schemas():
         vault.ensure_schema_by_name(schema_name)
+    # Any ingestion job still 'running' at boot died with whatever worker
+    # was running its background thread (a graceful reload that outlasted
+    # its drain window, a crash, a hard restart) — it can never finish or
+    # update itself again, so leaving it 'running' would strand its
+    # progress bar forever instead of surfacing a real, retryable error.
+    core_store.fail_orphaned_ingestion_jobs()
     yield
 
 
@@ -331,19 +337,22 @@ def _strip_unsupported(text: str, unsupported: list[str]) -> str:
     return "\n".join(lines).strip()
 
 
-def _ingest_pages(
-    pages: list[tuple[int | None, str]], filename: str, kind: str, origin: str,
-    replaces: str, original: tuple[bytes | Path, str, str] | None,
-) -> dict:
-    """Read → tag → grade → split into passages → write. Shared by the
-    direct-upload route below and the chunked-upload complete step
-    (app/uploads.py) — everything from here on is identical either way,
-    the only difference is how `pages`/`original` were produced.
+def _prep_and_check_duplicate(
+    pages: list[tuple[int | None, str]], filename: str, replaces: str,
+) -> tuple[str, str, int]:
+    """The fast, synchronous half of ingestion: join the pages into one body
+    and refuse an exact re-upload with 409 rather than quietly creating a
+    second copy — the Reader is generative, so duplicates get different
+    titles, summaries and grades and are near-impossible to spot in the
+    library. Pass `replaces` with the existing source's id to supersede it
+    deliberately.
 
-    An exact re-upload is refused with 409 rather than quietly creating a second
-    copy — the Reader is generative, so duplicates get different titles, summaries
-    and grades and are near-impossible to spot in the library. Pass `replaces`
-    with the existing source's id to supersede it deliberately.
+    Split out of the old _ingest_pages() so the staged-promotion path
+    (_promote_staged_async) can run this check immediately, before a job is
+    created or any background work starts — a practitioner clicking Ingest
+    on an exact duplicate must still get an instant 409 with the
+    replace-or-discard choice, not a job that "succeeds" into a redundant
+    copy some seconds later.
     """
     page_count = sum(1 for n, _ in pages if n is not None)
     body = "\n\n".join(t.strip() for _, t in pages if t.strip()).strip()
@@ -365,7 +374,31 @@ def _ingest_pages(
             ),
             "duplicate_of": existing["id"],
         })
+    return body, digest, page_count
 
+
+def _run_ingest(
+    pages: list[tuple[int | None, str]], body: str, digest: str, page_count: int,
+    filename: str, kind: str, origin: str, replaces: str,
+    original: tuple[bytes | Path, str, str] | None,
+    on_progress=lambda step, detail=None: None,
+    pre_write_check=lambda: True,
+) -> dict:
+    """Read → tag → grade → split into passages → write — the slow half of
+    ingestion, run synchronously by the direct-upload routes below but
+    backgrounded (via BackgroundTasks) for staged promotion, where
+    `on_progress` is wired to core_store.update_ingestion_job so a client
+    polling the job can watch it move through each stage.
+
+    `pre_write_check` is called immediately before the Neo4j write (the
+    real point of no return) — always true for the two synchronous callers
+    below, but for a backgrounded staged-promotion job it re-confirms the
+    staged item hasn't been discarded out from under a multi-minute-long
+    job in the meantime (found in review: the one-time check
+    _run_staged_ingest_job used to do only covered the moment the job
+    started, not the whole duration a large document's Reader/embed/
+    graph-extraction chain can run before actually reaching this write)."""
+    on_progress("reading")
     # Show the Reader the shelves already in use so it files this source
     # beside its neighbours instead of coining a new label.
     card = ingestion_pipeline.read_source(body, filename, kind, origin,
@@ -376,6 +409,7 @@ def _ingest_pages(
     if replaces:
         store.delete_document(replaces)
 
+    on_progress("chunking")
     passages = store.chunk_pages(pages)
     # Embed + extract the knowledge graph now, so the document is connected
     # to the rest of the corpus (and searchable) the moment it lands, rather
@@ -386,6 +420,7 @@ def _ingest_pages(
     # The failure itself is still surfaced as a clean, actionable error
     # (matching /api/scrape's handling of the same class of failure a few
     # routes away), not a bare unhandled 500.
+    on_progress("embedding")
     try:
         embeddings = get_llm_client(LLMRole.EMBEDDER).embed([p["text"] for p in passages])
     except openai.APIError as exc:
@@ -420,13 +455,29 @@ def _ingest_pages(
                             filename, exc)
             return i, [], []
 
+    total_passages = len(passages)
+    on_progress("extracting_graph", f"0 of {total_passages} passages")
+    done_passages = 0
     with ThreadPoolExecutor(max_workers=8) as pool:
         futures = [pool.submit(_extract, i, p["text"]) for i, p in enumerate(passages)]
-        for future in futures:
+        # as_completed(), not the plain futures list: iterating the futures
+        # in submission order would block on future[0].result() until it's
+        # done even if a later one finishes first, so the progress counter
+        # would jump in lockstep with the slowest-so-far passage instead of
+        # advancing as each one actually lands.
+        for future in as_completed(futures):
             i, entities, rels = future.result()
             entities_per_passage[i] = entities
             relationships.extend(rels)
+            done_passages += 1
+            on_progress("extracting_graph", f"{done_passages} of {total_passages} passages")
 
+    on_progress("writing")
+    if not pre_write_check():
+        raise HTTPException(409, {
+            "message": "Cancelled — the staged item was discarded before ingestion finished.",
+            "duplicate_of": None,
+        })
     try:
         result = store.ingest_document(
             title=card["title"], filename=filename, kind=kind, origin=origin,
@@ -463,6 +514,23 @@ def _ingest_pages(
                           result["id"])
 
     return result
+
+
+def _ingest_pages(
+    pages: list[tuple[int | None, str]], filename: str, kind: str, origin: str,
+    replaces: str, original: tuple[bytes | Path, str, str] | None,
+) -> dict:
+    """Full synchronous pipeline — duplicate check + the slow read/chunk/
+    embed/extract/write chain, all inside one call. Shared by the
+    direct-upload route below and the chunked-upload complete step
+    (app/uploads.py), both of which still run atomically in one request
+    (verify.py/verify_v2.py, the script callers of those routes, expect
+    exactly that). The staged-promotion path does NOT use this — it calls
+    _prep_and_check_duplicate() and _run_ingest() separately so the slow
+    half can be backgrounded (see _promote_staged_async below)."""
+    body, digest, page_count = _prep_and_check_duplicate(pages, filename, replaces)
+    return _run_ingest(pages, body, digest, page_count, filename, kind, origin,
+                        replaces, original)
 
 
 @app.post("/api/sources")
@@ -574,10 +642,82 @@ def _staged_owner_filter(caller: dict) -> str | None:
     return None if caller["role"] == "admin" else caller["id"]
 
 
-def _promote_staged(
-    staged_id: str, kind: str, origin: str, owner: str | None = None,
-    replaces: str = "",
+def _job_error_message(exc: Exception) -> str:
+    """HTTPException.detail here is sometimes a plain string (the 502 in
+    _run_ingest) and sometimes the {"message", "duplicate_of"} dict
+    _prep_and_check_duplicate/store.ingest_document's ConstraintError branch
+    raise — either way, ingestion_jobs.error_message should hold the same
+    human-readable text a synchronous caller would have seen, not a repr of
+    the exception object."""
+    if isinstance(exc, HTTPException):
+        detail = exc.detail
+        return detail.get("message", str(detail)) if isinstance(detail, dict) else str(detail)
+    return str(exc)
+
+
+def _run_staged_ingest_job(
+    job_id: str, staged_id: str, owner: str | None, staged_kind: str,
+    pages: list[tuple[int | None, str]], body: str, digest: str, page_count: int,
+    filename: str, kind: str, origin: str, replaces: str,
+    original: tuple[bytes | Path, str, str] | None,
+) -> None:
+    """Runs in Starlette's threadpool after the response for
+    POST /api/staged/{id}/ingest (or the batch route) has already been sent
+    — this is the slow part of ingestion (Reader call onward) that used to
+    run inside the request and blow past nginx's proxy_read_timeout on a
+    large document. Every exception is caught here rather than left to
+    vanish into Starlette's background-task logging: without this, a caller
+    polling the job would see it stuck on "running" forever instead of a
+    real error."""
+    def progress(step: str, detail: str | None = None) -> None:
+        core_store.update_ingestion_job(job_id, step=step, step_detail=detail)
+
+    # Cheap early exit if it's already gone — avoids spending a Reader LLM
+    # call and a full embed/graph-extraction pass on a document the user
+    # discarded before this job even started. Not sufficient by itself:
+    # pages/body/original were already captured as plain arguments when
+    # this was handed to BackgroundTasks, so a discard *during* the slow
+    # chain (Reader onward, which can run minutes on a large document)
+    # would sail right past a check made only here — _run_ingest's own
+    # pre_write_check below re-confirms this again immediately before the
+    # actual Neo4j write, the real point of no return (found in review).
+    if core_store.get_staged_source(staged_id, owner) is None:
+        core_store.update_ingestion_job(
+            job_id, status="error", step="error",
+            error_message="Cancelled — the staged item was discarded before ingestion finished.")
+        return
+
+    try:
+        result = _run_ingest(
+            pages, body, digest, page_count, filename, kind, origin, replaces, original,
+            on_progress=progress,
+            pre_write_check=lambda: core_store.get_staged_source(staged_id, owner) is not None,
+        )
+        # _run_ingest() archives its own copy of the file under the *new*
+        # source's id (originals.save_from_path) — the staged copy under the
+        # staged id is redundant the moment that succeeds, dropped below.
+        core_store.delete_staged_source(staged_id, owner)
+        if staged_kind == "file":
+            originals.delete(staged_id)
+        core_store.update_ingestion_job(
+            job_id, status="done", step="done", result_document_id=result["id"])
+    except Exception as exc:
+        logging.exception("staged ingest job %s (%s) failed", job_id, filename)
+        core_store.update_ingestion_job(
+            job_id, status="error", step="error", error_message=_job_error_message(exc))
+
+
+def _promote_staged_async(
+    staged_id: str, kind: str, origin: str, owner: str | None,
+    replaces: str, background_tasks: BackgroundTasks,
 ) -> dict:
+    """Looks up the staged item and runs the same synchronous duplicate
+    check _ingest_pages() always has, then hands the slow remainder to
+    BackgroundTasks and returns a job id immediately. The duplicate check
+    stays synchronous and immediate — before any job row exists — so a
+    practitioner clicking Ingest on an exact duplicate still gets an
+    instant 409 with the replace-or-discard choice, not a job that
+    "succeeds" into a redundant copy."""
     staged = core_store.get_staged_source(staged_id, owner)
     if staged is None:
         raise HTTPException(404, f"no such staged item: {staged_id}")
@@ -589,14 +729,15 @@ def _promote_staged(
         if path is not None:
             original = (path, staged["filename"],
                         staged["media_type"] or _media_type(staged["filename"]))
-    # _ingest_pages() archives its own copy of the file under the *new*
-    # source's id (originals.save_from_path) — the staged copy under the
-    # staged id is redundant the moment that succeeds, dropped below.
-    result = _ingest_pages(pages, filename, kind, origin, replaces, original)
-    core_store.delete_staged_source(staged_id, owner)
-    if staged["kind"] == "file":
-        originals.delete(staged_id)
-    return result
+
+    body, digest, page_count = _prep_and_check_duplicate(pages, filename, replaces)
+
+    job = core_store.create_ingestion_job(staged_id, owner, filename)
+    background_tasks.add_task(
+        _run_staged_ingest_job, job["id"], staged_id, owner, staged["kind"],
+        pages, body, digest, page_count, filename, kind, origin, replaces, original,
+    )
+    return {"job_id": job["id"]}
 
 
 @app.post("/api/staged")
@@ -742,13 +883,19 @@ class StagedIngestBody(BaseModel):
     replaces: str = ""
 
 
-@app.post("/api/staged/{staged_id}/ingest")
+@app.post("/api/staged/{staged_id}/ingest", status_code=202)
 def promote_staged(
-    staged_id: str, body: StagedIngestBody,
+    staged_id: str, body: StagedIngestBody, background_tasks: BackgroundTasks,
     _caller: dict = Depends(auth.require_admin_or_upload_permitted_practitioner),
 ) -> dict:
-    return _promote_staged(staged_id, body.kind, body.origin,
-                            _staged_owner_filter(_caller), body.replaces)
+    """202: the duplicate check (still a synchronous 409 on a real
+    duplicate — see _promote_staged_async) passed, and the actual document
+    doesn't exist yet at response time — the caller gets a job id and polls
+    GET /api/ingestion-jobs/{job_id} for progress, not the ingested
+    document itself."""
+    return _promote_staged_async(staged_id, body.kind, body.origin,
+                                  _staged_owner_filter(_caller), body.replaces,
+                                  background_tasks)
 
 
 class StagedBatchIngestBody(BaseModel):
@@ -759,17 +906,73 @@ class StagedBatchIngestBody(BaseModel):
 
 @app.post("/api/staged/ingest")
 def promote_staged_batch(
-    body: StagedBatchIngestBody,
+    body: StagedBatchIngestBody, background_tasks: BackgroundTasks,
     _caller: dict = Depends(auth.require_admin_or_upload_permitted_practitioner),
 ) -> dict:
+    """Each id either 409s immediately as a duplicate (reported in
+    `duplicates`, resolvable individually via the single-item route) or
+    gets its own background job (reported in `jobs`) — replaces the old
+    `{"ingested": [...], "failed": [...]}` shape, since nothing here
+    finishes ingesting before the response goes out any more."""
     owner = _staged_owner_filter(_caller)
-    done, failed = [], []
+    jobs, duplicates, failed = [], [], []
+    # Two identical staged items selected in the same batch both pass
+    # _prep_and_check_duplicate's store.find_by_hash check, since neither
+    # is written to the store until its (backgrounded) job actually runs —
+    # the second one would otherwise only fail later as a generic
+    # neo4j ConstraintError, minutes after the response went out, with no
+    # duplicate_of for the frontend to offer a replace choice (found in
+    # review). Tracked here, not inside _prep_and_check_duplicate itself,
+    # since that function has no notion of "the rest of this batch."
+    seen_digests: set[str] = set()
     for staged_id in body.ids:
         try:
-            done.append(_promote_staged(staged_id, body.kind, body.origin, owner))
+            staged = core_store.get_staged_source(staged_id, owner)
+            if staged is None:
+                raise HTTPException(404, f"no such staged item: {staged_id}")
+            pages = core_store.get_staged_pages(staged_id)
+            digest = store.content_hash(
+                "\n\n".join(t.strip() for _, t in pages if t.strip()).strip())
+            if digest in seen_digests:
+                duplicates.append({"staged_id": staged_id, "error": {
+                    "message": "Identical to another item already in this batch.",
+                    "duplicate_of": None,
+                }})
+                continue
+            seen_digests.add(digest)
+            enqueued = _promote_staged_async(staged_id, body.kind, body.origin, owner,
+                                              "", background_tasks)
+            jobs.append({"staged_id": staged_id, "job_id": enqueued["job_id"]})
         except HTTPException as exc:
-            failed.append({"id": staged_id, "error": exc.detail})
-    return {"ingested": done, "failed": failed}
+            if exc.status_code == 409:
+                duplicates.append({"staged_id": staged_id, "error": exc.detail})
+            else:
+                failed.append({"staged_id": staged_id, "error": exc.detail})
+    return {"jobs": jobs, "duplicates": duplicates, "failed": failed}
+
+
+@app.get("/api/ingestion-jobs/active")
+def list_active_ingestion_jobs(
+    _caller: dict = Depends(auth.require_admin_or_upload_permitted_practitioner),
+) -> list[dict]:
+    """Lets the frontend reattach to an in-progress job after a page reload
+    without needing to remember a job id anywhere client-side — admin sees
+    every active job, a practitioner sees only their own."""
+    return core_store.list_active_ingestion_jobs(_staged_owner_filter(_caller))
+
+
+@app.get("/api/ingestion-jobs/{job_id}")
+def get_ingestion_job(
+    job_id: str,
+    _caller: dict = Depends(auth.require_admin_or_upload_permitted_practitioner),
+) -> dict:
+    # 404, not 403, for a job that isn't the caller's own — same
+    # don't-confirm-existence pattern as _own_questionnaire_or_404.
+    owner = _staged_owner_filter(_caller)
+    job = core_store.get_ingestion_job(job_id)
+    if job is None or (owner is not None and job["owner"] != owner):
+        raise HTTPException(404, "no such ingestion job")
+    return job
 
 
 @app.get("/api/sources")

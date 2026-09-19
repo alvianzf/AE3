@@ -185,24 +185,40 @@ Fixed by switching the app server from bare `uvicorn` to
 (`/etc/systemd/system/clinic.service`):
 
 ```
-ExecStart=/opt/clinic/.venv/bin/gunicorn app.main:app --worker-class uvicorn.workers.UvicornWorker --workers 1 --bind 127.0.0.1:8000 --forwarded-allow-ips=127.0.0.1 --timeout 300 --graceful-timeout 180
+ExecStart=/opt/clinic/.venv/bin/gunicorn app.main:app --worker-class uvicorn.workers.UvicornWorker --workers 1 --bind 127.0.0.1:8000 --forwarded-allow-ips=127.0.0.1 --timeout 1800 --graceful-timeout 1800
 ExecReload=/bin/kill -s HUP $MAINPID
 ```
 
-`SIGHUP` to gunicorn's master (`systemctl reload clinic`, or
-`reload-or-restart` — what the deploy workflow now uses, since it falls
-back to a hard restart if the service isn't already running) makes it
-boot a *new* worker on the **same already-open listening socket**
-before gracefully draining and killing the old one — NGINX's single
-upstream connection never sees a refusal, because something is always
-listening on `127.0.0.1:8000` throughout. `--graceful-timeout 180`
-gives the old worker up to 3 minutes to finish in-flight requests
-before a reload force-kills it (matching `proxy_read_timeout 300s`'s
-own generosity for a slow consult); `--timeout 300` is gunicorn's
-worker-silent-timeout, effectively moot for an async `UvicornWorker`
-(its event loop keeps heartbeating independently of how long any single
-request takes) but set to match anyway rather than leaning on that
-distinction.
+`SIGHUP` to gunicorn's master makes it boot a *new* worker on the
+**same already-open listening socket** before gracefully draining and
+killing the old one — NGINX's single upstream connection never sees a
+refusal, because something is always listening on `127.0.0.1:8000`
+throughout. The deploy workflow sends this signal via a plain `kill -HUP
+$(systemctl show -p MainPID --value clinic)`, not `systemctl reload` /
+`reload-or-restart` — those failed with "Interactive authentication
+required" specifically from GitHub Actions' SSH context (reproducible
+every time, even though the identical command succeeds manually over
+SSH as the same root user, and plain `systemctl restart` has always
+worked fine for this same deploy key — some polkit rule evidently
+differs between the `ReloadOrRestartUnit`/`RestartUnit` D-Bus methods).
+Sending the signal directly needs no D-Bus/polkit involvement at all.
+
+`--graceful-timeout 1800` (30 minutes) gives the old worker real room to
+finish in-flight work before a reload force-kills it — raised from an
+initial 180s once staged-document ingestion became a backgrounded job
+(see `specs/` for that change): a large document's Reader/embed/graph-
+extraction/write chain now runs in a `BackgroundTasks` thread *after*
+the HTTP response has already gone out, so it's invisible to the normal
+in-flight-request draining a short graceful-timeout was originally sized
+for — a deploy landing mid-ingest used to have a real chance of killing
+that thread outright with no bound. `--timeout 1800` (gunicorn's
+worker-silent-timeout) is raised to match for the same reason, though
+it's largely moot for an async `UvicornWorker` (its event loop keeps
+heartbeating independently of how long any single request takes). A
+worker killed mid-job despite this margin still can't get worse than a
+stuck job row — `app/main.py`'s boot sequence marks any `ingestion_jobs`
+row still `'running'` at startup as a clear, retryable error, so nothing
+is ever silently lost, only (rarely) interrupted and reported as such.
 
 Steady-state resource usage is unchanged from bare uvicorn — one worker
 process, not a worker pool — a reload briefly runs two processes only
