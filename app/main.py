@@ -33,6 +33,7 @@ from pydantic import BaseModel
 
 from . import auth, billing, core_store, db, originals, scraper, uploads, vault, vault_files, wearables
 from .config import get_config
+from .clients import nebius_admin
 from .clients.llm_client import Role as LLMRole
 from .clients.llm_client import get_client as get_llm_client
 from .clients.llm_client import ping_role
@@ -1399,6 +1400,49 @@ def superadmin_reactivate_admin(admin_id: str,
     if admin is None:
         raise HTTPException(404, "no such admin")
     return _public(admin)
+
+
+@app.get("/api/superadmin/dedicated-endpoints")
+def superadmin_list_dedicated_endpoints(
+    _: dict = Depends(auth.require_superadmin),
+) -> list[dict]:
+    """Live status of every Nebius dedicated GPU deployment on this
+    account (app/clients/nebius_admin.py) — the Qwen3-32B/Qwen3-Embedding-8B
+    endpoints Reader/Graph-builder/Checker-LLM/Embedder route to.
+    """
+    try:
+        return nebius_admin.list_dedicated_endpoints()
+    except nebius_admin.NebiusAdminError as exc:
+        raise HTTPException(502, str(exc))
+
+
+@app.post("/api/superadmin/dedicated-endpoints/{endpoint_id}/start")
+def superadmin_start_dedicated_endpoint(
+    endpoint_id: str, _: dict = Depends(auth.require_superadmin),
+) -> dict:
+    try:
+        result = nebius_admin.start_dedicated_endpoint(endpoint_id)
+    except nebius_admin.NebiusAdminError as exc:
+        raise HTTPException(502, str(exc))
+    core_store.log("superadmin", "dedicated endpoint started", endpoint_id)
+    return result
+
+
+@app.post("/api/superadmin/dedicated-endpoints/{endpoint_id}/stop")
+def superadmin_stop_dedicated_endpoint(
+    endpoint_id: str, _: dict = Depends(auth.require_superadmin),
+) -> dict:
+    """Stops GPU billing while idle. Any AI-team role still routed to this
+    endpoint's routing_key (app/config.py) will fail chat completions until
+    it's started again — this is a real outage for whichever roles use it,
+    not a transparent cost-saving toggle.
+    """
+    try:
+        result = nebius_admin.stop_dedicated_endpoint(endpoint_id)
+    except nebius_admin.NebiusAdminError as exc:
+        raise HTTPException(502, str(exc))
+    core_store.log("superadmin", "dedicated endpoint stopped", endpoint_id)
+    return result
 
 
 @app.get("/api/superadmin/audit-log")
