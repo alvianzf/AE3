@@ -178,13 +178,30 @@ def health() -> dict:
     # typo'd key for a single role is visible here instead of silently
     # passing a coarser check (specs/v6 review: this endpoint used to
     # probe only Role.REASONER and call the whole provider "ok").
-    ai_team = {
-        role.value: {
-            "model": get_llm_client(role).model,
-            "job": job,
-            **probe(lambda role=role: ping_role(role)),
+    #
+    # Every probe below is an independent round-trip (6 chat-model pings,
+    # Neo4j, Postgres) with no dependency between them, so they run
+    # concurrently rather than one after another — found live: run
+    # sequentially this endpoint took 2+s, almost all of it waiting on
+    # chat-model round-trips one at a time. Same ThreadPoolExecutor
+    # convention app/ingestion/pipeline.py's extract_graph() fan-out
+    # already uses for the same reason.
+    jobs: dict[str, tuple] = {role.value: (lambda role=role: ping_role(role), role, job)
+                               for role, job in _AI_TEAM_ROLES}
+    with ThreadPoolExecutor(max_workers=len(jobs) + 3) as pool:
+        futures = {
+            pool.submit(probe, fn): name
+            for name, (fn, _role, _job) in jobs.items()
         }
-        for role, job in _AI_TEAM_ROLES
+        futures[pool.submit(probe, checker.ping)] = "checker"
+        futures[pool.submit(probe, graph_schema.ping)] = "neo4j"
+        futures[pool.submit(probe, core_store.ping)] = "postgres"
+
+        results = {futures[f]: f.result() for f in as_completed(futures)}
+
+    ai_team = {
+        name: {"model": get_llm_client(role).model, "job": job, **results[name]}
+        for name, (_fn, role, job) in jobs.items()
     }
     # Not a chat-model role — HHEM-2.1-Open is a local anti-hallucination
     # classifier (specs/v4.2/01), run via transformers/torch, no Nebius
@@ -194,12 +211,12 @@ def health() -> dict:
         "model": cfg.checker_model,
         "job": "Anti-hallucination check: scores each answer sentence "
                "against its cited sources (not an LLM call)",
-        **probe(checker.ping),
+        **results["checker"],
     }
 
     checks = {
-        "neo4j": probe(graph_schema.ping),
-        "postgres": probe(core_store.ping),
+        "neo4j": results["neo4j"],
+        "postgres": results["postgres"],
         "ai_team": {
             "status": "ok" if all(r["ok"] for r in ai_team.values()) else "degraded",
             "roles": ai_team,
