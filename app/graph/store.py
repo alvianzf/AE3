@@ -191,6 +191,8 @@ def ingest_document(
     relationships: list[dict] | None = None,
     original: tuple[bytes | Path, str, str] | None = None,
     folder_path: str = "",
+    owner_practitioner_id: str | None = None,
+    is_private: bool = False,
 ) -> dict:
     """Write a read-and-graded document plus its chunks, entities, and
     typed relationships. Idempotent: content_hash is a uniqueness
@@ -229,7 +231,8 @@ def ingest_document(
                                   author: $author, published: $published,
                                   reference: $reference, page_count: $page_count,
                                   char_count: $char_count, passage_count: $total,
-                                  folder_path: $folder_path})
+                                  folder_path: $folder_path, is_private: $is_private,
+                                  owner_practitioner_id: $owner_practitioner_id})
             FOREACH (row IN $rows |
               CREATE (c:Chunk {id: row.id, text: row.text, chunk_index: row.chunk_index,
                                page_start: row.page_start, page_end: row.page_end,
@@ -241,6 +244,7 @@ def ingest_document(
             body=body, topics=topics, author=author, published=published,
             reference=reference, page_count=page_count, char_count=len(body),
             total=total, rows=rows, folder_path=normalize_folder_path(folder_path),
+            is_private=is_private, owner_practitioner_id=owner_practitioner_id,
         )
         _link_chunks_in_order(s, document_id)
         if entity_rows:
@@ -416,7 +420,8 @@ _CARD = """
     doc.original_media_type AS original_media_type,
     doc.original_bytes AS original_bytes,
     coalesce(doc.folder_path, '') AS folder_path,
-    coalesce(doc.is_private, false) AS is_private
+    coalesce(doc.is_private, false) AS is_private,
+    doc.owner_practitioner_id AS owner_practitioner_id
 """
 
 

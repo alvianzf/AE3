@@ -1,5 +1,32 @@
 # Specs changelog
 
+## v6.10 — 2026-11-02 (practitioner-owned private knowledge base)
+
+Any Pro practitioner — not just one an admin has flagged with
+`can_upload_library` — can upload documents that become part of their
+own consults immediately, private to them alone, no admin step. Reuses
+`v6.9/01`'s `is_private`/`document_access` enforcement exactly
+(nothing new in the retrieval paths), just automated at ingest time:
+the uploading practitioner grants themselves access instead of an
+admin granting it afterward. Adds `Document.owner_practitioner_id` —
+the provenance tag found missing while reading `app/main.py`'s staged-
+upload code (`owner` already exists, but only as bookkeeping on the
+transient `staged_sources`/`ingestion_jobs` tables, never written onto
+the resulting `Document`). A new, parallel set of routes
+(`/api/me/knowledge/stage*`, `DELETE /api/me/knowledge/{id}`) rather
+than a flag on the existing `can_upload_library`-gated ones, so that
+permission's meaning doesn't change. Diverges from the shared-library
+path on folder suggestion (skipped) and deletion (the owning
+practitioner can delete their own via the new route). Found and closed
+in review: the new personal-ingest route's `replaces` parameter is
+now checked against document ownership before deleting — the existing
+shared-library promotion route has the same shape with no equivalent
+check, a pre-existing gap flagged but out of scope to fix here. The
+admin-Library "Owner" facet from the spec (to keep personal uploads
+from diluting the default shared-library view) is not yet built — the
+backend tag (`owner_practitioner_id`, already on every `_CARD`
+response) is there for it when that UI lands.
+
 ## v6.9 — 2026-11-02 (private knowledge base, per-practitioner access)
 
 Admins can mark a document — or a whole folder (`v6.8/01`) at once, via
