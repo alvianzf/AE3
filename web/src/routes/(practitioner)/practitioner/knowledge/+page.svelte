@@ -236,36 +236,6 @@
 		}
 	}
 
-	// Same viewer as the admin Library page (web/src/routes/(admin)/admin/
-	// +page.svelte) — library content is shared/admin-curated, and a
-	// practitioner already reads it implicitly via their own consults and
-	// per-source weighting below, so viewing it directly isn't new exposure
-	// (app/auth.py's require_admin_or_practitioner backs both GET routes).
-	let viewing = $state(false);
-	let viewTitle = $state('');
-	let viewLoading = $state(false);
-	let viewBody = $state<{ body: string; body_reconstructed?: boolean } | null>(null);
-	let viewOriginalUrl = $state<string | null>(null);
-
-	async function viewDoc(s: any) {
-		viewTitle = s.title;
-		viewBody = null;
-		viewOriginalUrl = null;
-		viewing = true;
-		if (s.original_name) {
-			viewOriginalUrl = `${PUBLIC_API_BASE}/api/sources/${s.id}/original#toolbar=0&navpanes=0&scrollbar=0`;
-			return;
-		}
-		viewLoading = true;
-		try {
-			viewBody = await get(fetch, `/sources/${s.id}/text`);
-		} catch (err: any) {
-			toast(err.message, 'alert');
-			viewing = false;
-		} finally {
-			viewLoading = false;
-		}
-	}
 
 	async function setWeight(id: string, weight: number) {
 		try {
@@ -280,10 +250,22 @@
 	// list before that page got search + pagination; bring the same two
 	// mechanisms here so it doesn't degrade faster as the library grows.
 	let q = $state('');
+	// Read-only here — only an admin can place a source into a folder
+	// (specs/v6.8/01); a practitioner just sees the resulting grouping,
+	// same as every other field on this page besides their own weight.
+	let activeFolder = $state('');
+	const folders = $derived.by(() => {
+		const set = new Set<string>();
+		for (const s of data.sources ?? []) set.add(s.folder_path || '');
+		return [...set].sort();
+	});
 	const filtered = $derived.by(() => {
 		const needle = q.trim().toLowerCase();
-		if (!needle) return data.sources;
-		return data.sources.filter((s: any) => (s.title ?? '').toLowerCase().includes(needle));
+		return (data.sources ?? []).filter((s: any) => {
+			if (activeFolder && (s.folder_path || '') !== activeFolder) return false;
+			if (!needle) return true;
+			return (s.title ?? '').toLowerCase().includes(needle);
+		});
 	});
 
 	const PER_PAGE = 12;
@@ -346,19 +328,30 @@
 			</ul>
 		</div>
 	{/if}
-	<input class="search" type="search" placeholder="Search by title…" bind:value={q} aria-label="Search library sources" />
+	<div class="toolbar">
+		<input class="search" type="search" placeholder="Search by title…" bind:value={q} aria-label="Search library sources" />
+		{#if folders.length > 1}
+			<select bind:value={activeFolder} aria-label="Filter by folder">
+				<option value="">All folders</option>
+				{#each folders as f (f)}
+					<option value={f}>{f || '(root)'}</option>
+				{/each}
+			</select>
+		{/if}
+	</div>
 	<DataTable
-		columns={[{ key: 'title', label: 'Source', sortable: true }, { key: 'grade', label: 'Grade' }, { key: 'weight', label: 'Your weight' }, { key: 'actions', label: '' }]}
+		columns={[{ key: 'title', label: 'Source', sortable: true }, { key: 'folder', label: 'Folder' }, { key: 'grade', label: 'Grade' }, { key: 'weight', label: 'Your weight' }, { key: 'actions', label: '' }]}
 		rows={pageItems}
 		empty="Nothing in the library yet."
 	>
 		{#snippet row(s)}
 			<td>{s.title}</td>
+			<td class="hint">{s.folder_path || '—'}</td>
 			<td><Chip tone="neutral">grade {s.grade}</Chip></td>
 			<td>
 				<input type="number" min="0" max="5" value={s.weight} onchange={(e) => setWeight(s.id as string, Number((e.target as HTMLInputElement).value))} />
 			</td>
-			<td><button class="icon-btn" onclick={() => viewDoc(s)} title="View document" aria-label="View {s.title}"><Icon name="eye" /></button></td>
+			<td><a class="icon-btn" href="/practitioner/knowledge/{s.id}" title="View document" aria-label="View {s.title}"><Icon name="eye" /></a></td>
 		{/snippet}
 	</DataTable>
 	{#if totalPages > 1}
@@ -431,24 +424,16 @@
 	{/snippet}
 </Dialog>
 
-<Dialog bind:open={viewing} title={viewTitle} wide>
-	{#if viewOriginalUrl}
-		<iframe class="doc-frame" src={viewOriginalUrl} title={viewTitle}></iframe>
-	{:else if viewLoading}
-		<p class="hint">Loading…</p>
-	{:else if viewBody}
-		{#if viewBody.body_reconstructed}
-			<p class="hint">Rebuilt from passages — no original body was stored for this source.</p>
-		{/if}
-		<div class="doc-body">{viewBody.body}</div>
-	{/if}
-</Dialog>
-
 <style>
 	input[type='number'] { width: 4rem; border: 1px solid var(--line-2); border-radius: var(--r); padding: .3rem .5rem; }
+	.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3); }
 	.search {
-		border: 1px solid var(--line-2); border-radius: 99px; padding: .5rem 1rem; margin-bottom: var(--space-3);
-		background: var(--panel); font-size: var(--text-sm); min-height: var(--tap-min); width: 100%; max-width: 20rem;
+		border: 1px solid var(--line-2); border-radius: 99px; padding: .5rem 1rem;
+		background: var(--panel); font-size: var(--text-sm); min-height: var(--tap-min); flex: 1 1 auto; max-width: 20rem;
+	}
+	.toolbar select {
+		border: 1px solid var(--line-2); border-radius: var(--r); padding: .4rem .6rem;
+		font: inherit; font-size: var(--text-sm); background: var(--panel); color: var(--ink);
 	}
 	.pager { display: flex; align-items: center; gap: var(--space-3); margin-top: var(--space-3); }
 	.pager button {
@@ -462,8 +447,6 @@
 		transition: background .15s var(--ease), border-color .15s var(--ease);
 	}
 	.icon-btn:hover { border-color: var(--accent); background: var(--accent-soft); }
-	.doc-body { white-space: pre-wrap; font-size: var(--text-sm); line-height: 1.6; max-height: 60vh; overflow-y: auto; }
-	.doc-frame { width: 100%; height: 75vh; border: none; border-radius: var(--r); }
 	.pager button:disabled { opacity: .5; cursor: default; }
 	.staged { display: grid; gap: var(--space-3); margin-bottom: var(--space-4); }
 	.staged-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }

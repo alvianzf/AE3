@@ -44,7 +44,8 @@ def ensure_schema() -> None:
                 text TEXT NOT NULL,
                 page_start INTEGER,
                 page_end INTEGER,
-                embedding vector({cfg.embedding_dimensions}) NOT NULL
+                embedding vector({cfg.embedding_dimensions}) NOT NULL,
+                is_private BOOLEAN NOT NULL DEFAULT FALSE
             )
         """)
 
@@ -87,12 +88,35 @@ def delete_document(document_id: str) -> None:
         conn.execute("DELETE FROM chunk_embeddings WHERE document_id = %s", (document_id,))
 
 
-def search(query_embedding: list[float], top_k: int, min_grade: int) -> list[dict]:
+def set_private(document_ids: list[str], is_private: bool) -> None:
+    """Mirrors store.set_private()/set_folder_private() on the Neo4j
+    side (specs/v6.9/01) — this table has no folder_path of its own, so
+    a "privatize this folder" bulk action passes the document ids Neo4j
+    already resolved rather than this store re-deriving the match."""
+    if not document_ids:
+        return
+    with core_connection() as conn:
+        conn.execute(
+            "UPDATE chunk_embeddings SET is_private = %s WHERE document_id = ANY(%s)",
+            (is_private, document_ids),
+        )
+
+
+def search(query_embedding: list[float], top_k: int, min_grade: int,
+          accessible_private_ids: set[str] | None = None) -> list[dict]:
     """Exact nearest-neighbor search (cosine distance) — no ANN index.
     The library is small enough today that a sequential scan over
     chunk_embeddings is fast on its own; an ivfflat/hnsw index is the
     obvious next step if the corpus grows large enough for this to
-    start costing real time, not added preemptively."""
+    start costing real time, not added preemptively.
+
+    `accessible_private_ids` gates a private document out of this fast
+    path the same way the deep-research path's seed search and every
+    traversal hop already are (specs/v6.9/01) — this path has no
+    weight-aware grade check of its own either (a pre-existing gap, not
+    introduced here), so the privacy gate is a plain SQL filter, same
+    as the `grade >= %s` check already is."""
+    accessible_private_ids = accessible_private_ids or set()
     with core_connection() as conn:
         rows = conn.execute(
             """
@@ -100,11 +124,12 @@ def search(query_embedding: list[float], top_k: int, min_grade: int) -> list[dic
                    page_start, page_end,
                    1 - (embedding <=> %s::vector) AS score
             FROM chunk_embeddings
-            WHERE grade >= %s
+            WHERE grade >= %s AND (NOT is_private OR document_id = ANY(%s))
             ORDER BY embedding <=> %s::vector
             LIMIT %s
             """,
-            (_vec_literal(query_embedding), min_grade, _vec_literal(query_embedding), top_k),
+            (_vec_literal(query_embedding), min_grade, list(accessible_private_ids),
+             _vec_literal(query_embedding), top_k),
         ).fetchall()
         return [dict(r) for r in rows]
 

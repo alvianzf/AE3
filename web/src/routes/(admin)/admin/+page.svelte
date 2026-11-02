@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
+	import { page as appPage } from '$app/state';
 	import { invalidateAll } from '$app/navigation';
 	import { PUBLIC_API_BASE } from '$env/static/public';
-	import { get, post, patch, del, ApiError } from '$lib/api';
+	import { get, post, patch, put, del, ApiError } from '$lib/api';
 	import { chunkedUpload } from '$lib/chunkedUpload';
 	import { toast } from '$lib/stores/toast';
 	import Spotlight from '$lib/components/Spotlight.svelte';
@@ -171,12 +172,33 @@
 	let q = $state('');
 	let activeTopic = $state('');
 	let activeKind = $state('');
+	// '' = unfiltered (every folder, including root); '(root)' is its own
+	// filter value (sources with no folder_path) — distinct from '' so
+	// "show me just the unfiled ones" is reachable (specs/v6.8/01).
+	// Deep-linked from a source's own detail page, e.g. "/admin/[id]"'s
+	// folder breadcrumb (specs/v6.8/01/02) — pre-selects that folder's
+	// filter chip on arrival instead of landing on the unfiltered list.
+	let activeFolder = $state(appPage.url.searchParams.get('folder') ?? '');
+
+	// Folders have no coverage-style counting endpoint of their own
+	// (unlike topics, via /api/coverage) — derived client-side from the
+	// already-loaded source list, same PoC-scale reasoning the rest of
+	// this page's filtering already runs on.
+	const folderCounts = $derived.by(() => {
+		const counts = new Map<string, number>();
+		for (const s of data.sources ?? []) {
+			const key = s.folder_path || '(root)';
+			counts.set(key, (counts.get(key) ?? 0) + 1);
+		}
+		return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+	});
 
 	const filtered = $derived.by(() => {
 		const needle = q.trim().toLowerCase();
 		return (data.sources ?? []).filter((s: any) => {
 			if (activeTopic && !(s.topics ?? []).includes(activeTopic)) return false;
 			if (activeKind && s.kind !== activeKind) return false;
+			if (activeFolder && (s.folder_path || '(root)') !== activeFolder) return false;
 			if (!needle) return true;
 			return [s.title, s.summary, s.origin, s.author, s.filename]
 				.some((v) => (v ?? '').toLowerCase().includes(needle));
@@ -197,35 +219,6 @@
 		return filtered.slice(start, start + DOCS_PER_PAGE);
 	});
 
-	let viewing = $state(false);
-	let viewTitle = $state('');
-	let viewLoading = $state(false);
-	let viewBody = $state<{ body: string; body_reconstructed?: boolean } | null>(null);
-	let viewOriginalUrl = $state<string | null>(null);
-
-	async function viewDoc(s: any) {
-		viewTitle = s.title;
-		viewBody = null;
-		viewOriginalUrl = null;
-		viewing = true;
-		if (s.original_name) {
-			// #toolbar=0&navpanes=0 hides the browser's own PDF-viewer chrome
-			// (toolbar + the file/outline sidebar) inside the frame — this is
-			// a document preview, not a full PDF reader.
-			viewOriginalUrl = `${PUBLIC_API_BASE}/api/sources/${s.id}/original#toolbar=0&navpanes=0&scrollbar=0`;
-			return;
-		}
-		viewLoading = true;
-		try {
-			viewBody = await get(fetch, `/sources/${s.id}/text`);
-		} catch (err: any) {
-			toast(err.message, 'alert');
-			viewing = false;
-		} finally {
-			viewLoading = false;
-		}
-	}
-
 	// Regrade/delete: PATCH and DELETE /api/sources/{id} always existed on the
 	// backend (the pre-rewrite admin page used both, static/app.js) but had no
 	// UI in this rewrite — README.md's "a source can be corrected or removed"
@@ -238,6 +231,138 @@
 			await invalidateAll();
 		} catch (err: any) {
 			toast(err.message, 'alert');
+		}
+	}
+
+	// A source's folder is always the admin's call (specs/v6.8/01) — the
+	// Reader's suggested_folder only sets the starting value at ingest
+	// time, same relationship suggested_grade already has to grade above.
+	async function setFolder(s: any, folderPath: string) {
+		const next = folderPath.trim();
+		if (next === (s.folder_path || '')) return;
+		try {
+			await patch(fetch, `/sources/${s.id}/folder`, { folder_path: next });
+			toast(`"${s.title.slice(0, 40)}" moved to ${next || '(root)'}.`);
+			await invalidateAll();
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		}
+	}
+
+	let renamingFolder = $state(false);
+	let renameOldPath = $state('');
+	let renameNewPath = $state('');
+	let renamingSubmitting = $state(false);
+
+	function askRenameFolder(folderKey: string) {
+		renameOldPath = folderKey === '(root)' ? '' : folderKey;
+		renameNewPath = renameOldPath;
+		renamingFolder = true;
+	}
+
+	async function renameFolder(e: Event) {
+		e.preventDefault();
+		if (!renameOldPath) return; // the root folder can't be renamed
+		renamingSubmitting = true;
+		try {
+			const result = await post(fetch, '/library/folders/rename', {
+				old_path: renameOldPath, new_path: renameNewPath
+			});
+			toast(`Moved ${result.moved} source${result.moved === 1 ? '' : 's'} to "${renameNewPath || '(root)'}".`);
+			renamingFolder = false;
+			if (activeFolder === renameOldPath) activeFolder = renameNewPath.trim() || '(root)';
+			await invalidateAll();
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		} finally {
+			renamingSubmitting = false;
+		}
+	}
+
+	// Private knowledge base (specs/v6.9/01) — a second, independent
+	// selection set over the already-ingested doc-grid, not a reuse of
+	// `selected` above (that one's scoped to the staged-upload queue).
+	let librarySelected = $state<Set<string>>(new Set());
+
+	function toggleLibrarySelected(id: string) {
+		const next = new Set(librarySelected);
+		if (next.has(id)) next.delete(id);
+		else next.add(id);
+		librarySelected = next;
+	}
+
+	async function setPrivate(s: any, isPrivate: boolean) {
+		try {
+			await patch(fetch, `/sources/${s.id}/privacy`, { is_private: isPrivate });
+			toast(`"${s.title.slice(0, 40)}" is now ${isPrivate ? 'private' : 'public'}.`);
+			await invalidateAll();
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		}
+	}
+
+	async function setPrivateBulk(isPrivate: boolean) {
+		const ids = [...librarySelected];
+		if (!ids.length) return;
+		try {
+			await Promise.all(ids.map((id) => patch(fetch, `/sources/${id}/privacy`, { is_private: isPrivate })));
+			toast(`${ids.length} source${ids.length === 1 ? '' : 's'} set to ${isPrivate ? 'private' : 'public'}.`);
+			librarySelected = new Set();
+			await invalidateAll();
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		}
+	}
+
+	async function setFolderPrivate(folderKey: string, isPrivate: boolean) {
+		const folderPath = folderKey === '(root)' ? '' : folderKey;
+		try {
+			const result = await post(fetch, '/library/folders/privacy', { folder_path: folderPath, is_private: isPrivate });
+			toast(`${result.updated} source${result.updated === 1 ? '' : 's'} in "${folderKey}" set to ${isPrivate ? 'private' : 'public'}.`);
+			await invalidateAll();
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		}
+	}
+
+	// Who specifically can still see a private document — a separate
+	// action from the privacy toggle itself, reachable again later, not
+	// frozen at the moment it was privatized (specs/v6.9/01).
+	let accessEditing = $state<any>(null);
+	let accessOpen = $state(false);
+	let accessSelected = $state<Set<string>>(new Set());
+	let accessSubmitting = $state(false);
+
+	async function askAccess(s: any) {
+		accessEditing = s;
+		accessOpen = true;
+		accessSelected = new Set();
+		try {
+			const ids: string[] = await get(fetch, `/sources/${s.id}/access`);
+			accessSelected = new Set(ids);
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		}
+	}
+
+	function toggleAccessSelected(id: string) {
+		const next = new Set(accessSelected);
+		if (next.has(id)) next.delete(id);
+		else next.add(id);
+		accessSelected = next;
+	}
+
+	async function saveAccess() {
+		if (!accessEditing) return;
+		accessSubmitting = true;
+		try {
+			await put(fetch, `/sources/${accessEditing.id}/access`, { practitioner_ids: [...accessSelected] });
+			toast('Access updated.');
+			accessOpen = false;
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		} finally {
+			accessSubmitting = false;
 		}
 	}
 
@@ -538,6 +663,33 @@
 						<button class="fchip" class:active={activeKind === k} onclick={() => { activeKind = activeKind === k ? '' : k; page = 1; }}>{k}</button>
 					{/each}
 				</div>
+				{#if folderCounts.length}
+					<div class="facet-row">
+						<span class="facet-label">Folder</span>
+						<button class="fchip" class:active={!activeFolder} onclick={() => { activeFolder = ''; page = 1; }}>All</button>
+						{#each folderCounts as [folder, count] (folder)}
+							<button class="fchip" class:active={activeFolder === folder} onclick={() => { activeFolder = activeFolder === folder ? '' : folder; page = 1; }}>
+								{folder} ({count})
+							</button>
+							{#if activeFolder === folder}
+								{#if folder !== '(root)'}
+									<Button variant="text" onclick={() => askRenameFolder(folder)}><Icon name="edit" size={13} />Rename</Button>
+								{/if}
+								<Button variant="text" onclick={() => setFolderPrivate(folder, true)}><Icon name="lock" size={13} />Privatize</Button>
+								<Button variant="text" onclick={() => setFolderPrivate(folder, false)}><Icon name="unlock" size={13} />Make public</Button>
+							{/if}
+						{/each}
+					</div>
+				{/if}
+			</div>
+		{/if}
+
+		{#if librarySelected.size}
+			<div class="bulk-bar">
+				<span class="hint">{librarySelected.size} selected</span>
+				<Button variant="outlined" onclick={() => setPrivateBulk(true)}><Icon name="lock" size={14} />Make private</Button>
+				<Button variant="outlined" onclick={() => setPrivateBulk(false)}><Icon name="unlock" size={14} />Make public</Button>
+				<Button variant="ghost" onclick={() => (librarySelected = new Set())}>Clear</Button>
 			</div>
 		{/if}
 
@@ -547,21 +699,45 @@
 			{#each pageItems as s (s.id)}
 				<div class="doc-card">
 					<div class="doc-card-head">
-						<button class="title-link" onclick={() => viewDoc(s)}>{s.title}</button>
+						<input
+							type="checkbox"
+							checked={librarySelected.has(s.id)}
+							onchange={() => toggleLibrarySelected(s.id)}
+							aria-label="Select {s.title}"
+						/>
+						<a class="title-link" href="/admin/{s.id}">{s.title}</a>
 						<div class="doc-card-actions">
-							<button class="icon-btn" onclick={() => viewDoc(s)} title="View document" aria-label="View {s.title}"><Icon name="eye" /></button>
+							<a class="icon-btn" href="/admin/{s.id}" title="View document" aria-label="View {s.title}"><Icon name="eye" /></a>
+							<button
+								class="icon-btn"
+								onclick={() => setPrivate(s, !s.is_private)}
+								title={s.is_private ? 'Make public' : 'Make private'}
+								aria-label={s.is_private ? `Make ${s.title} public` : `Make ${s.title} private`}
+							><Icon name={s.is_private ? 'lock' : 'unlock'} /></button>
+							{#if s.is_private}
+								<button class="icon-btn" onclick={() => askAccess(s)} title="Edit access" aria-label="Edit access for {s.title}"><Icon name="users" /></button>
+							{/if}
 							<button class="icon-btn danger" onclick={() => askDelete(s)} title="Remove from library" aria-label="Remove {s.title}"><Icon name="trash" /></button>
 						</div>
 					</div>
 					{#if s.topics?.length}<div class="topics">{s.topics.join(' · ')}</div>{/if}
 					<div class="doc-card-foot">
 						<Chip tone="neutral">{s.kind}</Chip>
+						{#if s.is_private}<Chip tone="warn">private</Chip>{/if}
 						<label class="grade-label">
 							Grade
 							<input
 								class="grade"
 								type="number" min="1" max="10" value={s.grade}
 								onchange={(e) => regrade(s, Number((e.target as HTMLInputElement).value))}
+							/>
+						</label>
+						<label class="folder-label">
+							<Icon name="folder" size={13} />
+							<input
+								class="folder-input"
+								type="text" placeholder="(root)" value={s.folder_path ?? ''}
+								onblur={(e) => setFolder(s, (e.target as HTMLInputElement).value)}
 							/>
 						</label>
 						<span class="hint">{(s.created_at ?? '').slice(0, 10)}</span>
@@ -731,6 +907,43 @@
 	{/snippet}
 </Dialog>
 
+<Dialog bind:open={renamingFolder} title="Rename folder">
+	<form onsubmit={renameFolder} id="rf-form">
+		<TextField label="Current path" bind:value={renameOldPath} disabled />
+		<TextField label="New path" bind:value={renameNewPath} placeholder="e.g. Hormones/Menopause" />
+	</form>
+	{#snippet footer()}
+		<Button variant="ghost" onclick={() => (renamingFolder = false)}>Cancel</Button>
+		<Button onclick={renameFolder} loading={renamingSubmitting}>Rename</Button>
+	{/snippet}
+</Dialog>
+
+<Dialog bind:open={accessOpen} title="Edit access">
+	{#if accessEditing}
+		<p class="hint">Who can still see "{accessEditing.title.slice(0, 60)}" despite it being private.</p>
+	{/if}
+	<ul class="access-list">
+		{#each data.practitioners as p (p.id)}
+			<li>
+				<label>
+					<input
+						type="checkbox"
+						checked={accessSelected.has(p.id)}
+						onchange={() => toggleAccessSelected(p.id)}
+					/>
+					{p.name} <span class="hint">{p.email}</span>
+				</label>
+			</li>
+		{:else}
+			<li class="hint">No practitioners yet.</li>
+		{/each}
+	</ul>
+	{#snippet footer()}
+		<Button variant="ghost" onclick={() => (accessOpen = false)}>Cancel</Button>
+		<Button onclick={saveAccess} loading={accessSubmitting}>Save</Button>
+	{/snippet}
+</Dialog>
+
 <Dialog bind:open={duplicateOpen} title="Already in the library">
 	<p>{duplicateMessage}</p>
 	{#snippet footer()}
@@ -738,19 +951,6 @@
 		<button class="view danger" onclick={discardDuplicate}>Discard staged item</button>
 		<button class="view" onclick={replaceDuplicate}>Replace old version</button>
 	{/snippet}
-</Dialog>
-
-<Dialog bind:open={viewing} title={viewTitle} wide>
-	{#if viewOriginalUrl}
-		<iframe class="doc-frame" src={viewOriginalUrl} title={viewTitle}></iframe>
-	{:else if viewLoading}
-		<p class="hint">Loading…</p>
-	{:else if viewBody}
-		{#if viewBody.body_reconstructed}
-			<p class="hint">Rebuilt from passages — no original body was stored for this source.</p>
-		{/if}
-		<div class="doc-body">{viewBody.body}</div>
-	{/if}
 </Dialog>
 
 <style>
@@ -822,6 +1022,9 @@
 	.dir-tile.active .dir-count { color: inherit; background: rgba(255, 255, 255, .35); }
 	.facets { display: grid; gap: var(--space-2); margin-bottom: var(--space-4); }
 	.doc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: var(--space-3); }
+	.bulk-bar { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-3); }
+	.access-list { max-height: 50vh; overflow-y: auto; display: grid; gap: .4rem; list-style: none; padding: 0; }
+	.access-list label { display: flex; align-items: center; gap: .5rem; }
 	.doc-card {
 		display: flex; flex-direction: column; gap: .5rem; padding: var(--space-4);
 		border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--panel-2);
@@ -831,6 +1034,11 @@
 	.doc-card-actions { display: flex; gap: .3rem; flex: 0 0 auto; }
 	.doc-card-foot { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin-top: auto; padding-top: .3rem; }
 	.grade-label { display: flex; align-items: center; gap: .35rem; font-size: var(--text-xs); color: var(--muted); }
+	.folder-label { display: flex; align-items: center; gap: .3rem; font-size: var(--text-xs); color: var(--muted); }
+	.folder-input {
+		width: 9rem; border: 1px solid var(--line-2); border-radius: var(--r);
+		padding: .3rem .4rem; font: inherit; font-size: var(--text-xs); color: var(--ink); background: var(--panel);
+	}
 	.pager { display: flex; align-items: center; justify-content: center; gap: var(--space-4); margin-top: var(--space-5); }
 	.facet-row { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
 	.facet-label {
@@ -873,8 +1081,6 @@
 		width: 3.5rem; border: 1px solid var(--line-2); border-radius: var(--r);
 		padding: .3rem .4rem; font: inherit; color: var(--ink); background: var(--panel);
 	}
-	.doc-body { white-space: pre-wrap; font-size: var(--text-sm); line-height: 1.6; max-height: 60vh; overflow-y: auto; }
-	.doc-frame { width: 100%; height: 75vh; border: none; border-radius: var(--r); }
 	.staged { display: grid; gap: var(--space-3); }
 	.staged-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
 	.staged-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }

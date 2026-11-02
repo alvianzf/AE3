@@ -190,6 +190,7 @@ def ingest_document(
     entities_per_passage: list[list[dict]] | None = None,
     relationships: list[dict] | None = None,
     original: tuple[bytes | Path, str, str] | None = None,
+    folder_path: str = "",
 ) -> dict:
     """Write a read-and-graded document plus its chunks, entities, and
     typed relationships. Idempotent: content_hash is a uniqueness
@@ -227,7 +228,8 @@ def ingest_document(
                                   content_hash: $digest, body: $body, topics: $topics,
                                   author: $author, published: $published,
                                   reference: $reference, page_count: $page_count,
-                                  char_count: $char_count, passage_count: $total})
+                                  char_count: $char_count, passage_count: $total,
+                                  folder_path: $folder_path})
             FOREACH (row IN $rows |
               CREATE (c:Chunk {id: row.id, text: row.text, chunk_index: row.chunk_index,
                                page_start: row.page_start, page_end: row.page_end,
@@ -238,7 +240,7 @@ def ingest_document(
             grade=grade, summary=source_card_summary, now=_now(), digest=digest,
             body=body, topics=topics, author=author, published=published,
             reference=reference, page_count=page_count, char_count=len(body),
-            total=total, rows=rows,
+            total=total, rows=rows, folder_path=normalize_folder_path(folder_path),
         )
         _link_chunks_in_order(s, document_id)
         if entity_rows:
@@ -412,8 +414,21 @@ _CARD = """
     doc.char_count AS char_count, doc.content_hash AS content_hash,
     doc.topics AS topics, doc.original_name AS original_name,
     doc.original_media_type AS original_media_type,
-    doc.original_bytes AS original_bytes
+    doc.original_bytes AS original_bytes,
+    coalesce(doc.folder_path, '') AS folder_path,
+    coalesce(doc.is_private, false) AS is_private
 """
+
+
+def normalize_folder_path(path: str) -> str:
+    """'/Hormones/Menopause/', '//Hormones//Menopause', and
+    'Hormones/Menopause' all collapse to the same 'Hormones/Menopause' —
+    specs/v6.8/01's string-prefix folder model treats a folder purely as
+    a path string, so this is the one place that string gets a canonical
+    shape (segments trimmed, empties dropped) rather than every caller
+    re-deriving it slightly differently."""
+    segments = [seg.strip() for seg in path.split("/")]
+    return "/".join(seg for seg in segments if seg)
 
 
 def get_document(document_id: str) -> dict | None:
@@ -495,7 +510,13 @@ def facets() -> dict:
             "RETURN DISTINCT t ORDER BY t")]
         kinds = [r["k"] for r in s.run(
             "MATCH (doc:Document) RETURN DISTINCT doc.kind AS k ORDER BY k")]
-    return {"topics": topics, "kinds": kinds}
+        # Folders are never a separate node (specs/v6.8/01) — just the
+        # distinct, non-empty folder_path values currently in use, same
+        # derivation topics already gets above.
+        folders = [r["f"] for r in s.run(
+            "MATCH (doc:Document) WHERE doc.folder_path IS NOT NULL AND doc.folder_path <> '' "
+            "RETURN DISTINCT doc.folder_path AS f ORDER BY f")]
+    return {"topics": topics, "kinds": kinds, "folders": folders}
 
 
 def document_text(document_id: str) -> dict | None:
@@ -532,6 +553,90 @@ def set_grade(document_id: str, grade: int) -> dict | None:
     return get_document(document_id)
 
 
+def set_folder(document_id: str, folder_path: str) -> dict | None:
+    """An admin's explicit placement always wins over whatever the Reader
+    suggested at ingest time (specs/v6.8/01) — same "suggestion is just
+    the initial value" relationship suggested_grade already has to grade."""
+    normalized = normalize_folder_path(folder_path)
+    with session() as s:
+        s.run("MATCH (doc:Document {id: $id}) SET doc.folder_path = $folder_path",
+              id=document_id, folder_path=normalized)
+    log("admin", "move to folder", f"{document_id} → '{normalized}'")
+    return get_document(document_id)
+
+
+def rename_folder(old_path: str, new_path: str) -> int:
+    """Renaming/moving a folder is rewriting the shared path prefix every
+    document under it carries — one statement, not a cascade across a
+    separate folder hierarchy (there isn't one; specs/v6.8/01). Matches
+    the folder itself (doc.folder_path = old) and every subfolder under
+    it (doc.folder_path STARTS WITH old + '/'). Returns the number of
+    documents moved."""
+    old = normalize_folder_path(old_path)
+    new = normalize_folder_path(new_path)
+    if not old:
+        raise ValueError("old_path must not be empty — the root folder can't be renamed")
+    with session() as s:
+        result = s.run(
+            """
+            MATCH (doc:Document)
+            WHERE doc.folder_path = $old OR doc.folder_path STARTS WITH $old_prefix
+            SET doc.folder_path = $new + substring(doc.folder_path, size($old))
+            RETURN count(doc) AS n
+            """,
+            old=old, old_prefix=f"{old}/", new=new,
+        ).single()
+    count = result["n"] if result else 0
+    log("admin", "rename folder", f"'{old}' → '{new}' ({count} document(s))")
+    return count
+
+
+def set_private(document_id: str, is_private: bool) -> dict | None:
+    """An admin's privacy call (specs/v6.9/01) — who specifically can
+    still see it despite this is a separate action
+    (core_store.set_document_access()), not bundled into this one."""
+    with session() as s:
+        s.run("MATCH (doc:Document {id: $id}) SET doc.is_private = $is_private",
+              id=document_id, is_private=is_private)
+    log("admin", "set private" if is_private else "set public", document_id)
+    return get_document(document_id)
+
+
+def document_ids_under_folder(folder_path: str) -> list[str]:
+    """Every document in this folder or a subfolder of it — the same
+    prefix match rename_folder() already uses, exposed on its own so a
+    caller that needs the affected ids themselves (bulk-privatizing a
+    folder also has to update the pgvector mirror, which has no
+    folder_path of its own to match against — app/retrieval/
+    pgvector_store.py) isn't stuck re-deriving the match differently."""
+    path = normalize_folder_path(folder_path)
+    with session() as s:
+        recs = s.run(
+            "MATCH (doc:Document) WHERE doc.folder_path = $path OR doc.folder_path STARTS WITH $prefix "
+            "RETURN doc.id AS id",
+            path=path, prefix=f"{path}/",
+        )
+        return [r["id"] for r in recs]
+
+
+def set_folder_private(folder_path: str, is_private: bool) -> list[str]:
+    """Bulk-privatize (or un-privatize) everything currently in a folder
+    — a one-time bulk write over whatever's there right now, not a
+    persisted folder-level policy (specs/v6.9/01's explicit tradeoff: a
+    document added to this same folder later is public by default,
+    same as any new document, and needs its own explicit action).
+    Returns the affected document ids so the caller can mirror the same
+    change into pgvector_store."""
+    ids = document_ids_under_folder(folder_path)
+    if ids:
+        with session() as s:
+            s.run("MATCH (doc:Document) WHERE doc.id IN $ids SET doc.is_private = $is_private",
+                  ids=ids, is_private=is_private)
+    log("admin", "set folder private" if is_private else "set folder public",
+        f"'{normalize_folder_path(folder_path)}' ({len(ids)} document(s))")
+    return ids
+
+
 def delete_document(document_id: str) -> None:
     with session() as s:
         s.run(
@@ -560,6 +665,8 @@ def catalogue(min_grade: int) -> list[dict]:
                    doc.grade AS grade, doc.origin AS origin, doc.kind AS kind,
                    doc.author AS author, doc.published AS published,
                    doc.topics AS topics, doc.original_name AS original_name,
+                   coalesce(doc.folder_path, '') AS folder_path,
+                   coalesce(doc.is_private, false) AS is_private,
                    count(DISTINCT c) AS passages
             ORDER BY doc.grade DESC, doc.title
             """,
@@ -756,7 +863,7 @@ def seed_chunks_by_vector(embedding: list[float], top_k: int) -> list[dict]:
             RETURN c.id AS id, c.text AS text, c.chunk_index AS chunk_index,
                    c.page_start AS page_start, c.page_end AS page_end,
                    doc.id AS document_id, doc.title AS document_title,
-                   doc.grade AS grade, score
+                   doc.grade AS grade, coalesce(doc.is_private, false) AS is_private, score
             ORDER BY score DESC
             """,
             embedding=embedding, top_k=top_k,
@@ -776,7 +883,7 @@ def seed_chunks_by_fulltext(query: str, top_k: int) -> list[dict]:
             RETURN c.id AS id, c.text AS text, c.chunk_index AS chunk_index,
                    c.page_start AS page_start, c.page_end AS page_end,
                    doc.id AS document_id, doc.title AS document_title,
-                   doc.grade AS grade, score
+                   doc.grade AS grade, coalesce(doc.is_private, false) AS is_private, score
             ORDER BY score DESC LIMIT $top_k
             """,
             search_query=_escape_lucene(query), top_k=top_k,
@@ -837,7 +944,8 @@ def entities_mentioned_by_chunks(chunk_ids: list[str]) -> list[dict]:
 
 def fetch_hop_neighbors(frontier_ids: list[str], visited_ids: set[str],
                         min_grade: int, limit: int,
-                        weights: dict[str, int] | None = None) -> list[dict]:
+                        weights: dict[str, int] | None = None,
+                        accessible_private_ids: set[str] | None = None) -> list[dict]:
     """Unvisited neighbors of the current frontier, one hop out, in any
     direction and via any relationship type (MENTIONS, NEXT_CHUNK,
     HAS_CHUNK's reverse, or any typed entity-entity relationship the
@@ -863,6 +971,7 @@ def fetch_hop_neighbors(frontier_ids: list[str], visited_ids: set[str],
     if not frontier_ids:
         return []
     weights = weights or {}
+    accessible_private_ids = accessible_private_ids or set()
     with session() as s:
         recs = s.run(
             """
@@ -875,16 +984,24 @@ def fetch_hop_neighbors(frontier_ids: list[str], visited_ids: set[str],
                    neighbor.name AS name, neighbor.type AS type,
                    neighbor.text AS text, neighbor.chunk_index AS chunk_index,
                    neighbor.page_start AS page_start, neighbor.page_end AS page_end,
-                   doc.id AS document_id, doc.title AS document_title, doc.grade AS grade
+                   doc.id AS document_id, doc.title AS document_title, doc.grade AS grade,
+                   coalesce(doc.is_private, false) AS is_private
             LIMIT $limit
             """,
             frontier_ids=frontier_ids, visited_ids=list(visited_ids), limit=limit,
         )
         candidates = [dict(r) for r in recs]
+    # A private Chunk this practitioner has no grant for is excluded at
+    # every hop, same reasoning the grade check already gets its own
+    # docstring for (specs/v6.9/01) — missing this at even one hop would
+    # make "private" a leak, not a real boundary. Entities pass through
+    # un-filtered here, same as the grade check: an Entity by itself
+    # carries no document to be private about.
     return [
         c for c in candidates
         if "Entity" in c["labels"] or (
             c.get("grade") is not None
             and weights.get(c.get("document_id"), c["grade"]) >= min_grade
+            and (not c.get("is_private") or c.get("document_id") in accessible_private_ids)
         )
     ]

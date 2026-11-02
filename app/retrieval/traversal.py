@@ -148,7 +148,8 @@ class GraphTraversalRetriever:
     def __init__(self, min_grade: int | None = None, max_depth: int | None = None,
                 max_candidates_per_hop: int | None = None,
                 judge_fn: JudgeFn | None = None,
-                weights: dict[str, int] | None = None):
+                weights: dict[str, int] | None = None,
+                accessible_private_ids: set[str] | None = None):
         self.min_grade = cfg.min_grade if min_grade is None else min_grade
         self.max_depth = cfg.traversal_max_depth if max_depth is None else max_depth
         self.max_candidates_per_hop = (
@@ -161,6 +162,12 @@ class GraphTraversalRetriever:
         # can't re-enter via a later hop just because that hop only
         # checked the shared grade.
         self.weights = weights or {}
+        # Which private documents (specs/v6.9/01) this practitioner has an
+        # explicit grant for — threaded through the same way `weights` is,
+        # for the same reason: a hop that only checked the seed's own
+        # filtering could otherwise pull a private Chunk back in two hops
+        # deep.
+        self.accessible_private_ids = accessible_private_ids or set()
         # Injectable so the stopping/pruning logic can be verified with a
         # deterministic fake judge_fn, independent of any real LLM call —
         # see tests/test_traversal.py.
@@ -204,7 +211,7 @@ class GraphTraversalRetriever:
 
             candidates = store.fetch_hop_neighbors(
                 frontier, visited, self.min_grade, self.max_candidates_per_hop,
-                weights=self.weights)
+                weights=self.weights, accessible_private_ids=self.accessible_private_ids)
             if not candidates:
                 stopped_reason = "no_new_candidates"
                 break

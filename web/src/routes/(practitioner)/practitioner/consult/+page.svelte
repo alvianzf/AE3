@@ -186,6 +186,14 @@
 		document.getElementById(`source-${btn.dataset.cite}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 	}
 
+	// Opens in a new tab, already scrolled to the exact passage/page this
+	// citation points to (specs/v6.8/02) — a separate action from the
+	// scroll-to-accordion one above, not a replacement for it.
+	function openInLibrary(s: any) {
+		const url = `/practitioner/knowledge/${s.document_id}?locator=${encodeURIComponent(s.locator ?? '')}`;
+		window.open(url, '_blank', 'noopener');
+	}
+
 	function timeLabel(iso: string | number | undefined) {
 		if (!iso) return '';
 		const d = new Date(iso);
@@ -429,7 +437,20 @@
 			<div class="sources">
 				{#each t.sources as s (s.label)}
 					<div class="source" id="source-{s.label}">
-						<div class="sh"><Chip tone="accent">{s.label}</Chip> {s.title} <span class="hint">{s.locator}</span></div>
+						<div class="sh">
+							<Chip tone="accent">{s.label}</Chip> {s.title} <span class="hint">{s.locator}</span>
+							{#if s.kind === 'chunk' && s.document_id}
+								<!-- A new tab, not a navigation here — this chat stays put
+								     (specs/v6.8/02). An entity-kind source has no single
+								     document/location to open, so it gets no button. -->
+								<button
+									class="open-lib"
+									onclick={() => openInLibrary(s)}
+									title="Open in library"
+									aria-label="Open {s.title} in the library"
+								><Icon name="external-link" size={13} /></button>
+							{/if}
+						</div>
 						<p class="snippet">{s.snippet}</p>
 					</div>
 				{/each}
@@ -755,6 +776,11 @@
 	.sources { margin-top: var(--space-3); display: grid; gap: var(--space-3); }
 	.source { padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--r); }
 	.sh { display: flex; align-items: center; gap: .4rem; font-weight: 600; font-size: var(--text-sm); }
+	.open-lib {
+		margin-left: auto; border: none; background: none; color: var(--muted); cursor: pointer;
+		display: inline-flex; padding: .2rem; border-radius: var(--r);
+	}
+	.open-lib:hover { color: var(--accent); background: var(--panel-2); }
 	.snippet { margin: .3rem 0 0; font-size: var(--text-sm); color: var(--muted); }
 	.list { margin: .3rem 0 0; padding-left: 1.1rem; font-size: var(--text-sm); }
 
