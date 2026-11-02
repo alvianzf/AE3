@@ -1092,18 +1092,26 @@ def delete_own_source(source_id: str, session: dict = Depends(auth.require_pro_p
 
 @app.get("/api/ingestion-jobs/active")
 def list_active_ingestion_jobs(
-    _caller: dict = Depends(auth.require_admin_or_upload_permitted_practitioner),
+    _caller: dict = Depends(auth.require_admin_or_pro_practitioner),
 ) -> list[dict]:
     """Lets the frontend reattach to an in-progress job after a page reload
     without needing to remember a job id anywhere client-side — admin sees
-    every active job, a practitioner sees only their own."""
+    every active job, a practitioner sees only their own.
+
+    require_admin_or_pro_practitioner, not require_admin_or_upload_
+    permitted_practitioner — found live, specs/v6.10/01: a Pro
+    practitioner using only the new personal-knowledge-base routes
+    (no can_upload_library grant) got "Library upload permission
+    required" trying to poll their own job's status, since this read-
+    only, ownership-scoped check (_staged_owner_filter below) doesn't
+    need that permission at all, only the staging/promotion routes do."""
     return core_store.list_active_ingestion_jobs(_staged_owner_filter(_caller))
 
 
 @app.get("/api/ingestion-jobs/{job_id}")
 def get_ingestion_job(
     job_id: str,
-    _caller: dict = Depends(auth.require_admin_or_upload_permitted_practitioner),
+    _caller: dict = Depends(auth.require_admin_or_pro_practitioner),
 ) -> dict:
     # 404, not 403, for a job that isn't the caller's own — same
     # don't-confirm-existence pattern as _own_questionnaire_or_404.
