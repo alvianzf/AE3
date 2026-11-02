@@ -403,6 +403,7 @@ def _run_ingest(
     original: tuple[bytes | Path, str, str] | None,
     on_progress=lambda step, detail=None: None,
     pre_write_check=lambda: True,
+    owner_practitioner_id: str | None = None,
 ) -> dict:
     """Read → tag → grade → split into passages → write — the slow half of
     ingestion, run synchronously by the direct-upload routes below but
@@ -421,11 +422,14 @@ def _run_ingest(
     on_progress("reading")
     # Show the Reader the shelves (and folders, specs/v6.8/01) already in
     # use so it files this source beside its neighbours instead of coining
-    # a new label.
+    # a new label. A personal upload (specs/v6.10/01) skips known_folders
+    # entirely — it always lands at folder_path="" below regardless of
+    # what the Reader suggests, so there's no point nudging a one-
+    # practitioner document toward the shared library's taxonomy.
     facets = store.facets()
-    card = ingestion_pipeline.read_source(body, filename, kind, origin,
-                                          known_topics=facets["topics"],
-                                          known_folders=facets["folders"])
+    card = ingestion_pipeline.read_source(
+        body, filename, kind, origin, known_topics=facets["topics"],
+        known_folders=None if owner_practitioner_id else facets["folders"])
 
     # Remove the superseded source only once the new one has been read, so a
     # failure part-way through does not leave the library short.
@@ -510,7 +514,9 @@ def _run_ingest(
             published=card["published"], reference=card["reference"],
             page_count=page_count, entities_per_passage=entities_per_passage,
             relationships=relationships, original=original,
-            folder_path=card["suggested_folder"],
+            folder_path="" if owner_practitioner_id else card["suggested_folder"],
+            owner_practitioner_id=owner_practitioner_id,
+            is_private=owner_practitioner_id is not None,
         )
     except neo4j.exceptions.ConstraintError:
         # Another upload of the same body landed between our check and our write.
@@ -519,6 +525,13 @@ def _run_ingest(
                        "Nothing was added.",
             "duplicate_of": None,
         })
+
+    if owner_practitioner_id:
+        # The uploading practitioner grants themselves access to their own
+        # document — the same core_store.set_document_access() an admin's
+        # grant-editor dialog already calls for v6.9/01, just invoked
+        # automatically instead of from a dialog (specs/v6.10/01).
+        core_store.set_document_access(result["id"], [owner_practitioner_id], owner_practitioner_id)
 
     # Mirror into the pgvector store for the "general lookup" fast-RAG
     # path (app/retrieval/pgvector_store.py) — same chunk ids Neo4j just
@@ -684,6 +697,7 @@ def _run_staged_ingest_job(
     pages: list[tuple[int | None, str]], body: str, digest: str, page_count: int,
     filename: str, kind: str, origin: str, replaces: str,
     original: tuple[bytes | Path, str, str] | None,
+    personal: bool = False,
 ) -> None:
     """Runs in Starlette's threadpool after the response for
     POST /api/staged/{id}/ingest (or the batch route) has already been sent
@@ -716,6 +730,7 @@ def _run_staged_ingest_job(
             pages, body, digest, page_count, filename, kind, origin, replaces, original,
             on_progress=progress,
             pre_write_check=lambda: core_store.get_staged_source(staged_id, owner) is not None,
+            owner_practitioner_id=owner if personal else None,
         )
         # _run_ingest() archives its own copy of the file under the *new*
         # source's id (originals.save_from_path) — the staged copy under the
@@ -734,6 +749,7 @@ def _run_staged_ingest_job(
 def _promote_staged_async(
     staged_id: str, kind: str, origin: str, owner: str | None,
     replaces: str, background_tasks: BackgroundTasks,
+    personal: bool = False,
 ) -> dict:
     """Looks up the staged item and runs the same synchronous duplicate
     check _ingest_pages() always has, then hands the slow remainder to
@@ -760,6 +776,7 @@ def _promote_staged_async(
     background_tasks.add_task(
         _run_staged_ingest_job, job["id"], staged_id, owner, staged["kind"],
         pages, body, digest, page_count, filename, kind, origin, replaces, original,
+        personal=personal,
     )
     return {"job_id": job["id"]}
 
@@ -973,6 +990,104 @@ def promote_staged_batch(
             else:
                 failed.append({"staged_id": staged_id, "error": exc.detail})
     return {"jobs": jobs, "duplicates": duplicates, "failed": failed}
+
+
+# --- Practitioner's own private knowledge base (specs/v6.10/01) --------------
+#
+# A separate, parallel surface from the staging/promotion routes above —
+# not a flag on them — so `can_upload_library`'s existing meaning (who
+# can contribute to the *shared* library) doesn't quietly change.
+# `core_store`'s staged_sources table is reused as-is (same schema, same
+# `owner` column); only the promotion step differs, via `personal=True`
+# threaded into `_promote_staged_async`. No file-preview-before-ingest
+# route here (unlike the shared flow's GET /api/staged/{id}/file) — a
+# deliberate v1 simplification, not an oversight: the resulting document
+# is viewable afterward through the existing source-detail page either
+# way, so previewing the raw staged file first isn't load-bearing yet.
+
+@app.post("/api/me/knowledge/stage")
+async def stage_own_source(
+    file: UploadFile | None = None,
+    text: str = Form(""),
+    session: dict = Depends(auth.require_pro_practitioner),
+) -> dict:
+    """Any Pro practitioner, not just one with can_upload_library — a
+    personal document can't affect anyone else's consults, so it doesn't
+    need that admin-granted permission (specs/v6.10/01)."""
+    if file is not None and file.filename:
+        raw = await file.read()
+        if len(raw) > _MAX_SOURCE_UPLOAD_BYTES:
+            raise HTTPException(
+                400,
+                f"File must be under {_MAX_SOURCE_UPLOAD_BYTES // (1024 * 1024)} MB.")
+        filename = file.filename
+        try:
+            pages = _extract_pages(filename, raw)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        media_type = file.content_type or _media_type(filename)
+        if not any(t.strip() for _, t in pages):
+            raise HTTPException(
+                400,
+                "No text could be read from this source. If it is a scanned PDF, "
+                "the pages are images and would need OCR before it can be staged.")
+        staged = core_store.create_staged_source("file", filename, media_type, pages, session["id"])
+        originals.save(staged["id"], raw, filename)
+        return staged
+    if text.strip():
+        return core_store.create_staged_source("text", None, None, [(None, text)], session["id"])
+    raise HTTPException(400, "Provide a file or text.")
+
+
+@app.get("/api/me/knowledge/stage")
+def list_own_staged(session: dict = Depends(auth.require_pro_practitioner)) -> list[dict]:
+    return core_store.list_staged_sources(session["id"])
+
+
+@app.delete("/api/me/knowledge/stage/{staged_id}")
+def discard_own_staged(staged_id: str, session: dict = Depends(auth.require_pro_practitioner)) -> dict:
+    staged = core_store.get_staged_source(staged_id, session["id"])
+    if staged is None:
+        raise HTTPException(404, "no such staged item")
+    core_store.delete_staged_source(staged_id, session["id"])
+    if staged["kind"] == "file":
+        originals.delete(staged_id)
+    return {"deleted": staged_id}
+
+
+@app.post("/api/me/knowledge/stage/{staged_id}/ingest", status_code=202)
+def promote_own_staged(
+    staged_id: str, body: StagedIngestBody, background_tasks: BackgroundTasks,
+    session: dict = Depends(auth.require_pro_practitioner),
+) -> dict:
+    # `replaces` (a duplicate-of id the practitioner is choosing to
+    # supersede) must already be their own document — without this, a
+    # practitioner could name any document id here and have
+    # _run_ingest's store.delete_document(replaces) remove someone
+    # else's source out from under them. This check is new with this
+    # route; the existing shared-library promotion route below has the
+    # same `replaces` shape with no equivalent check, a pre-existing gap
+    # out of scope for this spec (specs/v6.10/01) to fix.
+    if body.replaces:
+        existing = store.get_document(body.replaces)
+        if existing is None or existing.get("owner_practitioner_id") != session["id"]:
+            raise HTTPException(404, "no such source")
+    return _promote_staged_async(staged_id, body.kind, body.origin, session["id"],
+                                 body.replaces, background_tasks, personal=True)
+
+
+@app.delete("/api/me/knowledge/{source_id}")
+def delete_own_source(source_id: str, session: dict = Depends(auth.require_pro_practitioner)) -> dict:
+    """Unlike DELETE /api/sources/{id} (admin-only, a shared-library
+    curation decision), a practitioner can delete their own personal
+    document themselves — 404, not 403, on anything that isn't theirs,
+    so this can't be used to confirm another document's existence."""
+    source = store.get_document(source_id)
+    if source is None or source.get("owner_practitioner_id") != session["id"]:
+        raise HTTPException(404, "no such source")
+    store.delete_document(source_id)
+    pgvector_store.delete_document(source_id)
+    return {"deleted": source_id}
 
 
 @app.get("/api/ingestion-jobs/active")

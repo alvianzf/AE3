@@ -23,6 +23,13 @@
 	// than a shared component — the first practitioner-facing copy of it. ---
 	let ingestOpen = $state(false);
 	let ingestTab = $state('upload');
+	// Which staging surface this dialog talks to (specs/v6.10/01) — the
+	// same dialog UI either way, just a different pair of endpoints and,
+	// for 'personal', no chunked-upload path (that one has no personal-
+	// mode backend route yet, so a personal file upload stays bounded by
+	// the plain direct-upload size cap, same as the shared flow's own
+	// small-file path).
+	let uploadMode: 'shared' | 'personal' = $state('shared');
 	let text = $state('');
 	let fileInput = $state<HTMLInputElement>();
 	let staging = $state(false);
@@ -136,7 +143,19 @@
 		staging = true;
 		stageProgress = null;
 		try {
-			await chunkedUpload('/sources', selectedFile, {}, (p) => (stageProgress = p), 'stage');
+			if (uploadMode === 'personal') {
+				const fd = new FormData();
+				fd.set('file', selectedFile);
+				const res = await fetch(`${PUBLIC_API_BASE}/api/me/knowledge/stage`, {
+					method: 'POST', credentials: 'include', body: fd
+				});
+				if (!res.ok) {
+					const body = await res.json().catch(() => ({}));
+					throw new Error(body?.detail?.message || body?.detail || 'Staging failed.');
+				}
+			} else {
+				await chunkedUpload('/sources', selectedFile, {}, (p) => (stageProgress = p), 'stage');
+			}
 			toast('Added to your staged list.');
 			pickFile(null);
 			if (fileInput) fileInput.value = '';
@@ -157,7 +176,8 @@
 		try {
 			const fd = new FormData();
 			fd.set('text', text);
-			const res = await fetch(`${PUBLIC_API_BASE}/api/staged`, { method: 'POST', credentials: 'include', body: fd });
+			const path = uploadMode === 'personal' ? '/api/me/knowledge/stage' : '/api/staged';
+			const res = await fetch(`${PUBLIC_API_BASE}${path}`, { method: 'POST', credentials: 'include', body: fd });
 			if (!res.ok) {
 				const body = await res.json().catch(() => ({}));
 				throw new Error(body?.detail?.message || body?.detail || 'Staging failed.');
@@ -179,19 +199,25 @@
 	// Reader-generated title/grade. Surfaced here so the practitioner can
 	// choose to replace the old version or discard the redundant staged item.
 	let duplicateStagedId = $state<string | null>(null);
+	let duplicateMode: 'shared' | 'personal' = $state('shared');
 	let duplicateOf = $state<string | null>(null);
 	let duplicateMessage = $state('');
 	let duplicateOpen = $state(false);
 
-	async function ingestOne(id: string) {
+	function stagedBase(mode: 'shared' | 'personal') {
+		return mode === 'personal' ? '/me/knowledge/stage' : '/staged';
+	}
+
+	async function ingestOne(id: string, mode: 'shared' | 'personal' = 'shared') {
 		promotingId = id;
 		try {
-			const res = await post(fetch, `/staged/${id}/ingest`, {});
+			const res = await post(fetch, `${stagedBase(mode)}/${id}/ingest`, {});
 			watchJob(id, res.job_id);
 		} catch (err: any) {
 			const detail = err instanceof ApiError ? (err.detail as any) : null;
 			if (err instanceof ApiError && err.status === 409 && detail?.duplicate_of) {
 				duplicateStagedId = id;
+				duplicateMode = mode;
 				duplicateOf = detail.duplicate_of;
 				duplicateMessage = detail.message;
 				duplicateOpen = true;
@@ -207,10 +233,11 @@
 		if (!duplicateStagedId || !duplicateOf) return;
 		const id = duplicateStagedId;
 		const replaces = duplicateOf;
+		const mode = duplicateMode;
 		duplicateOpen = false;
 		promotingId = id;
 		try {
-			const res = await post(fetch, `/staged/${id}/ingest`, { replaces });
+			const res = await post(fetch, `${stagedBase(mode)}/${id}/ingest`, { replaces });
 			watchJob(id, res.job_id);
 		} catch (err: any) {
 			toast(err.message, 'alert');
@@ -222,13 +249,14 @@
 	async function discardDuplicate() {
 		if (!duplicateStagedId) return;
 		const id = duplicateStagedId;
+		const mode = duplicateMode;
 		duplicateOpen = false;
-		await discardStaged(id);
+		await discardStaged(id, mode);
 	}
 
-	async function discardStaged(id: string) {
+	async function discardStaged(id: string, mode: 'shared' | 'personal' = 'shared') {
 		try {
-			await del(fetch, `/staged/${id}`);
+			await del(fetch, `${stagedBase(mode)}/${id}`);
 			toast('Discarded.');
 			await invalidateAll();
 		} catch (err: any) {
@@ -241,6 +269,30 @@
 		try {
 			await put(fetch, `/me/knowledge/${id}/weight`, { weight });
 			toast('Weight updated.');
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		}
+	}
+
+	// A practitioner can delete their own private document themselves —
+	// unlike the shared library, which stays an admin-only decision
+	// (specs/v6.10/01).
+	let deleting = $state<any>(null);
+	let confirmingDelete = $state(false);
+
+	function deleteOwn(s: any) {
+		deleting = s;
+		confirmingDelete = true;
+	}
+
+	async function confirmDeleteOwn() {
+		if (!deleting) return;
+		const s = deleting;
+		confirmingDelete = false;
+		try {
+			await del(fetch, `/me/knowledge/${s.id}`);
+			toast(`"${s.title.slice(0, 40)}" deleted.`);
+			await invalidateAll();
 		} catch (err: any) {
 			toast(err.message, 'alert');
 		}
@@ -280,7 +332,7 @@
 
 <svelte:head><title>Library weights — Practitioner portal</title></svelte:head>
 
-<Spotlight title="Your knowledge weighting" actions={data.canUploadLibrary ? uploadActions : undefined}>
+<Spotlight title="Your knowledge weighting" actions={uploadActions}>
 	<p class="hint">Boost or dampen how much each shared library source counts when your consults run.</p>
 
 	{#if data.canUploadLibrary && data.staged?.length}
@@ -328,6 +380,49 @@
 			</ul>
 		</div>
 	{/if}
+
+	{#if data.personalStaged?.length}
+		<div class="staged">
+			<strong>{data.personalStaged.length} of your private uploads not yet ingested</strong>
+			<ul class="staged-list">
+				{#each data.personalStaged as item (item.id)}
+					<li class="staged-item">
+						<div class="staged-body">
+							<div class="staged-title">
+								{item.filename ?? 'Pasted text'}
+								<Chip tone="neutral">{item.kind}</Chip>
+								<Chip tone="warn">private</Chip>
+								{#if item.page_count}<span class="hint">{item.page_count} page(s)</span>{/if}
+							</div>
+							<p class="staged-preview">{item.preview}{item.preview?.length >= 280 ? '…' : ''}</p>
+							{#if jobsByStagedId[item.id] && jobsByStagedId[item.id].status !== 'error'}
+								<div class="job-progress">
+									<div class="track"><div class="fill" style="width: {jobProgressPercent(jobsByStagedId[item.id])}%"></div></div>
+									<span class="hint">{jobLabel(jobsByStagedId[item.id])}</span>
+								</div>
+							{:else if jobsByStagedId[item.id]}
+								<p class="hint job-error">{jobLabel(jobsByStagedId[item.id])}</p>
+							{/if}
+						</div>
+						<div class="staged-actions">
+							<button
+								class="view"
+								onclick={() => ingestOne(item.id, 'personal')}
+								disabled={promotingId === item.id || jobsByStagedId[item.id]?.status === 'running'}
+							>
+								{jobsByStagedId[item.id]?.status === 'running' ? 'Ingesting…' : 'Ingest'}
+							</button>
+							<button
+							class="view danger"
+							onclick={() => discardStaged(item.id, 'personal')}
+							disabled={jobsByStagedId[item.id]?.status === 'running'}
+						>Discard</button>
+						</div>
+					</li>
+				{/each}
+			</ul>
+		</div>
+	{/if}
 	<div class="toolbar">
 		<input class="search" type="search" placeholder="Search by title…" bind:value={q} aria-label="Search library sources" />
 		{#if folders.length > 1}
@@ -345,13 +440,18 @@
 		empty="Nothing in the library yet."
 	>
 		{#snippet row(s)}
-			<td>{s.title}</td>
+			<td>{s.title} {#if s.owner_practitioner_id === data.practitionerId}<Chip tone="warn">private</Chip>{/if}</td>
 			<td class="hint">{s.folder_path || '—'}</td>
 			<td><Chip tone="neutral">grade {s.grade}</Chip></td>
 			<td>
 				<input type="number" min="0" max="5" value={s.weight} onchange={(e) => setWeight(s.id as string, Number((e.target as HTMLInputElement).value))} />
 			</td>
-			<td><a class="icon-btn" href="/practitioner/knowledge/{s.id}" title="View document" aria-label="View {s.title}"><Icon name="eye" /></a></td>
+			<td class="actions">
+				<a class="icon-btn" href="/practitioner/knowledge/{s.id}" title="View document" aria-label="View {s.title}"><Icon name="eye" /></a>
+				{#if s.owner_practitioner_id === data.practitionerId}
+					<button class="icon-btn danger" onclick={() => deleteOwn(s)} title="Delete your document" aria-label="Delete {s.title}"><Icon name="trash" /></button>
+				{/if}
+			</td>
 		{/snippet}
 	</DataTable>
 	{#if totalPages > 1}
@@ -364,7 +464,15 @@
 </Spotlight>
 
 {#snippet uploadActions()}
-	<Button onclick={() => (ingestOpen = true)}>+ Add resources</Button>
+	{#if data.canUploadLibrary}
+		<Button onclick={() => { uploadMode = 'shared'; ingestOpen = true; }}>+ Add resources</Button>
+	{/if}
+	<!-- Always available, independent of can_upload_library (specs/v6.10/01)
+	     — a personal document can't affect anyone else's consults, so it
+	     doesn't need the same admin-granted permission the shared path does. -->
+	<Button variant={data.canUploadLibrary ? 'outlined' : 'filled'} onclick={() => { uploadMode = 'personal'; ingestOpen = true; }}>
+		+ Add to my private library
+	</Button>
 {/snippet}
 
 <Dialog bind:open={ingestOpen} title="Add resources" wide>
@@ -415,6 +523,16 @@
 	</div>
 </Dialog>
 
+<Dialog bind:open={confirmingDelete} title="Delete source">
+	{#if deleting}
+		<p>Delete "{deleting.title}"? This can't be undone.</p>
+	{/if}
+	{#snippet footer()}
+		<button class="view" onclick={() => (confirmingDelete = false)}>Keep</button>
+		<button class="view danger" onclick={confirmDeleteOwn}>Delete</button>
+	{/snippet}
+</Dialog>
+
 <Dialog bind:open={duplicateOpen} title="Already in the library">
 	<p>{duplicateMessage}</p>
 	{#snippet footer()}
@@ -447,6 +565,9 @@
 		transition: background .15s var(--ease), border-color .15s var(--ease);
 	}
 	.icon-btn:hover { border-color: var(--accent); background: var(--accent-soft); }
+	.icon-btn.danger { color: var(--danger); }
+	.icon-btn.danger:hover { border-color: var(--danger); background: var(--danger-soft); }
+	.actions { display: flex; align-items: center; gap: .4rem; }
 	.pager button:disabled { opacity: .5; cursor: default; }
 	.staged { display: grid; gap: var(--space-3); margin-bottom: var(--space-4); }
 	.staged-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
