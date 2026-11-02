@@ -1,5 +1,37 @@
 # Specs changelog
 
+## v6.9 — 2026-11-02 (private knowledge base, per-practitioner access)
+
+Admins can mark a document — or a whole folder (`v6.8/01`) at once, via
+bulk-select — as private, invisible to every practitioner's RAG results
+except the specific ones explicitly granted access. A new core-store
+`document_access` table (admin-controlled, so it does not live in a
+per-practitioner vault schema the way `source_weights` does). Enforcement
+has to cover three separate retrieval paths a private document could
+otherwise leak through: seed search, every graph-traversal hop, and the
+general-lookup pgvector fast path. States explicitly that "privatize a
+folder" is a one-time bulk action, not a persisted folder-level policy —
+the same tradeoff `v6.8/01`'s string-prefix folder model already accepts.
+
+## v6.8 — 2026-11-02 (library folders; citation deep-link)
+
+Two direct feature requests. `01` (folder/subfolder organization over
+the knowledge library, `Document.folder_path` as a plain string prefix
+— not a separate node type — with the Reader suggesting a path the same
+way it already suggests topics; the admin's placement is always final)
+is implemented: `app/graph/store.py`/`app/ingestion/pipeline.py`/
+`app/main.py`, plus a folder facet row, per-card folder field, and a
+rename action on the admin Library page, and a read-only folder column/
+filter on the practitioner knowledge page. `02` (clicking a citation on
+a generated answer opens the library in a new tab at that exact document
+and passage/page) is also implemented: the admin and practitioner
+library viewers were promoted from client-side dialogs to real routed
+pages (`/knowledge/[id]`, `/admin/[id]`), each taking a `?locator=` that
+scrolls to and highlights the exact passage, or opens a PDF at the exact
+page via `#page=N`. Admin/superadmin CRUD on accounts and the
+practitioner library viewer this builds on both already shipped (`v6.6`,
+`v6.7`) — noted as baseline, not re-specced.
+
 ## v6.7 — 2026-09-16 (SEO/GEO; practitioner-owned questionnaires; portal UX batch)
 
 Same day as `v6.6`'s audits, a run of direct feature/UX requests.

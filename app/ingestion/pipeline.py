@@ -33,9 +33,17 @@ READER_SCHEMA = {
         "author": {"type": "string", "description": "Empty string if not stated."},
         "published": {"type": "string", "description": "Empty string if not stated."},
         "reference": {"type": "string", "description": "Empty string if none."},
+        "suggested_folder": {
+            "type": "string",
+            "description": "A suggested folder path (e.g. 'Hormones/Menopause'), "
+                           "taken from the library's existing folder list wherever "
+                           "one fits. Empty string if none fits well — never "
+                           "invent a folder name close to but different from an "
+                           "existing one.",
+        },
     },
     "required": ["title", "summary", "topics", "suggested_grade", "author",
-                 "published", "reference"],
+                 "published", "reference", "suggested_folder"],
     "additionalProperties": False,
 }
 
@@ -151,11 +159,15 @@ def _reader_sample(text: str, budget: int = 40_000) -> str:
 
 
 def read_source(text: str, filename: str, kind: str, origin: str,
-                known_topics: list[str] | None = None) -> dict:
+                known_topics: list[str] | None = None,
+                known_folders: list[str] | None = None) -> dict:
     shelves = known_topics or []
+    folders = known_folders or []
     prompt = (
         f"Topics already used in this library (reuse where one fits):\n"
         f"{', '.join(sorted(shelves)) or '(the library is empty)'}\n\n"
+        f"Folders already used in this library (reuse where one fits):\n"
+        f"{', '.join(sorted(folders)) or '(no folders yet)'}\n\n"
         f"Filename: {filename}\nKind: {kind}\nStated origin: {origin}\n\n"
         f"Source text:\n---\n{_reader_sample(text)}\n---"
     )
@@ -172,6 +184,7 @@ def read_source(text: str, filename: str, kind: str, origin: str,
     card["topics"] = [t.strip().lower() for t in card["topics"] if t.strip()][:4]
     for f in ("author", "published", "reference"):
         card[f] = card.get(f, "").strip()
+    card["suggested_folder"] = store.normalize_folder_path(card.get("suggested_folder", ""))
     return card
 
 
@@ -362,7 +375,9 @@ def ingest(*, text: str, filename: str, kind: str, origin: str,
     if existing is not None:
         raise ValueError(f"Already ingested as '{existing['title']}' ({existing['id']})")
 
-    card = read_source(text, filename, kind, origin, store.facets()["topics"])
+    facets = store.facets()
+    card = read_source(text, filename, kind, origin,
+                       known_topics=facets["topics"], known_folders=facets["folders"])
     passages = store.chunk_pages(pages or [(None, text)])
     if not passages:
         raise ValueError("Source produced no passages after chunking.")
@@ -410,5 +425,5 @@ def ingest(*, text: str, filename: str, kind: str, origin: str,
         reference=card["reference"],
         page_count=max((pn or 0 for pn, _ in (pages or [])), default=0),
         entities_per_passage=entities_per_passage, relationships=all_relationships,
-        original=original,
+        original=original, folder_path=card["suggested_folder"],
     )

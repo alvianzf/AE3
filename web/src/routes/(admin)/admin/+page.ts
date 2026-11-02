@@ -3,7 +3,7 @@ import { get } from '$lib/api';
 export const ssr = false;
 
 export async function load({ fetch }) {
-	const [sourcesRes, graph, coverage, facets, staged, activeJobs] = await Promise.all([
+	const [sourcesRes, graph, coverage, facets, staged, activeJobs, practitioners] = await Promise.all([
 		get(fetch, '/sources?per_page=200').catch(() => ({ sources: [], total: 0 })),
 		get(fetch, '/graph').catch(() => null),
 		get(fetch, '/coverage').catch(() => []),
@@ -13,7 +13,11 @@ export async function load({ fetch }) {
 		// GET /api/ingestion-jobs/active) — lets the page resume showing its
 		// progress bar on load/reload instead of only while the tab that
 		// started it stays open.
-		get(fetch, '/ingestion-jobs/active').catch(() => [])
+		get(fetch, '/ingestion-jobs/active').catch(() => []),
+		// For the private-document access-grant picker (specs/v6.9/01) —
+		// same practitioner list web/src/routes/(admin)/admin/users/
+		// +page.svelte already loads.
+		get(fetch, '/admin/practitioners').catch(() => [])
 	]);
 	return {
 		sources: sourcesRes?.sources ?? sourcesRes ?? [],
@@ -21,6 +25,7 @@ export async function load({ fetch }) {
 		coverage,
 		kinds: facets?.kinds ?? [],
 		staged,
-		activeJobs
+		activeJobs,
+		practitioners
 	};
 }

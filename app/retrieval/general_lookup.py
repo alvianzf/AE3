@@ -18,7 +18,8 @@ cfg = get_config()
 
 
 def lookup(question: str, patient: PatientContext, min_grade: int,
-          top_k: int | None = None) -> TraversalResult:
+          top_k: int | None = None,
+          accessible_private_ids: set[str] | None = None) -> TraversalResult:
     """Embeds the question directly — no query-forming LLM call first.
 
     That's a deliberate speed/thoroughness tradeoff, not an oversight:
@@ -41,7 +42,8 @@ def lookup(question: str, patient: PatientContext, min_grade: int,
     """
     query_text = f"{patient.as_query_text()}\n\nQuestion: {question}"
     embedding = get_client(Role.EMBEDDER).embed([query_text])[0]
-    rows = search(embedding, top_k=top_k or cfg.traversal_seed_top_k, min_grade=min_grade)
+    rows = search(embedding, top_k=top_k or cfg.traversal_seed_top_k, min_grade=min_grade,
+                 accessible_private_ids=accessible_private_ids)
     accumulated = [
         {
             "id": r["id"], "text": r["text"], "document_title": r["document_title"],

@@ -196,6 +196,26 @@ def ensure_schema() -> None:
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
+
+            -- Which practitioners an admin has granted access to a
+            -- private document (specs/v6.9/01) — an admin's own grant,
+            -- not a practitioner's own preference, so this lives in the
+            -- public schema, not inside app/vault.py's per-practitioner
+            -- vault_<id> schema the way source_weights does. The
+            -- document itself lives in Neo4j, not Postgres, so
+            -- document_id is a plain string reference, no FK — a stale
+            -- row left behind by a deleted document is harmless dead
+            -- data, same category originals.delete()'s docstring already
+            -- accepts for an orphaned original file.
+            CREATE TABLE IF NOT EXISTS document_access (
+                document_id TEXT NOT NULL,
+                practitioner_id TEXT NOT NULL REFERENCES practitioners(id),
+                granted_at TEXT NOT NULL,
+                granted_by TEXT NOT NULL,
+                PRIMARY KEY (document_id, practitioner_id)
+            );
+            CREATE INDEX IF NOT EXISTS document_access_by_practitioner
+                ON document_access(practitioner_id);
             """
         )
         # Every deployment needs at least one superadmin able to manage
@@ -265,6 +285,48 @@ def set_setting(key: str, value: str) -> None:
             "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
             (key, value),
         )
+
+
+# --- Private knowledge base access (specs/v6.9/01) --------------------------
+
+def get_document_access(document_id: str) -> list[str]:
+    """Practitioner ids currently granted access to this document —
+    pre-checks a grant-editor dialog with who already has it."""
+    with core_connection() as conn:
+        rows = conn.execute(
+            "SELECT practitioner_id FROM document_access WHERE document_id = %s",
+            (document_id,),
+        ).fetchall()
+    return [r["practitioner_id"] for r in rows]
+
+
+def set_document_access(document_id: str, practitioner_ids: list[str], granted_by: str) -> None:
+    """Replaces the full grant list for one document in one transaction —
+    same simplicity can_upload_library's single-flag-flip already has,
+    not an incremental add/remove diff (specs/v6.9/01)."""
+    with core_connection() as conn:
+        conn.execute("DELETE FROM document_access WHERE document_id = %s", (document_id,))
+        for practitioner_id in practitioner_ids:
+            conn.execute(
+                "INSERT INTO document_access (document_id, practitioner_id, granted_at, granted_by) "
+                "VALUES (%s, %s, %s, %s)",
+                (document_id, practitioner_id, _now(), granted_by),
+            )
+    log(granted_by, "set document access", f"{document_id} → {len(practitioner_ids)} practitioner(s)")
+
+
+def get_accessible_document_ids(practitioner_id: str) -> set[str]:
+    """Every document this practitioner has an explicit grant for —
+    threaded through retrieval (seed search, every traversal hop,
+    general lookup) as the allow-list a private document needs to be
+    reachable at all. Granting a public document is harmless/a no-op —
+    this set only matters where a caller also checks `is_private`."""
+    with core_connection() as conn:
+        rows = conn.execute(
+            "SELECT document_id FROM document_access WHERE practitioner_id = %s",
+            (practitioner_id,),
+        ).fetchall()
+    return {r["document_id"] for r in rows}
 
 
 # --- Admins --------------------------------------------------------------

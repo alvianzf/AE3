@@ -419,10 +419,13 @@ def _run_ingest(
     started, not the whole duration a large document's Reader/embed/
     graph-extraction chain can run before actually reaching this write)."""
     on_progress("reading")
-    # Show the Reader the shelves already in use so it files this source
-    # beside its neighbours instead of coining a new label.
+    # Show the Reader the shelves (and folders, specs/v6.8/01) already in
+    # use so it files this source beside its neighbours instead of coining
+    # a new label.
+    facets = store.facets()
     card = ingestion_pipeline.read_source(body, filename, kind, origin,
-                                          known_topics=store.facets()["topics"])
+                                          known_topics=facets["topics"],
+                                          known_folders=facets["folders"])
 
     # Remove the superseded source only once the new one has been read, so a
     # failure part-way through does not leave the library short.
@@ -507,6 +510,7 @@ def _run_ingest(
             published=card["published"], reference=card["reference"],
             page_count=page_count, entities_per_passage=entities_per_passage,
             relationships=relationships, original=original,
+            folder_path=card["suggested_folder"],
         )
     except neo4j.exceptions.ConstraintError:
         # Another upload of the same body landed between our check and our write.
@@ -1102,9 +1106,25 @@ def get_source(source_id: str, _admin: dict = Depends(auth.require_admin)) -> di
     return source
 
 
+def _check_private_access(source_id: str, caller: dict) -> None:
+    """A private document (specs/v6.9/01) is new exposure for a
+    practitioner with no grant for it — unlike every other source,
+    it's deliberately absent from their consult results and their own
+    GET /api/me/knowledge listing (app/main.py's me_knowledge()), so
+    letting them hit its viewer directly by id would undo that. An
+    admin isn't checked — they manage the grant list itself."""
+    if caller["role"] != "practitioner":
+        return
+    document = store.get_document(source_id)
+    if document and document.get("is_private") \
+            and source_id not in core_store.get_accessible_document_ids(caller["id"]):
+        raise HTTPException(404, "no such source")
+
+
 @app.get("/api/sources/{source_id}/text")
 def read_source(source_id: str, _caller: dict = Depends(auth.require_admin_or_pro_practitioner)) -> dict:
     """The source as ingested, so the original stays readable in the library."""
+    _check_private_access(source_id, _caller)
     source = store.document_text(source_id)
     if source is None:
         raise HTTPException(404, "no such source")
@@ -1115,6 +1135,7 @@ def read_source(source_id: str, _caller: dict = Depends(auth.require_admin_or_pr
 
 @app.get("/api/sources/{source_id}/original")
 def download_source(source_id: str, _caller: dict = Depends(auth.require_admin_or_pro_practitioner)) -> FileResponse:
+    _check_private_access(source_id, _caller)
     """The uploaded file itself — what the passages were extracted *from*.
 
     404 when no original was kept: pasted text, a source ingested before the file
@@ -1166,6 +1187,92 @@ def remove_source(source_id: str, _admin: dict = Depends(auth.require_admin)) ->
     store.delete_document(source_id)
     pgvector_store.delete_document(source_id)
     return {"deleted": source_id}
+
+
+class FolderUpdate(BaseModel):
+    folder_path: str
+
+
+@app.patch("/api/sources/{source_id}/folder")
+def move_source(source_id: str, body: FolderUpdate,
+                _admin: dict = Depends(auth.require_admin)) -> dict:
+    """An admin's placement is always final (specs/v6.8/01) — this is
+    what overrides whatever the Reader suggested at ingest time, same
+    relationship PATCH /api/sources/{id} already has to suggested_grade."""
+    source = store.set_folder(source_id, body.folder_path)
+    if source is None:
+        raise HTTPException(404, "no such source")
+    return source
+
+
+class FolderRename(BaseModel):
+    old_path: str
+    new_path: str
+
+
+@app.post("/api/library/folders/rename")
+def rename_library_folder(body: FolderRename,
+                          _admin: dict = Depends(auth.require_admin)) -> dict:
+    """Renames (or moves) a folder and everything under it in one go —
+    a folder is just a shared path prefix (specs/v6.8/01), not a
+    separate node to look up by id."""
+    try:
+        moved = store.rename_folder(body.old_path, body.new_path)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return {"moved": moved}
+
+
+class PrivacyUpdate(BaseModel):
+    is_private: bool
+
+
+@app.patch("/api/sources/{source_id}/privacy")
+def set_source_privacy(source_id: str, body: PrivacyUpdate,
+                       admin: dict = Depends(auth.require_admin)) -> dict:
+    """Specs/v6.9/01 — who specifically can still see it despite this is
+    a separate action (PUT .../access below), not bundled into this one."""
+    source = store.set_private(source_id, body.is_private)
+    if source is None:
+        raise HTTPException(404, "no such source")
+    pgvector_store.set_private([source_id], body.is_private)
+    return source
+
+
+class FolderPrivacyUpdate(BaseModel):
+    folder_path: str
+    is_private: bool
+
+
+@app.post("/api/library/folders/privacy")
+def set_folder_privacy(body: FolderPrivacyUpdate,
+                       admin: dict = Depends(auth.require_admin)) -> dict:
+    """Bulk-privatize (or un-privatize) everything currently in a folder
+    — a one-time action over what's there now, not a persisted
+    folder-level policy (specs/v6.9/01's explicit tradeoff, same one
+    v6.8/01's folder model already accepts for renaming)."""
+    ids = store.set_folder_private(body.folder_path, body.is_private)
+    pgvector_store.set_private(ids, body.is_private)
+    return {"updated": len(ids)}
+
+
+@app.get("/api/sources/{source_id}/access")
+def get_source_access(source_id: str, _admin: dict = Depends(auth.require_admin)) -> list[str]:
+    return core_store.get_document_access(source_id)
+
+
+class AccessUpdate(BaseModel):
+    practitioner_ids: list[str]
+
+
+@app.put("/api/sources/{source_id}/access")
+def set_source_access(source_id: str, body: AccessUpdate,
+                      admin: dict = Depends(auth.require_admin)) -> dict:
+    """Replaces the full grant list for this document in one call —
+    reachable again later from a private document's own row, not frozen
+    at the moment it was privatized (specs/v6.9/01)."""
+    core_store.set_document_access(source_id, body.practitioner_ids, admin["id"])
+    return {"practitioner_ids": core_store.get_document_access(source_id)}
 
 
 @app.get("/api/coverage")
@@ -1851,7 +1958,13 @@ def me_update_contact(submission_id: str, body: ContactStatusUpdate,
 @app.get("/api/me/knowledge")
 def me_knowledge(session: dict = Depends(auth.require_pro_practitioner)) -> list[dict]:
     weights = vault.get_source_weights(session["id"])
+    accessible_private = core_store.get_accessible_document_ids(session["id"])
     cards = store.catalogue(1)
+    # A private document (specs/v6.9/01) this practitioner has no grant
+    # for shouldn't just be excluded from their consult results — it
+    # shouldn't be visible or viewable in their own library listing
+    # either.
+    cards = [c for c in cards if not c.get("is_private") or c["id"] in accessible_private]
     for card in cards:
         card["weight"] = weights.get(card["id"], card["grade"])
     return cards
@@ -2053,6 +2166,11 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
     # the shared admin grade — so a practitioner's own down/up-weight
     # actually affects only their own consultations (specs/v2/14 addendum #5).
     weights = vault.get_source_weights(practitioner_id)
+    # Which private documents (specs/v6.9/01) this practitioner has an
+    # explicit admin grant for — threaded through the same way `weights`
+    # is, into every retrieval path a private document could otherwise
+    # leak through.
+    accessible_private = core_store.get_accessible_document_ids(practitioner_id)
     # specs/graph-traversal-rag — the new pipeline's calls (seed formation,
     # per-hop judging, reasoning) don't yet each take a separate `history`
     # parameter the way the old select_sources()/answer() did; folded into
@@ -2100,7 +2218,8 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
                 # deep_research's seed_search stage makes.
                 yield _sse({"event": "agent_start", "agent": "lookup"})
                 t0 = time.monotonic()
-                traversal = general_lookup.lookup(question, patient, body.min_grade)
+                traversal = general_lookup.lookup(question, patient, body.min_grade,
+                                                  accessible_private_ids=accessible_private)
                 _track(traversal.usage)
                 yield _sse(_timed_done({"event": "agent_done", "agent": "lookup", **traversal.usage,
                            "accumulated": len(traversal.accumulated)}, t0))
@@ -2114,14 +2233,16 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
             else:
                 yield _sse({"event": "agent_start", "agent": "seed_search"})
                 t0 = time.monotonic()
-                seed_result = seed_search.seed(question, patient, body.min_grade, weights=weights)
+                seed_result = seed_search.seed(question, patient, body.min_grade, weights=weights,
+                                               accessible_private_ids=accessible_private)
                 _track(seed_result.usage)
                 yield _sse(_timed_done({"event": "agent_done", "agent": "seed_search", **seed_result.usage}, t0))
                 search_query_repr = seed_result.search_query
 
                 yield _sse({"event": "agent_start", "agent": "traversal"})
                 t0 = time.monotonic()
-                retriever = GraphTraversalRetriever(min_grade=body.min_grade, weights=weights)
+                retriever = GraphTraversalRetriever(min_grade=body.min_grade, weights=weights,
+                                                    accessible_private_ids=accessible_private)
                 traversal = None
                 # A broad question can legitimately run every hop up to
                 # max_depth, each a full LLM round-trip — retrieve_streaming()
@@ -2271,6 +2392,11 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
                 {
                     "label": f"K{i + 1}",
                     "id": node.get("id"),
+                    # Only a chunk-kind source has one real document to open
+                    # (specs/v6.8/02) — an entity-kind source's node has no
+                    # document_id at all, so this is None for those, same as
+                    # every other document-only field below already is.
+                    "document_id": node.get("document_id"),
                     "title": node.get("document_title") or node.get("name") or node.get("id"),
                     "grade": node.get("grade"),
                     "snippet": node.get("text") or node.get("name") or "",

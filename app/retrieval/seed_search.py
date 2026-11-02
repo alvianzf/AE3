@@ -62,7 +62,8 @@ def form_search_query(question: str, patient: PatientContext) -> tuple[str, dict
 
 
 def seed(question: str, patient: PatientContext, min_grade: int,
-        top_k: int | None = None, weights: dict[str, int] | None = None) -> SeedResult:
+        top_k: int | None = None, weights: dict[str, int] | None = None,
+        accessible_private_ids: set[str] | None = None) -> SeedResult:
     """`weights` is a practitioner's own per-document grade override
     (vault.get_source_weights()) — applied here, in Python, rather than
     as a Cypher WHERE clause (store.seed_chunks_by_vector/_fulltext
@@ -73,6 +74,7 @@ def seed(question: str, patient: PatientContext, min_grade: int,
     at every later hop."""
     top_k = top_k or cfg.traversal_seed_top_k
     weights = weights or {}
+    accessible_private_ids = accessible_private_ids or set()
     search_query, usage = form_search_query(question, patient)
 
     embedding = get_client(Role.EMBEDDER).embed([search_query])[0]
@@ -82,9 +84,13 @@ def seed(question: str, patient: PatientContext, min_grade: int,
     records: dict[str, dict] = {}
     for hit in (*vector_hits, *fulltext_hits):
         records.setdefault(hit["id"], hit)
+    # A private chunk (specs/v6.9/01) this practitioner has no grant for
+    # never becomes a seed in the first place — same weight-aware-grade
+    # reasoning above, just a second gate alongside it, not instead of it.
     chunk_ids = [
         cid for cid, r in records.items()
         if weights.get(r.get("document_id"), r.get("grade", 0)) >= min_grade
+        and (not r.get("is_private") or r.get("document_id") in accessible_private_ids)
     ]
     records = {cid: records[cid] for cid in chunk_ids}
 
