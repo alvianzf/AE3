@@ -121,6 +121,13 @@ class Config:
     # the Neo4j vector index creation below fails outright, loudly, not
     # silently: confirm this value before deploying.
     embedding_dimensions = int(os.getenv("EMBEDDING_DIMENSIONS", "4096"))
+    # Emergency-only: routes Role.EMBEDDER to a CPU-local model instead of
+    # Nebius (app/clients/llm_client.py, app/clients/local_embedder.py).
+    # Off by default — turning it on requires EMBEDDING_DIMENSIONS to
+    # match local_embedder.DIMENSIONS and the vector index/stored chunk
+    # embeddings to already be rebuilt at that dimension, or seed search
+    # breaks differently instead of being fixed.
+    embedder_force_local = os.getenv("EMBEDDER_FORCE_LOCAL", "false").lower() == "true"
 
     # Ingestion — passages are the citable unit
     chunk_size = int(os.getenv("CHUNK_SIZE", "1200"))
