@@ -36,7 +36,9 @@ from .config import get_config
 from .clients import nebius_admin
 from .clients.llm_client import Role as LLMRole
 from .clients.llm_client import get_client as get_llm_client
+from .clients.llm_client import get_provider as get_llm_provider
 from .clients.llm_client import ping_role
+from .clients.llm_client import set_provider as set_llm_provider
 from .graph import schema as graph_schema
 from .graph import store
 from .ingestion import pipeline as ingestion_pipeline
@@ -1460,6 +1462,31 @@ def superadmin_stop_dedicated_endpoint(
         raise HTTPException(502, str(exc))
     core_store.log("superadmin", "dedicated endpoint stopped", endpoint_id)
     return result
+
+
+@app.get("/api/superadmin/llm-provider")
+def superadmin_get_llm_provider(_: dict = Depends(auth.require_superadmin)) -> dict:
+    """Which provider the five Anthropic-mappable chat roles (Reader,
+    Graph-builder, Answer-engine, Reasoner, Checker-LLM) currently use.
+    Role.EMBEDDER isn't included — it always stays on Nebius, Anthropic
+    has no embeddings endpoint (app/clients/llm_client.py)."""
+    return {"provider": get_llm_provider()}
+
+
+class LLMProviderUpdate(BaseModel):
+    provider: str
+
+
+@app.post("/api/superadmin/llm-provider")
+def superadmin_set_llm_provider(
+    body: LLMProviderUpdate, _: dict = Depends(auth.require_superadmin),
+) -> dict:
+    try:
+        set_llm_provider(body.provider)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    core_store.log("superadmin", "llm provider changed", body.provider)
+    return {"provider": get_llm_provider()}
 
 
 @app.get("/api/superadmin/audit-log")

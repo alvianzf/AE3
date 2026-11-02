@@ -187,6 +187,15 @@ def ensure_schema() -> None:
             );
             CREATE INDEX IF NOT EXISTS ingestion_jobs_by_staged ON ingestion_jobs(staged_id);
             CREATE INDEX IF NOT EXISTS ingestion_jobs_by_owner ON ingestion_jobs(owner, created_at);
+
+            -- Small key/value store for superadmin-toggled settings that
+            -- don't warrant their own table — e.g. llm_provider (app/
+            -- clients/llm_client.py), switching the AI team's chat roles
+            -- between Nebius and Anthropic without redeploying.
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
             """
         )
         # Every deployment needs at least one superadmin able to manage
@@ -237,6 +246,25 @@ def list_audit_events(limit: int = 50, offset: int = 0) -> list[dict]:
 def count_audit_events() -> int:
     with core_connection() as conn:
         return conn.execute("SELECT count(*) AS n FROM audit_events").fetchone()["n"]
+
+
+# --- Settings --------------------------------------------------------------
+
+def get_setting(key: str, default: str) -> str:
+    with core_connection() as conn:
+        row = conn.execute(
+            "SELECT value FROM app_settings WHERE key = %s", (key,)
+        ).fetchone()
+    return row["value"] if row else default
+
+
+def set_setting(key: str, value: str) -> None:
+    with core_connection() as conn:
+        conn.execute(
+            "INSERT INTO app_settings (key, value) VALUES (%s, %s) "
+            "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+            (key, value),
+        )
 
 
 # --- Admins --------------------------------------------------------------

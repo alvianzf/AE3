@@ -1,10 +1,38 @@
 <script lang="ts">
+	import { invalidateAll } from '$app/navigation';
+	import { post } from '$lib/api';
+	import { toast } from '$lib/stores/toast';
 	import StatTile from '$lib/components/StatTile.svelte';
 	import Chip from '$lib/components/Chip.svelte';
+	import Toggle from '$lib/components/Toggle.svelte';
 
 	let { data } = $props();
 	const s = $derived(data.stats ?? {});
 	const health = $derived(data.health);
+	const isSuperadmin = $derived(data.session?.admin_role === 'superadmin');
+	let switchingProvider = $state(false);
+	// Optimistic-ish: reflects the last load's value, then whatever the
+	// toggle just set — invalidateAll() below re-syncs it from the server.
+	let llmProvider = $state(data.llmProvider);
+	$effect(() => { llmProvider = data.llmProvider; });
+
+	// Role.EMBEDDER always stays on Nebius regardless of this setting —
+	// Anthropic has no embeddings endpoint (app/clients/llm_client.py) —
+	// so the toggle only covers the other five chat-model roles.
+	async function setProvider(useAnthropic: boolean) {
+		const provider = useAnthropic ? 'anthropic' : 'nebius';
+		switchingProvider = true;
+		try {
+			await post(fetch, '/superadmin/llm-provider', { provider });
+			llmProvider = provider;
+			toast(`AI team switched to ${provider === 'anthropic' ? 'Anthropic (Opus/Sonnet/Haiku)' : 'Nebius'}.`);
+			await invalidateAll();
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		} finally {
+			switchingProvider = false;
+		}
+	}
 	// Fields site_stats() (app/core_store.py) doesn't have a dedicated tile
 	// for below — rendered generically so a future stat added there doesn't
 	// need a matching frontend change to show up somewhere.
@@ -81,9 +109,28 @@
 	<p class="hint">Health check unavailable.</p>
 {/if}
 
+{#if isSuperadmin}
+	<h2 class="section-title">AI model provider</h2>
+	<p class="hint">
+		Switches Reader, Graph-builder, Answer-engine, Reasoner and Checker-LLM between
+		Nebius and Anthropic (Opus 5 / Sonnet 5 / Haiku 4.5). Embedder always stays on
+		Nebius — Anthropic has no embeddings endpoint.
+	</p>
+	<div class="check-row provider-row">
+		<Toggle
+			checked={llmProvider === 'anthropic'}
+			onchange={setProvider}
+			disabled={switchingProvider}
+			label="Use Anthropic for the AI team's chat roles"
+		/>
+		<span class="hint">{llmProvider === 'anthropic' ? 'Anthropic' : 'Nebius'}</span>
+	</div>
+{/if}
+
 <style>
 	.tiles { margin-top: var(--space-5); }
 	.section-title { margin-top: var(--space-6); margin-bottom: var(--space-2); }
 	.checks { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-3); }
 	.check-row { display: flex; align-items: center; gap: .5rem; }
+	.provider-row { margin-top: var(--space-3); }
 </style>
