@@ -58,6 +58,12 @@ class Config:
     nebius_api_key = os.getenv("NEBIUS_API_KEY", "")
     nebius_base_url = os.getenv("NEBIUS_BASE_URL", "https://api.tokenfactory.nebius.com/v1/")
 
+    # Anthropic — alternate provider for the five chat-model roles (not
+    # Embedder, which Anthropic has no equivalent for), toggled at runtime
+    # via the superadmin llm_provider setting (app/clients/llm_client.py),
+    # not an env-var switch, so it doesn't need a redeploy to flip.
+    anthropic_api_key = os.getenv("ANTHROPIC_API_KEY", "")
+
     # The AI team — six roles now, not four (specs/v4.2/01). Defaults below
     # are real Nebius catalog IDs, confirmed 2026-09-11 against a live
     # `models.list()` call — the originally specced bare labels

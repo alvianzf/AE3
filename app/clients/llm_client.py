@@ -16,9 +16,16 @@ from enum import Enum
 
 from openai import OpenAI
 
+from .. import core_store
 from ..config import get_config
+from .anthropic_client import AnthropicLLMClient
 
 cfg = get_config()
+
+# Superadmin-toggled (app/main.py's /api/superadmin/llm-provider), not an
+# env var — meant to be flipped live, without a redeploy. "nebius" is the
+# default/fallback for any value that isn't "anthropic".
+_PROVIDER_SETTING_KEY = "llm_provider"
 
 
 # A generation call must fail fast, not hang — found live: with max_tokens
@@ -60,6 +67,31 @@ class Role(str, Enum):
     # the local HF-classifier Checker (app/reasoning/checker.py, cfg.
     # checker_model/checker_threshold), which isn't a chat role at all.
     CHECKER = "checker_llm"
+
+
+# Anthropic model each role maps to when the provider is "anthropic" — no
+# Role.EMBEDDER entry: Anthropic has no embeddings endpoint, so Embedder
+# always stays on Nebius regardless of this setting (see get_client()).
+#
+#   Reasoner (final, user-facing answer) -> Opus 5: quality matters most
+#   here, it's the one thing the practitioner actually reads.
+#   Checker (LLM-as-judge anti-hallucination) -> Sonnet 5: needs real
+#   judgment to catch unsupported claims, but runs once per answer
+#   (batched), not per passage, so Opus-tier cost isn't justified.
+#   Reader (per-source summary/grade, once per ingest) -> Sonnet 5: same
+#   reasoning as Checker — quality-sensitive, low volume.
+#   Graph-builder (per-passage extraction) and Answer-engine (per-hop
+#   relevance judging) -> Haiku 4.5: both run many times per
+#   ingest/consult (ThreadPoolExecutor fan-out in app/main.py/
+#   retrieval/traversal.py), so speed/cost matters more than on the
+#   other three roles.
+_ANTHROPIC_MODELS = {
+    Role.READER: "claude-sonnet-5",
+    Role.GRAPH_BUILDER: "claude-haiku-4-5-20251001",
+    Role.ANSWER_ENGINE: "claude-haiku-4-5-20251001",
+    Role.REASONER: "claude-opus-5",
+    Role.CHECKER: "claude-sonnet-5",
+}
 
 
 @dataclass(frozen=True)
@@ -201,15 +233,39 @@ class LLMClient:
                 "output_tokens": response.usage.completion_tokens}
 
 
-_clients: dict[Role, LLMClient] = {}
+_clients: dict[tuple[Role, str], LLMClient | AnthropicLLMClient] = {}
 
 
-def get_client(role: Role) -> LLMClient:
-    """Cached per-role singleton — avoids reconstructing an OpenAI client
-    (and its underlying HTTP connection pool) on every call."""
-    if role not in _clients:
-        _clients[role] = LLMClient(role)
-    return _clients[role]
+def get_provider() -> str:
+    """The superadmin-toggled provider for the five Anthropic-mappable
+    chat roles. Embedder ignores this entirely (see get_client() below)."""
+    value = core_store.get_setting(_PROVIDER_SETTING_KEY, "nebius")
+    return value if value == "anthropic" else "nebius"
+
+
+def set_provider(provider: str) -> None:
+    if provider not in ("nebius", "anthropic"):
+        raise ValueError(f"unknown provider: {provider}")
+    core_store.set_setting(_PROVIDER_SETTING_KEY, provider)
+    _clients.clear()
+
+
+def get_client(role: Role) -> LLMClient | AnthropicLLMClient:
+    """Cached per-(role, provider) singleton — avoids reconstructing a
+    client (and its underlying HTTP connection pool) on every call, while
+    still picking up a live provider switch (set_provider() clears the
+    cache) without a process restart.
+
+    Role.EMBEDDER always resolves to Nebius: Anthropic has no embeddings
+    endpoint, so there's nothing in _ANTHROPIC_MODELS for it to map to."""
+    provider = get_provider() if role != Role.EMBEDDER else "nebius"
+    key = (role, provider)
+    if key not in _clients:
+        if provider == "anthropic":
+            _clients[key] = AnthropicLLMClient(role, _ANTHROPIC_MODELS[role])
+        else:
+            _clients[key] = LLMClient(role)
+    return _clients[key]
 
 
 # Every chat-model role that /api/health should report on individually.

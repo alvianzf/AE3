@@ -16,6 +16,11 @@ python-dotenv==1.2.2
 
 # The AI team — Nebius token factory, OpenAI-compatible (specs/v4.2)
 openai==2.7.1
+# Alternate provider for the five chat-model roles (app/clients/
+# anthropic_client.py), toggled live via the superadmin llm_provider
+# setting. Anthropic's own SDK, not the OpenAI-compatible surface above —
+# Anthropic doesn't offer one.
+anthropic==2.3.0
 # Checker (anti-hallucination) — HHEM-2.1-Open is a classifier, not a chat
 # model; run directly via transformers, not through the OpenAI-compatible
 # chat endpoint (specs/v4.2/01#the-checker-is-a-direct-classifier-call-not-a-chat-completion)
