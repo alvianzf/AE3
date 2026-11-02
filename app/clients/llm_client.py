@@ -19,6 +19,7 @@ from openai import OpenAI
 from .. import core_store
 from ..config import get_config
 from .anthropic_client import AnthropicLLMClient
+from .local_embedder import LocalEmbedderClient
 
 cfg = get_config()
 
@@ -257,7 +258,22 @@ def get_client(role: Role) -> LLMClient | AnthropicLLMClient:
     cache) without a process restart.
 
     Role.EMBEDDER always resolves to Nebius: Anthropic has no embeddings
-    endpoint, so there's nothing in _ANTHROPIC_MODELS for it to map to."""
+    endpoint, so there's nothing in _ANTHROPIC_MODELS for it to map to.
+    EMBEDDER_FORCE_LOCAL (cfg.embedder_force_local) is a separate,
+    emergency-only override of that — found live 2026-11-02: Nebius's
+    account ran out of budget (402 credit_balance_exhausted) mid-demo,
+    which blocks every consult at the seed-search embedding step
+    regardless of the Anthropic toggle above, since Embedder never moves
+    off Nebius on its own. Flips Embedder to a CPU-local model instead
+    (app/clients/local_embedder.py) with no billing dependency at all —
+    the vector index and every stored chunk embedding must be rebuilt at
+    that model's dimension for this to actually work (specs/ hotfix
+    runbook, not part of normal boot)."""
+    if role == Role.EMBEDDER and cfg.embedder_force_local:
+        key = (role, "local")
+        if key not in _clients:
+            _clients[key] = LocalEmbedderClient()
+        return _clients[key]
     provider = get_provider() if role != Role.EMBEDDER else "nebius"
     key = (role, provider)
     if key not in _clients:
