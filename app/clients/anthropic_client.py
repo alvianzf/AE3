@@ -21,12 +21,31 @@ cfg = get_config()
 
 _CHAT_TIMEOUT_SECONDS = 90.0  # same budget as llm_client.LLMClient
 
+# Real per-model output-token ceilings — found live: app/retrieval/
+# traversal.py's relevance judge calls chat_json(max_tokens=100_000) for
+# Role.ANSWER_ENGINE, which maps to Haiku 4.5 here; Anthropic rejected it
+# outright (a BadRequestError, not a truncation) with "max_tokens: 100000
+# > 64000, which is the maximum allowed number of output tokens for
+# claude-haiku-4-5-20251001". Every call site's max_tokens has to be
+# clamped per-model rather than trusted as-is, same reasoning
+# llm_client.LLMClient's chat_json() docstring already gives for Nebius's
+# dedicated Qwen3-32B deployment capping at 40_960.
+_MAX_OUTPUT_TOKENS = {
+    "claude-haiku-4-5-20251001": 64_000,
+    "claude-sonnet-5": 128_000,
+    "claude-opus-5": 128_000,
+}
+
 
 class AnthropicLLMClient:
     def __init__(self, role, model: str):
         self.role = role
         self.model = model
         self._client = Anthropic(api_key=cfg.anthropic_api_key, timeout=_CHAT_TIMEOUT_SECONDS)
+
+    def _clamp(self, max_tokens: int) -> int:
+        cap = _MAX_OUTPUT_TOKENS.get(self.model)
+        return min(max_tokens, cap) if cap else max_tokens
 
     def chat_json(self, system: str, prompt: str, schema: dict,
                   max_tokens: int = 20_000, extra_body: dict | None = None) -> tuple[dict, dict]:
@@ -54,7 +73,7 @@ class AnthropicLLMClient:
         def _attempt():
             response = self._client.messages.create(
                 model=self.model,
-                max_tokens=max_tokens,
+                max_tokens=self._clamp(max_tokens),
                 system=system,
                 messages=[{"role": "user", "content": prompt}],
                 tools=[tool],
@@ -82,7 +101,7 @@ class AnthropicLLMClient:
         letting the model think pays for itself in quality."""
         response = self._client.messages.create(
             model=self.model,
-            max_tokens=max_tokens,
+            max_tokens=self._clamp(max_tokens),
             system=system,
             messages=[{"role": "user", "content": prompt}],
         )
