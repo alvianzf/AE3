@@ -170,6 +170,15 @@ class Config:
     # traversal ever starts expanding.
     traversal_seed_top_k = int(os.getenv("TRAVERSAL_SEED_TOP_K", "10"))
 
+    # Ingestion queue (app/ingestion/queue.py) — how many staged-promotion
+    # jobs run their actual Reader/embed/graph-extraction work at once.
+    # Default 1 (fully serialized): found live, 2026-11-03, a single large
+    # PDF's own ingest footprint was already enough to OOM-kill the app at
+    # the time's 4G ceiling (DEPLOY.md) — nothing capped how many could run
+    # concurrently before this, so N simultaneous ingests multiplied that
+    # risk by N with no backpressure at all.
+    ingestion_concurrency = int(os.getenv("INGESTION_CONCURRENCY", "1"))
+
 
 @lru_cache
 def get_config() -> Config:

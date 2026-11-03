@@ -72,10 +72,24 @@
 	let jobsByStagedId = $state<Record<string, any>>({});
 	const pollTimers: Record<string, ReturnType<typeof setInterval>> = {};
 
+	// A job occupies a staged item whether it's actually running or still
+	// waiting for a concurrency slot (app/ingestion/queue.py) — either
+	// way, re-ingesting or discarding that same item from under it is
+	// blocked the same as before, not just while status='running'.
+	function jobActive(job: any): boolean {
+		return job?.status === 'running' || job?.status === 'queued';
+	}
+
 	function jobLabel(job: any): string {
 		if (job.status === 'error') return `Failed: ${job.error_message ?? 'unknown error'}`;
+		// Genuinely waiting for a concurrency slot (app/ingestion/
+		// queue.py), distinct from step='queued' below (already picked
+		// up, just hasn't reported its first real progress update yet) —
+		// found live, 2026-11-03: an unbounded number of simultaneous
+		// ingests was itself enough to OOM the app (DEPLOY.md).
+		if (job.status === 'queued') return 'Waiting in queue…';
 		switch (job.step) {
-			case 'queued': return 'Queued…';
+			case 'queued': return 'Starting…';
 			case 'reading': return 'Reading document…';
 			case 'chunking': return 'Splitting into passages…';
 			case 'embedding': return 'Embedding chunks…';
@@ -190,21 +204,32 @@
 	const folderTree = $derived.by(() => {
 		const index = new Map<string, TreeNode>();
 		const roots: TreeNode[] = [];
+		function ensure(acc: string, seg: string): TreeNode {
+			let node = index.get(acc);
+			if (!node) {
+				node = { name: seg, path: acc, count: 0, children: [] };
+				index.set(acc, node);
+				(acc.includes('/') ? ensure(acc.slice(0, acc.lastIndexOf('/')), '').children : roots).push(node);
+			}
+			return node;
+		}
 		for (const s of data.sources ?? []) {
 			const path = s.folder_path || '';
 			if (!path) continue;
 			let acc = '';
-			let siblings = roots;
 			for (const seg of path.split('/')) {
 				acc = acc ? `${acc}/${seg}` : seg;
-				let node = index.get(acc);
-				if (!node) {
-					node = { name: seg, path: acc, count: 0, children: [] };
-					index.set(acc, node);
-					siblings.push(node);
-				}
-				node.count++;
-				siblings = node.children;
+				ensure(acc, seg).count++;
+			}
+		}
+		// Explicitly-created folders (specs/v6.8/01's empty-folder
+		// addendum) appear in the tree even with zero documents — same
+		// ensure() walk, just without the count++ a document triggers.
+		for (const path of data.folders ?? []) {
+			let acc = '';
+			for (const seg of path.split('/')) {
+				acc = acc ? `${acc}/${seg}` : seg;
+				ensure(acc, seg);
 			}
 		}
 		function sortTree(nodes: TreeNode[]) {
@@ -213,6 +238,17 @@
 		}
 		sortTree(roots);
 		return roots;
+	});
+	// Every known folder path, flat and including subfolders at every
+	// depth — the "Move to..." dialog's quick-pick suggestions, so moving
+	// a document doesn't require typing out a deep path by hand.
+	const folderPaths = $derived.by(() => {
+		const paths: string[] = [];
+		function walk(nodes: TreeNode[]) {
+			for (const n of nodes) { paths.push(n.path); walk(n.children); }
+		}
+		walk(folderTree);
+		return paths.sort();
 	});
 
 	function findNode(nodes: TreeNode[], path: string): TreeNode | null {
@@ -365,6 +401,32 @@
 		}
 	}
 
+	// "Move to..." — reachable by right-click on a document card or its
+	// explicit Move button, not just drag-and-drop (not every input
+	// device supports drag, and a target folder deep in the tree may not
+	// even be visible/expanded to drop onto).
+	let movingSource = $state<any>(null);
+	let movingOpen = $state(false);
+	let movingPath = $state('');
+
+	function askMove(s: any) {
+		movingSource = s;
+		movingPath = s.folder_path ?? '';
+		movingOpen = true;
+	}
+
+	function onDocContextMenu(e: MouseEvent, s: any) {
+		e.preventDefault();
+		askMove(s);
+	}
+
+	async function confirmMove(e: Event) {
+		e.preventDefault();
+		if (!movingSource) return;
+		await setFolder(movingSource, movingPath);
+		movingOpen = false;
+	}
+
 	let renamingFolder = $state(false);
 	let renameOldPath = $state('');
 	let renameNewPath = $state('');
@@ -399,6 +461,61 @@
 			renamingFolder = false;
 		} finally {
 			renamingSubmitting = false;
+		}
+	}
+
+	// A folder created ahead of any document landing in it (specs/
+	// v6.8/01's empty-folder addendum) — always created under the
+	// currently-open folder, same as a real file browser's "New Folder"
+	// always being a subfolder of whatever directory you're looking at.
+	let newFolderOpen = $state(false);
+	let newFolderName = $state('');
+	let newFolderSubmitting = $state(false);
+
+	async function createFolder(e: Event) {
+		e.preventDefault();
+		const name = newFolderName.trim();
+		if (!name) return;
+		newFolderSubmitting = true;
+		try {
+			const path = currentPath ? `${currentPath}/${name}` : name;
+			await post(fetch, '/library/folders', { folder_path: path });
+			toast(`Created "${path}".`);
+			newFolderOpen = false;
+			newFolderName = '';
+			await invalidateAll();
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		} finally {
+			newFolderSubmitting = false;
+		}
+	}
+
+	let deletingFolder = $state<{ path: string; count: number } | null>(null);
+	let deletingFolderOpen = $state(false);
+	let deletingFolderSubmitting = $state(false);
+
+	function askDeleteFolder(path: string, count: number) {
+		deletingFolder = { path, count };
+		deletingFolderOpen = true;
+	}
+
+	async function confirmDeleteFolder() {
+		if (!deletingFolder) return;
+		const { path } = deletingFolder;
+		deletingFolderSubmitting = true;
+		try {
+			const result = await post(fetch, '/library/folders/delete', { folder_path: path });
+			toast(`Deleted "${path}" (${result.deleted_documents} document${result.deleted_documents === 1 ? '' : 's'}).`);
+			deletingFolderOpen = false;
+			if (currentPath === path || currentPath.startsWith(`${path}/`)) {
+				currentPath = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+			}
+			await invalidateAll();
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		} finally {
+			deletingFolderSubmitting = false;
 		}
 	}
 
@@ -799,6 +916,7 @@
 					onDrop={handleDropOnFolder}
 					onRename={askRenameFolder}
 					onPrivatize={setFolderPrivate}
+					onDelete={(path, count) => askDeleteFolder(path, count)}
 				/>
 			</aside>
 
@@ -807,16 +925,21 @@
 					<!-- Finder/Nautilus-style breadcrumb — "Library" is root,
 					     each segment is a real folder_path prefix you can jump
 					     back up to. -->
-					<nav class="breadcrumb" aria-label="Folder path">
-						<button onclick={() => { currentPath = ''; page = 1; }} disabled={!currentPath}>Library</button>
-						{#each breadcrumb as crumb, i (crumb.path)}
-							<span class="sep">/</span>
-							<button
-								onclick={() => { currentPath = crumb.path; page = 1; }}
-								disabled={i === breadcrumb.length - 1}
-							>{crumb.name}</button>
-						{/each}
-					</nav>
+					<div class="breadcrumb-row">
+						<nav class="breadcrumb" aria-label="Folder path">
+							<button onclick={() => { currentPath = ''; page = 1; }} disabled={!currentPath}>Library</button>
+							{#each breadcrumb as crumb, i (crumb.path)}
+								<span class="sep">/</span>
+								<button
+									onclick={() => { currentPath = crumb.path; page = 1; }}
+									disabled={i === breadcrumb.length - 1}
+								>{crumb.name}</button>
+							{/each}
+						</nav>
+						<Button variant="text" onclick={() => { newFolderName = ''; newFolderOpen = true; }}>
+							<Icon name="folder" size={13} />+ New folder
+						</Button>
+					</div>
 				{/if}
 
 				{#if data.kinds.length}
@@ -869,12 +992,16 @@
 									<button title="Make folder public" aria-label="Make {node.name} public" onclick={() => setFolderPrivate(node.path, false)}>
 										<Icon name="unlock" size={12} />
 									</button>
+									<button title="Delete folder" aria-label="Delete {node.name}" onclick={() => askDeleteFolder(node.path, node.count)}>
+										<Icon name="trash" size={12} />
+									</button>
 								</span>
 							</div>
 						{/each}
 					{/if}
 					{#each pageItems as s (s.id)}
 						<div
+							oncontextmenu={(e) => onDocContextMenu(e, s)}
 							class="doc-card"
 							draggable="true"
 							ondragstart={() => (draggedId = s.id)}
@@ -890,6 +1017,9 @@
 								<a class="title-link" href="/admin/{s.id}">{s.title}</a>
 								<div class="doc-card-actions">
 									<a class="icon-btn" href="/admin/{s.id}" title="View document" aria-label="View {s.title}"><Icon name="eye" /></a>
+									<button class="icon-btn" onclick={() => askMove(s)} title="Move to folder (or right-click the card)" aria-label="Move {s.title}">
+										<Icon name="folder" />
+									</button>
 									<button
 										class="icon-btn"
 										onclick={() => setPrivate(s, !s.is_private)}
@@ -975,7 +1105,7 @@
 								type="checkbox"
 								checked={selected.has(item.id)}
 								onchange={() => toggleSelected(item.id)}
-								disabled={jobsByStagedId[item.id]?.status === 'running'}
+								disabled={jobActive(jobsByStagedId[item.id])}
 								aria-label="Select {item.filename ?? 'pasted text'}"
 							/>
 							<div class="staged-body">
@@ -1003,15 +1133,15 @@
 								<button
 									class="view"
 									onclick={() => ingestOne(item.id)}
-									disabled={promotingId === item.id || jobsByStagedId[item.id]?.status === 'running'}
+									disabled={promotingId === item.id || jobActive(jobsByStagedId[item.id])}
 								>
-									{jobsByStagedId[item.id]?.status === 'running' ? 'Ingesting…' : 'Ingest'}
+									{jobActive(jobsByStagedId[item.id]) ? (jobsByStagedId[item.id]?.status === 'queued' ? 'Queued…' : 'Ingesting…') : 'Ingest'}
 								</button>
 								<button
 								class="view danger"
 								onclick={() => discardStaged(item.id)}
-								disabled={jobsByStagedId[item.id]?.status === 'running'}
-								title={jobsByStagedId[item.id]?.status === 'running' ? 'Ingestion is already running for this item' : undefined}
+								disabled={jobActive(jobsByStagedId[item.id])}
+								title={jobActive(jobsByStagedId[item.id]) ? 'Ingestion is already queued or running for this item' : undefined}
 							>Discard</button>
 							</div>
 						</li>
@@ -1119,6 +1249,52 @@
 	{#snippet footer()}
 		<Button variant="ghost" onclick={() => (renamingFolder = false)}>Cancel</Button>
 		<Button onclick={renameFolder} loading={renamingSubmitting}>Rename</Button>
+	{/snippet}
+</Dialog>
+
+<Dialog bind:open={newFolderOpen} title="New folder">
+	<form onsubmit={createFolder} id="nf-form">
+		<p class="hint">Inside "{currentPath || 'Library'}".</p>
+		<TextField label="Folder name" bind:value={newFolderName} placeholder="e.g. Menopause" />
+	</form>
+	{#snippet footer()}
+		<Button variant="ghost" onclick={() => (newFolderOpen = false)}>Cancel</Button>
+		<Button onclick={createFolder} loading={newFolderSubmitting}>Create</Button>
+	{/snippet}
+</Dialog>
+
+<Dialog bind:open={deletingFolderOpen} title="Delete folder">
+	{#if deletingFolder}
+		<p>
+			Delete "{deletingFolder.path}"
+			{#if deletingFolder.count}and its {deletingFolder.count} document{deletingFolder.count === 1 ? '' : 's'}{/if}?
+			This can't be undone.
+		</p>
+	{/if}
+	{#snippet footer()}
+		<Button variant="ghost" onclick={() => (deletingFolderOpen = false)}>Cancel</Button>
+		<Button variant="danger" onclick={confirmDeleteFolder} loading={deletingFolderSubmitting}>Delete</Button>
+	{/snippet}
+</Dialog>
+
+<Dialog bind:open={movingOpen} title="Move to folder">
+	{#if movingSource}
+		<form onsubmit={confirmMove} id="mv-form">
+			<p class="hint">Moving "{movingSource.title.slice(0, 60)}".</p>
+			<TextField label="Folder path" bind:value={movingPath} placeholder="(root)" />
+			{#if folderPaths.length}
+				<p class="hint">Existing folders:</p>
+				<div class="move-suggestions">
+					{#each folderPaths as p (p)}
+						<button type="button" class="fchip" onclick={() => (movingPath = p)}>{p}</button>
+					{/each}
+				</div>
+			{/if}
+		</form>
+	{/if}
+	{#snippet footer()}
+		<Button variant="ghost" onclick={() => (movingOpen = false)}>Cancel</Button>
+		<Button onclick={confirmMove}>Move</Button>
 	{/snippet}
 </Dialog>
 
@@ -1232,7 +1408,9 @@
 		max-height: 70vh; overflow-y: auto; position: sticky; top: var(--space-4);
 	}
 	.library-main { flex: 1 1 auto; min-width: 0; }
+	.breadcrumb-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
 	.breadcrumb { display: flex; align-items: center; gap: .3rem; margin-bottom: var(--space-3); font-size: var(--text-sm); flex-wrap: wrap; }
+	.move-suggestions { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .3rem; }
 	.breadcrumb button {
 		border: none; background: none; cursor: pointer; font: inherit; color: var(--accent); padding: .1rem .2rem;
 	}

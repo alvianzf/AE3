@@ -515,13 +515,65 @@ def facets() -> dict:
             "RETURN DISTINCT t ORDER BY t")]
         kinds = [r["k"] for r in s.run(
             "MATCH (doc:Document) RETURN DISTINCT doc.kind AS k ORDER BY k")]
-        # Folders are never a separate node (specs/v6.8/01) — just the
-        # distinct, non-empty folder_path values currently in use, same
-        # derivation topics already gets above.
+        # A folder is "real" two ways (specs/v6.8/01 + its empty-folder
+        # addendum): a distinct Document.folder_path value in use, or an
+        # explicit :Folder node created ahead of any document landing in
+        # it — unioned so a caller sees one flat list either way.
         folders = [r["f"] for r in s.run(
             "MATCH (doc:Document) WHERE doc.folder_path IS NOT NULL AND doc.folder_path <> '' "
-            "RETURN DISTINCT doc.folder_path AS f ORDER BY f")]
+            "RETURN DISTINCT doc.folder_path AS f "
+            "UNION "
+            "MATCH (f:Folder) RETURN f.path AS f "
+            "ORDER BY f")]
     return {"topics": topics, "kinds": kinds, "folders": folders}
+
+
+def create_folder(folder_path: str) -> dict:
+    """An explicitly-created folder, so it exists in the tree before any
+    document is placed in it — idempotent (MERGE), creating it twice is
+    a no-op, not an error."""
+    path = normalize_folder_path(folder_path)
+    if not path:
+        raise ValueError("folder_path must not be empty")
+    with session() as s:
+        s.run("MERGE (f:Folder {path: $path}) ON CREATE SET f.created_at = $now",
+              path=path, now=_now())
+    log("admin", "create folder", path)
+    return {"path": path}
+
+
+def delete_folder(folder_path: str) -> list[str]:
+    """Deletes the folder itself (its :Folder node, if any) and every
+    document in it or a subfolder of it — the common "drag a folder to
+    the trash" expectation (Finder/Nautilus both delete recursively, not
+    just when empty like a bare `rmdir`). Returns the deleted document
+    ids so the caller can mirror the removal into pgvector_store the
+    same way a single-document delete already does."""
+    path = normalize_folder_path(folder_path)
+    if not path:
+        raise ValueError("folder_path must not be empty — the root folder can't be deleted")
+    with session() as s:
+        ids = [r["id"] for r in s.run(
+            "MATCH (doc:Document) WHERE doc.folder_path = $path OR doc.folder_path STARTS WITH $prefix "
+            "RETURN doc.id AS id",
+            path=path, prefix=f"{path}/",
+        )]
+        s.run(
+            """
+            MATCH (doc:Document) WHERE doc.id IN $ids
+            OPTIONAL MATCH (doc)-[:HAS_CHUNK]->(c:Chunk)
+            DETACH DELETE c, doc
+            """,
+            ids=ids,
+        )
+        s.run(
+            "MATCH (f:Folder) WHERE f.path = $path OR f.path STARTS WITH $prefix DETACH DELETE f",
+            path=path, prefix=f"{path}/",
+        )
+    for document_id in ids:
+        originals.delete(document_id)
+    log("admin", "delete folder", f"'{path}' ({len(ids)} document(s))")
+    return ids
 
 
 def document_text(document_id: str) -> dict | None:
@@ -608,6 +660,17 @@ def rename_folder(old_path: str, new_path: str) -> int:
             """,
             old=old, old_prefix=f"{old}/", new=new,
         ).single()
+        # Explicitly-created folders (empty or not) move along with the
+        # documents — same prefix rewrite, just on :Folder.path instead
+        # of Document.folder_path.
+        s.run(
+            """
+            MATCH (f:Folder)
+            WHERE f.path = $old OR f.path STARTS WITH $old_prefix
+            SET f.path = $new + substring(f.path, size($old))
+            """,
+            old=old, old_prefix=f"{old}/", new=new,
+        )
     count = result["n"] if result else 0
     log("admin", "rename folder", f"'{old}' → '{new}' ({count} document(s))")
     return count

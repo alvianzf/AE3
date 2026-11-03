@@ -48,10 +48,20 @@
 	let jobsByStagedId = $state<Record<string, any>>({});
 	const pollTimers: Record<string, ReturnType<typeof setInterval>> = {};
 
+	// A job occupies a staged item whether it's actually running or still
+	// waiting for a concurrency slot (app/ingestion/queue.py).
+	function jobActive(job: any): boolean {
+		return job?.status === 'running' || job?.status === 'queued';
+	}
+
 	function jobLabel(job: any): string {
 		if (job.status === 'error') return `Failed: ${job.error_message ?? 'unknown error'}`;
+		// Genuinely waiting for a concurrency slot (app/ingestion/
+		// queue.py), distinct from step='queued' below (already picked
+		// up, just hasn't reported its first real progress update yet).
+		if (job.status === 'queued') return 'Waiting in queue…';
 		switch (job.step) {
-			case 'queued': return 'Queued…';
+			case 'queued': return 'Starting…';
 			case 'reading': return 'Reading document…';
 			case 'chunking': return 'Splitting into passages…';
 			case 'embedding': return 'Embedding chunks…';
@@ -364,15 +374,15 @@
 							<button
 								class="view"
 								onclick={() => ingestOne(item.id)}
-								disabled={promotingId === item.id || jobsByStagedId[item.id]?.status === 'running'}
+								disabled={promotingId === item.id || jobActive(jobsByStagedId[item.id])}
 							>
-								{jobsByStagedId[item.id]?.status === 'running' ? 'Ingesting…' : 'Ingest'}
+								{jobActive(jobsByStagedId[item.id]) ? (jobsByStagedId[item.id]?.status === 'queued' ? 'Queued…' : 'Ingesting…') : 'Ingest'}
 							</button>
 							<button
 							class="view danger"
 							onclick={() => discardStaged(item.id)}
-							disabled={jobsByStagedId[item.id]?.status === 'running'}
-							title={jobsByStagedId[item.id]?.status === 'running' ? 'Ingestion is already running for this item' : undefined}
+							disabled={jobActive(jobsByStagedId[item.id])}
+							title={jobActive(jobsByStagedId[item.id]) ? 'Ingestion is already queued or running for this item' : undefined}
 						>Discard</button>
 						</div>
 					</li>
@@ -408,14 +418,14 @@
 							<button
 								class="view"
 								onclick={() => ingestOne(item.id, 'personal')}
-								disabled={promotingId === item.id || jobsByStagedId[item.id]?.status === 'running'}
+								disabled={promotingId === item.id || jobActive(jobsByStagedId[item.id])}
 							>
-								{jobsByStagedId[item.id]?.status === 'running' ? 'Ingesting…' : 'Ingest'}
+								{jobActive(jobsByStagedId[item.id]) ? (jobsByStagedId[item.id]?.status === 'queued' ? 'Queued…' : 'Ingesting…') : 'Ingest'}
 							</button>
 							<button
 							class="view danger"
 							onclick={() => discardStaged(item.id, 'personal')}
-							disabled={jobsByStagedId[item.id]?.status === 'running'}
+							disabled={jobActive(jobsByStagedId[item.id])}
 						>Discard</button>
 						</div>
 					</li>

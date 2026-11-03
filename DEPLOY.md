@@ -140,14 +140,34 @@ Easy to lose in a rewrite and each breaks a core feature silently:
 
 ### One systemd setting this app depends on: `MemoryMax`
 
-`/etc/systemd/system/clinic.service`'s `MemoryMax` is **4G**, not the
-original 500M. **Without headroom here, the Checker (HHEM, `app/reasoning/
-checker.py`) OOM-kills the whole app**, not just its own request — found
-live, 2026-09-14, repeatedly, against production. `run_check` defaults to
-`true` (`app/main.py`'s `MeConsult`), so this isn't an edge case: it's
-what the very first real consult with checking enabled does on a fresh
-boot. Two distinct causes, both fixed, but the memory ceiling itself
-still needs to stay raised:
+`/etc/systemd/system/clinic.service`'s `MemoryMax` is **6G** (raised from
+4G, 2026-11-03 — see "Second raise" below), not the original 500M.
+**Without headroom here, the app can OOM-kill itself outright**, not
+just fail one request — found live, 2026-09-14, repeatedly, against
+production, via the cause below; found live again, 2026-11-03, via a
+second, unrelated cause.
+
+**Second raise, 2026-11-03**: a real ingest of a large PDF (425 pages,
+513 passages — "The Hormone Cure") OOM-killed the whole service at 4G.
+Root cause is `EMBEDDER_FORCE_LOCAL` (`app/clients/local_embedder.py`,
+the emergency CPU-local embedder fallback from a Nebius billing outage
+the same day — see "Emergency fallback" section below) being left on:
+a resident `sentence-transformers` model in the same process, on top of
+a large ingest's own Reader/embed/8-way-concurrent-graph-extraction
+memory footprint, pushed past 4G. **This is a standing risk as long as
+`EMBEDDER_FORCE_LOCAL=true`** (i.e., as long as Nebius billing stays
+unresolved) — 6G was picked from `free -h`'s real headroom at the time
+(7.7G total, ~5.8G available), not derived from a worst-case ingest
+size; a larger document than this one could still OOM at 6G. The
+durable fix is restoring Nebius billing and turning `EMBEDDER_FORCE_LOCAL`
+back off, not an ever-higher ceiling. **Not tracked in this repo or the
+deploy workflow** — `/etc/systemd/system/clinic.service` is server-side
+config, edited directly and not synced by CI; a fresh server needs this
+set manually (`systemctl edit` or edit the unit file directly, then
+`daemon-reload` + `restart`).
+
+Original 2026-09-14 cause, below — two distinct issues, both fixed in
+code, but the memory ceiling itself stayed raised for them too:
 1. HHEM's first-ever model download (via HuggingFace's `xet` chunked
    transfer) prefetches multi-hundred-MB blocks into memory before
    writing to disk — a one-time cold-start cost. Not a problem once the

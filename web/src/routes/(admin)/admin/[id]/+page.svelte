@@ -25,6 +25,25 @@
 				})()
 			: null
 	);
+	// Open the same file with no #fragment — the plain download URL, for
+	// the "open in a new tab" fallback below (a browser extension/PDF
+	// viewer quirk that silently breaks the embedded iframe shouldn't
+	// also block viewing the original entirely — found live, specs/
+	// v6.8/02's follow-up: an admin reported the detail page loading but
+	// the PDF area staying empty, with nothing in the server logs to
+	// explain it).
+	const downloadUrl = $derived(
+		source?.original_name ? `${PUBLIC_API_BASE}/api/sources/${source.id}/original` : null
+	);
+	let iframeLoaded = $state(false);
+	let iframeTimedOut = $state(false);
+	$effect(() => {
+		if (!originalUrl) return;
+		iframeLoaded = false;
+		iframeTimedOut = false;
+		const t = setTimeout(() => { if (!iframeLoaded) iframeTimedOut = true; }, 8000);
+		return () => clearTimeout(t);
+	});
 
 	let passageEls: Record<number, HTMLElement> = {};
 	$effect(() => {
@@ -36,8 +55,10 @@
 
 <svelte:head><title>{source?.title ?? 'Source'} — Admin portal</title></svelte:head>
 
-<Quiet title={source?.title}>
-	{#if source}
+<Quiet title={source?.error ? 'Could not load' : source?.title}>
+	{#if source?.error}
+		<p class="hint">Could not load this source: {source.error}</p>
+	{:else if source}
 		<p class="hint">
 			<a href="/admin?folder={encodeURIComponent(source.folder_path || '')}">
 				{source.folder_path || 'Library'}
@@ -45,7 +66,15 @@
 			· <Chip tone="neutral">grade {source.grade}</Chip>
 		</p>
 		{#if originalUrl}
-			<iframe class="doc-frame" src={originalUrl} title={source.title}></iframe>
+			<p class="hint">
+				<a href={downloadUrl} target="_blank" rel="noopener">Open original in a new tab ↗</a>
+			</p>
+			{#if iframeTimedOut}
+				<p class="hint">
+					Still loading, or it didn't load — use the "Open original in a new tab" link above.
+				</p>
+			{/if}
+			<iframe class="doc-frame" src={originalUrl} title={source.title} onload={() => (iframeLoaded = true)}></iframe>
 		{:else}
 			{#if source.body_reconstructed}
 				<p class="hint">Rebuilt from passages — no original body was stored for this source.</p>

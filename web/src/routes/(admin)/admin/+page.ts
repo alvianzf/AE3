@@ -24,6 +24,11 @@ export async function load({ fetch }) {
 		graph,
 		coverage,
 		kinds: facets?.kinds ?? [],
+		// Includes explicitly-created empty folders (specs/v6.8/01's
+		// empty-folder addendum) — the client-built folderTree in
+		// +page.svelte merges these in even where no document uses them
+		// yet, same union store.facets() itself already does server-side.
+		folders: facets?.folders ?? [],
 		staged,
 		activeJobs,
 		practitioners
