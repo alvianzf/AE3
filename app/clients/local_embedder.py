@@ -37,6 +37,12 @@ class LocalEmbedderClient:
     role = None
     model = _MODEL_NAME
 
+    def ping(self) -> None:
+        """No credentials to validate (CPU-local, no API key) — just
+        confirms the model actually loads, the equivalent failure mode
+        a real provider's ping() would catch."""
+        _load()
+
     def embed(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []

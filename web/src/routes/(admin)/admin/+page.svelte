@@ -13,6 +13,7 @@
 	import Button from '$lib/components/Button.svelte';
 	import Dialog from '$lib/components/Dialog.svelte';
 	import Icon from '$lib/components/Icon.svelte';
+	import FolderTree, { type TreeNode } from '$lib/components/FolderTree.svelte';
 
 	let { data } = $props();
 
@@ -180,25 +181,53 @@
 	// filter chip on arrival instead of landing on the unfiltered list.
 	let activeFolder = $state(appPage.url.searchParams.get('folder') ?? '');
 
-	// Folders have no coverage-style counting endpoint of their own
-	// (unlike topics, via /api/coverage) — derived client-side from the
-	// already-loaded source list, same PoC-scale reasoning the rest of
-	// this page's filtering already runs on.
-	const folderCounts = $derived.by(() => {
-		const counts = new Map<string, number>();
+	// A real nested tree, not a flat chip row — folders still have no
+	// node of their own (specs/v6.8/01's string-prefix model), so this is
+	// built client-side from the already-loaded source list's folder_path
+	// values, same PoC-scale reasoning the rest of this page's filtering
+	// already runs on, not from a dedicated coverage-style endpoint.
+	const folderTree = $derived.by(() => {
+		const index = new Map<string, TreeNode>();
+		const roots: TreeNode[] = [];
 		for (const s of data.sources ?? []) {
-			const key = s.folder_path || '(root)';
-			counts.set(key, (counts.get(key) ?? 0) + 1);
+			const path = s.folder_path || '';
+			if (!path) continue;
+			let acc = '';
+			let siblings = roots;
+			for (const seg of path.split('/')) {
+				acc = acc ? `${acc}/${seg}` : seg;
+				let node = index.get(acc);
+				if (!node) {
+					node = { name: seg, path: acc, count: 0, children: [] };
+					index.set(acc, node);
+					siblings.push(node);
+				}
+				node.count++;
+				siblings = node.children;
+			}
 		}
-		return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+		function sortTree(nodes: TreeNode[]) {
+			nodes.sort((a, b) => a.name.localeCompare(b.name));
+			for (const n of nodes) sortTree(n.children);
+		}
+		sortTree(roots);
+		return roots;
 	});
+	const unfiledCount = $derived((data.sources ?? []).filter((s: any) => !s.folder_path).length);
 
 	const filtered = $derived.by(() => {
 		const needle = q.trim().toLowerCase();
 		return (data.sources ?? []).filter((s: any) => {
 			if (activeTopic && !(s.topics ?? []).includes(activeTopic)) return false;
 			if (activeKind && s.kind !== activeKind) return false;
-			if (activeFolder && (s.folder_path || '(root)') !== activeFolder) return false;
+			if (activeFolder) {
+				const fp = s.folder_path || '';
+				if (activeFolder === '(root)') {
+					if (fp !== '') return false;
+				} else if (fp !== activeFolder && !fp.startsWith(`${activeFolder}/`)) {
+					return false;
+				}
+			}
 			if (!needle) return true;
 			return [s.title, s.summary, s.origin, s.author, s.filename]
 				.some((v) => (v ?? '').toLowerCase().includes(needle));
@@ -223,6 +252,32 @@
 	// backend (the pre-rewrite admin page used both, static/app.js) but had no
 	// UI in this rewrite — README.md's "a source can be corrected or removed"
 	// had no way to do either (specs/v4/04-known-issues.md#h1).
+	// Tags (topics) are editable/assignable by an admin — the Reader's
+	// suggestion at ingest is only a starting point, same relationship
+	// grade/folder already have to their own Reader suggestions.
+	let newTagText: Record<string, string> = $state({});
+
+	async function setTopics(s: any, topics: string[]) {
+		try {
+			await patch(fetch, `/sources/${s.id}/topics`, { topics });
+			await invalidateAll();
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		}
+	}
+
+	function addTag(s: any) {
+		const raw = (newTagText[s.id] ?? '').trim();
+		if (!raw) return;
+		newTagText = { ...newTagText, [s.id]: '' };
+		if ((s.topics ?? []).includes(raw.toLowerCase())) return;
+		setTopics(s, [...(s.topics ?? []), raw]);
+	}
+
+	function removeTag(s: any, tag: string) {
+		setTopics(s, (s.topics ?? []).filter((t: string) => t !== tag));
+	}
+
 	async function regrade(s: any, grade: number) {
 		if (grade === s.grade) return;
 		try {
@@ -232,6 +287,18 @@
 		} catch (err: any) {
 			toast(err.message, 'alert');
 		}
+	}
+
+	// Drag a doc card onto a folder-tree node to move it — same
+	// setFolder() write the inline per-card field already uses, just a
+	// second way to trigger it.
+	let draggedId = $state<string | null>(null);
+
+	function onDropOnFolder(path: string) {
+		if (!draggedId) return;
+		const s = (data.sources ?? []).find((x: any) => x.id === draggedId);
+		draggedId = null;
+		if (s) setFolder(s, path);
 	}
 
 	// A source's folder is always the admin's call (specs/v6.8/01) — the
@@ -654,107 +721,146 @@
 			<p class="hint">Nothing ingested yet — use "+ Add resources" to start teaching Clinic.</p>
 		{/if}
 
-		{#if data.kinds.length}
-			<div class="facets">
-				<div class="facet-row">
-					<span class="facet-label">Kind</span>
-					<button class="fchip" class:active={!activeKind} onclick={() => { activeKind = ''; page = 1; }}>All</button>
-					{#each data.kinds as k (k)}
-						<button class="fchip" class:active={activeKind === k} onclick={() => { activeKind = activeKind === k ? '' : k; page = 1; }}>{k}</button>
+		<div class="library-layout">
+			<!-- A real folder tree, not a flat chip row (specs/v6.8/01) —
+			     click a folder to filter (including its subfolders), drag a
+			     doc card onto one to move it, hover for rename/privatize. -->
+			<aside class="folder-sidebar">
+				<div
+					class="node root-node"
+					class:active={!activeFolder}
+					ondragover={(e) => e.preventDefault()}
+					ondrop={(e) => { e.preventDefault(); onDropOnFolder(''); }}
+				>
+					<button class="name" onclick={() => { activeFolder = ''; page = 1; }}>
+						<Icon name="folder" size={13} /> All sources <span class="count">{data.sources.length}</span>
+					</button>
+				</div>
+				<div
+					class="node root-node"
+					class:active={activeFolder === '(root)'}
+					ondragover={(e) => e.preventDefault()}
+					ondrop={(e) => { e.preventDefault(); onDropOnFolder(''); }}
+				>
+					<button class="name" onclick={() => { activeFolder = activeFolder === '(root)' ? '' : '(root)'; page = 1; }}>
+						<Icon name="folder" size={13} /> (unfiled) <span class="count">{unfiledCount}</span>
+					</button>
+				</div>
+				<FolderTree
+					nodes={folderTree}
+					activePath={activeFolder}
+					onSelect={(path) => { activeFolder = activeFolder === path ? '' : path; page = 1; }}
+					onDrop={onDropOnFolder}
+					onRename={askRenameFolder}
+					onPrivatize={setFolderPrivate}
+				/>
+			</aside>
+
+			<div class="library-main">
+				{#if data.kinds.length}
+					<div class="facets">
+						<div class="facet-row">
+							<span class="facet-label">Kind</span>
+							<button class="fchip" class:active={!activeKind} onclick={() => { activeKind = ''; page = 1; }}>All</button>
+							{#each data.kinds as k (k)}
+								<button class="fchip" class:active={activeKind === k} onclick={() => { activeKind = activeKind === k ? '' : k; page = 1; }}>{k}</button>
+							{/each}
+						</div>
+					</div>
+				{/if}
+
+				{#if librarySelected.size}
+					<div class="bulk-bar">
+						<span class="hint">{librarySelected.size} selected</span>
+						<Button variant="outlined" onclick={() => setPrivateBulk(true)}><Icon name="lock" size={14} />Make private</Button>
+						<Button variant="outlined" onclick={() => setPrivateBulk(false)}><Icon name="unlock" size={14} />Make public</Button>
+						<Button variant="ghost" onclick={() => (librarySelected = new Set())}>Clear</Button>
+					</div>
+				{/if}
+
+				<!-- Documents as cards, not a table — sits directly below the
+				     categories/Kind facets rather than behind a drill-down click. -->
+				<div class="doc-grid">
+					{#each pageItems as s (s.id)}
+						<div
+							class="doc-card"
+							draggable="true"
+							ondragstart={() => (draggedId = s.id)}
+							ondragend={() => (draggedId = null)}
+						>
+							<div class="doc-card-head">
+								<input
+									type="checkbox"
+									checked={librarySelected.has(s.id)}
+									onchange={() => toggleLibrarySelected(s.id)}
+									aria-label="Select {s.title}"
+								/>
+								<a class="title-link" href="/admin/{s.id}">{s.title}</a>
+								<div class="doc-card-actions">
+									<a class="icon-btn" href="/admin/{s.id}" title="View document" aria-label="View {s.title}"><Icon name="eye" /></a>
+									<button
+										class="icon-btn"
+										onclick={() => setPrivate(s, !s.is_private)}
+										title={s.is_private ? 'Make public' : 'Make private'}
+										aria-label={s.is_private ? `Make ${s.title} public` : `Make ${s.title} private`}
+									><Icon name={s.is_private ? 'lock' : 'unlock'} /></button>
+									{#if s.is_private}
+										<button class="icon-btn" onclick={() => askAccess(s)} title="Edit access" aria-label="Edit access for {s.title}"><Icon name="users" /></button>
+									{/if}
+									<button class="icon-btn danger" onclick={() => askDelete(s)} title="Remove from library" aria-label="Remove {s.title}"><Icon name="trash" /></button>
+								</div>
+							</div>
+							<div class="tags">
+								{#each s.topics ?? [] as tag (tag)}
+									<button class="tag" onclick={() => removeTag(s, tag)} title="Remove tag">
+										{tag} <span aria-hidden="true">&times;</span>
+									</button>
+								{/each}
+								<input
+									class="tag-input"
+									type="text" placeholder="+ tag"
+									value={newTagText[s.id] ?? ''}
+									oninput={(e) => (newTagText = { ...newTagText, [s.id]: (e.target as HTMLInputElement).value })}
+									onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag(s); } }}
+									onblur={() => addTag(s)}
+								/>
+							</div>
+							<div class="doc-card-foot">
+								<Chip tone="neutral">{s.kind}</Chip>
+								{#if s.is_private}<Chip tone="warn">private</Chip>{/if}
+								<label class="grade-label">
+									Grade
+									<input
+										class="grade"
+										type="number" min="1" max="10" value={s.grade}
+										onchange={(e) => regrade(s, Number((e.target as HTMLInputElement).value))}
+									/>
+								</label>
+								<label class="folder-label">
+									<Icon name="folder" size={13} />
+									<input
+										class="folder-input"
+										type="text" placeholder="(root)" value={s.folder_path ?? ''}
+										onblur={(e) => setFolder(s, (e.target as HTMLInputElement).value)}
+									/>
+								</label>
+								<span class="hint">{(s.created_at ?? '').slice(0, 10)}</span>
+							</div>
+						</div>
+					{:else}
+						<p class="hint">{data.sources.length ? 'Nothing matches those filters.' : 'Nothing ingested yet.'}</p>
 					{/each}
 				</div>
-				{#if folderCounts.length}
-					<div class="facet-row">
-						<span class="facet-label">Folder</span>
-						<button class="fchip" class:active={!activeFolder} onclick={() => { activeFolder = ''; page = 1; }}>All</button>
-						{#each folderCounts as [folder, count] (folder)}
-							<button class="fchip" class:active={activeFolder === folder} onclick={() => { activeFolder = activeFolder === folder ? '' : folder; page = 1; }}>
-								{folder} ({count})
-							</button>
-							{#if activeFolder === folder}
-								{#if folder !== '(root)'}
-									<Button variant="text" onclick={() => askRenameFolder(folder)}><Icon name="edit" size={13} />Rename</Button>
-								{/if}
-								<Button variant="text" onclick={() => setFolderPrivate(folder, true)}><Icon name="lock" size={13} />Privatize</Button>
-								<Button variant="text" onclick={() => setFolderPrivate(folder, false)}><Icon name="unlock" size={13} />Make public</Button>
-							{/if}
-						{/each}
+
+				{#if totalPages > 1}
+					<div class="pager">
+						<button class="view" onclick={() => (page = shownPage - 1)} disabled={shownPage <= 1}>← Prev</button>
+						<span class="hint">Page {shownPage} of {totalPages} ({filtered.length} document{filtered.length === 1 ? '' : 's'})</span>
+						<button class="view" onclick={() => (page = shownPage + 1)} disabled={shownPage >= totalPages}>Next →</button>
 					</div>
 				{/if}
 			</div>
-		{/if}
-
-		{#if librarySelected.size}
-			<div class="bulk-bar">
-				<span class="hint">{librarySelected.size} selected</span>
-				<Button variant="outlined" onclick={() => setPrivateBulk(true)}><Icon name="lock" size={14} />Make private</Button>
-				<Button variant="outlined" onclick={() => setPrivateBulk(false)}><Icon name="unlock" size={14} />Make public</Button>
-				<Button variant="ghost" onclick={() => (librarySelected = new Set())}>Clear</Button>
-			</div>
-		{/if}
-
-		<!-- Documents as cards, not a table — sits directly below the
-		     categories/Kind facets rather than behind a drill-down click. -->
-		<div class="doc-grid">
-			{#each pageItems as s (s.id)}
-				<div class="doc-card">
-					<div class="doc-card-head">
-						<input
-							type="checkbox"
-							checked={librarySelected.has(s.id)}
-							onchange={() => toggleLibrarySelected(s.id)}
-							aria-label="Select {s.title}"
-						/>
-						<a class="title-link" href="/admin/{s.id}">{s.title}</a>
-						<div class="doc-card-actions">
-							<a class="icon-btn" href="/admin/{s.id}" title="View document" aria-label="View {s.title}"><Icon name="eye" /></a>
-							<button
-								class="icon-btn"
-								onclick={() => setPrivate(s, !s.is_private)}
-								title={s.is_private ? 'Make public' : 'Make private'}
-								aria-label={s.is_private ? `Make ${s.title} public` : `Make ${s.title} private`}
-							><Icon name={s.is_private ? 'lock' : 'unlock'} /></button>
-							{#if s.is_private}
-								<button class="icon-btn" onclick={() => askAccess(s)} title="Edit access" aria-label="Edit access for {s.title}"><Icon name="users" /></button>
-							{/if}
-							<button class="icon-btn danger" onclick={() => askDelete(s)} title="Remove from library" aria-label="Remove {s.title}"><Icon name="trash" /></button>
-						</div>
-					</div>
-					{#if s.topics?.length}<div class="topics">{s.topics.join(' · ')}</div>{/if}
-					<div class="doc-card-foot">
-						<Chip tone="neutral">{s.kind}</Chip>
-						{#if s.is_private}<Chip tone="warn">private</Chip>{/if}
-						<label class="grade-label">
-							Grade
-							<input
-								class="grade"
-								type="number" min="1" max="10" value={s.grade}
-								onchange={(e) => regrade(s, Number((e.target as HTMLInputElement).value))}
-							/>
-						</label>
-						<label class="folder-label">
-							<Icon name="folder" size={13} />
-							<input
-								class="folder-input"
-								type="text" placeholder="(root)" value={s.folder_path ?? ''}
-								onblur={(e) => setFolder(s, (e.target as HTMLInputElement).value)}
-							/>
-						</label>
-						<span class="hint">{(s.created_at ?? '').slice(0, 10)}</span>
-					</div>
-				</div>
-			{:else}
-				<p class="hint">{data.sources.length ? 'Nothing matches those filters.' : 'Nothing ingested yet.'}</p>
-			{/each}
 		</div>
-
-		{#if totalPages > 1}
-			<div class="pager">
-				<button class="view" onclick={() => (page = shownPage - 1)} disabled={shownPage <= 1}>← Prev</button>
-				<span class="hint">Page {shownPage} of {totalPages} ({filtered.length} document{filtered.length === 1 ? '' : 's'})</span>
-				<button class="view" onclick={() => (page = shownPage + 1)} disabled={shownPage >= totalPages}>Next →</button>
-			</div>
-		{/if}
 	{:else}
 		{#if data.staged?.length}
 			<div class="staged">
@@ -1022,6 +1128,29 @@
 	.dir-tile.active .dir-count { color: inherit; background: rgba(255, 255, 255, .35); }
 	.facets { display: grid; gap: var(--space-2); margin-bottom: var(--space-4); }
 	.doc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: var(--space-3); }
+	.library-layout { display: flex; gap: var(--space-5); align-items: flex-start; }
+	.folder-sidebar {
+		flex: 0 0 14rem; min-width: 0; border-right: 1px solid var(--line); padding-right: var(--space-4);
+		max-height: 70vh; overflow-y: auto; position: sticky; top: var(--space-4);
+	}
+	.library-main { flex: 1 1 auto; min-width: 0; }
+	/* Mirrors FolderTree.svelte's .node/.name/.count exactly — these two
+	   rows (All sources / unfiled) sit above the real tree, not inside
+	   it, since neither is a real folder_path value. */
+	.folder-sidebar .root-node {
+		display: flex; align-items: center; border-radius: var(--r); margin-bottom: .15rem;
+	}
+	.folder-sidebar .root-node:hover { background: var(--panel-2); }
+	.folder-sidebar .root-node.active { background: var(--accent-soft); }
+	.folder-sidebar .name {
+		flex: 1 1 auto; display: flex; align-items: center; gap: .35rem; border: none; background: none;
+		cursor: pointer; font: inherit; font-size: var(--text-sm); color: var(--ink); padding: .3rem 0; text-align: left;
+	}
+	.folder-sidebar .count { color: var(--muted); font-size: var(--text-xs); margin-left: auto; }
+	@media (max-width: 900px) {
+		.library-layout { flex-direction: column; }
+		.folder-sidebar { flex: 0 0 auto; width: 100%; max-height: none; border-right: none; border-bottom: 1px solid var(--line); padding-right: 0; padding-bottom: var(--space-3); position: static; }
+	}
 	.bulk-bar { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-3); }
 	.access-list { max-height: 50vh; overflow-y: auto; display: grid; gap: .4rem; list-style: none; padding: 0; }
 	.access-list label { display: flex; align-items: center; gap: .5rem; }
@@ -1053,7 +1182,17 @@
 	}
 	.fchip:hover { border-color: var(--accent); }
 	.fchip.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
-	.topics { font-size: var(--text-xs); color: var(--muted); margin-top: .15rem; }
+	.tags { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; margin-top: .3rem; }
+	.tag {
+		font: inherit; font-size: var(--text-xs); cursor: pointer; display: inline-flex; align-items: center; gap: .25rem;
+		border: 1px solid var(--line); background: var(--panel-2); color: var(--muted);
+		border-radius: 99px; padding: .15rem .55rem;
+	}
+	.tag:hover { border-color: var(--danger); color: var(--danger); }
+	.tag-input {
+		font: inherit; font-size: var(--text-xs); border: 1px dashed var(--line-2); border-radius: 99px;
+		padding: .15rem .55rem; background: transparent; color: var(--ink); width: 5.5rem;
+	}
 	.view {
 		font: inherit; font-size: var(--text-sm); font-weight: 650; cursor: pointer;
 		border: 1px solid var(--line); background: var(--panel); color: var(--accent-ink);

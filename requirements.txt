@@ -21,14 +21,18 @@ openai==2.7.1
 # setting. Anthropic's own SDK, not the OpenAI-compatible surface above —
 # Anthropic doesn't offer one.
 anthropic==2.3.0
-# Checker (anti-hallucination) — HHEM-2.1-Open is a classifier, not a chat
-# model; run directly via transformers, not through the OpenAI-compatible
-# chat endpoint (specs/v4.2/01#the-checker-is-a-direct-classifier-call-not-a-chat-completion)
+# CPU-local embedder fallback (app/clients/local_embedder.py,
+# EMBEDDER_FORCE_LOCAL) — a sentence-transformers model run directly via
+# transformers, no third-party billing dependency. Previously also
+# required by the local HHEM anti-hallucination classifier
+# (app/reasoning/checker.py), which was never actually used in the real
+# consult pipeline (llm_checker.py's LLM-as-judge is the active path) and
+# has been removed — these two packages stay for the embedder fallback.
 transformers==4.57.1
 # CPU-only build, from PyTorch's own index below — the default PyPI wheel
-# bundles CUDA and is several GB; this classifier never needs a GPU, and
-# the full wheel exhausted disk space on the production deploy (a real
-# incident, not a hypothetical: it failed the first deploy of specs/v6).
+# bundles CUDA and is several GB; nothing here needs a GPU, and the full
+# wheel exhausted disk space on the production deploy (a real incident,
+# not a hypothetical: it failed the first deploy of specs/v6).
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch==2.9.0
 

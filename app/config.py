@@ -97,25 +97,17 @@ class Config:
     reasoner_base_url = os.getenv("REASONER_BASE_URL", nebius_base_url)
     reasoner_api_key = os.getenv("REASONER_API_KEY", nebius_api_key)
     # LLM-as-judge Checker (app/reasoning/llm_checker.py, specs/v6.3/02) —
-    # the "last measure" fallback: HHEM (checker_model below) costs
-    # 28-77s/call on this VPS's CPU, and a smaller local classifier
-    # (MiniCheck) was *worse* (185s), pointing at CPU-only inference
-    # itself as the bottleneck, not model choice. This offloads scoring
-    # to Nebius instead. Defaults to the same model already proven fast
-    # and reliable for batched strict-JSON judgments (traversal.py's
+    # the active anti-hallucination path. A local HHEM classifier
+    # (app/reasoning/checker.py) was tried first and removed: 28-77s/call
+    # on this VPS's CPU, and a smaller local classifier (MiniCheck) was
+    # *worse* (185s), pointing at CPU-only inference itself as the
+    # bottleneck, not model choice — this offloads scoring to Nebius
+    # instead. Defaults to the same model already proven fast and
+    # reliable for batched strict-JSON judgments (traversal.py's
     # relevance judge uses it too).
     checker_llm_model = os.getenv("CHECKER_LLM_MODEL", "Qwen/Qwen3-30B-A3B-Instruct-2507")
     checker_llm_base_url = os.getenv("CHECKER_LLM_BASE_URL", nebius_base_url)
     checker_llm_api_key = os.getenv("CHECKER_LLM_API_KEY", nebius_api_key)
-    # Not a chat model — a hallucination-detection classifier run directly
-    # via transformers, not through the Nebius chat endpoint. Default is
-    # HHEM-2.1-Open's real Hugging Face repo id, not a Nebius catalog name.
-    checker_model = os.getenv("CHECKER_MODEL", "vectara/hallucination_evaluation_model")
-    # Threshold below which a (claim, evidence) pair is flagged as
-    # unsupported — HHEM's score is a 0-1 consistency probability, higher
-    # is more supported. Not calibrated against real examples yet
-    # (specs/v4.2/01) — a starting value, not a validated one.
-    checker_threshold = float(os.getenv("CHECKER_THRESHOLD", "0.5"))
     # Qwen3-Embedding-8B's real output dimension is unconfirmed here
     # (specs/v4.2/01) — must match whatever the model actually returns or
     # the Neo4j vector index creation below fails outright, loudly, not

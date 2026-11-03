@@ -114,6 +114,14 @@ class AnthropicLLMClient:
             "stays on Nebius regardless of the llm_provider setting."
         )
 
+    def ping(self) -> None:
+        """Validate credentials without spending tokens — same reasoning
+        as llm_client.LLMClient.ping(): list models rather than retrieve
+        the role's specific one."""
+        models = {m.id for m in self._client.models.list()}
+        if self.model not in models:
+            raise ValueError(f"{self.model} ({self.role.value}) not found in the provider's model catalog")
+
     @staticmethod
     def _usage(response) -> dict:
         return {"input_tokens": response.usage.input_tokens,
