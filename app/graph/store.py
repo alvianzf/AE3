@@ -596,6 +596,8 @@ def rename_folder(old_path: str, new_path: str) -> int:
     new = normalize_folder_path(new_path)
     if not old:
         raise ValueError("old_path must not be empty — the root folder can't be renamed")
+    if new == old or new.startswith(f"{old}/"):
+        raise ValueError(f"can't move '{old}' into itself or one of its own subfolders")
     with session() as s:
         result = s.run(
             """
