@@ -72,6 +72,22 @@
 	let jobsByStagedId = $state<Record<string, any>>({});
 	const pollTimers: Record<string, ReturnType<typeof setInterval>> = {};
 
+	// The just-ingested document, shown in the "Placed in library" dialog
+	// right after a job finishes — the Reader already chose a folder and
+	// tags at ingest time (app/ingestion/pipeline.py's suggested_folder /
+	// topics), but nothing surfaced that choice to the admin before this;
+	// the toast alone named the action, not the result.
+	let placementPreview = $state<any | null>(null);
+	// setFolder/addTag/removeTag write through `data.sources` (invalidateAll),
+	// not through placementPreview's own object reference — without this,
+	// clicking a folder-suggestion chip or adding a tag moves/tags the
+	// document but the open dialog keeps showing its stale pre-edit state.
+	$effect(() => {
+		if (!placementPreview) return;
+		const fresh = (data.sources ?? []).find((x: any) => x.id === placementPreview.id);
+		if (fresh && fresh !== placementPreview) placementPreview = fresh;
+	});
+
 	// A job occupies a staged item whether it's actually running or still
 	// waiting for a concurrency slot (app/ingestion/queue.py) — either
 	// way, re-ingesting or discarding that same item from under it is
@@ -135,9 +151,15 @@
 				if (job.status === 'done') {
 					clearInterval(pollTimers[stagedId]);
 					delete pollTimers[stagedId];
-					toast('Ingested into the library.');
 					clearFiltersAfterIngest();
 					await invalidateAll();
+					const placed = (data.sources ?? []).find((x: any) => x.id === job.result_document_id);
+					toast(
+						placed
+							? `"${placed.title.slice(0, 40)}" ingested — filed in ${placed.folder_path || '(root)'}.`
+							: 'Ingested into the library.'
+					);
+					if (placed) placementPreview = placed;
 				} else if (job.status === 'error') {
 					clearInterval(pollTimers[stagedId]);
 					delete pollTimers[stagedId];
@@ -1026,7 +1048,7 @@
 									onchange={() => toggleLibrarySelected(s.id)}
 									aria-label="Select {s.title}"
 								/>
-								<a class="title-link" href="/admin/{s.id}">{s.title}</a>
+								<a class="title-link" href="/admin/{s.id}" title={s.title}>{s.title}</a>
 								<div class="doc-card-actions">
 									<a class="icon-btn" href="/admin/{s.id}" title="View document" aria-label="View {s.title}"><Icon name="eye" /></a>
 									<button class="icon-btn" onclick={() => askMove(s)} title="Move to folder (or right-click the card)" aria-label="Move {s.title}">
@@ -1336,6 +1358,50 @@
 	{/snippet}
 </Dialog>
 
+<!-- Shown once per completed ingest (watchJob's 'done' branch) — the
+     Reader's suggested folder/tags are already applied by the time this
+     opens, so this is "here's where it landed, adjust if you want" rather
+     than a pre-commit approval gate. Reuses the same setFolder/addTag/
+     removeTag writes the library's own doc-cards already use. -->
+<Dialog bind:open={() => !!placementPreview, (v) => { if (!v) placementPreview = null; }} title="Placed in library">
+	{#if placementPreview}
+		<p class="hint">"{placementPreview.title.slice(0, 80)}" was ingested and filed as shown below — the Reader suggested these, adjust them if needed.</p>
+		<label class="folder-label">
+			<Icon name="folder" size={13} />
+			<input
+				class="folder-input"
+				type="text" placeholder="(root)" value={placementPreview.folder_path ?? ''}
+				onblur={(e) => setFolder(placementPreview, (e.target as HTMLInputElement).value)}
+			/>
+		</label>
+		{#if folderPaths.length}
+			<div class="move-suggestions">
+				{#each folderPaths as p (p)}
+					<button type="button" class="fchip" onclick={() => setFolder(placementPreview, p)}>{p}</button>
+				{/each}
+			</div>
+		{/if}
+		<div class="tags placement-tags">
+			{#each placementPreview.topics ?? [] as tag (tag)}
+				<button class="tag" onclick={() => removeTag(placementPreview, tag)} title="Remove tag">
+					{tag} <span aria-hidden="true">&times;</span>
+				</button>
+			{/each}
+			<input
+				class="tag-input"
+				type="text" placeholder="+ tag"
+				value={newTagText[placementPreview.id] ?? ''}
+				oninput={(e) => (newTagText = { ...newTagText, [placementPreview.id]: (e.target as HTMLInputElement).value })}
+				onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag(placementPreview); } }}
+				onblur={() => addTag(placementPreview)}
+			/>
+		</div>
+	{/if}
+	{#snippet footer()}
+		<Button onclick={() => (placementPreview = null)}>Got it</Button>
+	{/snippet}
+</Dialog>
+
 <Dialog bind:open={accessOpen} title="Edit access">
 	{#if accessEditing}
 		<p class="hint">Who can still see "{accessEditing.title.slice(0, 60)}" despite it being private.</p>
@@ -1509,7 +1575,18 @@
 		border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--panel-2);
 	}
 	.doc-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-2); }
-	.doc-card-head .title-link { font-weight: 650; }
+	.doc-card-head input[type="checkbox"] { flex: 0 0 auto; margin-top: .25rem; }
+	/* Clamped to 2 lines, not left to wrap freely — an unbounded title
+	   (found live, 2026-11-03: "icon drift") squeezes into the narrow
+	   column next to doc-card-actions' fixed width and wraps into many
+	   short lines, leaving the action icons pinned to the top of a much
+	   taller card instead of sitting beside the title the way every other
+	   card does. */
+	.doc-card-head .title-link {
+		font-weight: 650; flex: 1 1 auto; min-width: 0;
+		display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical;
+		overflow: hidden;
+	}
 	.doc-card-actions { display: flex; gap: .3rem; flex: 0 0 auto; }
 	.doc-card-foot { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin-top: auto; padding-top: .3rem; }
 	.grade-label { display: flex; align-items: center; gap: .35rem; font-size: var(--text-xs); color: var(--muted); }
