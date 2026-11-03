@@ -228,6 +228,18 @@ class LLMClient:
         response = self._client.embeddings.create(model=self.model, input=texts)
         return [d.embedding for d in response.data]
 
+    def ping(self) -> None:
+        """Validate credentials without spending tokens — lists models
+        rather than retrieving the role's specific one. Found live
+        against the real Nebius endpoint: GET /models/{id}
+        (models.retrieve) 404s unconditionally, for every model id,
+        even ones models.list() itself just returned; only the list
+        endpoint is actually implemented there."""
+        scoped = self._client.with_options(timeout=_PING_TIMEOUT_SECONDS)
+        models = {m.id for m in scoped.models.list().data}
+        if self.model not in models:
+            raise ValueError(f"{self.model} ({self.role.value}) not found in the provider's model catalog")
+
     @staticmethod
     def _usage(response) -> dict:
         return {"input_tokens": response.usage.prompt_tokens,
@@ -306,16 +318,13 @@ def ping_role(role: Role) -> None:
     endpoint) should wrap this themselves, same as every other health
     check in app/main.py does via its own probe() helper.
 
-    Lists models rather than retrieving the role's specific one — found
-    live against the real Nebius endpoint: GET /models/{id} (models.retrieve)
-    404s unconditionally, for every model id, even ones models.list() itself
-    just returned; only the list endpoint is actually implemented there.
-    """
-    client = get_client(role)
-    scoped = client._client.with_options(timeout=_PING_TIMEOUT_SECONDS)
-    models = {m.id for m in scoped.models.list().data}
-    if client.model not in models:
-        raise ValueError(f"{client.model} ({role.value}) not found in the provider's model catalog")
+    Delegates to the resolved client's own ping() — found live: this used
+    to reach into client._client.models.list() directly, which only the
+    openai-SDK-backed LLMClient has; get_client(Role.EMBEDDER) with
+    EMBEDDER_FORCE_LOCAL on resolves to LocalEmbedderClient, which has no
+    _client at all, so /api/health reported it "down" with an
+    AttributeError instead of actually checking it."""
+    get_client(role).ping()
 
 
 def ping() -> bool:

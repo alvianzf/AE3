@@ -43,7 +43,7 @@ from .graph import schema as graph_schema
 from .graph import store
 from .ingestion import pipeline as ingestion_pipeline
 from .patient.context import get_patient_context
-from .reasoning import checker, llm_checker, reasoner
+from .reasoning import llm_checker, reasoner
 from .retrieval import general_lookup, pgvector_store, seed_search
 from .retrieval.traversal import GraphTraversalRetriever
 
@@ -190,12 +190,11 @@ def health() -> dict:
     # already uses for the same reason.
     jobs: dict[str, tuple] = {role.value: (lambda role=role: ping_role(role), role, job)
                                for role, job in _AI_TEAM_ROLES}
-    with ThreadPoolExecutor(max_workers=len(jobs) + 3) as pool:
+    with ThreadPoolExecutor(max_workers=len(jobs) + 2) as pool:
         futures = {
             pool.submit(probe, fn): name
             for name, (fn, _role, _job) in jobs.items()
         }
-        futures[pool.submit(probe, checker.ping)] = "checker"
         futures[pool.submit(probe, graph_schema.ping)] = "neo4j"
         futures[pool.submit(probe, core_store.ping)] = "postgres"
 
@@ -204,16 +203,6 @@ def health() -> dict:
     ai_team = {
         name: {"model": get_llm_client(role).model, "job": job, **results[name]}
         for name, (_fn, role, job) in jobs.items()
-    }
-    # Not a chat-model role — HHEM-2.1-Open is a local anti-hallucination
-    # classifier (specs/v4.2/01), run via transformers/torch, no Nebius
-    # call involved. First health check after a cold boot pays the model
-    # load cost; every one after that reuses the cached singleton.
-    ai_team["checker"] = {
-        "model": cfg.checker_model,
-        "job": "Anti-hallucination check: scores each answer sentence "
-               "against its cited sources (not an LLM call)",
-        **results["checker"],
     }
 
     checks = {
@@ -1323,6 +1312,22 @@ def move_source(source_id: str, body: FolderUpdate,
     what overrides whatever the Reader suggested at ingest time, same
     relationship PATCH /api/sources/{id} already has to suggested_grade."""
     source = store.set_folder(source_id, body.folder_path)
+    if source is None:
+        raise HTTPException(404, "no such source")
+    return source
+
+
+class TopicsUpdate(BaseModel):
+    topics: list[str]
+
+
+@app.patch("/api/sources/{source_id}/topics")
+def set_source_topics(source_id: str, body: TopicsUpdate,
+                      _admin: dict = Depends(auth.require_admin)) -> dict:
+    """Tags are editable and assignable by an admin — the Reader's
+    topics at ingest time are only a suggested starting point, same
+    relationship it already has to suggested_folder/suggested_grade."""
+    source = store.set_topics(source_id, body.topics)
     if source is None:
         raise HTTPException(404, "no such source")
     return source

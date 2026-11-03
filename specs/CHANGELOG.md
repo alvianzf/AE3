@@ -1,5 +1,38 @@
 # Specs changelog
 
+## 2026-11-03 — admin portal polish, tags, folder tree, HHEM removal
+
+A batch of direct requests, no new spec version (maintenance/UX on
+already-shipped features, not new scope):
+
+- **Real folder tree UI** (`v6.8/01` addendum) — the flat folder chip
+  row replaced with a real nested, collapsible tree sidebar
+  (`FolderTree.svelte`), drag-and-drop to move a document onto a
+  folder, prefix-match filtering (select a folder, see its subfolders
+  too).
+- **Editable tags** (`v6.8/01` addendum) — topics are now admin-
+  editable/assignable per document (add/remove chips), not just a
+  Reader suggestion frozen at ingest time. New `store.set_topics()` +
+  `PATCH /api/sources/{id}/topics`.
+- **System health moved to a footer status bar** — the dashboard's
+  per-role chip block replaced with a compact, persistent dot-per-check
+  bar at the bottom of every admin page (`(admin)/admin/+layout.svelte`),
+  hover for the ms/error detail a chip used to spell out.
+- **Fixed**: `/api/health`'s embedder check reported "down" with an
+  `AttributeError` whenever `EMBEDDER_FORCE_LOCAL` was on —
+  `ping_role()` used to reach into `client._client.models.list()`
+  directly, which only the openai-SDK-backed client has.
+  `LLMClient`/`AnthropicLLMClient`/`LocalEmbedderClient` each gained
+  their own `.ping()` now, and `ping_role()` just calls it.
+- **Removed**: the local HHEM-2.1-Open anti-hallucination classifier
+  (`app/reasoning/checker.py`, `cfg.checker_model`/`checker_threshold`)
+  — confirmed unused in the real consult pipeline (`llm_checker.py`'s
+  LLM-as-judge has been the active path since `v6.3`); removed outright
+  rather than left as dead code. `transformers`/`torch` stay in
+  `requirements.txt` for the local embedder fallback, which needs them
+  independently.
+- Admin rail: Dashboard and Library swapped order (Dashboard first).
+
 ## v6.10 — 2026-11-02 (practitioner-owned private knowledge base)
 
 Any Pro practitioner — not just one an admin has flagged with

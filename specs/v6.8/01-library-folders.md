@@ -114,3 +114,22 @@ folder.
   see, they still see, just grouped.
 - No nested-folder depth limit beyond what a sane UI can render; not
   enforced server-side.
+
+## Addendum — a real tree UI, and editable tags
+
+Shipped after the initial flat chip-row version: the admin Library page
+got a real nested folder-tree sidebar (`$lib/components/FolderTree.svelte`,
+recursive via self-import — `<svelte:self>` works but is deprecated in
+Svelte 5) replacing the flat folder facet row. Selecting a folder now
+filters by prefix match (the folder and everything under it), not just
+an exact `folder_path` match; a document card is draggable onto any tree
+node to move it (the same `PATCH /api/sources/{id}/folder` the inline
+field already used); rename/privatize/make-public actions live on each
+node, shown on hover.
+
+Topics ("tags") are now editable the same way folders and grades already
+are: `store.set_topics()` + `PATCH /api/sources/{id}/topics`, with the
+Reader's topics at ingest staying only the starting value — an admin can
+add or remove tags per document directly from the library grid (chip +
+×, or an inline "+ tag" field), same "AI suggests, admin decides"
+relationship this doc already describes for folders.

@@ -558,6 +558,21 @@ def set_grade(document_id: str, grade: int) -> dict | None:
     return get_document(document_id)
 
 
+def set_topics(document_id: str, topics: list[str]) -> dict | None:
+    """An admin's edit always wins over whatever the Reader suggested at
+    ingest time — same relationship folder_path already has to
+    suggested_folder. Normalized the same way read_source() already
+    normalizes the Reader's own topics (lowercased, trimmed, empties
+    dropped) so an admin-added tag and an AI-suggested one are
+    interchangeable, not two different shapes of the same thing."""
+    cleaned = [t.strip().lower() for t in topics if t.strip()]
+    with session() as s:
+        s.run("MATCH (doc:Document {id: $id}) SET doc.topics = $topics",
+              id=document_id, topics=cleaned)
+    log("admin", "set topics", f"{document_id} → {cleaned}")
+    return get_document(document_id)
+
+
 def set_folder(document_id: str, folder_path: str) -> dict | None:
     """An admin's explicit placement always wins over whatever the Reader
     suggested at ingest time (specs/v6.8/01) — same "suggestion is just
