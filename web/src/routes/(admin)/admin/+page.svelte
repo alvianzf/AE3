@@ -207,7 +207,7 @@
 		function ensure(acc: string, seg: string): TreeNode {
 			let node = index.get(acc);
 			if (!node) {
-				node = { name: seg, path: acc, count: 0, children: [] };
+				node = { name: seg, path: acc, count: 0, children: [], docs: [] };
 				index.set(acc, node);
 				(acc.includes('/') ? ensure(acc.slice(0, acc.lastIndexOf('/')), '').children : roots).push(node);
 			}
@@ -221,6 +221,12 @@
 				acc = acc ? `${acc}/${seg}` : seg;
 				ensure(acc, seg).count++;
 			}
+			// The tree-view tab's leaf rows (specs/v6.8/01's Finder-copy
+			// request) — a document belongs to the deepest node on its own
+			// path, not every ancestor, so this is outside the count++ loop
+			// above (which deliberately does touch every ancestor, for the
+			// tile/sidebar counts elsewhere on this page).
+			index.get(path)?.docs.push(s);
 		}
 		// Explicitly-created folders (specs/v6.8/01's empty-folder
 		// addendum) appear in the tree even with zero documents — same
@@ -234,11 +240,16 @@
 		}
 		function sortTree(nodes: TreeNode[]) {
 			nodes.sort((a, b) => a.name.localeCompare(b.name));
-			for (const n of nodes) sortTree(n.children);
+			for (const n of nodes) { n.docs.sort((a, b) => a.title.localeCompare(b.title)); sortTree(n.children); }
 		}
 		sortTree(roots);
 		return roots;
 	});
+	// Root-level documents (no folder) — the tree-view tab's top-level
+	// leaf rows, alongside the top-level folder nodes above.
+	const rootDocs = $derived(
+		(data.sources ?? []).filter((s: any) => !s.folder_path).sort((a: any, b: any) => a.title.localeCompare(b.title))
+	);
 	// Every known folder path, flat and including subfolders at every
 	// depth — the "Move to..." dialog's quick-pick suggestions, so moving
 	// a document doesn't require typing out a deep path by hand.
@@ -846,6 +857,7 @@
 		bind:active={mainTab}
 		tabs={[
 			{ id: 'library', label: 'Library' },
+			{ id: 'tree', label: 'Tree view' },
 			{ id: 'staged', label: data.staged?.length ? `Staged for review (${data.staged.length})` : 'Staged for review' }
 		]}
 	/>
@@ -1089,6 +1101,31 @@
 				{/if}
 			</div>
 		</div>
+	{:else if mainTab === 'tree'}
+		<!-- Unified folders+documents tree, reusing already-loaded data.sources
+		     / data.folders — no new fetch, so this tab paints in well under
+		     100ms. Clicking a folder jumps into the Library tab at that path;
+		     clicking a document (a real <a href>) opens its detail page. -->
+		<div class="tree-view-pane">
+			<div
+				class="node root-node"
+				ondragover={(e) => e.preventDefault()}
+				ondrop={(e) => { e.preventDefault(); handleDropOnFolder(''); }}
+			>
+				<span class="name"><Icon name="folder" size={13} /> Library <span class="count">{data.sources.length}</span></span>
+			</div>
+			<FolderTree
+				nodes={folderTree}
+				activePath={currentPath}
+				docs={rootDocs}
+				showDocs
+				onSelect={(path) => { currentPath = path; mainTab = 'library'; page = 1; }}
+				onDrop={handleDropOnFolder}
+				onRename={askRenameFolder}
+				onPrivatize={setFolderPrivate}
+				onDelete={(path, count) => askDeleteFolder(path, count)}
+			/>
+		</div>
 	{:else}
 		{#if data.staged?.length}
 			<div class="staged">
@@ -1267,7 +1304,8 @@
 	{#if deletingFolder}
 		<p>
 			Delete "{deletingFolder.path}"
-			{#if deletingFolder.count}and its {deletingFolder.count} document{deletingFolder.count === 1 ? '' : 's'}{/if}?
+			{#if deletingFolder.count}and every document in it, including subfolders
+				({deletingFolder.count} document{deletingFolder.count === 1 ? '' : 's'} total){/if}?
 			This can't be undone.
 		</p>
 	{/if}
@@ -1450,6 +1488,15 @@
 		cursor: pointer; font: inherit; font-size: var(--text-sm); color: var(--ink); padding: .3rem 0; text-align: left;
 	}
 	.folder-sidebar .count { color: var(--muted); font-size: var(--text-xs); margin-left: auto; }
+	.tree-view-pane { max-width: 36rem; }
+	.tree-view-pane .root-node {
+		display: flex; align-items: center; border-radius: var(--r); margin-bottom: .15rem;
+	}
+	.tree-view-pane .name {
+		flex: 1 1 auto; display: flex; align-items: center; gap: .35rem; font-size: var(--text-sm);
+		color: var(--ink); padding: .3rem 0;
+	}
+	.tree-view-pane .count { color: var(--muted); font-size: var(--text-xs); margin-left: auto; }
 	@media (max-width: 900px) {
 		.library-layout { flex-direction: column; }
 		.folder-sidebar { flex: 0 0 auto; width: 100%; max-height: none; border-right: none; border-bottom: 1px solid var(--line); padding-right: 0; padding-bottom: var(--space-3); position: static; }

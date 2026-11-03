@@ -10,6 +10,7 @@
 		path: string;
 		count: number;
 		children: TreeNode[];
+		docs: any[];
 	}
 
 	let {
@@ -20,6 +21,8 @@
 		onRename,
 		onPrivatize,
 		onDelete,
+		docs = [],
+		showDocs = false,
 		depth = 0
 	}: {
 		nodes: TreeNode[];
@@ -29,10 +32,21 @@
 		onRename: (path: string) => void;
 		onPrivatize: (path: string, isPrivate: boolean) => void;
 		onDelete: (path: string, count: number) => void;
+		// Documents to show as leaf rows at this exact level (not
+		// subfolder contents — those come from each node's own `.docs`)
+		// — opt-in via showDocs, so the admin-page sidebar's existing
+		// folder-only FolderTree (quick navigation, not a full browser)
+		// doesn't suddenly grow a leaf row per document just because
+		// TreeNode now always carries `.docs`.
+		docs?: any[];
+		showDocs?: boolean;
 		depth?: number;
 	} = $props();
 
-	let expanded = $state<Set<string>>(new Set());
+	// Tree shows 3 levels deep by default (root + 2 more), with a chevron
+	// to go further — each recursive instance only knows its own depth, so
+	// "auto-expand" is just "this instance's nodes land at depth < 2".
+	let expanded = $state<Set<string>>(depth < 2 ? new Set(nodes.map((n) => n.path)) : new Set());
 	let dragOverPath = $state<string | null>(null);
 
 	function toggle(path: string, e: MouseEvent) {
@@ -55,7 +69,7 @@
 				ondragleave={() => (dragOverPath = null)}
 				ondrop={(e) => { e.preventDefault(); dragOverPath = null; onDrop(node.path); }}
 			>
-				{#if node.children.length}
+				{#if node.children.length || (showDocs && node.docs.length)}
 					<button class="chevron" onclick={(e) => toggle(node.path, e)} aria-label="Toggle {node.name}">
 						<span class:open={expanded.has(node.path)}><Icon name="chevron" size={11} /></span>
 					</button>
@@ -74,12 +88,38 @@
 					<button onclick={() => onDelete(node.path, node.count)} title="Delete folder" aria-label="Delete {node.name}"><Icon name="trash" size={11} /></button>
 				</span>
 			</div>
-			{#if node.children.length && expanded.has(node.path)}
-				<FolderTree nodes={node.children} {activePath} {onSelect} {onDrop} {onRename} {onPrivatize} {onDelete} depth={depth + 1} />
+			{#if expanded.has(node.path)}
+				{#if showDocs && node.docs.length}
+					<ul class="docs" style="--depth: {depth + 1}">
+						{#each node.docs as doc (doc.id)}
+							<li>
+								<a class="doc-leaf" href="/admin/{doc.id}">
+									<Icon name="file" size={13} />
+									<span class="label">{doc.title}</span>
+								</a>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+				{#if node.children.length}
+					<FolderTree nodes={node.children} {activePath} {onSelect} {onDrop} {onRename} {onPrivatize} {onDelete} {showDocs} depth={depth + 1} />
+				{/if}
 			{/if}
 		</li>
 	{/each}
 </ul>
+{#if showDocs && docs.length}
+	<ul class="docs" style="--depth: {depth + 1}">
+		{#each docs as doc (doc.id)}
+			<li>
+				<a class="doc-leaf" href="/admin/{doc.id}">
+					<Icon name="file" size={13} />
+					<span class="label">{doc.title}</span>
+				</a>
+			</li>
+		{/each}
+	</ul>
+{/if}
 
 <style>
 	/* padding-left via --depth, not a ".tree .tree" descendant selector —
@@ -118,4 +158,11 @@
 		border-radius: var(--r); display: inline-flex;
 	}
 	.node-actions button:hover { color: var(--accent); background: var(--panel); }
+	.docs { list-style: none; margin: 0; padding: 0; padding-left: calc(var(--depth) * 1rem + 1.1rem); }
+	.doc-leaf {
+		display: flex; align-items: center; gap: .35rem; padding: .3rem 0; text-decoration: none;
+		color: var(--muted); font-size: var(--text-sm); border-radius: var(--r);
+	}
+	.doc-leaf:hover { color: var(--ink); }
+	.doc-leaf .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>
