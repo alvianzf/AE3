@@ -28,6 +28,16 @@ def ensure_schema() -> None:
         # concurrent uploads could both pass.
         s.run("CREATE CONSTRAINT document_hash IF NOT EXISTS "
               "FOR (n:Document) REQUIRE n.content_hash IS UNIQUE")
+        # A folder with no documents in it yet (specs/v6.8/01's known
+        # limitation, closed here) — Document.folder_path alone can't
+        # represent a folder an admin created ahead of uploading anything
+        # into it, so an explicitly-created folder gets a real node.
+        # Documents filed into a path with no :Folder node still work
+        # exactly as before (store.facets()/the folder tree treat a
+        # folder as "real" either way — a Document-implied path or an
+        # explicit :Folder, unioned).
+        s.run("CREATE CONSTRAINT folder_path IF NOT EXISTS "
+              "FOR (n:Folder) REQUIRE n.path IS UNIQUE")
 
         # Vector index for seed search (retrieval/seed_search.py).
         # cfg.embedding_dimensions must match Qwen3-Embedding-8B's real

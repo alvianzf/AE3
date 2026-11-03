@@ -19,6 +19,7 @@
 		onDrop,
 		onRename,
 		onPrivatize,
+		onDelete,
 		depth = 0
 	}: {
 		nodes: TreeNode[];
@@ -27,6 +28,7 @@
 		onDrop: (path: string) => void;
 		onRename: (path: string) => void;
 		onPrivatize: (path: string, isPrivate: boolean) => void;
+		onDelete: (path: string, count: number) => void;
 		depth?: number;
 	} = $props();
 
@@ -69,10 +71,11 @@
 					<button onclick={() => onRename(node.path)} title="Rename folder" aria-label="Rename {node.name}"><Icon name="edit" size={11} /></button>
 					<button onclick={() => onPrivatize(node.path, true)} title="Privatize folder" aria-label="Privatize {node.name}"><Icon name="lock" size={11} /></button>
 					<button onclick={() => onPrivatize(node.path, false)} title="Make folder public" aria-label="Make {node.name} public"><Icon name="unlock" size={11} /></button>
+					<button onclick={() => onDelete(node.path, node.count)} title="Delete folder" aria-label="Delete {node.name}"><Icon name="trash" size={11} /></button>
 				</span>
 			</div>
 			{#if node.children.length && expanded.has(node.path)}
-				<FolderTree nodes={node.children} {activePath} {onSelect} {onDrop} {onRename} {onPrivatize} depth={depth + 1} />
+				<FolderTree nodes={node.children} {activePath} {onSelect} {onDrop} {onRename} {onPrivatize} {onDelete} depth={depth + 1} />
 			{/if}
 		</li>
 	{/each}

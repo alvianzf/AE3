@@ -1034,11 +1034,20 @@ def delete_staged_source(staged_id: str, created_by: str | None = None) -> bool:
 # _run_staged_ingest_job) ----------------------------------------------------
 
 def create_ingestion_job(staged_id: str, owner: str | None, filename: str) -> dict:
+    """Starts 'queued' (app/ingestion/queue.py) — a worker flips it to
+    'running' once it actually picks the job up, which may not be
+    immediately if cfg.ingestion_concurrency's other slots are all busy.
+    Distinct from `step='queued'` below, which means something narrower
+    ("accepted, about to start reading") and is set by the worker itself
+    right as that status flip happens — a client sees status='queued'
+    the whole time it's genuinely waiting for a slot, then status=
+    'running'/step='queued' for the brief moment between being picked up
+    and the first real progress update."""
     job_id = str(uuid.uuid4())
     now = _now()
     row = {
         "id": job_id, "staged_id": staged_id, "owner": owner, "filename": filename,
-        "status": "running", "step": "queued", "step_detail": None,
+        "status": "queued", "step": "queued", "step_detail": None,
         "error_message": None, "result_document_id": None,
         "created_at": now, "updated_at": now,
     }
@@ -1095,12 +1104,19 @@ def fail_orphaned_ingestion_jobs() -> int:
     with it. Without this, that job's row stays 'running' forever: GET
     /api/ingestion-jobs/active keeps surfacing it, and its progress bar is
     stuck with no way to ever resolve or retry through the UI (found in
-    review, right after the graceful-reload deploy work landed)."""
+    review, right after the graceful-reload deploy work landed).
+
+    Also covers 'queued' (app/ingestion/queue.py) — a job a worker never
+    actually picked up before the process died. No partial work was
+    lost for it (nothing had started), but the in-process asyncio.Queue
+    it was waiting on is gone too, so it would otherwise sit at
+    status='queued' forever with nothing left to ever pick it up — same
+    clear-error outcome as a 'running' job, not a silent resume."""
     with core_connection() as conn:
         cur = conn.execute(
             "UPDATE ingestion_jobs SET status = 'error', step = 'error', "
             "error_message = 'Interrupted by a server restart — please retry.', "
-            "updated_at = %s WHERE status = 'running'",
+            "updated_at = %s WHERE status IN ('running', 'queued')",
             (_now(),),
         )
         return cur.rowcount

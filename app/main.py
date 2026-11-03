@@ -25,7 +25,7 @@ from pathlib import Path
 
 import openai
 import neo4j.exceptions
-from fastapi import BackgroundTasks, Depends, FastAPI, Form, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
@@ -42,6 +42,7 @@ from .clients.llm_client import set_provider as set_llm_provider
 from .graph import schema as graph_schema
 from .graph import store
 from .ingestion import pipeline as ingestion_pipeline
+from .ingestion import queue as ingestion_queue
 from .patient.context import get_patient_context
 from .reasoning import llm_checker, reasoner
 from .retrieval import general_lookup, pgvector_store, seed_search
@@ -116,6 +117,11 @@ async def lifespan(app: FastAPI):
     # update itself again, so leaving it 'running' would strand its
     # progress bar forever instead of surfacing a real, retryable error.
     core_store.fail_orphaned_ingestion_jobs()
+    # Starts the bounded worker pool new ingest jobs are queued onto
+    # (app/ingestion/queue.py) — after fail_orphaned_ingestion_jobs()
+    # above, so a job this boot inherited from a dead process is already
+    # resolved to a clear error before any new work can start.
+    ingestion_queue.start_workers()
     yield
 
 
@@ -396,8 +402,9 @@ def _run_ingest(
 ) -> dict:
     """Read → tag → grade → split into passages → write — the slow half of
     ingestion, run synchronously by the direct-upload routes below but
-    backgrounded (via BackgroundTasks) for staged promotion, where
-    `on_progress` is wired to core_store.update_ingestion_job so a client
+    backgrounded (via the ingestion queue, app/ingestion/queue.py) for
+    staged promotion, where `on_progress` is wired to
+    core_store.update_ingestion_job so a client
     polling the job can watch it move through each stage.
 
     `pre_write_check` is called immediately before the Neo4j write (the
@@ -699,6 +706,13 @@ def _run_staged_ingest_job(
     def progress(step: str, detail: str | None = None) -> None:
         core_store.update_ingestion_job(job_id, step=step, step_detail=detail)
 
+    # The first thing a worker does on actually picking this job up
+    # (app/ingestion/queue.py) — status moves from 'queued' (waiting for
+    # a concurrency slot) to 'running', so a client polling can tell
+    # "genuinely waiting" from "working on it" instead of both looking
+    # identical.
+    core_store.update_ingestion_job(job_id, status="running")
+
     # Cheap early exit if it's already gone — avoids spending a Reader LLM
     # call and a full embed/graph-extraction pass on a document the user
     # discarded before this job even started. Not sufficient by itself:
@@ -737,16 +751,18 @@ def _run_staged_ingest_job(
 
 def _promote_staged_async(
     staged_id: str, kind: str, origin: str, owner: str | None,
-    replaces: str, background_tasks: BackgroundTasks,
-    personal: bool = False,
+    replaces: str, personal: bool = False,
 ) -> dict:
     """Looks up the staged item and runs the same synchronous duplicate
     check _ingest_pages() always has, then hands the slow remainder to
-    BackgroundTasks and returns a job id immediately. The duplicate check
-    stays synchronous and immediate — before any job row exists — so a
-    practitioner clicking Ingest on an exact duplicate still gets an
-    instant 409 with the replace-or-discard choice, not a job that
-    "succeeds" into a redundant copy."""
+    the ingestion queue (app/ingestion/queue.py — a concurrency-capped
+    replacement for FastAPI's BackgroundTasks, found live 2026-11-03:
+    unbounded concurrent ingests is a real OOM risk, see DEPLOY.md) and
+    returns a job id immediately. The duplicate check stays synchronous
+    and immediate — before any job row exists — so a practitioner
+    clicking Ingest on an exact duplicate still gets an instant 409 with
+    the replace-or-discard choice, not a job that "succeeds" into a
+    redundant copy."""
     staged = core_store.get_staged_source(staged_id, owner)
     if staged is None:
         raise HTTPException(404, f"no such staged item: {staged_id}")
@@ -762,8 +778,8 @@ def _promote_staged_async(
     body, digest, page_count = _prep_and_check_duplicate(pages, filename, replaces)
 
     job = core_store.create_ingestion_job(staged_id, owner, filename)
-    background_tasks.add_task(
-        _run_staged_ingest_job, job["id"], staged_id, owner, staged["kind"],
+    ingestion_queue.enqueue(
+        job["id"], _run_staged_ingest_job, job["id"], staged_id, owner, staged["kind"],
         pages, body, digest, page_count, filename, kind, origin, replaces, original,
         personal=personal,
     )
@@ -915,7 +931,7 @@ class StagedIngestBody(BaseModel):
 
 @app.post("/api/staged/{staged_id}/ingest", status_code=202)
 def promote_staged(
-    staged_id: str, body: StagedIngestBody, background_tasks: BackgroundTasks,
+    staged_id: str, body: StagedIngestBody,
     _caller: dict = Depends(auth.require_admin_or_upload_permitted_practitioner),
 ) -> dict:
     """202: the duplicate check (still a synchronous 409 on a real
@@ -924,8 +940,7 @@ def promote_staged(
     GET /api/ingestion-jobs/{job_id} for progress, not the ingested
     document itself."""
     return _promote_staged_async(staged_id, body.kind, body.origin,
-                                  _staged_owner_filter(_caller), body.replaces,
-                                  background_tasks)
+                                  _staged_owner_filter(_caller), body.replaces)
 
 
 class StagedBatchIngestBody(BaseModel):
@@ -936,7 +951,7 @@ class StagedBatchIngestBody(BaseModel):
 
 @app.post("/api/staged/ingest")
 def promote_staged_batch(
-    body: StagedBatchIngestBody, background_tasks: BackgroundTasks,
+    body: StagedBatchIngestBody,
     _caller: dict = Depends(auth.require_admin_or_upload_permitted_practitioner),
 ) -> dict:
     """Each id either 409s immediately as a duplicate (reported in
@@ -970,8 +985,7 @@ def promote_staged_batch(
                 }})
                 continue
             seen_digests.add(digest)
-            enqueued = _promote_staged_async(staged_id, body.kind, body.origin, owner,
-                                              "", background_tasks)
+            enqueued = _promote_staged_async(staged_id, body.kind, body.origin, owner, "")
             jobs.append({"staged_id": staged_id, "job_id": enqueued["job_id"]})
         except HTTPException as exc:
             if exc.status_code == 409:
@@ -1046,7 +1060,7 @@ def discard_own_staged(staged_id: str, session: dict = Depends(auth.require_pro_
 
 @app.post("/api/me/knowledge/stage/{staged_id}/ingest", status_code=202)
 def promote_own_staged(
-    staged_id: str, body: StagedIngestBody, background_tasks: BackgroundTasks,
+    staged_id: str, body: StagedIngestBody,
     session: dict = Depends(auth.require_pro_practitioner),
 ) -> dict:
     # `replaces` (a duplicate-of id the practitioner is choosing to
@@ -1062,7 +1076,7 @@ def promote_own_staged(
         if existing is None or existing.get("owner_practitioner_id") != session["id"]:
             raise HTTPException(404, "no such source")
     return _promote_staged_async(staged_id, body.kind, body.origin, session["id"],
-                                 body.replaces, background_tasks, personal=True)
+                                 body.replaces, personal=True)
 
 
 @app.delete("/api/me/knowledge/{source_id}")
@@ -1331,6 +1345,41 @@ def set_source_topics(source_id: str, body: TopicsUpdate,
     if source is None:
         raise HTTPException(404, "no such source")
     return source
+
+
+class FolderCreate(BaseModel):
+    folder_path: str
+
+
+@app.post("/api/library/folders")
+def create_library_folder(body: FolderCreate,
+                          _admin: dict = Depends(auth.require_admin)) -> dict:
+    """An empty folder, created ahead of any document landing in it —
+    closes specs/v6.8/01's known limitation ("no persistent empty
+    folder without a first-class Folder entity") with exactly that."""
+    try:
+        return store.create_folder(body.folder_path)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+class FolderDelete(BaseModel):
+    folder_path: str
+
+
+@app.post("/api/library/folders/delete")
+def delete_library_folder(body: FolderDelete,
+                          _admin: dict = Depends(auth.require_admin)) -> dict:
+    """Deletes the folder and every document in it or a subfolder of it
+    — the "drag a folder to the trash" expectation a real file browser
+    has, not a bare `rmdir` that only works when empty."""
+    try:
+        deleted_ids = store.delete_folder(body.folder_path)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    for document_id in deleted_ids:
+        pgvector_store.delete_document(document_id)
+    return {"deleted_documents": len(deleted_ids)}
 
 
 class FolderRename(BaseModel):

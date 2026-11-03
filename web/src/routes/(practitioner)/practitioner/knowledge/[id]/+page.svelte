@@ -23,6 +23,23 @@
 				})()
 			: null
 	);
+	// Plain download URL (no #fragment) for the "open in a new tab"
+	// fallback below — an embedded-iframe quirk (a browser extension, a
+	// slow load with no visible spinner) shouldn't also block viewing
+	// the original outright. Found live: a detail page loading with the
+	// PDF area staying empty, nothing in the server logs to explain it.
+	const downloadUrl = $derived(
+		source?.original_name ? `${PUBLIC_API_BASE}/api/sources/${source.id}/original` : null
+	);
+	let iframeLoaded = $state(false);
+	let iframeTimedOut = $state(false);
+	$effect(() => {
+		if (!originalUrl) return;
+		iframeLoaded = false;
+		iframeTimedOut = false;
+		const t = setTimeout(() => { if (!iframeLoaded) iframeTimedOut = true; }, 8000);
+		return () => clearTimeout(t);
+	});
 
 	// _locator() (app/main.py) produces the exact same string for a
 	// passage here and for a citation's `sources[].locator` on the
@@ -38,14 +55,24 @@
 
 <svelte:head><title>{source?.title ?? 'Source'} — Practitioner portal</title></svelte:head>
 
-<Quiet title={source?.title}>
-	{#if source}
+<Quiet title={source?.error ? 'Could not load' : source?.title}>
+	{#if source?.error}
+		<p class="hint">Could not load this source: {source.error}</p>
+	{:else if source}
 		<p class="hint">
 			{#if source.folder_path}{source.folder_path} · {/if}
 			<Chip tone="neutral">grade {source.grade}</Chip>
 		</p>
 		{#if originalUrl}
-			<iframe class="doc-frame" src={originalUrl} title={source.title}></iframe>
+			<p class="hint">
+				<a href={downloadUrl} target="_blank" rel="noopener">Open original in a new tab ↗</a>
+			</p>
+			{#if iframeTimedOut}
+				<p class="hint">
+					Still loading, or it didn't load — use the "Open original in a new tab" link above.
+				</p>
+			{/if}
+			<iframe class="doc-frame" src={originalUrl} title={source.title} onload={() => (iframeLoaded = true)}></iframe>
 		{:else}
 			{#if source.body_reconstructed}
 				<p class="hint">Rebuilt from passages — no original body was stored for this source.</p>

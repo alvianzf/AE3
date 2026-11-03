@@ -44,10 +44,19 @@ def ensure_schema() -> None:
                 text TEXT NOT NULL,
                 page_start INTEGER,
                 page_end INTEGER,
-                embedding vector({cfg.embedding_dimensions}) NOT NULL,
-                is_private BOOLEAN NOT NULL DEFAULT FALSE
+                embedding vector({cfg.embedding_dimensions}) NOT NULL
             )
         """)
+        # CREATE TABLE IF NOT EXISTS above is a no-op for a table that
+        # already existed before is_private was added (specs/v6.9/01) —
+        # found live, same gap core_store.py's practitioners table hit
+        # for can_upload_library: apply it explicitly too, or this column
+        # silently never exists on a database that predates it and every
+        # set_private() call 500s with UndefinedColumn.
+        conn.executescript(
+            "ALTER TABLE chunk_embeddings ADD COLUMN IF NOT EXISTS "
+            "is_private BOOLEAN NOT NULL DEFAULT FALSE"
+        )
 
 
 def save_chunk_embeddings(document_id: str, document_title: str, grade: int,
