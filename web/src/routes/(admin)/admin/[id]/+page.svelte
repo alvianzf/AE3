@@ -39,8 +39,8 @@
 <Quiet title={source?.title}>
 	{#if source}
 		<p class="hint">
-			<a href="/admin?folder={encodeURIComponent(source.folder_path || '(root)')}">
-				{source.folder_path || '(root)'}
+			<a href="/admin?folder={encodeURIComponent(source.folder_path || '')}">
+				{source.folder_path || 'Library'}
 			</a>
 			· <Chip tone="neutral">grade {source.grade}</Chip>
 		</p>

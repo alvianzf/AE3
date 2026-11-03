@@ -105,8 +105,11 @@
 	}
 	.label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 	.count { color: var(--muted); font-size: var(--text-xs); flex: 0 0 auto; }
-	.node-actions { display: none; gap: .15rem; flex: 0 0 auto; padding-right: .2rem; }
-	.node:hover .node-actions { display: flex; }
+	/* Always visible, not hover-revealed — matches the admin Library
+	   page's doc-card-actions, and hover-reveal on a flex row would grow
+	   the row's content width on hover (shifting the name/count next to
+	   it) and is unreachable on touch devices anyway. */
+	.node-actions { display: flex; gap: .15rem; flex: 0 0 auto; padding-right: .2rem; }
 	.node-actions button {
 		border: none; background: none; cursor: pointer; color: var(--muted); padding: .2rem;
 		border-radius: var(--r); display: inline-flex;

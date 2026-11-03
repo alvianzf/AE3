@@ -133,3 +133,32 @@ Reader's topics at ingest staying only the starting value — an admin can
 add or remove tags per document directly from the library grid (chip +
 ×, or an inline "+ tag" field), same "AI suggests, admin decides"
 relationship this doc already describes for folders.
+
+## Addendum 2 — a real Finder/Nautilus-style browser
+
+Shipped after the tree-sidebar version above: the main library pane
+stopped being a flat, prefix-filtered list and became an actual
+directory browser. A `currentPath` state (not a filter chip) tracks
+which folder is open; the pane shows exactly that folder's direct
+contents — subfolder tiles, then the documents filed there, one level
+at a time — with a breadcrumb back up to the root ("Library"). Clicking
+a subfolder tile or a sidebar tree node navigates into it, matching
+double-click-to-open in a real file manager (single click here, since
+this is a web list, not a desktop icon grid).
+
+A folder tile is now draggable too, not just document cards — dropping
+one onto another folder tile, a sidebar tree node, or the root entry
+reuses the same `POST /api/library/folders/rename` the rename dialog
+already calls, with the dragged folder's own name appended under the
+drop target (nesting it there). Guarded against dropping a folder into
+itself or one of its own subfolders (client-side only; the backend
+`rename_folder()` has no equivalent guard against a caller constructing
+the same cycle directly — a real gap, not exercised by this UI since it
+never produces that call, but worth closing on the backend too if this
+ever gets a second caller).
+
+A non-empty search box switches the main pane to a flat, library-wide
+result list (every matching document regardless of folder), the same
+"search this folder vs. search everywhere" split Finder/Nautilus both
+make — not worth building a separate "search just this folder" mode for
+a library this size.

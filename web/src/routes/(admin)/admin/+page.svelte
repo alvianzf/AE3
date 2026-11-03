@@ -173,13 +173,14 @@
 	let q = $state('');
 	let activeTopic = $state('');
 	let activeKind = $state('');
-	// '' = unfiltered (every folder, including root); '(root)' is its own
-	// filter value (sources with no folder_path) — distinct from '' so
-	// "show me just the unfiled ones" is reachable (specs/v6.8/01).
-	// Deep-linked from a source's own detail page, e.g. "/admin/[id]"'s
-	// folder breadcrumb (specs/v6.8/01/02) — pre-selects that folder's
-	// filter chip on arrival instead of landing on the unfiltered list.
-	let activeFolder = $state(appPage.url.searchParams.get('folder') ?? '');
+	// The folder currently being browsed — a real Finder/Nautilus-style
+	// "current directory", not a filter chip: '' is root. Navigating into
+	// a folder shows exactly its direct contents (subfolders + the
+	// documents filed there), not every descendant flattened into one
+	// list — that's what folders of a real file browser mean. Deep-linked
+	// from a source's own detail page, e.g. "/admin/[id]"'s folder
+	// breadcrumb (specs/v6.8/01/02) — lands already browsing that folder.
+	let currentPath = $state(appPage.url.searchParams.get('folder') ?? '');
 
 	// A real nested tree, not a flat chip row — folders still have no
 	// node of their own (specs/v6.8/01's string-prefix model), so this is
@@ -213,24 +214,54 @@
 		sortTree(roots);
 		return roots;
 	});
-	const unfiledCount = $derived((data.sources ?? []).filter((s: any) => !s.folder_path).length);
+
+	function findNode(nodes: TreeNode[], path: string): TreeNode | null {
+		for (const n of nodes) {
+			if (n.path === path) return n;
+			if (path === n.path || path.startsWith(`${n.path}/`)) {
+				const hit = findNode(n.children, path);
+				if (hit) return hit;
+			}
+		}
+		return null;
+	}
+
+	// The subfolder tiles shown in the main pane for whatever folder is
+	// currently open — direct children only (findNode().children), same
+	// "one level, not every descendant" rule the documents below follow.
+	const visibleSubfolders = $derived.by(() => {
+		if (!currentPath) return folderTree;
+		return findNode(folderTree, currentPath)?.children ?? [];
+	});
+
+	const breadcrumb = $derived.by(() => {
+		if (!currentPath) return [];
+		const segments = currentPath.split('/');
+		let acc = '';
+		return segments.map((name) => {
+			acc = acc ? `${acc}/${name}` : name;
+			return { name, path: acc };
+		});
+	});
+
+	// A non-empty search box switches to a flat, library-wide result list
+	// (every matching document regardless of which folder it's in) — the
+	// same "search this folder vs. search everywhere" split Finder/
+	// Nautilus both make, just defaulting to "everywhere" once you've
+	// typed something, since not knowing which folder a document is in
+	// is exactly why you'd search for it.
+	const searching = $derived(q.trim().length > 0);
 
 	const filtered = $derived.by(() => {
 		const needle = q.trim().toLowerCase();
 		return (data.sources ?? []).filter((s: any) => {
 			if (activeTopic && !(s.topics ?? []).includes(activeTopic)) return false;
 			if (activeKind && s.kind !== activeKind) return false;
-			if (activeFolder) {
-				const fp = s.folder_path || '';
-				if (activeFolder === '(root)') {
-					if (fp !== '') return false;
-				} else if (fp !== activeFolder && !fp.startsWith(`${activeFolder}/`)) {
-					return false;
-				}
+			if (searching) {
+				return [s.title, s.summary, s.origin, s.author, s.filename]
+					.some((v) => (v ?? '').toLowerCase().includes(needle));
 			}
-			if (!needle) return true;
-			return [s.title, s.summary, s.origin, s.author, s.filename]
-				.some((v) => (v ?? '').toLowerCase().includes(needle));
+			return (s.folder_path || '') === currentPath;
 		});
 	});
 
@@ -289,16 +320,34 @@
 		}
 	}
 
-	// Drag a doc card onto a folder-tree node to move it — same
-	// setFolder() write the inline per-card field already uses, just a
-	// second way to trigger it.
+	// Drag a doc card or a folder tile onto a folder (tree node, main-pane
+	// tile, or breadcrumb segment) to move it — a document drag reuses
+	// setFolder() (the same write the inline per-card field already
+	// triggers); a folder drag reuses moveFolderTo() (the same write the
+	// rename dialog already triggers) with its own name appended under
+	// the drop target, i.e. nesting it there.
 	let draggedId = $state<string | null>(null);
+	let draggedFolderPath = $state<string | null>(null);
 
-	function onDropOnFolder(path: string) {
-		if (!draggedId) return;
-		const s = (data.sources ?? []).find((x: any) => x.id === draggedId);
-		draggedId = null;
-		if (s) setFolder(s, path);
+	function handleDropOnFolder(targetPath: string) {
+		if (draggedId) {
+			const s = (data.sources ?? []).find((x: any) => x.id === draggedId);
+			draggedId = null;
+			if (s) setFolder(s, targetPath);
+			return;
+		}
+		if (draggedFolderPath) {
+			const source = draggedFolderPath;
+			draggedFolderPath = null;
+			if (targetPath === source || targetPath.startsWith(`${source}/`)) {
+				toast("Can't move a folder into itself or its own subfolder.", 'alert');
+				return;
+			}
+			const name = source.split('/').pop()!;
+			const dest = targetPath ? `${targetPath}/${name}` : name;
+			if (dest === source) return;
+			moveFolderTo(source, dest);
+		}
 	}
 
 	// A source's folder is always the admin's call (specs/v6.8/01) — the
@@ -321,10 +370,24 @@
 	let renameNewPath = $state('');
 	let renamingSubmitting = $state(false);
 
-	function askRenameFolder(folderKey: string) {
-		renameOldPath = folderKey === '(root)' ? '' : folderKey;
-		renameNewPath = renameOldPath;
+	function askRenameFolder(folderPath: string) {
+		renameOldPath = folderPath;
+		renameNewPath = folderPath;
 		renamingFolder = true;
+	}
+
+	async function moveFolderTo(oldPath: string, newPath: string) {
+		try {
+			const result = await post(fetch, '/library/folders/rename', {
+				old_path: oldPath, new_path: newPath
+			});
+			toast(`Moved ${result.moved} source${result.moved === 1 ? '' : 's'} to "${newPath || '(root)'}".`);
+			if (currentPath === oldPath) currentPath = newPath;
+			else if (currentPath.startsWith(`${oldPath}/`)) currentPath = newPath + currentPath.slice(oldPath.length);
+			await invalidateAll();
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		}
 	}
 
 	async function renameFolder(e: Event) {
@@ -332,15 +395,8 @@
 		if (!renameOldPath) return; // the root folder can't be renamed
 		renamingSubmitting = true;
 		try {
-			const result = await post(fetch, '/library/folders/rename', {
-				old_path: renameOldPath, new_path: renameNewPath
-			});
-			toast(`Moved ${result.moved} source${result.moved === 1 ? '' : 's'} to "${renameNewPath || '(root)'}".`);
+			await moveFolderTo(renameOldPath, renameNewPath);
 			renamingFolder = false;
-			if (activeFolder === renameOldPath) activeFolder = renameNewPath.trim() || '(root)';
-			await invalidateAll();
-		} catch (err: any) {
-			toast(err.message, 'alert');
 		} finally {
 			renamingSubmitting = false;
 		}
@@ -381,11 +437,10 @@
 		}
 	}
 
-	async function setFolderPrivate(folderKey: string, isPrivate: boolean) {
-		const folderPath = folderKey === '(root)' ? '' : folderKey;
+	async function setFolderPrivate(folderPath: string, isPrivate: boolean) {
 		try {
 			const result = await post(fetch, '/library/folders/privacy', { folder_path: folderPath, is_private: isPrivate });
-			toast(`${result.updated} source${result.updated === 1 ? '' : 's'} in "${folderKey}" set to ${isPrivate ? 'private' : 'public'}.`);
+			toast(`${result.updated} source${result.updated === 1 ? '' : 's'} in "${folderPath}" set to ${isPrivate ? 'private' : 'public'}.`);
 			await invalidateAll();
 		} catch (err: any) {
 			toast(err.message, 'alert');
@@ -722,41 +777,48 @@
 		{/if}
 
 		<div class="library-layout">
-			<!-- A real folder tree, not a flat chip row (specs/v6.8/01) —
-			     click a folder to filter (including its subfolders), drag a
-			     doc card onto one to move it, hover for rename/privatize. -->
+			<!-- A real folder tree for quick-jump navigation (specs/v6.8/01) —
+			     click a folder to open it (same as double-clicking its tile in
+			     the main pane), drag a doc card or another folder tile onto one
+			     to move it there, hover for rename/privatize. -->
 			<aside class="folder-sidebar">
 				<div
 					class="node root-node"
-					class:active={!activeFolder}
+					class:active={!currentPath}
 					ondragover={(e) => e.preventDefault()}
-					ondrop={(e) => { e.preventDefault(); onDropOnFolder(''); }}
+					ondrop={(e) => { e.preventDefault(); handleDropOnFolder(''); }}
 				>
-					<button class="name" onclick={() => { activeFolder = ''; page = 1; }}>
-						<Icon name="folder" size={13} /> All sources <span class="count">{data.sources.length}</span>
-					</button>
-				</div>
-				<div
-					class="node root-node"
-					class:active={activeFolder === '(root)'}
-					ondragover={(e) => e.preventDefault()}
-					ondrop={(e) => { e.preventDefault(); onDropOnFolder(''); }}
-				>
-					<button class="name" onclick={() => { activeFolder = activeFolder === '(root)' ? '' : '(root)'; page = 1; }}>
-						<Icon name="folder" size={13} /> (unfiled) <span class="count">{unfiledCount}</span>
+					<button class="name" onclick={() => { currentPath = ''; page = 1; }}>
+						<Icon name="folder" size={13} /> Library <span class="count">{data.sources.length}</span>
 					</button>
 				</div>
 				<FolderTree
 					nodes={folderTree}
-					activePath={activeFolder}
-					onSelect={(path) => { activeFolder = activeFolder === path ? '' : path; page = 1; }}
-					onDrop={onDropOnFolder}
+					activePath={currentPath}
+					onSelect={(path) => { currentPath = path; page = 1; }}
+					onDrop={handleDropOnFolder}
 					onRename={askRenameFolder}
 					onPrivatize={setFolderPrivate}
 				/>
 			</aside>
 
 			<div class="library-main">
+				{#if !searching}
+					<!-- Finder/Nautilus-style breadcrumb — "Library" is root,
+					     each segment is a real folder_path prefix you can jump
+					     back up to. -->
+					<nav class="breadcrumb" aria-label="Folder path">
+						<button onclick={() => { currentPath = ''; page = 1; }} disabled={!currentPath}>Library</button>
+						{#each breadcrumb as crumb, i (crumb.path)}
+							<span class="sep">/</span>
+							<button
+								onclick={() => { currentPath = crumb.path; page = 1; }}
+								disabled={i === breadcrumb.length - 1}
+							>{crumb.name}</button>
+						{/each}
+					</nav>
+				{/if}
+
 				{#if data.kinds.length}
 					<div class="facets">
 						<div class="facet-row">
@@ -778,9 +840,39 @@
 					</div>
 				{/if}
 
-				<!-- Documents as cards, not a table — sits directly below the
-				     categories/Kind facets rather than behind a drill-down click. -->
+				<!-- Documents (and, while browsing, subfolders) as cards/tiles —
+				     sits directly below the breadcrumb/Kind facet rather than
+				     behind a drill-down click. -->
 				<div class="doc-grid">
+					{#if !searching}
+						{#each visibleSubfolders as node (node.path)}
+							<div
+								class="folder-card"
+								draggable="true"
+								ondragstart={() => (draggedFolderPath = node.path)}
+								ondragend={() => (draggedFolderPath = null)}
+								ondragover={(e) => e.preventDefault()}
+								ondrop={(e) => { e.preventDefault(); handleDropOnFolder(node.path); }}
+							>
+								<button class="folder-card-open" onclick={() => { currentPath = node.path; page = 1; }}>
+									<Icon name="folder" size={28} />
+									<span class="folder-card-name">{node.name}</span>
+									<span class="count">{node.count}</span>
+								</button>
+								<span class="folder-card-actions">
+									<button title="Rename folder" aria-label="Rename {node.name}" onclick={() => askRenameFolder(node.path)}>
+										<Icon name="edit" size={12} />
+									</button>
+									<button title="Privatize folder" aria-label="Privatize {node.name}" onclick={() => setFolderPrivate(node.path, true)}>
+										<Icon name="lock" size={12} />
+									</button>
+									<button title="Make folder public" aria-label="Make {node.name} public" onclick={() => setFolderPrivate(node.path, false)}>
+										<Icon name="unlock" size={12} />
+									</button>
+								</span>
+							</div>
+						{/each}
+					{/if}
 					{#each pageItems as s (s.id)}
 						<div
 							class="doc-card"
@@ -848,7 +940,13 @@
 							</div>
 						</div>
 					{:else}
-						<p class="hint">{data.sources.length ? 'Nothing matches those filters.' : 'Nothing ingested yet.'}</p>
+						{#if !visibleSubfolders.length}
+							<p class="hint">
+								{#if !data.sources.length}Nothing ingested yet — use "+ Add resources" to start teaching Clinic.
+								{:else if searching}Nothing matches that search.
+								{:else}This folder is empty.{/if}
+							</p>
+						{/if}
 					{/each}
 				</div>
 
@@ -1134,6 +1232,33 @@
 		max-height: 70vh; overflow-y: auto; position: sticky; top: var(--space-4);
 	}
 	.library-main { flex: 1 1 auto; min-width: 0; }
+	.breadcrumb { display: flex; align-items: center; gap: .3rem; margin-bottom: var(--space-3); font-size: var(--text-sm); flex-wrap: wrap; }
+	.breadcrumb button {
+		border: none; background: none; cursor: pointer; font: inherit; color: var(--accent); padding: .1rem .2rem;
+	}
+	.breadcrumb button:disabled { color: var(--ink); cursor: default; font-weight: 650; }
+	.breadcrumb .sep { color: var(--muted); }
+	.folder-card {
+		position: relative; border: 1px solid var(--line); border-radius: var(--r); background: var(--panel);
+		min-height: 7rem;
+	}
+	.folder-card:hover { border-color: var(--accent); background: var(--accent-soft); }
+	.folder-card-open {
+		display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .2rem;
+		width: 100%; height: 100%; min-height: 7rem; border: none; background: none; cursor: pointer;
+		font: inherit; color: var(--ink); padding: var(--space-3) var(--space-2);
+	}
+	.folder-card-name { font-size: var(--text-sm); font-weight: 600; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+	.folder-card .count { color: var(--muted); font-size: var(--text-xs); }
+	/* Always visible, not hover-revealed (matches doc-card-actions, and
+	   hover never fires on touch) — absolutely positioned so this doesn't
+	   affect the tile's own size either way, but consistency matters more
+	   than the extra chrome being decorative most of the time. */
+	.folder-card-actions { display: flex; gap: .2rem; position: absolute; top: .3rem; right: .3rem; }
+	.folder-card-actions button {
+		display: inline-flex; border: none; background: none; padding: .2rem; border-radius: var(--r); color: var(--muted); cursor: pointer;
+	}
+	.folder-card-actions button:hover { color: var(--accent); background: var(--panel); }
 	/* Mirrors FolderTree.svelte's .node/.name/.count exactly — these two
 	   rows (All sources / unfiled) sit above the real tree, not inside
 	   it, since neither is a real folder_path value. */
