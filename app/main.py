@@ -785,6 +785,25 @@ def _promote_staged_async(
     staged = core_store.get_staged_source(staged_id, owner)
     if staged is None:
         raise HTTPException(404, f"no such staged item: {staged_id}")
+
+    # Found live, specs/v6.16: nothing stopped two ingestion jobs from
+    # being created for the same staged item (a double-click on Retry,
+    # or the page's auto-kick-on-load racing a manual click) — the
+    # frontend's polling is keyed by staged_id, so the second job
+    # silently stops tracking of the first, and if the first then wins
+    # the write, its completion is never observed (the second's
+    # ConstraintError 409 reports the whole thing as "failed" even
+    # though the document was actually ingested). A duplicate attempt
+    # reattaches to the already-running job instead of racing it. Not
+    # fully race-proof (no DB-level unique constraint backs this — a
+    # true check-then-create TOCTOU window remains between two
+    # requests landing in the same instant), but closes the common
+    # case: a double-click is two sequential requests, not two that
+    # execute this check simultaneously.
+    existing_job = core_store.get_active_job_for_staged(staged_id)
+    if existing_job is not None:
+        return {"job_id": existing_job["id"]}
+
     pages = core_store.get_staged_pages(staged_id)
     filename = staged["filename"] or staged.get("source_url") or "pasted text"
     original = None

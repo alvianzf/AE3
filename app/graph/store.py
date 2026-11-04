@@ -701,8 +701,15 @@ def set_doc_type(document_id: str, doc_type: str) -> dict | None:
     with session() as s:
         s.run("MATCH (doc:Document {id: $id}) SET doc.doc_type = $doc_type",
               id=document_id, doc_type=doc_type)
-    log("admin", "set doc_type", f"{document_id} → '{doc_type}'")
-    return get_document(document_id)
+    result = get_document(document_id)
+    # Logged only on a real match — found in review: the MATCH/SET above
+    # is a silent no-op for a nonexistent document_id (the route then
+    # correctly 404s), but log() used to fire unconditionally anyway,
+    # recording "set doc_type" entries for edits that provably did
+    # nothing.
+    if result is not None:
+        log("admin", "set doc_type", f"{document_id} → '{doc_type}'")
+    return result
 
 
 def set_uploaded_by(document_id: str, uploaded_by: str) -> dict | None:
@@ -717,8 +724,10 @@ def set_uploaded_by(document_id: str, uploaded_by: str) -> dict | None:
     with session() as s:
         s.run("MATCH (doc:Document {id: $id}) SET doc.uploaded_by = $uploaded_by",
               id=document_id, uploaded_by=uploaded_by.strip())
-    log("admin", "set uploaded_by", f"{document_id} → '{uploaded_by.strip()}'")
-    return get_document(document_id)
+    result = get_document(document_id)
+    if result is not None:
+        log("admin", "set uploaded_by", f"{document_id} → '{uploaded_by.strip()}'")
+    return result
 
 
 def set_private(document_id: str, is_private: bool) -> dict | None:

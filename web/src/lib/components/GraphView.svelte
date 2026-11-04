@@ -58,8 +58,28 @@
 		folder: 'var(--accent)',
 		document: 'var(--ink)'
 	};
+	// The concept layer's `group` is an entity type straight from the
+	// KG-builder (Symptom, Treatment, hormone, ...) — an open,
+	// unbounded set, not a fixed enum worth hardcoding. Found in
+	// review: every such node fell through to the same `var(--muted)`
+	// fallback, so the one feature meant to show a *typed* graph
+	// rendered as an undifferentiated gray cloud, distinguishable only
+	// by circle size. A fixed palette assigned in sorted order (stable
+	// across reloads — not hashed, which would've worked but reads as
+	// arbitrary noise instead of a legend an admin can actually learn)
+	// covers it, with a legend below listing which type got which
+	// color.
+	const PALETTE = [
+		'#c0392b', '#2980b9', '#27ae60', '#8e44ad', '#d68910',
+		'#16a085', '#2c3e50', '#e67e22', '#2471a3', '#935116'
+	];
+	const paletteColors = $derived.by(() => {
+		const groups = [...new Set(nodes.map((n) => n.group).filter((g): g is string => !!g && !(g in COLORS)))].sort();
+		return new Map(groups.map((g, i) => [g, PALETTE[i % PALETTE.length]]));
+	});
 	function colorFor(group?: string): string {
-		return COLORS[group ?? ''] ?? 'var(--muted)';
+		if (!group) return 'var(--muted)';
+		return COLORS[group] ?? paletteColors.get(group) ?? 'var(--muted)';
 	}
 
 	let simulation: ReturnType<typeof forceSimulation> | null = null;
@@ -120,9 +140,18 @@
 		// ~300 ticks at the default alphaDecay) before the first paint —
 		// without this, the initial random starting positions and a
 		// strong charge force produce a visibly chaotic expansion on
-		// every layer switch, not just an unfit one.
+		// every layer switch, not just an unfit one. This does NOT mark
+		// `fitted` itself (found in review: it used to, unconditionally
+		// — for a graph that genuinely needs more than 300 ticks, e.g.
+		// the ~150-node/~2900-edge concept layer, that skipped the real
+		// 'end' handler above forever, leaving the view fit to
+		// still-unsettled positions — the exact "ran off the edges" bug
+		// this was supposed to fix). This call is just an immediate,
+		// best-effort first paint; the `on('end', ...)` handler above
+		// still fires the real, guarded fit once the simulation actually
+		// converges, whether that's on the very next frame (already
+		// converged within the 300 ticks) or later.
 		for (let i = 0; i < 300 && (simulation.alpha() ?? 0) > simulation.alphaMin(); i++) simulation.tick();
-		fitted = true;
 		fitToView();
 
 		return () => simulation?.stop();
@@ -204,6 +233,17 @@
 				{/each}
 			</g>
 		</svg>
+		{#if paletteColors.size}
+			<!-- Only the open-ended entity-type palette gets a legend —
+			     the document/folder layer's two groups are already
+			     self-explanatory from the node's own icon-less shape and
+			     label, not worth a swatch each. -->
+			<div class="legend">
+				{#each [...paletteColors] as [group, color] (group)}
+					<span class="legend-item"><span class="swatch" style="background: {color}"></span>{group}</span>
+				{/each}
+			</div>
+		{/if}
 	{/if}
 </div>
 
@@ -219,4 +259,10 @@
 	}
 	.node:hover circle { stroke: var(--accent); }
 	.node:hover text { fill: var(--ink); }
+	.legend {
+		display: flex; flex-wrap: wrap; gap: .3rem .9rem; padding: .6rem .8rem;
+		border-top: 1px solid var(--line); font-size: var(--text-xs); color: var(--muted);
+	}
+	.legend-item { display: inline-flex; align-items: center; gap: .35rem; }
+	.swatch { width: .6rem; height: .6rem; border-radius: 50%; flex: 0 0 auto; }
 </style>
