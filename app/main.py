@@ -1202,6 +1202,15 @@ def get_graph(_admin: dict = Depends(auth.require_admin)) -> dict:
     return {**store.graph_stats(), "unlinked": store.unlinked_documents()}
 
 
+@app.get("/api/graph/concepts")
+def get_concept_graph(_admin: dict = Depends(auth.require_admin)) -> dict:
+    """The Library page's Graph view, concept layer (specs/v6.13) — a
+    bounded node-link view of the actual knowledge graph (typed
+    Entity->Entity relationships), not the document/folder tree the
+    same tab's other layer already shows client-side."""
+    return store.concept_graph()
+
+
 @app.post("/api/relink")
 def relink(_admin: dict = Depends(auth.require_admin)) -> dict:
     """Build the knowledge graph for documents that have none.

@@ -1,5 +1,16 @@
 # Specs changelog
 
+## 2026-11-04 — v6.13, knowledge-base graph view
+
+See [v6.13/README.md](v6.13/README.md). Direct request, user chose
+"both, as switchable layers" when asked which the graph should show.
+New Graph view tab: document/folder layer (client-side, reuses the
+Tree view tab's data) and concept layer (the actual typed-relationship
+knowledge graph, bounded to the top 150 entities by relationship
+degree — production has 7905+). Added `d3-force`/`d3-drag`/`d3-zoom`/
+`d3-selection` as dependencies — checked `force-graph`'s own dependency
+tree first and chose the four focused d3 primitives over it.
+
 ## 2026-11-04 — v6.12, removed the staging/review step
 
 See [v6.12/README.md](v6.12/README.md). Direct request: no more
