@@ -88,7 +88,7 @@
 
   /* The master-detail shell: a narrow icon rail, a list pane, a detail
      pane. Named here once so every portal page builds the same shape. */
-  --rail-w: 3.75rem;
+  --rail-w: 12rem;
   --list-w: 20rem;
 }
 

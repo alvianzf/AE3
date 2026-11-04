@@ -55,7 +55,7 @@
 </script>
 
 <div class="menu-wrap" bind:this={wrapEl}>
-	<button class="icon-btn" onclick={toggle} title={label} aria-label={label} aria-expanded={open}>
+	<button class="menu-trigger" onclick={toggle} title={label} aria-label={label} aria-expanded={open}>
 		<Icon name="more-vertical" />
 	</button>
 	{#if open}
@@ -72,6 +72,18 @@
 
 <style>
 	.menu-wrap { position: relative; display: inline-flex; }
+	/* Own scoped class, not the generic "icon-btn" every page redefines
+	   locally (border/background differ page to page) — found live:
+	   the "⋮" trigger inherited whatever that page's own .icon-btn
+	   happened to look like, so it was a different control (bordered
+	   here, bare there) depending on where it sat. No border, no
+	   background by default, anywhere this component is used. */
+	.menu-trigger {
+		display: flex; align-items: center; justify-content: center;
+		width: 2rem; height: 2rem; border: none; background: none; border-radius: var(--r);
+		color: var(--ink-2); cursor: pointer; padding: 0;
+	}
+	.menu-trigger:hover { background: var(--panel-2); color: var(--ink); }
 	.menu-pop {
 		position: absolute; top: 100%; right: 0; left: auto; bottom: auto; margin: .25rem 0 0;
 		padding: .3rem; border: 1px solid var(--line); border-radius: var(--r-lg);
