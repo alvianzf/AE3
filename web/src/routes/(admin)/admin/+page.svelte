@@ -16,6 +16,7 @@
 	import FolderTree, { type TreeNode } from '$lib/components/FolderTree.svelte';
 	import GraphView, { type GraphNode, type GraphEdge } from '$lib/components/GraphView.svelte';
 	import Menu from '$lib/components/Menu.svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
 
 	let { data } = $props();
 
@@ -1114,6 +1115,11 @@
 			{/each}
 		</div>
 		{#if !data.coverage.length}
+			<!-- specs/v7/03 — the grid's own EmptyState just below already
+			     covers the identical "truly nothing ingested" condition
+			     with the full icon/headline/CTA treatment; this row stays a
+			     plain hint rather than a second, redundant copy of the
+			     same "start here" block stacked right above it. -->
 			<p class="hint">Nothing ingested yet — use "+ Add resources" to start teaching Clinic.</p>
 		{/if}
 
@@ -1358,11 +1364,41 @@
 						     this whole area blank with no "nothing matches"
 						     message, indistinguishable from a stuck page. -->
 						{#if searching || !visibleSubfolders.length}
-							<p class="hint">
-								{#if !data.sources.length}Nothing ingested yet — use "+ Add resources" to start teaching Clinic.
-								{:else if searching}Nothing matches that search.
-								{:else}This folder is empty.{/if}
-							</p>
+							<!-- grid-column: 1/-1 — a single grid item inside
+							     .doc-grid's auto-fill columns would otherwise
+							     only get one narrow (min 16rem) track's width,
+							     which the old plain-text hint got away with but
+							     this richer icon/headline/CTA treatment needs
+							     to span the full row to not look cramped. -->
+							<div class="grid-empty">
+								{#if !data.sources.length}
+									<EmptyState
+										icon="book"
+										title="Your library is empty"
+										body='Upload a document, paste text, or scrape a URL to start teaching Clinic.'
+									>
+										{#snippet action()}
+											<Button onclick={() => (ingestOpen = true)}>+ Add resources</Button>
+										{/snippet}
+									</EmptyState>
+								{:else if searching}
+									<EmptyState icon="search" title="Nothing matches that search" body="Try a different term, or clear the search.">
+										{#snippet action()}
+											<Button variant="ghost" onclick={() => { q = ''; page = 1; }}>Clear search</Button>
+										{/snippet}
+									</EmptyState>
+								{:else}
+									<EmptyState
+										icon="folder"
+										title="This folder is empty"
+										body="Upload a document here, or browse to another folder."
+									>
+										{#snippet action()}
+											<Button onclick={() => (ingestOpen = true)}>+ Add resources</Button>
+										{/snippet}
+									</EmptyState>
+								{/if}
+							</div>
 						{/if}
 					{/each}
 					{/if}
@@ -1467,10 +1503,34 @@
 										</td>
 									</tr>
 								{:else}
-									<tr><td colspan="10" class="hint">
-										{#if !data.sources.length}Nothing ingested yet — use "+ Add resources" to start teaching Clinic.
-										{:else if searching}Nothing matches that search.
-										{:else}This folder is empty.{/if}
+									<tr><td colspan="10">
+										{#if !data.sources.length}
+											<EmptyState
+												icon="book"
+												title="Your library is empty"
+												body='Upload a document, paste text, or scrape a URL to start teaching Clinic.'
+											>
+												{#snippet action()}
+													<Button onclick={() => (ingestOpen = true)}>+ Add resources</Button>
+												{/snippet}
+											</EmptyState>
+										{:else if searching}
+											<EmptyState icon="search" title="Nothing matches that search" body="Try a different term, or clear the search.">
+												{#snippet action()}
+													<Button variant="ghost" onclick={() => { q = ''; page = 1; }}>Clear search</Button>
+												{/snippet}
+											</EmptyState>
+										{:else}
+											<EmptyState
+												icon="folder"
+												title="This folder is empty"
+												body="Upload a document here, or browse to another folder."
+											>
+												{#snippet action()}
+													<Button onclick={() => (ingestOpen = true)}>+ Add resources</Button>
+												{/snippet}
+											</EmptyState>
+										{/if}
 									</td></tr>
 								{/each}
 							</tbody>
@@ -1871,6 +1931,7 @@
 	}
 	.dir-tile.active .dir-count { color: inherit; background: rgba(255, 255, 255, .35); }
 	.doc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: var(--space-3); }
+	.grid-empty { grid-column: 1 / -1; }
 	.doc-grid.list-view { grid-template-columns: 1fr; }
 	.doc-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r-lg); }
 	.doc-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
