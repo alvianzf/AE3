@@ -18,6 +18,17 @@ practitioner → client → command palette → onboarding), each phase its
 own independently reviewable/deployable PR per this repo's existing
 norm.
 
+## 2026-11-04 — v6.20, Library sort, concepts-stat bug fix
+
+See [v6.20/README.md](v6.20/README.md). Sort by name/date-ingested
+across every document view; checked the data model before adding a
+third "date uploaded" option and found no second timestamp exists to
+back it (a document's upload and ingest times are the same fact in
+this system). Also fixed a real pre-existing bug found live: the
+Library tab's "N concepts" stat read a field name `store.graph_stats()`
+never actually returns, silently showing 0 regardless of the real
+entity count since the line was first written.
+
 ## 2026-11-04 — v6.19, local-embedder OOM fix, menu reliability rewrite
 
 See [v6.19/README.md](v6.19/README.md). Two live production incidents:

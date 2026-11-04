@@ -267,6 +267,37 @@
 	$effect(() => {
 		try { localStorage.setItem('admin-library-view', viewMode); } catch {}
 	});
+
+	// Sort — file name or date ingested, each ascending/descending. Not
+	// "date uploaded" as a third, separate option: checked the data
+	// model first (found live, "sort by... date uploaded" asked) — a
+	// Document only ever persists one timestamp (ingested_at/
+	// created_at, the same value under both names at the API boundary).
+	// The staged item's own upload-time row is deleted the moment
+	// promotion succeeds, so there's no second, distinct "uploaded at"
+	// moment surviving anywhere to sort by — a document's upload and
+	// ingest timestamps are the same thing in this system (doubly true
+	// since v6.12's auto-ingest-on-upload removed any real gap between
+	// the two events anyway). Persisted locally, same as viewMode.
+	let sortBy = $state<'title' | 'created_at'>(
+		(typeof localStorage !== 'undefined' && (localStorage.getItem('admin-library-sort') as any)) || 'title'
+	);
+	let sortDir = $state<'asc' | 'desc'>(
+		(typeof localStorage !== 'undefined' && (localStorage.getItem('admin-library-sort-dir') as any)) || 'asc'
+	);
+	$effect(() => {
+		try {
+			localStorage.setItem('admin-library-sort', sortBy);
+			localStorage.setItem('admin-library-sort-dir', sortDir);
+		} catch {}
+	});
+	function sortDocs(docs: any[]): any[] {
+		const dir = sortDir === 'asc' ? 1 : -1;
+		return [...docs].sort((a, b) => {
+			if (sortBy === 'title') return a.title.localeCompare(b.title) * dir;
+			return ((a.created_at ?? '') < (b.created_at ?? '') ? -1 : (a.created_at ?? '') > (b.created_at ?? '') ? 1 : 0) * dir;
+		});
+	}
 	// The folder currently being browsed — a real Finder/Nautilus-style
 	// "current directory", not a filter chip: '' is root. Navigating into
 	// a folder shows exactly its direct contents (subfolders + the
@@ -320,16 +351,14 @@
 		}
 		function sortTree(nodes: TreeNode[]) {
 			nodes.sort((a, b) => a.name.localeCompare(b.name));
-			for (const n of nodes) { n.docs.sort((a, b) => a.title.localeCompare(b.title)); sortTree(n.children); }
+			for (const n of nodes) { n.docs = sortDocs(n.docs); sortTree(n.children); }
 		}
 		sortTree(roots);
 		return roots;
 	});
 	// Root-level documents (no folder) — the tree-view tab's top-level
 	// leaf rows, alongside the top-level folder nodes above.
-	const rootDocs = $derived(
-		(data.sources ?? []).filter((s: any) => !s.folder_path).sort((a: any, b: any) => a.title.localeCompare(b.title))
-	);
+	const rootDocs = $derived(sortDocs((data.sources ?? []).filter((s: any) => !s.folder_path)));
 	// Graph view (specs/v6.13) — two switchable layers in one tab.
 	// Every known folder path, flat and including subfolders at every
 	// depth — the "Move to..." dialog's quick-pick suggestions, so moving
@@ -382,7 +411,7 @@
 
 	const filtered = $derived.by(() => {
 		const needle = q.trim().toLowerCase();
-		return (data.sources ?? []).filter((s: any) => {
+		const matches = (data.sources ?? []).filter((s: any) => {
 			if (activeTopic && !(s.topics ?? []).includes(activeTopic)) return false;
 			if (searching) {
 				// Omni search: every field a document has, not just a fixed
@@ -394,6 +423,7 @@
 			}
 			return (s.folder_path || '') === currentPath;
 		});
+		return sortDocs(matches);
 	});
 
 	// Paginated client-side too, same reasoning as the filtering above — the
@@ -1030,6 +1060,21 @@
 					<button class="search-clear" onclick={() => { q = ''; page = 1; }} aria-label="Clear search">&times;</button>
 				{/if}
 			</div>
+			<div class="sort-control">
+				<select bind:value={sortBy} aria-label="Sort by">
+					<option value="title">Name</option>
+					<option value="created_at">Date ingested</option>
+				</select>
+				<button
+					class="sort-dir"
+					class:desc={sortDir === 'desc'}
+					onclick={() => (sortDir = sortDir === 'asc' ? 'desc' : 'asc')}
+					title={sortDir === 'asc' ? 'Ascending' : 'Descending'}
+					aria-label={sortDir === 'asc' ? 'Sort ascending' : 'Sort descending'}
+				>
+					<Icon name="chevron" size={13} />
+				</button>
+			</div>
 			<div class="view-toggle" role="group" aria-label="Document view">
 				<button class:active={viewMode === 'icons'} onclick={() => (viewMode = 'icons')} title="Icons" aria-label="Icons view"><Icon name="grid" size={15} /></button>
 				<button class:active={viewMode === 'list'} onclick={() => (viewMode = 'list')} title="List" aria-label="List view"><Icon name="list" size={15} /></button>
@@ -1038,7 +1083,13 @@
 		</div>
 
 		{#if data.graph}
-			<p class="hint graph-stats">{data.graph.concepts ?? 0} concepts · {data.graph.mentions ?? 0} links · {(data.graph.unlinked ?? []).length} unlinked sources</p>
+			<!-- Found live ("why does the library have 0 concepts?"): this
+			     always read .concepts, a field store.graph_stats() (app/
+			     graph/store.py) never actually returns — its real key is
+			     "entities". The stat was silently always 0 since whenever
+			     this line was first written, not something this session's
+			     work broke. -->
+			<p class="hint graph-stats">{data.graph.entities ?? 0} concepts · {data.graph.mentions ?? 0} links · {(data.graph.unlinked ?? []).length} unlinked sources</p>
 		{/if}
 
 		<!-- DMOZ-style categories: one scrollable row, always visible above the
@@ -1808,6 +1859,24 @@
 		color: var(--ink);
 		transition: border-color .15s var(--ease), box-shadow .15s var(--ease);
 	}
+	.sort-control {
+		display: flex; align-items: center; gap: .2rem; flex: 0 0 auto;
+		border: 1px solid var(--line-2); border-radius: var(--r-lg); padding: .2rem .2rem .2rem .5rem;
+	}
+	.sort-control select {
+		border: none; background: none; font: inherit; font-size: var(--text-sm); color: var(--ink); cursor: pointer;
+	}
+	.sort-dir {
+		display: inline-flex; align-items: center; justify-content: center;
+		width: 1.6rem; height: 1.6rem; border: none; background: none; cursor: pointer;
+		color: var(--muted); border-radius: var(--r);
+		transition: transform var(--duration-fast, .12s) var(--ease);
+	}
+	.sort-dir:hover { background: var(--panel-2); color: var(--accent); }
+	/* The chevron icon points down natively — that's already correct for
+	   descending; rotated 180deg (pointing up) for ascending. */
+	.sort-dir:not(.desc) { transform: rotate(180deg); }
+	.sort-dir:not(.desc):hover { transform: rotate(180deg); }
 	.view-toggle { display: flex; gap: .1rem; border: 1px solid var(--line-2); border-radius: var(--r-lg); padding: .2rem; flex: 0 0 auto; }
 	.view-toggle button {
 		border: none; background: none; cursor: pointer; color: var(--muted); padding: .5rem .6rem;
