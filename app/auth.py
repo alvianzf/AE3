@@ -356,9 +356,13 @@ def register(app: FastAPI) -> None:
         # enriching it here costs no extra round trip anywhere, unlike a
         # dedicated endpoint each portal would otherwise need to add.
         tour_completed = False
+        has_practitioner_view = False
         if session["role"] == "admin":
             admin = core_store.get_admin(session["id"])
             tour_completed = bool(admin and admin.get("tour_completed"))
+            # specs/v8 §4.2 — drives the portal switcher in the top bar;
+            # only an admin with a live, set link gets one.
+            has_practitioner_view = bool(admin and admin.get("linked_practitioner_id"))
         elif session["role"] == "practitioner":
             practitioner = core_store.get_practitioner(session["id"])
             tour_completed = bool(practitioner and practitioner.get("tour_completed"))
@@ -366,7 +370,7 @@ def register(app: FastAPI) -> None:
             from . import vault
             client = vault.get_client(session["practitioner_id"], session["id"])
             tour_completed = bool(client and client.get("tour_completed"))
-        return {**session, "tour_completed": tour_completed}
+        return {**session, "tour_completed": tour_completed, "has_practitioner_view": has_practitioner_view}
 
     @app.post("/api/auth/tour-completed")
     async def tour_completed(request: Request):

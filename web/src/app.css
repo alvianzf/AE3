@@ -77,6 +77,17 @@
   --ease-in: cubic-bezier(.7, 0, .84, 0);
   --tap-min: 2.25rem;
   --container-max: 78rem;
+
+  /* specs/v8 §11 — the new persistent top bar, and the rail's evolution
+     from icon-only to label-visible by default. Replaces AppRail's own
+     hardcoded 4.75rem width literal. */
+  --topbar-h: 3.25rem;
+  --rail-w-expanded: 13rem;
+  --rail-w-collapsed: 4.75rem;
+  /* specs/v8 §5.3/§11 — the contextual-panel primitive .rail-layout
+     (below) already used 22rem; named here so AppTopBar/future panels
+     share one value instead of each guessing their own. */
+  --panel-w: 22rem;
 }
 
 /* specs/v7/01 — breakpoint convention, documented here rather than as
@@ -177,7 +188,7 @@ label { font-size: var(--text-sm); font-weight: 600; color: var(--ink-2); }
    secondary panel above/below the main work surface by default, which
    reads as cramped on anything wider than a phone. Shared here instead of
    redefined per page. */
-.rail-layout { display: grid; grid-template-columns: 22rem 1fr; gap: var(--space-5); align-items: start; }
+.rail-layout { display: grid; grid-template-columns: var(--panel-w) 1fr; gap: var(--space-5); align-items: start; }
 .rail-layout > .rail { display: grid; gap: var(--space-5); align-content: start; }
 @media (max-width: 960px) { .rail-layout { grid-template-columns: 1fr; } }
 .hint { color: var(--muted); font-size: var(--text-sm); }

@@ -89,6 +89,20 @@ def ensure_schema() -> None:
             ALTER TABLE practitioners ADD COLUMN IF NOT EXISTS
                 tour_completed BOOLEAN NOT NULL DEFAULT FALSE;
 
+            -- specs/v8 §4.1 — some admins also hold a practitioner profile
+            -- (not all — an optional link, set/cleared by a superadmin).
+            -- One-directional (admins -> practitioners) is enough: the
+            -- only lookup this ever needs is "does this admin also have a
+            -- practitioner view," never the reverse.
+            ALTER TABLE admins ADD COLUMN IF NOT EXISTS
+                linked_practitioner_id TEXT REFERENCES practitioners(id);
+
+            -- specs/v8 §8.3/§8.1 — a practitioner opts in explicitly before
+            -- the public directory or landing page highlights them as
+            -- taking new clients; defaults to FALSE, never auto-listed.
+            ALTER TABLE practitioners ADD COLUMN IF NOT EXISTS
+                accepting_new_clients BOOLEAN NOT NULL DEFAULT FALSE;
+
             -- Routing only: which vault schema a client's login belongs
             -- to. No clinical content — that lives in the vault itself.
             CREATE TABLE IF NOT EXISTS client_directory (
@@ -444,6 +458,29 @@ def set_admin_tour_completed(admin_id: str) -> None:
         )
 
 
+def set_admin_linked_practitioner(admin_id: str, practitioner_id: str | None) -> dict | None:
+    """specs/v8 §4.1 — superadmin-only link/unlink between an admin account
+    and an existing practitioner profile. Does not touch the practitioner
+    row at all — the link is one-directional, read only from the admin
+    side (GET /api/auth/me's has_practitioner_view)."""
+    with core_connection() as conn:
+        exists = conn.execute(
+            "SELECT 1 FROM admins WHERE id = %s", (admin_id,)
+        ).fetchone()
+        if not exists:
+            return None
+        if practitioner_id is not None and conn.execute(
+            "SELECT 1 FROM practitioners WHERE id = %s", (practitioner_id,)
+        ).fetchone() is None:
+            raise ValueError("no such practitioner")
+        conn.execute(
+            "UPDATE admins SET linked_practitioner_id = %s WHERE id = %s",
+            (practitioner_id, admin_id),
+        )
+    log("superadmin", "admin<->practitioner link changed", f"{admin_id} -> {practitioner_id}")
+    return get_admin(admin_id)
+
+
 # --- Practitioners ---------------------------------------------------------
 
 def _decode_practitioner(row: dict) -> dict:
@@ -580,7 +617,7 @@ def set_can_upload_library(practitioner_id: str, allowed: bool) -> dict | None:
 
 def update_practitioner_profile(practitioner_id: str, **fields) -> dict | None:
     allowed = {"name", "bio", "specialties", "languages", "years_experience",
-               "consultation_price_cents", "photo_path"}
+               "consultation_price_cents", "photo_path", "accepting_new_clients"}
     unknown = set(fields) - allowed
     if unknown:
         raise ValueError(f"unknown profile field(s): {', '.join(sorted(unknown))}")

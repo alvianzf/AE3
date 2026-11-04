@@ -1703,6 +1703,27 @@ def contact_practitioner(practitioner_id: str, body: ContactSubmission) -> dict:
         practitioner_id, body.name, body.email, body.message)
 
 
+class SiteContactSubmission(BaseModel):
+    name: str
+    email: str
+    message: str
+
+
+@app.post("/api/contact")
+def site_contact(body: SiteContactSubmission) -> dict:
+    """specs/v8 §8.2 — a general /contact path, independent of the
+    per-practitioner contact-form flow (POST /api/practitioners/{id}/contact,
+    which goes to that one practitioner's own inbox). No new table: this is
+    a low-volume, admin-facing inquiry, not a user-facing inbox anyone
+    reviews/responds-to-in-app — core_store.log()'s existing trail (already
+    readable via GET /api/superadmin/audit-log) is the right-sized place
+    for it, not a second contact_form_submissions-shaped table."""
+    auth.check_email_format(body.email)
+    core_store.log("public", "site contact form submission",
+                   f"{body.name} <{body.email}>: {body.message}")
+    return {"ok": True}
+
+
 class ClientSignup(BaseModel):
     name: str
     email: str
@@ -1803,6 +1824,25 @@ def superadmin_suspend_admin(admin_id: str,
 def superadmin_reactivate_admin(admin_id: str,
                                 _: dict = Depends(auth.require_superadmin)) -> dict:
     admin = core_store.set_admin_active(admin_id, True)
+    if admin is None:
+        raise HTTPException(404, "no such admin")
+    return _public(admin)
+
+
+class AdminLinkPractitioner(BaseModel):
+    practitioner_id: str | None = None
+
+
+@app.put("/api/superadmin/admins/{admin_id}/link-practitioner")
+def superadmin_link_practitioner(admin_id: str, body: AdminLinkPractitioner,
+                                 _: dict = Depends(auth.require_superadmin)) -> dict:
+    """specs/v8 §4.1/§7.2 — an optional, superadmin-set link from an admin
+    account to an existing practitioner profile (not all admins are
+    practitioners). Pass practitioner_id: null to unlink."""
+    try:
+        admin = core_store.set_admin_linked_practitioner(admin_id, body.practitioner_id)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
     if admin is None:
         raise HTTPException(404, "no such admin")
     return _public(admin)
@@ -2167,7 +2207,7 @@ async def me_update_profile(request: Request,
     practitioner_id = session["id"]
     content_type = request.headers.get("content-type", "")
     allowed = {"name", "bio", "specialties", "languages", "years_experience",
-               "consultation_price_cents"}
+               "consultation_price_cents", "accepting_new_clients"}
     fields: dict = {}
     if content_type.startswith("multipart/form-data"):
         form = await request.form()
@@ -2180,6 +2220,8 @@ async def me_update_profile(request: Request,
                     fields[key] = json.loads(value or "[]")
                 elif key == "years_experience" or key == "consultation_price_cents":
                     fields[key] = int(value)
+                elif key == "accepting_new_clients":
+                    fields[key] = str(value).lower() in ("true", "1", "on")
                 else:
                     fields[key] = str(value)
             except (ValueError, TypeError) as exc:

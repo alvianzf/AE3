@@ -1,5 +1,7 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import AppRail from '$lib/components/AppRail.svelte';
+	import TopBar from '$lib/components/TopBar.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import Tour from '$lib/components/Tour.svelte';
 
@@ -19,13 +21,18 @@
 		{ selector: 'a[href="/admin/users"]', title: 'Users', body: 'Review practitioner applications, and manage admin and client accounts.' }
 	];
 
+	// specs/v8 §7.1 — Library is the admin portal's actual job-to-be-done
+	// (the most-used surface, per this session's own research), so it's
+	// the primary nav group; everything else is secondary/account-shaped.
 	const items = [
+		{ href: '/admin', label: 'Library', icon: 'book', group: 'primary' as const },
 		{ href: '/admin/dashboard', label: 'Dashboard', icon: 'home' },
-		{ href: '/admin', label: 'Library', icon: 'book' },
 		{ href: '/admin/users', label: 'Users', icon: 'users' },
 		{ href: '/admin/questionnaires', label: 'Questionnaires', icon: 'clipboard' },
 		{ href: '/admin/audit', label: 'Audit history', icon: 'history' }
 	];
+
+	const crumb = $derived(items.find((i) => page.url.pathname === i.href || page.url.pathname.startsWith(i.href + '/'))?.label ?? 'Admin portal');
 
 	// specs/v7/06 — v1 scope is navigation only; the Library page's own
 	// view modes/tabs (Tree view, Graph view) aren't separate routes to
@@ -69,8 +76,16 @@
 <Tour steps={tourSteps} bind:active={tourActive} />
 
 <div class="shell">
-	<AppRail {items} portalLabel="Admin portal" userLabel={data.session?.admin_role} onCommandPalette={() => (paletteOpen = true)} />
-	<main>
+	<AppRail {items} portalLabel="Admin portal" />
+	<div class="col">
+		<TopBar
+			crumbs={[{ label: 'Admin portal' }, { label: crumb }]}
+			onCommandPalette={() => (paletteOpen = true)}
+			userLabel={data.session?.admin_role}
+			showSwitcher={!!data.session?.has_practitioner_view}
+			switcherTo="practitioner"
+		/>
+		<main>
 		{@render children()}
 		{#if health}
 			<footer class="health-bar">
@@ -80,7 +95,8 @@
 				{/each}
 			</footer>
 		{/if}
-	</main>
+		</main>
+	</div>
 </div>
 
 <style>
@@ -92,9 +108,10 @@
 		--rail-bottom: rgba(20, 16, 30, .95);
 		--rail-indicator: #c9b8ff;
 	}
+	.col { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; min-height: 100dvh; }
 	/* No .container max-width here on purpose: admin screens are data-dense
 	   (tables, a directory grid) and benefit from the full width next to the
-	   icon-only AppRail, unlike the public site's prose-width pages that
+	   label-visible AppRail, unlike the public site's prose-width pages that
 	   .container is tuned for — a fixed 78rem cap left wide empty gutters on
 	   anything wider than a laptop. */
 	main { flex: 1 1 auto; min-width: 0; padding: var(--space-6) var(--space-5); }

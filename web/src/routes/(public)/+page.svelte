@@ -1,11 +1,26 @@
 <script lang="ts">
+	import { browser } from '$app/environment';
 	import { PUBLIC_SITE_URL } from '$env/static/public';
+	import { get } from '$lib/api';
 	import Sprig from '$lib/components/Sprig.svelte';
 	import Chip from '$lib/components/Chip.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import Seo from '$lib/components/Seo.svelte';
+	import ParticleField from '$lib/components/ParticleField.svelte';
 	import { jsonLdScript } from '$lib/seo';
 	import { reveal } from '$lib/actions/reveal';
+
+	let { data } = $props();
+	let practitioners = $state(data.practitioners);
+	$effect(() => {
+		if (!browser) return;
+		get(fetch, '/practitioners').then((list) => { practitioners = list; }).catch(() => {});
+	});
+	// specs/v8 §8.1 — "highlight practitioners that are available": a new
+	// section, not a restyle of anything that already exists. Only
+	// practitioners who've explicitly opted in (accepting_new_clients —
+	// defaults to FALSE, never auto-listed) ever show up here.
+	const available = $derived((practitioners ?? []).filter((p: any) => p.accepting_new_clients).slice(0, 4));
 
 	const description =
 		"Clinic gives independent practitioners an AI assistant grounded in their own curated library — every answer cited, independently checked, and never sourced from the open internet.";
@@ -63,6 +78,7 @@
      former root content (search/filter/grid) moved to /practitioners
      unchanged; /about redirects here rather than duplicating this pitch. -->
 <section class="hero">
+	<ParticleField />
 	<div class="container heroin">
 		<span class="sprigbig"><Sprig size={30} /></span>
 		<h1>An AI assistant practitioners can put their name behind.</h1>
@@ -122,6 +138,28 @@
 		</div>
 	</section>
 
+	{#if available.length}
+		<section class="practitioners" use:reveal>
+			<div class="ph"><h2>Practitioners taking new clients</h2><a class="seeall" href="/practitioners">See all →</a></div>
+			<div class="grid">
+				{#each available as pr, i (pr.id)}
+					<a class="card" href="/coach/{pr.id}" style="--reveal-delay: {i * 60}ms">
+						<div class="photo" style={pr.photo_path ? `background-image:url(${pr.photo_path})` : ''}>
+							{#if !pr.photo_path}<span>{pr.name?.[0] ?? '?'}</span>{/if}
+						</div>
+						<div class="body">
+							<h3>{pr.name}</h3>
+							<span class="available-dot">Accepting new clients</span>
+							<div class="chip-row">
+								{#each (pr.specialties ?? []).slice(0, 2) as s (s)}<Chip tone="accent">{s}</Chip>{/each}
+							</div>
+						</div>
+					</a>
+				{/each}
+			</div>
+		</section>
+	{/if}
+
 	<section class="cta" use:reveal>
 		<div>
 			<p>Ready to look for a practitioner?</p>
@@ -136,10 +174,11 @@
 
 <style>
 	.hero {
+		position: relative; overflow: hidden;
 		background: linear-gradient(135deg, var(--rail-top), var(--rail-bottom));
 		color: #fdf1f2; padding: var(--space-7) 0; margin-bottom: var(--space-6);
 	}
-	.heroin { display: flex; flex-direction: column; gap: var(--space-3); max-width: 42rem; }
+	.heroin { position: relative; z-index: 1; display: flex; flex-direction: column; gap: var(--space-3); max-width: 42rem; }
 	.sprigbig { color: #ffb9c4; }
 	.hero h1 { font-size: var(--text-3xl); font-weight: 750; }
 	.hero p { color: #f7dfe2; font-size: var(--text-lg); }
@@ -162,6 +201,25 @@
 	.pillar p { color: var(--muted); font-size: var(--text-sm); }
 
 	.chip-row { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: var(--space-4); }
+
+	.practitioners { opacity: 0; }
+	.practitioners:global(.revealed) { animation: liftIn var(--duration-slow) var(--ease) both; }
+	.practitioners .ph { padding: 0 0 var(--space-3); border-bottom: none; }
+	.practitioners .ph h2 { font-size: var(--text-xl); }
+	.seeall { color: var(--accent-ink); font-size: var(--text-sm); font-weight: 650; text-decoration: none; }
+	.practitioners .grid { display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); }
+	.practitioners .card {
+		display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line);
+		border-radius: var(--r-lg); overflow: hidden; text-decoration: none; color: inherit;
+		box-shadow: var(--shadow); transition: transform .18s var(--ease), box-shadow .18s var(--ease);
+	}
+	.practitioners .card:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); }
+	.practitioners .photo { height: 6rem; background: var(--accent-soft); background-size: cover; background-position: center; display: flex; align-items: center; justify-content: center; }
+	.practitioners .photo span { font-size: 1.5rem; font-weight: 700; color: var(--accent-ink); }
+	.practitioners .body { padding: var(--space-3); display: flex; flex-direction: column; gap: .35rem; }
+	.practitioners h3 { font-size: var(--text-base); }
+	.available-dot { display: inline-flex; align-items: center; gap: .35rem; font-size: var(--text-xs); color: var(--ok); font-weight: 650; }
+	.available-dot::before { content: ''; width: .4rem; height: .4rem; border-radius: 50%; background: var(--ok); }
 
 	/* specs/v7/06 — scroll-triggered reveal: every use:reveal element
 	   starts invisible/offset and only plays liftIn once the reveal

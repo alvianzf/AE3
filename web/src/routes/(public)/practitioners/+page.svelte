@@ -20,6 +20,7 @@
 
 	let q = $state('');
 	let specialty = $state('');
+	let onlyAccepting = $state(false);
 
 	const specialties = $derived.by(() => {
 		const s = new Set<string>();
@@ -31,7 +32,8 @@
 		practitioners.filter((p: any) => {
 			const matchesQ = !q || p.name.toLowerCase().includes(q.toLowerCase()) || (p.bio ?? '').toLowerCase().includes(q.toLowerCase());
 			const matchesSpecialty = !specialty || (p.specialties ?? []).includes(specialty);
-			return matchesQ && matchesSpecialty;
+			const matchesAccepting = !onlyAccepting || p.accepting_new_clients;
+			return matchesQ && matchesSpecialty && matchesAccepting;
 		})
 	);
 </script>
@@ -62,6 +64,10 @@
 			<option value="">All specialties</option>
 			{#each specialties as s (s)}<option value={s}>{s}</option>{/each}
 		</select>
+		<label class="accepting-filter">
+			<input type="checkbox" bind:checked={onlyAccepting} />
+			Accepting new clients
+		</label>
 	</div>
 
 	<div class="grid">
@@ -99,6 +105,7 @@
 		background: var(--panel); font-size: var(--text-sm); min-height: var(--tap-min);
 	}
 	.filters input { flex: 1 1 16rem; }
+	.accepting-filter { display: flex; align-items: center; gap: .4rem; font-size: var(--text-sm); color: var(--ink-2); }
 	.grid { display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); padding-bottom: var(--space-7); }
 	.src {
 		display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line);
