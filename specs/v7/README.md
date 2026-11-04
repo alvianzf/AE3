@@ -27,7 +27,13 @@ documents are reviewed and approved, phase by phase, per
   [02-impl-landing-page.md](02-impl-landing-page.md).
 - [**03 · Admin portal**](03-admin-portal.md) — Library (highest
   priority: component consolidation, not new features), Dashboard,
-  Users, Questionnaires, Audit history, the nav rail.
+  Users, Questionnaires, Audit history, the nav rail. **Phase 2
+  implemented, partial** (`EmptyState.svelte` adoption across all
+  three of the Library's empty states; `Card.svelte` consolidation
+  deliberately descoped after a closer read found `.doc-card`/
+  `.folder-card` are genuinely different patterns, not one pattern
+  with cosmetic drift) — see
+  [03-impl-admin-library-empty-states.md](03-impl-admin-library-empty-states.md).
 - [**04 · Practitioner portal**](04-practitioner-portal.md) —
   Consult first, then Clients/Knowledge and the rest.
 - [**05 · Client portal**](05-client-portal.md) — the least
