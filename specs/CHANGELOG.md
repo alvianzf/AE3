@@ -1,5 +1,39 @@
 # Specs changelog
 
+## 2026-11-04 — v9, backend pipeline latency brainstorm (spec only, not implemented)
+
+See [v9/README.md](v9/README.md). Direct request: make the backend AI
+pipeline (ingest + consult) at least 30% faster, same-or-better
+accuracy, free tools only, same API contract where one exists — "find
+the best one" rather than build several. Read the real ingest/retrieval/
+reasoning call sequence end to end before proposing anything (no
+guessing), found five real candidate levers, and recommends a combined
+package of the three that are free, zero/near-zero accuracy risk, and
+need no API-contract change: Anthropic prompt caching on every role's
+static system prompt (production is currently on the Anthropic
+provider, confirmed live, and implements no caching today), running the
+ingest Reader call concurrently with chunking+embedding (independent
+work currently run sequentially for no reason), and formalizing the
+already-live local embedder (currently only an undocumented emergency
+fallback, active in production right now because of a past Nebius
+billing outage) as the deliberate default. Spec only, per instruction;
+implementation needs a live before/after timing run to actually claim
+the 30% target, not an estimate.
+
+## 2026-11-04 — v8, full UX/UI redesign (implemented, live-verified in production)
+
+See [v8/README.md](v8/README.md). Direct request, assembled from a
+rapid sequence of messages treated as one combined brief: redesign
+layout and UX across the whole app (keep only color/branding), rebuild
+the Graph view lightweight, rebuild the landing page with animation and
+a practitioner highlight, support an optional admin↔practitioner dual
+role, add EU legal/disclaimer pages, and build out the practitioner
+profile page's forms. Spec first (one single file, per explicit
+instruction overriding the v7-style multi-file convention), then
+implemented in one pass on explicit follow-up instruction ("implement
+them all, do not ask me for phases"). Shipped via PR #103, merged and
+deployed, health-checked live.
+
 ## 2026-11-04 — v7, full UI/UX redesign (spec only, not implemented)
 
 See [v7/README.md](v7/README.md). Direct request: redesign the whole
