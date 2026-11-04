@@ -2,8 +2,6 @@
 	import { PUBLIC_API_BASE } from '$env/static/public';
 	import { post, del } from '$lib/api';
 	import { toast } from '$lib/stores/toast';
-	import Workspace from '$lib/components/Workspace.svelte';
-	import Section from '$lib/components/Section.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import Select from '$lib/components/Select.svelte';
 	import TextField from '$lib/components/TextField.svelte';
@@ -101,13 +99,13 @@
 
 <svelte:head><title>{data.client.name} — Practitioner portal</title></svelte:head>
 
-<Workspace title={data.client.name} backHref="/practitioner/clients">
+<div class="pane-row"><div class="detail-pane"><div class="detail-head"><div><h1>{data.client.name}</h1></div></div>
 	<p><strong>{data.client.name}</strong> — {data.client.email}</p>
 	<p class="hint">{data.client.country ?? 'Country not set'} · DOB {data.client.dob ?? 'not set'}</p>
 
 	<div class="rail-layout">
 		<div class="rail">
-			<Section title="Files">
+			<div class="rail-section"><h2>Files</h2>
 				{#if !data.files?.length}
 					<p class="hint">No files uploaded yet.</p>
 				{:else}
@@ -117,9 +115,9 @@
 						{/each}
 					</ul>
 				{/if}
-			</Section>
+			</div>
 
-			<Section title="Documents">
+			<div class="rail-section"><h2>Documents</h2>
 				{#if !data.documents?.length}
 					<p class="hint">No documents yet.</p>
 				{:else}
@@ -127,9 +125,9 @@
 						{#each data.documents as d (d.id)}<li>{d.filename ?? d.kind}</li>{/each}
 					</ul>
 				{/if}
-			</Section>
+			</div>
 
-			<Section title="Record">
+			<div class="rail-section"><h2>Record</h2>
 				<form class="entry-form" onsubmit={addEntry}>
 					<Select label="Kind" bind:value={entryKind} disabled={addingEntry}
 						options={Object.entries(KIND_LABELS).map(([value, label]) => ({ value, label }))} />
@@ -155,10 +153,10 @@
 				{:else}
 					<p class="hint" style="margin-top: var(--space-3)">Nothing recorded yet — conditions, medications, and labs added here shape what the consult pipeline considers when answering.</p>
 				{/if}
-			</Section>
+			</div>
 		</div>
 
-		<Section title="Sessions">
+		<div class="rail-section"><h2>Sessions</h2>
 			{#if !data.sessions?.length}
 				<p class="hint">No consultation sessions yet.</p>
 			{:else}
@@ -174,11 +172,13 @@
 					{/each}
 				</ul>
 			{/if}
-		</Section>
+		</div>
 	</div>
-</Workspace>
+</div></div>
 
 <style>
+	.rail-section { margin-bottom: var(--space-5); }
+	.rail-section h2 { font-size: var(--text-sm); font-weight: 650; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-bottom: var(--space-2); }
 	.list { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
 	.session { display: grid; gap: .35rem; }
 	.sr { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }

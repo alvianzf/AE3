@@ -2,7 +2,6 @@
 	import { invalidateAll } from '$app/navigation';
 	import { get, post } from '$lib/api';
 	import { toast } from '$lib/stores/toast';
-	import Workspace from '$lib/components/Workspace.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import Dialog from '$lib/components/Dialog.svelte';
 	import TextField from '$lib/components/TextField.svelte';
@@ -123,7 +122,7 @@
 
 <svelte:head><title>Questionnaires — Admin portal</title></svelte:head>
 
-<Workspace title="Questionnaires" backHref="/admin">
+<div class="pane-row"><div class="detail-pane"><div class="detail-head"><div><h1>Questionnaires</h1></div></div>
 	{#snippet actions()}
 		<Button variant="filled" onclick={openCreate}><Icon name="plus" size={15} />New questionnaire</Button>
 	{/snippet}
@@ -147,7 +146,7 @@
 			</td>
 		{/snippet}
 	</DataTable>
-</Workspace>
+</div></div>
 
 <Dialog bind:open title={editingId ? 'Edit questionnaire' : 'New questionnaire'} wide>
 	<form onsubmit={save} id="qn-form">

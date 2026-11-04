@@ -2,7 +2,6 @@
 	import { invalidateAll } from '$app/navigation';
 	import { post } from '$lib/api';
 	import { toast } from '$lib/stores/toast';
-	import Workspace from '$lib/components/Workspace.svelte';
 	import Toggle from '$lib/components/Toggle.svelte';
 
 	let { data } = $props();
@@ -46,7 +45,9 @@
 
 <svelte:head><title>Settings — Admin portal</title></svelte:head>
 
-<Workspace title="Settings" backHref="/admin">
+<div class="pane-row">
+<div class="detail-pane">
+<div class="detail-head"><div><h1>Settings</h1></div></div>
 	<section class="block">
 		<h2>System health</h2>
 		<p class:ok={health?.status === 'ok'} class="overall">{health?.status ?? 'unknown'}</p>
@@ -76,7 +77,8 @@
 			</div>
 		</section>
 	{/if}
-</Workspace>
+</div>
+</div>
 
 <style>
 	.block { margin-bottom: var(--space-6); }

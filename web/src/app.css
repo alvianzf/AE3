@@ -1,10 +1,11 @@
-/* Ground-up remodel, direct instruction: "ditch everything... only
-   reserve the colors, logo, and the floating leaves." Every custom
-   property below that names a color is untouched on purpose — these are
-   the literal values preserved. Radius/shadow/surface treatment below
-   this block is new: flatter, airier, no frosted-glass/gradient-header
-   chrome, which is what made every prior pass still read as "the same
-   app" even after the nav shape changed twice. */
+/* Full rebuild, direct instruction: every visual/structural convention
+   below is new — no card grid, no rounded-shadow panels, no gradient-
+   painted chrome, no icon-dock/launcher-tile pattern from earlier
+   passes. Three things only are carried over unchanged: the color
+   custom properties below (values untouched), the Sprig logo mark, and
+   LeafField's floating-leaves animation. Layout is now a flat,
+   divider-based master-detail (a thin dark rail + a list pane + a
+   detail pane), not a grid of boxed cards. */
 :root {
   --bg: #f7f5f2;
   --panel: #fff;
@@ -25,25 +26,28 @@
   --danger: #b13434;
   --danger-soft: #fbe8e8;
 
-  /* Bigger radii, softer/more diffuse shadows, no backdrop blur anywhere
-     — the old frosted-glass card was the single biggest "this still
-     looks the same" offender since it painted every panel regardless
-     of what sat inside it. */
-  --r: 10px;
-  --r-lg: 18px;
-  --r-xl: 28px;
-  --shadow: 0 1px 2px rgba(34, 31, 27, .02), 0 2px 8px rgba(34, 31, 27, .04);
-  --shadow-lg: 0 8px 28px rgba(34, 31, 27, .10), 0 24px 56px rgba(34, 31, 27, .08);
-
+  /* Flat system: a small radius for interactive controls only (buttons,
+     inputs, chips) — panels/lists/rows are square-cornered dividers, no
+     radius, no shadow. The rounded-card-with-soft-shadow language is
+     retired outright, not resized. */
+  --r: 4px;
+  --r-lg: 6px;
+  --shadow: none;
+  --shadow-lg: 0 12px 32px rgba(20, 18, 16, .16);
   --ease: cubic-bezier(.22, .68, 0, 1);
 
-  /* sidebar gradient — kept literal per spec (rejected any reinterpretation).
-     specs/v4.1/02: the default here is also the client portal's identity
-     (the one the public site already trained visitors on); practitioner
-     and admin layouts override all three on their own .shell wrapper. */
+  /* The rail is no longer a gradient-painted panel — it's flat, dark
+     neutral (near-black, not colored), so --rail-indicator (the accent
+     used for the active item only) is the one place these particular
+     brand hues still show in the nav. --rail-top/--rail-bottom stay
+     defined (same literal values as before — nothing here is a new
+     color) because the public landing hero's one remaining gradient
+     accent (the headline's highlighted word) still reads from them. */
   --rail-top: rgba(203, 44, 68, .88);
   --rail-bottom: rgba(64, 6, 16, .94);
   --rail-indicator: #ff8fa3;
+  --rail-bg: #1c1a18;
+  --rail-ink: #f3efe9;
 
   --space-1: .25rem; --space-2: .5rem; --space-3: .75rem;
   --space-4: 1rem;   --space-5: 1.5rem; --space-6: 2rem; --space-7: 3rem;
@@ -82,16 +86,10 @@
   --tap-min: 2.25rem;
   --container-max: 78rem;
 
-  /* specs/v8 §11 — the new persistent top bar, and the rail's evolution
-     from icon-only to label-visible by default. Replaces AppRail's own
-     hardcoded 4.75rem width literal. */
-  --topbar-h: 3.25rem;
-  --rail-w-expanded: 13rem;
-  --rail-w-collapsed: 4.75rem;
-  /* specs/v8 §5.3/§11 — the contextual-panel primitive .rail-layout
-     (below) already used 22rem; named here so AppTopBar/future panels
-     share one value instead of each guessing their own. */
-  --panel-w: 22rem;
+  /* The master-detail shell: a narrow icon rail, a list pane, a detail
+     pane. Named here once so every portal page builds the same shape. */
+  --rail-w: 3.75rem;
+  --list-w: 20rem;
 }
 
 /* specs/v7/01 — breakpoint convention, documented here rather than as
@@ -135,36 +133,53 @@ p { margin: 0; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 svg { flex: 0 0 auto; }
 
-/* ── Flat surfaces, replacing the old frosted-glass card + colored
-   gradient header bar on every panel. A page's own <h1>/.page-head
-   (below) now carries the visual weight a colored bar used to — the
-   card underneath it is just a plain, quiet container. */
-.card-panel, .panel {
-  background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-xl);
-  box-shadow: var(--shadow);
-  animation: fadeIn .3s var(--ease) both;
-}
-.ph {
-  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
-  padding: var(--space-5) var(--space-6) var(--space-4);
-}
-.ph h2, .ph h3 { font-size: var(--text-xl); font-weight: var(--weight-bold); }
-.panel > .ph { padding: var(--space-4) var(--space-5) var(--space-3); }
-.pb { padding: 0 var(--space-6) var(--space-6); }
-.pb.tight { padding: 0 var(--space-4) var(--space-4); }
-.panel > .pb { padding: 0 var(--space-5) var(--space-4); }
-.panel > .pb.tight { padding: 0 var(--space-4) var(--space-4); }
+/* ── The master-detail shell every portal page uses now: a fixed dark
+   icon rail, then the content area splits into a list pane (a dense,
+   flat column of rows — no cards) and a detail pane (the selected
+   row's full content). A page with no real "many items" concept (a
+   form, a chat) just uses .detail-pane alone, full width. */
+.app-shell { display: flex; min-height: 100dvh; background: var(--bg); }
+.pane-row { display: flex; flex: 1 1 auto; min-width: 0; min-height: 100dvh; }
 
-/* ── A page's own top-of-content header: icon + title + subtitle on the
-   left, one primary action on the right. Replaces the scattered
-   "<h1>...</h1><p class='hint'>...</p>" each page previously hand-rolled
-   a little differently. */
-.page-head {
-  display: flex; align-items: flex-start; justify-content: space-between;
-  gap: var(--space-4); flex-wrap: wrap; margin-bottom: var(--space-6);
+.list-pane {
+  width: var(--list-w); flex: 0 0 auto; border-right: 1px solid var(--line);
+  display: flex; flex-direction: column; min-height: 100dvh; background: var(--panel);
 }
-.page-head h1 { font-size: var(--text-2xl); font-weight: var(--weight-bold); }
-.page-head p { color: var(--muted); margin-top: .3rem; }
+.list-pane-head { padding: var(--space-4) var(--space-4) var(--space-3); border-bottom: 1px solid var(--line); }
+.list-pane-head h1 { font-size: var(--text-lg); font-weight: var(--weight-bold); }
+.list-pane-body { flex: 1 1 auto; overflow-y: auto; }
+.list-row {
+  display: flex; flex-direction: column; gap: .2rem; width: 100%; text-align: left;
+  padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--line);
+  background: none; border-left: 3px solid transparent; color: inherit; text-decoration: none;
+  cursor: pointer; font: inherit;
+}
+.list-row:hover { background: var(--panel-2); }
+.list-row.on { background: var(--accent-soft); border-left-color: var(--accent); }
+.list-row .row-title { font-weight: var(--weight-medium); color: var(--ink); }
+.list-row .row-sub { font-size: var(--text-xs); color: var(--muted); }
+
+.detail-pane { flex: 1 1 auto; min-width: 0; padding: var(--space-5) var(--space-6); overflow-y: auto; }
+.detail-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: var(--space-4); flex-wrap: wrap; margin-bottom: var(--space-5);
+  padding-bottom: var(--space-4); border-bottom: 1px solid var(--line);
+}
+.detail-head h1 { font-size: var(--text-2xl); font-weight: var(--weight-bold); }
+.detail-head p { color: var(--muted); margin-top: .3rem; }
+@media (max-width: 960px) {
+  .pane-row { flex-direction: column; }
+  .list-pane { width: 100%; border-right: none; border-bottom: 1px solid var(--line); min-height: auto; max-height: 40vh; }
+}
+
+/* ── Public-site-only box (login/signup/join/account) — flat, bordered,
+   no shadow/radius, matching the rebuilt system. Not used anywhere in
+   the three authenticated portals, which use the pane shell above. */
+.card-panel { background: var(--panel); border: 1px solid var(--line); }
+.ph { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-5) var(--space-6) var(--space-4); border-bottom: 1px solid var(--line); }
+.ph h2, .ph h3 { font-size: var(--text-xl); font-weight: var(--weight-bold); }
+.pb { padding: var(--space-5) var(--space-6); }
+.pb.center { text-align: center; }
 
 /* ── Buttons/forms baseline (component-level detail lives in .svelte files) */
 button, input, select, textarea { font: inherit; color: inherit; }
@@ -190,7 +205,7 @@ label { font-size: var(--text-sm); font-weight: 600; color: var(--ink-2); }
    secondary panel above/below the main work surface by default, which
    reads as cramped on anything wider than a phone. Shared here instead of
    redefined per page. */
-.rail-layout { display: grid; grid-template-columns: var(--panel-w) 1fr; gap: var(--space-5); align-items: start; }
+.rail-layout { display: grid; grid-template-columns: var(--list-w) 1fr; gap: var(--space-5); align-items: start; }
 .rail-layout > .rail { display: grid; gap: var(--space-5); align-content: start; }
 @media (max-width: 960px) { .rail-layout { grid-template-columns: 1fr; } }
 .hint { color: var(--muted); font-size: var(--text-sm); }

@@ -2,7 +2,6 @@
 	import { invalidateAll } from '$app/navigation';
 	import { post } from '$lib/api';
 	import { toast } from '$lib/stores/toast';
-	import Workspace from '$lib/components/Workspace.svelte';
 	import Chip from '$lib/components/Chip.svelte';
 	import Button from '$lib/components/Button.svelte';
 
@@ -73,7 +72,8 @@
 
 <svelte:head><title>Questionnaire — Client portal</title></svelte:head>
 
-<Workspace title={q?.title ?? 'Questionnaire'} backHref="/client">
+<div class="pane-row"><div class="detail-pane">
+<div class="detail-head"><div><h1>{q?.title ?? 'Questionnaire'}</h1></div></div>
 	{#if !q}
 		<p class="hint">No questionnaire is active right now.</p>
 	{:else}
@@ -135,7 +135,7 @@
 			<Button type="submit" loading={submitting}>{data.response ? 'Save changes' : 'Submit answers'}</Button>
 		</form>
 	{/if}
-</Workspace>
+</div></div>
 
 <style>
 	.status-row { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; margin-bottom: var(--space-5); }

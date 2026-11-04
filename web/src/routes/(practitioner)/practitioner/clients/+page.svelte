@@ -4,7 +4,6 @@
 	import { goto, invalidateAll } from '$app/navigation';
 	import { post, del } from '$lib/api';
 	import { toast } from '$lib/stores/toast';
-	import Workspace from '$lib/components/Workspace.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import Dialog from '$lib/components/Dialog.svelte';
@@ -74,7 +73,7 @@
 
 <svelte:head><title>Clients — Practitioner portal</title></svelte:head>
 
-<Workspace title="Clients" backHref="/practitioner">
+<div class="pane-row"><div class="detail-pane"><div class="detail-head"><div><h1>Clients</h1></div></div>
 	{#snippet actions()}
 		<Button variant="filled" onclick={() => (open = true)}><Icon name="plus" size={15} />Add client</Button>
 	{/snippet}
@@ -93,7 +92,7 @@
 			<td><Button variant="text" onclick={() => { removeTarget = { id: c.id as string, name: c.name as string }; removeOpen = true; }}><Icon name="trash" size={15} />Remove</Button></td>
 		{/snippet}
 	</DataTable>
-</Workspace>
+</div></div>
 
 <Dialog bind:open title="Add a client">
 	<form onsubmit={create} id="add-client-form">

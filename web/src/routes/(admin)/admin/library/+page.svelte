@@ -6,10 +6,8 @@
 	import { get, post, patch, put, del, ApiError } from '$lib/api';
 	import { chunkedUpload } from '$lib/chunkedUpload';
 	import { toast } from '$lib/stores/toast';
-	import Workspace from '$lib/components/Workspace.svelte';
-	import Tabs from '$lib/components/Tabs.svelte';
-	import Chip from '$lib/components/Chip.svelte';
 	import TextField from '$lib/components/TextField.svelte';
+	import Tabs from '$lib/components/Tabs.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import Dialog from '$lib/components/Dialog.svelte';
 	import Icon from '$lib/components/Icon.svelte';
@@ -258,16 +256,6 @@
 	// (README "Deliberate PoC limits") and +page.ts already loads up to 200.
 	let q = $state('');
 	let activeTopic = $state('');
-	// Icons (the original card grid) / list (same cards, one per row) /
-	// table (a compact Explorer-style "Details" view with its own
-	// columns) — the three view modes any desktop file browser offers.
-	// Persisted locally only (per-browser convenience, not server state).
-	let viewMode = $state<'icons' | 'list' | 'table'>(
-		(typeof localStorage !== 'undefined' && (localStorage.getItem('admin-library-view') as any)) || 'icons'
-	);
-	$effect(() => {
-		try { localStorage.setItem('admin-library-view', viewMode); } catch {}
-	});
 
 	// Sort — file name or date ingested, each ascending/descending. Not
 	// "date uploaded" as a third, separate option: checked the data
@@ -480,18 +468,16 @@
 	// grade/folder already have to their own Reader suggestions.
 	let newTagText: Record<string, string> = $state({});
 
-	// Direct feedback: the card showed every editable field at once (type
-	// select, grade input, folder input, an always-open tag-adder) with no
-	// visual hierarchy — "confusing." The read-only facts (title, type,
-	// date, author) now render as plain text/chips by default; the actual
-	// editing controls open on demand via "Edit details," one card at a
-	// time, instead of every card always being a small form.
-	let cardEditOpen = $state<Set<string>>(new Set());
-	function toggleCardEdit(id: string) {
-		const next = new Set(cardEditOpen);
-		if (next.has(id)) next.delete(id); else next.add(id);
-		cardEditOpen = next;
-	}
+	// Full rebuild: the detail pane shows one document at a time, so
+	// every field is just always there — no per-card "Edit details"
+	// progressive disclosure needed any more (that was a fix for N
+	// cards all being small forms at once; there's only ever one
+	// detail pane open now).
+	let selectedDocId = $state<string | null>(null);
+	const selectedDoc = $derived(pageItems.find((d: any) => d.id === selectedDocId) ?? null);
+	$effect(() => {
+		if (!selectedDocId && pageItems.length) selectedDocId = pageItems[0].id;
+	});
 
 	async function setTopics(s: any, topics: string[]) {
 		try {
@@ -1056,601 +1042,287 @@
 	}
 </script>
 
-<svelte:head><title>Knowledge — Admin portal</title></svelte:head>
+<svelte:head><title>Library — Admin portal</title></svelte:head>
 
-<!-- specs/v4/03: library list stays Tier 1 (the actual work surface).
-     Teaching Functional Health Collab (upload/paste/scrape) is an on-demand modal reached via
-     the library's "+ Add resources" action; audit history and graph stats
-     each moved to their own page (removed from here outright, not just
-     de-weighted) rather than sitting in a rail panel next to the library. -->
-<Workspace title="Library" backHref="/admin" actions={libraryActions}>
-	<Tabs
-		bind:active={mainTab}
-		tabs={[
-			{ id: 'library', label: 'Library' },
-			{ id: 'tree', label: 'Tree view' },
-			{ id: 'graph', label: 'Graph view' }
-		]}
-	/>
-
-	<div class="tab-panel">
-	{#if mainTab === 'library'}
-		{#if (data.staged?.length ?? 0) > 0 || (queueStats?.queued_count ?? 0) > 0 || (queueStats?.processing_count ?? 0) > 0}
-			<div class="queue-status-row">
-				<p class="queue-status hint">
-					{data.sources.length} ingested
-					· {(queueStats?.queued_count ?? 0) + (queueStats?.processing_count ?? 0)} in queue
-					{#if queueStats?.processing_count}({queueStats.processing_count} processing){/if}
-					{#if queueStats?.total_queued_chars}· {formatChars(queueStats.total_queued_chars)} queued{/if}
-					{#if queueStats?.estimated_seconds_remaining != null}· est. {formatEta(queueStats.estimated_seconds_remaining)} remaining{/if}
-				</p>
-				{#if erroredStagedIds.length}
-					<Button variant="outlined" onclick={retryAll} loading={retryingAll}>
-						Retry all ({erroredStagedIds.length})
-					</Button>
-				{/if}
+<!-- Full rebuild: a mail-client-style master list + detail, replacing
+     the card grid entirely. The list pane is always a flat, dense
+     column of rows — no Icons/Table view modes any more, one shape.
+     Selecting a row shows its full editable detail in the pane beside
+     it, so every field (tags/grade/type/folder/privacy) is always
+     visible there instead of hidden behind a per-card "Edit" toggle. -->
+<div class="pane-row lib">
+	<aside class="list-pane">
+		<div class="list-pane-head">
+			<div class="lp-top">
+				<h1>Library</h1>
+				<Menu label="More">
+					{#snippet items()}
+						<button onclick={() => (ingestOpen = true)}><Icon name="plus" size={14} />Add resources</button>
+						<button onclick={() => { maintenanceKind = 'relink'; maintenanceOpen = true; }}><Icon name="refresh" size={14} />Relink unlinked</button>
+						<button onclick={() => { maintenanceKind = 'consolidate'; maintenanceOpen = true; }}><Icon name="check" size={14} />Consolidate entities</button>
+					{/snippet}
+				</Menu>
 			</div>
-		{/if}
-		<div class="search-bar">
-			<div class="search-input-wrap">
-				<input
-					class="search"
-					type="search"
-					placeholder="Search titles, summaries, origins, authors, folders, tags…"
-					bind:value={q}
-					oninput={() => (page = 1)}
-					aria-label="Search the library"
-				/>
-				{#if q}
-					<button class="search-clear" onclick={() => { q = ''; page = 1; }} aria-label="Clear search">&times;</button>
-				{/if}
+			<div class="lp-modes" role="group" aria-label="Library view">
+				<button class:on={mainTab === 'library'} onclick={() => (mainTab = 'library')}>List</button>
+				<button class:on={mainTab === 'tree'} onclick={() => (mainTab = 'tree')}>Folders</button>
+				<button class:on={mainTab === 'graph'} onclick={() => (mainTab = 'graph')}>Graph</button>
 			</div>
-			<!-- Ground-up pass: the sort select+direction-button and the
-			     3-button view-mode toggle used to sit side by side as 5
-			     separate controls, always visible — direct feedback was
-			     "too much on one screen." One "View" menu now covers both
-			     jobs; nothing lost, just not all open at once by default. -->
-			<Menu label="View">
-				{#snippet items()}
-					<div class="menu-section-label">Sort by</div>
-					<button onclick={() => (sortBy = 'title')} class="menu-choice" class:menu-active={sortBy === 'title'}>Name</button>
-					<button onclick={() => (sortBy = 'created_at')} class="menu-choice" class:menu-active={sortBy === 'created_at'}>Date ingested</button>
-					<button onclick={() => (sortDir = sortDir === 'asc' ? 'desc' : 'asc')}>
-						<Icon name="chevron" size={14} />{sortDir === 'asc' ? 'Ascending' : 'Descending'} (click to flip)
-					</button>
-					<div class="menu-section-label">Show as</div>
-					<button onclick={() => (viewMode = 'icons')} class="menu-choice" class:menu-active={viewMode === 'icons'}><Icon name="grid" size={14} />Icons</button>
-					<button onclick={() => (viewMode = 'list')} class="menu-choice" class:menu-active={viewMode === 'list'}><Icon name="list" size={14} />List</button>
-					<button onclick={() => (viewMode = 'table')} class="menu-choice" class:menu-active={viewMode === 'table'}><Icon name="table" size={14} />Table</button>
-				{/snippet}
-			</Menu>
-		</div>
 
-		{#if data.graph}
-			<!-- Found live ("why does the library have 0 concepts?"): this
-			     always read .concepts, a field store.graph_stats() (app/
-			     graph/store.py) never actually returns — its real key is
-			     "entities". The stat was silently always 0 since whenever
-			     this line was first written, not something this session's
-			     work broke. -->
-			<p class="hint graph-stats">{data.graph.entities ?? 0} concepts · {data.graph.mentions ?? 0} links · {(data.graph.unlinked ?? []).length} unlinked sources</p>
-		{/if}
-
-		<!-- DMOZ-style categories: one scrollable row, always visible above the
-		     documents — https://dmoz-odp.com/'s shape, but a single x-scroll
-		     strip instead of a wrapping grid so a tile stays short (a
-		     name-and-count pill) no matter how many categories there are.
-		     Topic is the only hierarchy the graph actually has (Neo4j has no
-		     subcategory nodes), so Kind below is a facet, not a second real
-		     tier — an honest read of a flat data model, not a fake nesting. -->
-		<div class="directory-row">
-			<button class="dir-tile" class:active={!activeTopic} onclick={() => { activeTopic = ''; page = 1; }}>
-				<span class="dir-name">All</span>
-				<span class="dir-count">{data.sources.length}</span>
-			</button>
-			{#each data.coverage as c (c.topic)}
-				<button class="dir-tile" class:active={activeTopic === c.topic} onclick={() => { activeTopic = activeTopic === c.topic ? '' : c.topic; page = 1; }}>
-					<span class="dir-name">{c.topic}</span>
-					<span class="dir-count">{c.sources}</span>
-				</button>
-			{/each}
-		</div>
-		{#if !data.coverage.length}
-			<!-- specs/v7/03 — the grid's own EmptyState just below already
-			     covers the identical "truly nothing ingested" condition
-			     with the full icon/headline/CTA treatment; this row stays a
-			     plain hint rather than a second, redundant copy of the
-			     same "start here" block stacked right above it. -->
-			<p class="hint">Nothing ingested yet — use "+ Add resources" to start teaching Functional Health Collab.</p>
-		{/if}
-
-		<div class="library-layout">
-			<!-- A real folder tree for quick-jump navigation (specs/v6.8/01) —
-			     click a folder to open it (same as double-clicking its tile in
-			     the main pane), drag a doc card or another folder tile onto one
-			     to move it there, hover for rename/privatize. -->
-			<aside class="folder-sidebar">
-				<div
-					class="node root-node"
-					class:active={!currentPath}
-					ondragover={(e) => e.preventDefault()}
-					ondrop={(e) => { e.preventDefault(); handleDropOnFolder(''); }}
-				>
-					<button class="name" onclick={() => { currentPath = ''; page = 1; }}>
-						<Icon name="folder" size={13} /> Library <span class="count">{data.sources.length}</span>
-					</button>
+			{#if mainTab === 'library'}
+				<div class="search-input-wrap">
+					<input
+						class="search"
+						type="search"
+						placeholder="Search…"
+						bind:value={q}
+						oninput={() => (page = 1)}
+						aria-label="Search the library"
+					/>
+					{#if q}
+						<button class="search-clear" onclick={() => { q = ''; page = 1; }} aria-label="Clear search">&times;</button>
+					{/if}
 				</div>
-				<FolderTree
-					nodes={folderTree}
-					activePath={currentPath}
-					onSelect={(path) => { currentPath = path; page = 1; }}
-					onDrop={handleDropOnFolder}
-					onRename={askRenameFolder}
-					onPrivatize={setFolderPrivate}
-					onDelete={(path, count) => askDeleteFolder(path, count)}
-				/>
-			</aside>
-
-			<div class="library-main">
+				<div class="lp-controls">
+					<select class="topic-select" bind:value={activeTopic} onchange={() => (page = 1)} aria-label="Filter by topic">
+						<option value="">All topics ({data.sources.length})</option>
+						{#each data.coverage as c (c.topic)}<option value={c.topic}>{c.topic} ({c.sources})</option>{/each}
+					</select>
+					<Menu label="Sort">
+						{#snippet items()}
+							<button onclick={() => (sortBy = 'title')} class="menu-choice" class:menu-active={sortBy === 'title'}>Name</button>
+							<button onclick={() => (sortBy = 'created_at')} class="menu-choice" class:menu-active={sortBy === 'created_at'}>Date ingested</button>
+							<button onclick={() => (sortDir = sortDir === 'asc' ? 'desc' : 'asc')}>
+								<Icon name="chevron" size={14} />{sortDir === 'asc' ? 'Ascending' : 'Descending'}
+							</button>
+						{/snippet}
+					</Menu>
+				</div>
 				{#if !searching}
-					<!-- Finder/Nautilus-style breadcrumb — "Library" is root,
-					     each segment is a real folder_path prefix you can jump
-					     back up to. -->
-					<div class="breadcrumb-row">
-						<nav class="breadcrumb" aria-label="Folder path">
-							<button onclick={() => { currentPath = ''; page = 1; }} disabled={!currentPath}>Library</button>
-							{#each breadcrumb as crumb, i (crumb.path)}
-								<span class="sep">/</span>
-								<button
-									onclick={() => { currentPath = crumb.path; page = 1; }}
-									disabled={i === breadcrumb.length - 1}
-								>{crumb.name}</button>
-							{/each}
-						</nav>
-						<Button variant="text" onclick={() => { newFolderName = ''; newFolderOpen = true; }}>
-							<Icon name="folder" size={13} />+ New folder
-						</Button>
-					</div>
+					<nav class="breadcrumb" aria-label="Folder path">
+						<button onclick={() => { currentPath = ''; page = 1; }} disabled={!currentPath}>Library</button>
+						{#each breadcrumb as crumb, i (crumb.path)}
+							<span class="sep">/</span>
+							<button onclick={() => { currentPath = crumb.path; page = 1; }} disabled={i === breadcrumb.length - 1}>{crumb.name}</button>
+						{/each}
+						<button class="new-folder" onclick={() => { newFolderName = ''; newFolderOpen = true; }} title="New folder" aria-label="New folder"><Icon name="plus" size={12} /></button>
+					</nav>
 				{/if}
-
+				{#if (data.staged?.length ?? 0) > 0 || (queueStats?.queued_count ?? 0) > 0 || (queueStats?.processing_count ?? 0) > 0}
+					<p class="queue-status hint">
+						{(queueStats?.queued_count ?? 0) + (queueStats?.processing_count ?? 0)} in queue
+						{#if queueStats?.processing_count}({queueStats.processing_count} processing){/if}
+						{#if erroredStagedIds.length}
+							· <button class="retry-link" onclick={retryAll} disabled={retryingAll}>retry {erroredStagedIds.length} failed</button>
+						{/if}
+					</p>
+				{/if}
 				{#if librarySelected.size}
 					<div class="bulk-bar">
 						<span class="hint">{librarySelected.size} selected</span>
-						<Button variant="outlined" onclick={() => setPrivateBulk(true)}><Icon name="lock" size={14} />Make private</Button>
-						<Button variant="outlined" onclick={() => setPrivateBulk(false)}><Icon name="unlock" size={14} />Make public</Button>
-						<Button variant="ghost" onclick={() => (librarySelected = new Set())}>Clear</Button>
+						<button onclick={() => setPrivateBulk(true)} title="Make private"><Icon name="lock" size={14} /></button>
+						<button onclick={() => setPrivateBulk(false)} title="Make public"><Icon name="unlock" size={14} /></button>
+						<button onclick={() => (librarySelected = new Set())} title="Clear selection"><Icon name="x" size={14} /></button>
 					</div>
 				{/if}
+			{/if}
+		</div>
 
-				<!-- Documents (and, while browsing, subfolders) as cards/tiles —
-				     sits directly below the breadcrumb/Kind facet rather than
-				     behind a drill-down click. -->
-				<div class="doc-grid" class:list-view={viewMode === 'list'}>
-					{#if !searching}
-						{#each visibleSubfolders as node (node.path)}
-							<div
-								class="folder-card"
-								draggable="true"
-								ondragstart={() => (draggedFolderPath = node.path)}
-								ondragend={() => (draggedFolderPath = null)}
-								ondragover={(e) => e.preventDefault()}
-								ondrop={(e) => { e.preventDefault(); handleDropOnFolder(node.path); }}
-							>
-								<button class="folder-card-open" onclick={() => { currentPath = node.path; page = 1; }}>
-									<Icon name="folder" size={28} />
-									<span class="folder-card-name">{node.name}</span>
-									<span class="count">{node.count}</span>
-								</button>
-								<span class="folder-card-actions">
-									<button title="Rename folder" aria-label="Rename {node.name}" onclick={() => askRenameFolder(node.path)}>
-										<Icon name="edit" size={12} />
-									</button>
-									<button title="Privatize folder" aria-label="Privatize {node.name}" onclick={() => setFolderPrivate(node.path, true)}>
-										<Icon name="lock" size={12} />
-									</button>
-									<button title="Make folder public" aria-label="Make {node.name} public" onclick={() => setFolderPrivate(node.path, false)}>
-										<Icon name="unlock" size={12} />
-									</button>
-									<button title="Delete folder" aria-label="Delete {node.name}" onclick={() => askDeleteFolder(node.path, node.count)}>
-										<Icon name="trash" size={12} />
-									</button>
-								</span>
-							</div>
-						{/each}
-					{/if}
-					<!-- Staged items as cards, right in the grid — specs/v6.12:
-					     no separate "staged for review" tab or manual Ingest
-					     click any more. A staged item IS the in-queue state;
-					     this card disappears on its own once the job finishes
-					     and the real document takes its place in `pageItems`
-					     (app/main.py's _run_staged_ingest_job deletes the
-					     staged row on success). Root only — a staged item has
-					     no folder_path yet — and not in table view (its own
-					     column set doesn't fit a progress bar well; icons/list
-					     cover the common case). -->
-					{#if !searching && !currentPath && viewMode !== 'table'}
-						{#each data.staged ?? [] as item (item.id)}
-							<div class="doc-card doc-card-pending">
-								<div class="doc-card-head">
-									<span class="title-link pending-title">{item.filename ?? item.source_url ?? 'Pasted text'}</span>
-									{#if item.kind === 'file'}
-										<a class="icon-btn" href={stagedFileUrl(item)} target="_blank" rel="noopener" title="Preview the original file" aria-label="Preview {item.filename}"><Icon name="eye" /></a>
-									{:else if item.kind === 'scraped_url'}
-										<a class="icon-btn" href={item.source_url} target="_blank" rel="noopener" title="Open the source page" aria-label="Open source"><Icon name="external-link" /></a>
-									{/if}
-								</div>
-								{#if jobsByStagedId[item.id]?.status === 'error'}
-									<p class="hint job-error">{jobLabel(jobsByStagedId[item.id])}</p>
-									<div class="doc-card-foot">
-										<button class="view" onclick={() => ingestOne(item.id)} disabled={promotingId === item.id}>Retry</button>
-										<button class="view danger" onclick={() => discardStaged(item.id)}>Discard</button>
-									</div>
-								{:else}
-									<div class="job-progress">
-										<div class="track"><div class="fill" style="width: {jobProgressPercent(jobsByStagedId[item.id] ?? { step: 'queued' })}%"></div></div>
-										<span class="hint">{jobLabel(jobsByStagedId[item.id] ?? { status: 'queued', step: 'queued' })}</span>
-									</div>
-									<div class="doc-card-foot">
-										<button
-											class="view danger"
-											onclick={() => discardStaged(item.id)}
-											disabled={jobActive(jobsByStagedId[item.id])}
-											title={jobActive(jobsByStagedId[item.id]) ? 'Already queued or running' : undefined}
-										>Discard</button>
-									</div>
-								{/if}
-							</div>
-						{/each}
-					{/if}
-					{#if viewMode !== 'table'}
-					{#each pageItems as s (s.id)}
-						<div
-							oncontextmenu={(e) => onDocContextMenu(e, s)}
-							class="doc-card"
+		<div class="list-pane-body">
+			{#if mainTab === 'library'}
+				{#if !searching}
+					{#each visibleSubfolders as node (node.path)}
+						<button
+							class="list-row folder-row"
 							draggable="true"
-							ondragstart={() => (draggedId = s.id)}
-							ondragend={() => (draggedId = null)}
+							ondragstart={() => (draggedFolderPath = node.path)}
+							ondragend={() => (draggedFolderPath = null)}
+							ondragover={(e) => e.preventDefault()}
+							ondrop={(e) => { e.preventDefault(); handleDropOnFolder(node.path); }}
+							onclick={() => { currentPath = node.path; page = 1; }}
 						>
-							<div class="doc-card-head">
-								<input
-									type="checkbox"
-									checked={librarySelected.has(s.id)}
-									onchange={() => toggleLibrarySelected(s.id)}
-									aria-label="Select {s.title}"
-								/>
-								<a class="title-link" href="/admin/{s.id}" title={s.title}>{s.title}</a>
-								<div class="doc-card-actions">
-									{#if needsFinalization.has(s.id)}
-										<button class="icon-btn finalize-bell" onclick={() => (placementPreview = s)} title="Review where this was filed" aria-label="Review placement for {s.title}"><Icon name="bell" /></button>
-									{/if}
-									<Menu label="More actions for {s.title}">
-										{#snippet items()}
-											<a href="/admin/{s.id}"><Icon name="eye" size={15} /> View</a>
-											<button onclick={() => askMove(s)}><Icon name="folder" size={15} /> Move to folder…</button>
-											<button onclick={() => setPrivate(s, !s.is_private)}>
-												<Icon name={s.is_private ? 'lock' : 'unlock'} size={15} /> {s.is_private ? 'Make public' : 'Make private'}
-											</button>
-											{#if s.is_private}
-												<button onclick={() => askAccess(s)}><Icon name="users" size={15} /> Edit access…</button>
-											{/if}
-											<button onclick={() => askAssignUploader(s)}><Icon name="user-card" size={15} /> {s.uploaded_by ? 'Reassign uploader…' : 'Assign uploader…'}</button>
-											<button class="danger" onclick={() => askDelete(s)}><Icon name="trash" size={15} /> Remove from library</button>
-										{/snippet}
-									</Menu>
+							<Icon name="folder" size={15} />
+							<span class="row-title">{node.name}</span>
+							<span class="row-sub">{node.count}</span>
+						</button>
+					{/each}
+				{/if}
+				{#if !searching && !currentPath}
+					{#each data.staged ?? [] as item (item.id)}
+						<div class="list-row staged-row">
+							<div class="row-title">{item.filename ?? item.source_url ?? 'Pasted text'}</div>
+							{#if jobsByStagedId[item.id]?.status === 'error'}
+								<p class="hint job-error">{jobLabel(jobsByStagedId[item.id])}</p>
+								<div class="row-actions">
+									<button onclick={() => ingestOne(item.id)} disabled={promotingId === item.id}>Retry</button>
+									<button class="danger" onclick={() => discardStaged(item.id)}>Discard</button>
 								</div>
-							</div>
-							<!-- Default face: read-only facts only (chips/text), no
-							     inline form controls — a browsing card, not a small
-							     editor by default. "Edit details" below opens the
-							     one place all the editable fields live. -->
-							<div class="doc-card-summary">
-								{#if s.doc_type}<Chip>{s.doc_type}</Chip>{/if}
-								{#if s.is_private}<Chip tone="warn">private</Chip>{/if}
-								<Chip tone="accent">Grade {s.grade}</Chip>
-								{#if s.folder_path}<span class="hint folder-hint"><Icon name="folder" size={12} /> {s.folder_path}</span>{/if}
-								<span class="hint">{(s.created_at ?? '').slice(0, 10)}</span>
-							</div>
-							{#if (s.topics ?? []).length}
-								<div class="tags-readonly">
-									{#each s.topics as tag (tag)}<Chip>{tag}</Chip>{/each}
+							{:else}
+								<div class="job-progress">
+									<div class="track"><div class="fill" style="width: {jobProgressPercent(jobsByStagedId[item.id] ?? { step: 'queued' })}%"></div></div>
+									<span class="hint">{jobLabel(jobsByStagedId[item.id] ?? { status: 'queued', step: 'queued' })}</span>
 								</div>
-							{/if}
-
-							{#if cardEditOpen.has(s.id)}
-								<div class="tags">
-									{#each s.topics ?? [] as tag (tag)}
-										<button class="tag" onclick={() => removeTag(s, tag)} title="Remove tag">
-											{tag} <span aria-hidden="true">&times;</span>
-										</button>
-									{/each}
-									<input
-										class="tag-input"
-										type="text" placeholder="+ tag"
-										value={newTagText[s.id] ?? ''}
-										oninput={(e) => (newTagText = { ...newTagText, [s.id]: (e.target as HTMLInputElement).value })}
-										onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag(s); } }}
-										onblur={() => addTag(s)}
-									/>
-								</div>
-								<div class="doc-card-foot">
-									<select
-										class="doc-type-select"
-										value={s.doc_type ?? ''}
-										onchange={(e) => setDocType(s, (e.target as HTMLSelectElement).value)}
-										aria-label="Content type for {s.title}"
-									>
-										<option value="">(type unset)</option>
-										{#each DOC_TYPES as t (t)}<option value={t}>{t}</option>{/each}
-									</select>
-									<label class="grade-label">
-										Grade
-										<input
-											class="grade"
-											type="number" min="1" max="10" value={s.grade}
-											onchange={(e) => regrade(s, Number((e.target as HTMLInputElement).value))}
-										/>
-									</label>
-									<label class="folder-label">
-										<Icon name="folder" size={13} />
-										<input
-											class="folder-input"
-											type="text" placeholder="(root)" value={s.folder_path ?? ''}
-											onblur={(e) => setFolder(s, (e.target as HTMLInputElement).value)}
-										/>
-									</label>
-								</div>
-							{/if}
-							<button class="edit-toggle" onclick={() => toggleCardEdit(s.id)}>
-								{cardEditOpen.has(s.id) ? 'Done editing' : 'Edit details'}
-							</button>
-							{#if s.author || s.uploaded_by}
-								<div class="doc-card-meta">
-									<!-- Separate lines with their own icon + color, not one
-									     run-on sentence (found live: "hard to distinguish them,
-									     color and fonts are the same") — author (the book's own
-									     byline) and uploader (who put it in this library) are
-									     different facts about a document, not two clauses of
-									     the same one. -->
-									{#if s.author}<p class="meta-line"><Icon name="book" size={11} /> {s.author}</p>{/if}
-									{#if s.uploaded_by}<p class="meta-line meta-uploader"><Icon name="user-card" size={11} /> {s.uploaded_by}</p>{/if}
+								<div class="row-actions">
+									<button class="danger" onclick={() => discardStaged(item.id)} disabled={jobActive(jobsByStagedId[item.id])}>Discard</button>
 								</div>
 							{/if}
 						</div>
-					{:else}
-						<!-- searching always shows feedback here even when
-						     visibleSubfolders.length > 0 — found in review:
-						     subfolder tiles are already hidden while
-						     searching (the {#if !searching} above), so a
-						     search that matches zero documents used to leave
-						     this whole area blank with no "nothing matches"
-						     message, indistinguishable from a stuck page. -->
-						{#if searching || !visibleSubfolders.length}
-							<!-- grid-column: 1/-1 — a single grid item inside
-							     .doc-grid's auto-fill columns would otherwise
-							     only get one narrow (min 16rem) track's width,
-							     which the old plain-text hint got away with but
-							     this richer icon/headline/CTA treatment needs
-							     to span the full row to not look cramped. -->
-							<div class="grid-empty">
-								{#if !data.sources.length}
-									<EmptyState
-										icon="book"
-										title="Your library is empty"
-										body='Upload a document, paste text, or scrape a URL to start teaching Functional Health Collab.'
-									>
-										{#snippet action()}
-											<Button onclick={() => (ingestOpen = true)}>+ Add resources</Button>
-										{/snippet}
-									</EmptyState>
-								{:else if searching}
-									<EmptyState icon="search" title="Nothing matches that search" body="Try a different term, or clear the search.">
-										{#snippet action()}
-											<Button variant="ghost" onclick={() => { q = ''; page = 1; }}>Clear search</Button>
-										{/snippet}
-									</EmptyState>
-								{:else}
-									<EmptyState
-										icon="folder"
-										title="This folder is empty"
-										body="Upload a document here, or browse to another folder."
-									>
-										{#snippet action()}
-											<Button onclick={() => (ingestOpen = true)}>+ Add resources</Button>
-										{/snippet}
-									</EmptyState>
-								{/if}
-							</div>
-						{/if}
 					{/each}
-					{/if}
-				</div>
-
-				{#if viewMode === 'table'}
-					<!-- Explorer/Finder "Details"/"Columns" view — a compact
-					     sortable-by-eye table instead of the card grid, same
-					     underlying pageItems and same edit affordances (tags
-					     stay comma-joined/read-only here; use Icons or List to
-					     edit them inline). -->
-					<div class="doc-table-wrap">
-						<table class="doc-table">
-							<thead>
-								<tr>
-									<th></th>
-									<th>Title</th>
-									<th>Type</th>
-									<th>Author</th>
-									<th>Uploaded by</th>
-									<th>Folder</th>
-									<th>Tags</th>
-									<th>Grade</th>
-									<th>Date</th>
-									<th></th>
-								</tr>
-							</thead>
-							<tbody>
-								<!-- Staged/in-progress items, same root-only condition
-								     as the Icons/List pending cards — found in review:
-								     Table view had no visibility into the queue at all
-								     (no row, no per-item Retry/Discard), only the
-								     aggregate status bar above. -->
-								{#if !searching && !currentPath}
-									{#each data.staged ?? [] as item (item.id)}
-										<tr class="staged-row">
-											<td colspan="9">
-												<span class="pending-title">{item.filename ?? item.source_url ?? 'Pasted text'}</span>
-												{#if jobsByStagedId[item.id]?.status === 'error'}
-													<span class="hint job-error">{jobLabel(jobsByStagedId[item.id])}</span>
-												{:else}
-													<span class="job-progress table-job-progress">
-														<span class="track"><span class="fill" style="width: {jobProgressPercent(jobsByStagedId[item.id] ?? { step: 'queued' })}%"></span></span>
-														<span class="hint">{jobLabel(jobsByStagedId[item.id] ?? { status: 'queued', step: 'queued' })}</span>
-													</span>
-												{/if}
-											</td>
-											<td class="doc-table-actions">
-												{#if jobsByStagedId[item.id]?.status === 'error'}
-													<button class="icon-btn" onclick={() => ingestOne(item.id)} disabled={promotingId === item.id} title="Retry" aria-label="Retry {item.filename}"><Icon name="refresh" size={15} /></button>
-												{/if}
-												<button
-													class="icon-btn danger"
-													onclick={() => discardStaged(item.id)}
-													disabled={jobActive(jobsByStagedId[item.id])}
-													title={jobActive(jobsByStagedId[item.id]) ? 'Already queued or running' : 'Discard'}
-													aria-label="Discard {item.filename}"
-												><Icon name="trash" size={15} /></button>
-											</td>
-										</tr>
-									{/each}
-								{/if}
-								{#each pageItems as s (s.id)}
-									<tr oncontextmenu={(e) => onDocContextMenu(e, s)}>
-										<td>
-											<input
-												type="checkbox"
-												checked={librarySelected.has(s.id)}
-												onchange={() => toggleLibrarySelected(s.id)}
-												aria-label="Select {s.title}"
-											/>
-										</td>
-										<td>
-											<a class="title-link" href="/admin/{s.id}" title={s.title}>{s.title}</a>
-											{#if s.is_private}<span class="private-badge" title="Private" aria-label="Private"><Icon name="lock" size={12} /></span>{/if}
-										</td>
-										<td class="hint">{s.doc_type || '—'}</td>
-										<td class="hint">{s.author || '—'}</td>
-										<td class="hint">{s.uploaded_by || '—'}</td>
-										<td class="hint">{s.folder_path || '(root)'}</td>
-										<td class="hint">{(s.topics ?? []).join(', ') || '—'}</td>
-										<td class="hint">{s.grade}</td>
-										<td class="hint">{(s.created_at ?? '').slice(0, 10)}</td>
-										<td class="doc-table-actions">
-											{#if needsFinalization.has(s.id)}
-												<button class="icon-btn finalize-bell" onclick={() => (placementPreview = s)} title="Review where this was filed" aria-label="Review placement for {s.title}"><Icon name="bell" size={15} /></button>
-											{/if}
-											<Menu label="More actions for {s.title}">
-												{#snippet items()}
-													<a href="/admin/{s.id}"><Icon name="eye" size={15} /> View</a>
-													<button onclick={() => askMove(s)}><Icon name="folder" size={15} /> Move to folder…</button>
-													<button onclick={() => setPrivate(s, !s.is_private)}>
-														<Icon name={s.is_private ? 'lock' : 'unlock'} size={15} /> {s.is_private ? 'Make public' : 'Make private'}
-													</button>
-													{#if s.is_private}
-														<button onclick={() => askAccess(s)}><Icon name="users" size={15} /> Edit access…</button>
-													{/if}
-													<button onclick={() => askAssignUploader(s)}><Icon name="user-card" size={15} /> {s.uploaded_by ? 'Reassign uploader…' : 'Assign uploader…'}</button>
-													<button class="danger" onclick={() => askDelete(s)}><Icon name="trash" size={15} /> Remove from library</button>
-												{/snippet}
-											</Menu>
-										</td>
-									</tr>
-								{:else}
-									<tr><td colspan="10">
-										{#if !data.sources.length}
-											<EmptyState
-												icon="book"
-												title="Your library is empty"
-												body='Upload a document, paste text, or scrape a URL to start teaching Functional Health Collab.'
-											>
-												{#snippet action()}
-													<Button onclick={() => (ingestOpen = true)}>+ Add resources</Button>
-												{/snippet}
-											</EmptyState>
-										{:else if searching}
-											<EmptyState icon="search" title="Nothing matches that search" body="Try a different term, or clear the search.">
-												{#snippet action()}
-													<Button variant="ghost" onclick={() => { q = ''; page = 1; }}>Clear search</Button>
-												{/snippet}
-											</EmptyState>
-										{:else}
-											<EmptyState
-												icon="folder"
-												title="This folder is empty"
-												body="Upload a document here, or browse to another folder."
-											>
-												{#snippet action()}
-													<Button onclick={() => (ingestOpen = true)}>+ Add resources</Button>
-												{/snippet}
-											</EmptyState>
-										{/if}
-									</td></tr>
-								{/each}
-							</tbody>
-						</table>
-					</div>
 				{/if}
-
+				{#each pageItems as s (s.id)}
+					<div
+						class="list-row doc-row"
+						class:on={selectedDocId === s.id}
+						oncontextmenu={(e) => onDocContextMenu(e, s)}
+						draggable="true"
+						ondragstart={() => (draggedId = s.id)}
+						ondragend={() => (draggedId = null)}
+					>
+						<input
+							type="checkbox"
+							checked={librarySelected.has(s.id)}
+							onclick={(e) => e.stopPropagation()}
+							onchange={() => toggleLibrarySelected(s.id)}
+							aria-label="Select {s.title}"
+						/>
+						<button class="row-main" onclick={() => (selectedDocId = s.id)}>
+							<span class="row-title">
+								{s.title}
+								{#if needsFinalization.has(s.id)}<Icon name="bell" size={12} />{/if}
+								{#if s.is_private}<Icon name="lock" size={12} />{/if}
+							</span>
+							<span class="row-sub">{s.doc_type || 'untyped'} · Grade {s.grade} · {(s.created_at ?? '').slice(0, 10)}</span>
+						</button>
+					</div>
+				{:else}
+					<div class="list-empty">
+						{#if !data.sources.length}
+							<EmptyState icon="book" title="Your library is empty" body='Upload a document, paste text, or scrape a URL to start teaching Functional Health Collab.'>
+								{#snippet action()}<Button onclick={() => (ingestOpen = true)}>+ Add resources</Button>{/snippet}
+							</EmptyState>
+						{:else if searching}
+							<EmptyState icon="search" title="Nothing matches that search" body="Try a different term, or clear the search.">
+								{#snippet action()}<Button variant="ghost" onclick={() => { q = ''; page = 1; }}>Clear search</Button>{/snippet}
+							</EmptyState>
+						{:else}
+							<EmptyState icon="folder" title="This folder is empty" body="Upload a document here, or browse to another folder.">
+								{#snippet action()}<Button onclick={() => (ingestOpen = true)}>+ Add resources</Button>{/snippet}
+							</EmptyState>
+						{/if}
+					</div>
+				{/each}
 				{#if totalPages > 1}
 					<div class="pager">
-						<button class="view" onclick={() => (page = shownPage - 1)} disabled={shownPage <= 1}>← Prev</button>
-						<span class="hint">Page {shownPage} of {totalPages} ({filtered.length} document{filtered.length === 1 ? '' : 's'})</span>
-						<button class="view" onclick={() => (page = shownPage + 1)} disabled={shownPage >= totalPages}>Next →</button>
+						<button onclick={() => (page = shownPage - 1)} disabled={shownPage <= 1}>←</button>
+						<span class="hint">{shownPage} / {totalPages}</span>
+						<button onclick={() => (page = shownPage + 1)} disabled={shownPage >= totalPages}>→</button>
 					</div>
 				{/if}
-			</div>
+			{:else if mainTab === 'tree'}
+				<div class="tree-row">
+					<button class="tree-root" onclick={() => handleDropOnFolder('')}>
+						<Icon name="folder" size={14} /> Library <span class="row-sub">{data.sources.length}</span>
+					</button>
+					<FolderTree
+						nodes={folderTree}
+						activePath={currentPath}
+						docs={rootDocs}
+						showDocs
+						onSelect={(path) => { currentPath = path; mainTab = 'library'; page = 1; }}
+						onDrop={handleDropOnFolder}
+						onRename={askRenameFolder}
+						onPrivatize={setFolderPrivate}
+						onDelete={(path, count) => askDeleteFolder(path, count)}
+					/>
+				</div>
+			{:else if mainTab === 'graph'}
+				{#if data.graph}
+					<p class="hint graph-stats">{data.graph.entities ?? 0} concepts · {data.graph.mentions ?? 0} links · {(data.graph.unlinked ?? []).length} unlinked</p>
+				{/if}
+			{/if}
 		</div>
-	{:else if mainTab === 'tree'}
-		<!-- Unified folders+documents tree, reusing already-loaded data.sources
-		     / data.folders — no new fetch, so this tab paints in well under
-		     100ms. Clicking a folder jumps into the Library tab at that path;
-		     clicking a document (a real <a href>) opens its detail page. -->
-		<div class="tree-view-pane">
-			<div
-				class="node root-node"
-				ondragover={(e) => e.preventDefault()}
-				ondrop={(e) => { e.preventDefault(); handleDropOnFolder(''); }}
-			>
-				<span class="name"><Icon name="folder" size={13} /> Library <span class="count">{data.sources.length}</span></span>
-			</div>
-			<FolderTree
-				nodes={folderTree}
-				activePath={currentPath}
-				docs={rootDocs}
-				showDocs
-				onSelect={(path) => { currentPath = path; mainTab = 'library'; page = 1; }}
-				onDrop={handleDropOnFolder}
-				onRename={askRenameFolder}
-				onPrivatize={setFolderPrivate}
-				onDelete={(path, count) => askDeleteFolder(path, count)}
-			/>
-		</div>
-	{:else if mainTab === 'graph'}
-		{#if data.graph}
-			<p class="hint graph-stats">{data.graph.entities ?? 0} concepts · {data.graph.mentions ?? 0} links · {(data.graph.unlinked ?? []).length} unlinked sources</p>
-		{/if}
-		{#if conceptGraphLoading}
-			<p class="hint">Loading the concept graph…</p>
-		{:else}
-			<GraphView nodes={conceptGraph?.nodes ?? []} edges={conceptGraph?.edges ?? []} />
-		{/if}
-	{/if}
-	</div>
-</Workspace>
+	</aside>
 
-{#snippet libraryActions()}
-	<Button variant="outlined" onclick={() => { maintenanceKind = 'relink'; maintenanceOpen = true; }}>Relink</Button>
-	<Button variant="outlined" onclick={() => { maintenanceKind = 'consolidate'; maintenanceOpen = true; }}>Consolidate</Button>
-	<Button onclick={() => (ingestOpen = true)}>+ Add resources</Button>
-{/snippet}
+	<div class="detail-pane">
+		{#if mainTab === 'graph'}
+			{#if conceptGraphLoading}
+				<p class="hint">Loading the concept graph…</p>
+			{:else}
+				<GraphView nodes={conceptGraph?.nodes ?? []} edges={conceptGraph?.edges ?? []} />
+			{/if}
+		{:else if mainTab === 'tree'}
+			<p class="hint">Pick a folder on the left, or switch to List to select a document.</p>
+		{:else if selectedDoc}
+			{@const s = selectedDoc}
+			<div class="detail-head">
+				<div>
+					<h1>{s.title}</h1>
+					<p>{s.author ? `by ${s.author}` : 'No author on record'}{s.uploaded_by ? ` · uploaded by ${s.uploaded_by}` : ''}</p>
+				</div>
+				<div class="detail-actions">
+					<a class="icon-btn" href="/admin/{s.id}" title="Open full detail" aria-label="Open full detail"><Icon name="external-link" size={16} /></a>
+					<Menu label="More actions for {s.title}">
+						{#snippet items()}
+							<button onclick={() => askMove(s)}><Icon name="folder" size={15} /> Move to folder…</button>
+							{#if s.is_private}<button onclick={() => askAccess(s)}><Icon name="users" size={15} /> Edit access…</button>{/if}
+							<button onclick={() => askAssignUploader(s)}><Icon name="user-card" size={15} /> {s.uploaded_by ? 'Reassign uploader…' : 'Assign uploader…'}</button>
+							<button class="danger" onclick={() => askDelete(s)}><Icon name="trash" size={15} /> Remove from library</button>
+						{/snippet}
+					</Menu>
+				</div>
+			</div>
+
+			{#if needsFinalization.has(s.id)}
+				<button class="finalize-notice" onclick={() => (placementPreview = s)}>
+					<Icon name="bell" size={14} /> This was just filed automatically — review where it landed
+				</button>
+			{/if}
+
+			<div class="detail-fields">
+				<label class="field">
+					<span>Type</span>
+					<select value={s.doc_type ?? ''} onchange={(e) => setDocType(s, (e.target as HTMLSelectElement).value)}>
+						<option value="">(unset)</option>
+						{#each DOC_TYPES as t (t)}<option value={t}>{t}</option>{/each}
+					</select>
+				</label>
+				<label class="field">
+					<span>Grade</span>
+					<input type="number" min="1" max="10" value={s.grade} onchange={(e) => regrade(s, Number((e.target as HTMLInputElement).value))} />
+				</label>
+				<label class="field">
+					<span>Folder</span>
+					<input type="text" placeholder="(root)" value={s.folder_path ?? ''} onblur={(e) => setFolder(s, (e.target as HTMLInputElement).value)} />
+				</label>
+				<label class="field">
+					<span>Visibility</span>
+					<button class="visibility-toggle" onclick={() => setPrivate(s, !s.is_private)}>
+						<Icon name={s.is_private ? 'lock' : 'unlock'} size={14} /> {s.is_private ? 'Private' : 'Public'}
+					</button>
+				</label>
+			</div>
+
+			<div class="field">
+				<span>Tags</span>
+				<div class="tags">
+					{#each s.topics ?? [] as tag (tag)}
+						<button class="tag" onclick={() => removeTag(s, tag)} title="Remove tag">{tag} <span aria-hidden="true">&times;</span></button>
+					{/each}
+					<input
+						class="tag-input"
+						type="text" placeholder="+ tag"
+						value={newTagText[s.id] ?? ''}
+						oninput={(e) => (newTagText = { ...newTagText, [s.id]: (e.target as HTMLInputElement).value })}
+						onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag(s); } }}
+						onblur={() => addTag(s)}
+					/>
+				</div>
+			</div>
+		{:else}
+			<p class="hint">Select a document from the list to see its details.</p>
+		{/if}
+	</div>
+</div>
 
 <Dialog bind:open={maintenanceOpen} title={maintenanceKind === 'relink' ? 'Relink unlinked sources' : 'Consolidate entities'}>
 	<p>
@@ -1897,7 +1569,6 @@
 <style>
 	.ingest { display: grid; gap: var(--space-3); }
 	.ingest-panel { margin-top: var(--space-4); display: grid; gap: var(--space-3); }
-	.tab-panel { margin-top: var(--space-4); }
 	.dropzone {
 		display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .3rem;
 		min-height: 8rem; padding: var(--space-4); text-align: center; cursor: pointer;
@@ -1923,233 +1594,129 @@
 	@media (prefers-reduced-motion: reduce) {
 		.scrape-progress .bar { animation: none; width: 100%; }
 	}
-	.search-bar { margin-bottom: var(--space-4); display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
-	.search-input-wrap { position: relative; flex: 1 1 16rem; min-width: 0; }
 	.graph-stats { margin: 0 0 var(--space-4); }
-	.search {
-		width: 100%; font-size: var(--text-lg); padding: var(--space-4) var(--space-5) var(--space-4) var(--space-4);
-		border: 1px solid var(--line-2); border-radius: var(--r-lg); background: var(--panel);
-		color: var(--ink);
-		transition: border-color .15s var(--ease), box-shadow .15s var(--ease);
-	}
-	.menu-section-label {
-		padding: .4rem .6rem .2rem; font-size: var(--text-xs); font-weight: 650; text-transform: uppercase;
-		letter-spacing: .04em; color: var(--muted);
-	}
 	.menu-choice.menu-active { color: var(--accent-ink); background: var(--accent-soft); }
-	.search:focus {
-		outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft);
-	}
-	.search-clear {
-		position: absolute; right: var(--space-3); top: 50%; transform: translateY(-50%);
-		border: none; background: none; cursor: pointer; font-size: 1.3rem; line-height: 1;
-		color: var(--muted); padding: .2rem .4rem;
-	}
-	.search-clear:hover { color: var(--ink); }
-	/* One short row, scrolling on the x axis rather than wrapping — a tile
-	   stays a compact name+count pill no matter how many categories exist. */
-	.directory-row {
-		display: flex; gap: var(--space-2); overflow-x: auto; overflow-y: hidden;
-		padding-bottom: var(--space-2); margin-bottom: var(--space-4);
-	}
-	.dir-tile {
-		flex: 0 0 auto; display: inline-flex; align-items: center; gap: .4rem; white-space: nowrap;
-		text-align: left; cursor: pointer; font: inherit; font-size: var(--text-sm);
-		border: 1px solid var(--line); background: var(--panel-2); color: var(--ink);
-		border-radius: 99px; padding: .45rem .85rem;
-		transition: border-color .15s var(--ease), background .15s var(--ease), color .15s var(--ease);
-	}
-	.dir-tile:hover { border-color: var(--accent); background: var(--accent-soft); }
-	.dir-tile.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
-	.dir-name { font-weight: 650; }
-	.dir-count {
-		font-size: var(--text-xs); color: var(--muted); background: var(--panel);
-		border-radius: 99px; padding: .1rem .45rem;
-	}
-	.dir-tile.active .dir-count { color: inherit; background: rgba(255, 255, 255, .35); }
-	.doc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: var(--space-3); }
-	.grid-empty { grid-column: 1 / -1; }
-	.doc-grid.list-view { grid-template-columns: 1fr; }
-	.doc-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r-lg); }
-	.doc-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
-	.doc-table th, .doc-table td {
-		padding: .5rem .6rem; text-align: left; border-bottom: 1px solid var(--line);
-		white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 16rem;
-	}
-	.doc-table th { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
-	.doc-table tbody tr:hover { background: var(--panel-2); }
-	.doc-table-actions { display: flex; align-items: center; gap: .2rem; white-space: nowrap; }
-	.private-badge { display: inline-flex; color: var(--muted); margin-left: .3rem; vertical-align: middle; }
-	.library-layout { display: flex; gap: var(--space-5); align-items: flex-start; }
-	.folder-sidebar {
-		flex: 0 0 14rem; min-width: 0; border-right: 1px solid var(--line); padding-right: var(--space-4);
-		max-height: 70vh; overflow-y: auto; position: sticky; top: var(--space-4);
-	}
-	.library-main { flex: 1 1 auto; min-width: 0; }
-	.breadcrumb-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
-	.breadcrumb { display: flex; align-items: center; gap: .3rem; margin-bottom: var(--space-3); font-size: var(--text-sm); flex-wrap: wrap; }
+	.access-list { max-height: 50vh; overflow-y: auto; display: grid; gap: .4rem; list-style: none; padding: 0; }
+	.access-list label { display: flex; align-items: center; gap: .5rem; }
 	.move-suggestions { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .3rem; }
+
+	/* ── List pane: search, topic/sort controls, breadcrumb, then the
+	   flat row list itself (folders, staged jobs, documents). ── */
+	.lp-top { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-2); }
+	.lp-modes { display: flex; gap: .1rem; margin-bottom: var(--space-3); }
+	.lp-modes button {
+		flex: 1 1 auto; border: 1px solid var(--line); background: var(--panel); color: var(--muted);
+		font: inherit; font-size: var(--text-xs); font-weight: 650; padding: .35rem 0; cursor: pointer;
+	}
+	.lp-modes button.on { color: var(--accent-ink); background: var(--accent-soft); border-color: var(--accent); }
+	.search-input-wrap { position: relative; margin-bottom: var(--space-2); }
+	.search {
+		width: 100%; font-size: var(--text-sm); padding: .5rem .5rem .5rem var(--space-3);
+		border: 1px solid var(--line-2); background: var(--panel); color: var(--ink);
+	}
+	.search:focus { outline: none; border-color: var(--accent); }
+	.search-clear {
+		position: absolute; right: .4rem; top: 50%; transform: translateY(-50%);
+		border: none; background: none; cursor: pointer; font-size: 1.1rem; line-height: 1; color: var(--muted);
+	}
+	.lp-controls { display: flex; align-items: center; gap: .3rem; margin-bottom: var(--space-2); }
+	.topic-select {
+		flex: 1 1 auto; min-width: 0; border: 1px solid var(--line-2); background: var(--panel);
+		color: var(--ink); font-size: var(--text-xs); padding: .3rem .4rem; cursor: pointer;
+	}
+	.breadcrumb { display: flex; align-items: center; gap: .3rem; margin-bottom: var(--space-2); font-size: var(--text-xs); flex-wrap: wrap; }
 	.breadcrumb button {
-		border: none; background: none; cursor: pointer; font: inherit; color: var(--accent); padding: .1rem .2rem;
+		border: none; background: none; cursor: pointer; font: inherit; color: var(--accent-ink); padding: .1rem .2rem;
 	}
 	.breadcrumb button:disabled { color: var(--ink); cursor: default; font-weight: 650; }
 	.breadcrumb .sep { color: var(--muted); }
-	.folder-card {
-		position: relative; border: 1px solid var(--line); border-radius: var(--r); background: var(--panel);
-		min-height: 7rem;
+	.breadcrumb .new-folder { margin-left: auto; color: var(--muted); }
+	.queue-status { margin: 0 0 var(--space-2); }
+	.retry-link { border: none; background: none; color: var(--accent-ink); cursor: pointer; font: inherit; padding: 0; text-decoration: underline; }
+	.bulk-bar { display: flex; align-items: center; gap: .4rem; margin-bottom: var(--space-2); }
+	.bulk-bar button { border: 1px solid var(--line); background: var(--panel); cursor: pointer; padding: .3rem .4rem; color: var(--ink-2); }
+
+	.folder-row, .staged-row, .doc-row {
+		display: flex; align-items: flex-start; gap: .5rem; padding: var(--space-3) var(--space-4);
+		border-bottom: 1px solid var(--line); width: 100%; text-align: left;
 	}
-	.folder-card:hover { border-color: var(--accent); background: var(--accent-soft); }
-	.folder-card-open {
-		display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .2rem;
-		width: 100%; height: 100%; min-height: 7rem; border: none; background: none; cursor: pointer;
-		font: inherit; color: var(--ink); padding: var(--space-3) var(--space-2);
+	.folder-row { border: none; background: none; cursor: pointer; color: var(--ink); align-items: center; }
+	.folder-row:hover { background: var(--panel-2); }
+	.doc-row { cursor: pointer; }
+	.doc-row:hover { background: var(--panel-2); }
+	.doc-row.on { background: var(--accent-soft); }
+	.doc-row input[type="checkbox"] { margin-top: .2rem; flex: 0 0 auto; }
+	.row-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: .15rem; border: none; background: none; text-align: left; font: inherit; cursor: pointer; padding: 0; }
+	.row-title { display: flex; align-items: center; gap: .3rem; font-weight: var(--weight-medium); color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.row-sub { font-size: var(--text-xs); color: var(--muted); }
+	.staged-row { flex-direction: column; background: var(--panel-2); gap: .3rem; }
+	.row-actions { display: flex; gap: .4rem; }
+	.row-actions button { border: 1px solid var(--line); background: var(--panel); cursor: pointer; padding: .2rem .5rem; font-size: var(--text-xs); }
+	.row-actions button.danger { color: var(--danger); }
+	.job-progress { display: grid; gap: .25rem; width: 100%; }
+	.job-progress .track { height: 4px; background: var(--panel); overflow: hidden; }
+	.job-progress .fill { height: 100%; background: var(--accent); transition: width .3s var(--ease); }
+	.job-error { color: var(--danger); margin: 0; }
+	.list-empty { padding: var(--space-4); }
+	.pager { display: flex; align-items: center; justify-content: center; gap: var(--space-3); padding: var(--space-3); }
+	.pager button { border: 1px solid var(--line); background: var(--panel); cursor: pointer; padding: .2rem .6rem; }
+	.pager button:disabled { opacity: .4; cursor: not-allowed; }
+
+	.tree-row { padding: var(--space-3); }
+	.tree-root { display: flex; align-items: center; gap: .4rem; border: none; background: none; cursor: pointer; font: inherit; color: var(--ink); padding: .3rem 0; margin-bottom: .3rem; }
+
+	/* ── Detail pane: one document's full, always-visible editable
+	   fields — no per-field "edit" toggle, there's only one open at a
+	   time now. ── */
+	.detail-actions { display: flex; gap: .4rem; }
+	.icon-btn {
+		display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+		border: 1px solid var(--line); background: var(--panel); color: var(--ink-2);
+		width: 2.2rem; height: 2.2rem; padding: 0; text-decoration: none;
 	}
-	.folder-card-name { font-size: var(--text-sm); font-weight: 600; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
-	.folder-card .count { color: var(--muted); font-size: var(--text-xs); }
-	/* Always visible, not hover-revealed (matches doc-card-actions, and
-	   hover never fires on touch) — absolutely positioned so this doesn't
-	   affect the tile's own size either way, but consistency matters more
-	   than the extra chrome being decorative most of the time. */
-	.folder-card-actions { display: flex; gap: .2rem; position: absolute; top: .3rem; right: .3rem; }
-	.folder-card-actions button {
-		display: inline-flex; border: none; background: none; padding: .2rem; border-radius: var(--r); color: var(--muted); cursor: pointer;
+	.icon-btn:hover { border-color: var(--accent); color: var(--accent-ink); }
+	.finalize-notice {
+		display: flex; align-items: center; gap: .4rem; width: 100%; text-align: left;
+		border: 1px solid var(--warn); background: var(--warn-soft); color: var(--ink);
+		padding: var(--space-3); margin-bottom: var(--space-4); cursor: pointer; font: inherit; font-size: var(--text-sm);
 	}
-	.folder-card-actions button:hover { color: var(--accent); background: var(--panel); }
-	/* Mirrors FolderTree.svelte's .node/.name/.count exactly — these two
-	   rows (All sources / unfiled) sit above the real tree, not inside
-	   it, since neither is a real folder_path value. */
-	.folder-sidebar .root-node {
-		display: flex; align-items: center; border-radius: var(--r); margin-bottom: .15rem;
+	.detail-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: var(--space-3); margin-bottom: var(--space-4); }
+	.field { display: flex; flex-direction: column; gap: .3rem; margin-bottom: var(--space-4); }
+	.field > span:first-child { font-size: var(--text-xs); font-weight: 650; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+	.field select, .field input[type="text"], .field input[type="number"] {
+		border: 1px solid var(--line-2); background: var(--panel); color: var(--ink); padding: .5rem .6rem;
 	}
-	.folder-sidebar .root-node:hover { background: var(--panel-2); }
-	.folder-sidebar .root-node.active { background: var(--accent-soft); }
-	.folder-sidebar .name {
-		flex: 1 1 auto; display: flex; align-items: center; gap: .35rem; border: none; background: none;
-		cursor: pointer; font: inherit; font-size: var(--text-sm); color: var(--ink); padding: .3rem 0; text-align: left;
+	.visibility-toggle {
+		display: inline-flex; align-items: center; gap: .4rem; border: 1px solid var(--line-2);
+		background: var(--panel); color: var(--ink); padding: .5rem .6rem; cursor: pointer; font: inherit; width: fit-content;
 	}
-	.folder-sidebar .count { color: var(--muted); font-size: var(--text-xs); margin-left: auto; }
-	.tree-view-pane { max-width: 36rem; }
-	.tree-view-pane .root-node {
-		display: flex; align-items: center; border-radius: var(--r); margin-bottom: .15rem;
-	}
-	.tree-view-pane .name {
-		flex: 1 1 auto; display: flex; align-items: center; gap: .35rem; font-size: var(--text-sm);
-		color: var(--ink); padding: .3rem 0;
-	}
-	.tree-view-pane .count { color: var(--muted); font-size: var(--text-xs); margin-left: auto; }
-	@media (max-width: 900px) {
-		.library-layout { flex-direction: column; }
-		.folder-sidebar { flex: 0 0 auto; width: 100%; max-height: none; border-right: none; border-bottom: 1px solid var(--line); padding-right: 0; padding-bottom: var(--space-3); position: static; }
-	}
-	.bulk-bar { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-3); }
-	.access-list { max-height: 50vh; overflow-y: auto; display: grid; gap: .4rem; list-style: none; padding: 0; }
-	.access-list label { display: flex; align-items: center; gap: .5rem; }
-	.doc-card {
-		display: flex; flex-direction: column; gap: .4rem; padding: var(--space-3);
-		border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--panel-2);
-	}
-	.doc-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-2); }
-	.doc-card-head input[type="checkbox"] { flex: 0 0 auto; margin-top: .25rem; }
-	/* Clamped to 2 lines, not left to wrap freely — an unbounded title
-	   (found live, 2026-11-03: "icon drift") squeezes into the narrow
-	   column next to doc-card-actions' fixed width and wraps into many
-	   short lines, leaving the action icons pinned to the top of a much
-	   taller card instead of sitting beside the title the way every other
-	   card does. */
-	.doc-card-head .title-link {
-		font-weight: 650; flex: 1 1 auto; min-width: 0;
-		display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical;
-		overflow: hidden;
-	}
-	.doc-card-actions { display: flex; gap: .3rem; flex: 0 0 auto; }
-	.doc-card-foot { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin-top: auto; padding-top: .3rem; }
-	.doc-card-summary { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; }
-	.folder-hint { display: inline-flex; align-items: center; gap: .25rem; }
-	.tags-readonly { display: flex; flex-wrap: wrap; gap: .3rem; }
-	.edit-toggle {
-		align-self: flex-start; border: none; background: none; cursor: pointer; padding: 0;
-		color: var(--accent-ink); font-size: var(--text-xs); font-weight: 650; margin-top: .2rem;
-	}
-	.edit-toggle:hover { text-decoration: underline; }
-	.grade-label { display: flex; align-items: center; gap: .3rem; font-size: var(--text-xs); color: var(--muted); }
-	.folder-label { display: flex; align-items: center; gap: .25rem; font-size: var(--text-xs); color: var(--muted); }
-	.folder-input {
-		width: 7.5rem; border: 1px solid var(--line-2); border-radius: var(--r);
-		padding: .2rem .35rem; font: inherit; font-size: var(--text-xs); color: var(--ink); background: var(--panel);
-	}
-	.doc-type-select {
-		border: 1px solid var(--line-2); border-radius: var(--r); padding: .15rem .35rem;
-		font: inherit; font-size: var(--text-xs); color: var(--ink); background: var(--panel); cursor: pointer;
-	}
-	.doc-card-meta { margin: -.1rem 0 0; display: grid; gap: .15rem; }
-	.meta-line { display: flex; align-items: center; gap: .3rem; margin: 0; font-size: var(--text-xs); color: var(--muted); }
-	.meta-uploader { color: var(--accent); }
-	.pager { display: flex; align-items: center; justify-content: center; gap: var(--space-4); margin-top: var(--space-5); }
 	.fchip {
 		font: inherit; font-size: var(--text-sm); cursor: pointer;
 		border: 1px solid var(--line); background: var(--panel-2); color: var(--ink);
-		border-radius: 99px; padding: .3rem .7rem; display: inline-flex; align-items: center; gap: .35rem;
-		transition: background .15s var(--ease), border-color .15s var(--ease), color .15s var(--ease);
+		padding: .3rem .7rem; display: inline-flex; align-items: center; gap: .35rem;
 	}
 	.fchip:hover { border-color: var(--accent); }
-	.tags { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem; margin-top: .25rem; }
+	.tags { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem; }
 	.tag {
 		font: inherit; font-size: var(--text-xs); cursor: pointer; display: inline-flex; align-items: center; gap: .2rem;
-		border: 1px solid var(--line); background: var(--panel-2); color: var(--muted);
-		border-radius: 99px; padding: .08rem .45rem; line-height: 1.5;
+		border: 1px solid var(--line); background: var(--panel-2); color: var(--muted); padding: .15rem .5rem;
 	}
 	.tag:hover { border-color: var(--danger); color: var(--danger); }
 	.tag-input {
-		font: inherit; font-size: var(--text-xs); border: 1px dashed var(--line-2); border-radius: 99px;
-		padding: .08rem .45rem; background: transparent; color: var(--ink); width: 5rem;
+		font: inherit; font-size: var(--text-xs); border: 1px dashed var(--line-2);
+		padding: .15rem .5rem; background: transparent; color: var(--ink); width: 6rem;
 	}
 	.view {
 		font: inherit; font-size: var(--text-sm); font-weight: 650; cursor: pointer;
-		border: 1px solid var(--line); background: var(--panel); color: var(--accent-ink);
-		border-radius: var(--r); padding: .3rem .7rem;
+		border: 1px solid var(--line); background: var(--panel); color: var(--accent-ink); padding: .3rem .7rem;
 	}
 	.view:hover { border-color: var(--accent); background: var(--accent-soft); }
 	.view.danger { color: var(--danger); }
 	.view.danger:hover { border-color: var(--danger); background: var(--danger-soft); }
-	.icon-btn {
-		display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
-		border: 1px solid var(--line); background: var(--panel); color: var(--accent-ink);
-		border-radius: var(--r); width: 2rem; height: 2rem; padding: 0;
-		transition: background .15s var(--ease), border-color .15s var(--ease);
-	}
-	.icon-btn:hover { border-color: var(--accent); background: var(--accent-soft); }
-	.icon-btn.danger { color: var(--danger); }
-	.icon-btn.danger:hover { border-color: var(--danger); background: var(--danger-soft); }
-	.title-link {
-		font: inherit; text-align: left; cursor: pointer; border: none; background: none;
-		padding: 0; color: var(--ink); text-decoration: underline; text-decoration-color: transparent;
-		transition: text-decoration-color .15s var(--ease);
-	}
-	.title-link:hover, .title-link:focus-visible { text-decoration-color: currentColor; }
-	input.grade {
-		width: 3.5rem; border: 1px solid var(--line-2); border-radius: var(--r);
-		padding: .3rem .4rem; font: inherit; color: var(--ink); background: var(--panel);
-	}
 	.view:disabled { opacity: .5; cursor: not-allowed; }
-	.queue-status-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; margin-bottom: var(--space-3); }
-	.queue-status { margin: 0; }
-	.doc-card-pending { opacity: .85; border-style: dashed; }
-	.pending-title { font-weight: 650; overflow-wrap: anywhere; }
-	.finalize-bell { color: var(--accent); }
-	.finalize-bell:hover { color: var(--accent); }
 	.upload-progress {
-		display: flex; align-items: center; gap: var(--space-3);
-		background: var(--panel-2); border-radius: 99px; padding: .35rem .35rem .35rem .1rem;
+		display: flex; align-items: center; gap: var(--space-3); background: var(--panel-2); padding: .35rem;
 	}
-	.upload-progress .bar { flex: 1 1 auto; height: 6px; border-radius: 99px; background: var(--accent); transition: width .2s var(--ease); margin-left: .25rem; }
+	.upload-progress .bar { flex: 1 1 auto; height: 6px; background: var(--accent); transition: width .2s var(--ease); }
 	.upload-progress .hint { flex: 0 0 auto; padding-right: .5rem; white-space: nowrap; }
-	.job-progress { margin-top: .4rem; display: grid; gap: .25rem; }
-	.job-progress .track { height: 6px; border-radius: 99px; background: var(--panel-2); overflow: hidden; }
-	.job-progress .fill { height: 100%; border-radius: 99px; background: var(--accent); transition: width .3s var(--ease); }
-	.job-error { color: var(--danger); margin-top: .4rem; }
-	.staged-row td { background: var(--panel-2); }
-	.staged-row .pending-title { margin-right: .6rem; }
-	.table-job-progress { display: inline-flex; align-items: center; gap: .5rem; margin-top: 0; }
-	.table-job-progress .track { width: 6rem; height: 5px; border-radius: 99px; background: var(--panel); overflow: hidden; }
-	.table-job-progress .fill { height: 100%; border-radius: 99px; background: var(--accent); transition: width .3s var(--ease); }
 </style>
