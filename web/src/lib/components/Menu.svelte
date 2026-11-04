@@ -36,8 +36,14 @@
 		position: absolute; top: 100%; right: 0; left: auto; bottom: auto; margin: .25rem 0 0;
 		padding: .3rem; border: 1px solid var(--line); border-radius: var(--r-lg);
 		background: var(--panel); box-shadow: var(--shadow-lg); min-width: 11rem;
-		display: grid; gap: .1rem;
+		gap: .1rem;
 	}
+	/* display must stay OUT of the base rule above — found live: an
+	   unconditional `display: grid` there is author-origin CSS, which
+	   always beats the UA stylesheet's default `[popover]:not(:popover-
+	   open) { display: none }` regardless of selector specificity (author
+	   styles win over user-agent styles in the cascade), so the menu
+	   rendered open on every page load instead of only once triggered. */
 	.menu-pop:popover-open { display: grid; }
 	/* Each item is whatever the caller renders (a <button> or <a>, danger
 	   or not) — this just normalizes their shared layout so callers don't

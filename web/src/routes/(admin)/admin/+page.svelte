@@ -1391,6 +1391,40 @@
 								</tr>
 							</thead>
 							<tbody>
+								<!-- Staged/in-progress items, same root-only condition
+								     as the Icons/List pending cards — found in review:
+								     Table view had no visibility into the queue at all
+								     (no row, no per-item Retry/Discard), only the
+								     aggregate status bar above. -->
+								{#if !searching && !currentPath}
+									{#each data.staged ?? [] as item (item.id)}
+										<tr class="staged-row">
+											<td colspan="9">
+												<span class="pending-title">{item.filename ?? item.source_url ?? 'Pasted text'}</span>
+												{#if jobsByStagedId[item.id]?.status === 'error'}
+													<span class="hint job-error">{jobLabel(jobsByStagedId[item.id])}</span>
+												{:else}
+													<span class="job-progress table-job-progress">
+														<span class="track"><span class="fill" style="width: {jobProgressPercent(jobsByStagedId[item.id] ?? { step: 'queued' })}%"></span></span>
+														<span class="hint">{jobLabel(jobsByStagedId[item.id] ?? { status: 'queued', step: 'queued' })}</span>
+													</span>
+												{/if}
+											</td>
+											<td class="doc-table-actions">
+												{#if jobsByStagedId[item.id]?.status === 'error'}
+													<button class="icon-btn" onclick={() => ingestOne(item.id)} disabled={promotingId === item.id} title="Retry" aria-label="Retry {item.filename}"><Icon name="refresh" size={15} /></button>
+												{/if}
+												<button
+													class="icon-btn danger"
+													onclick={() => discardStaged(item.id)}
+													disabled={jobActive(jobsByStagedId[item.id])}
+													title={jobActive(jobsByStagedId[item.id]) ? 'Already queued or running' : 'Discard'}
+													aria-label="Discard {item.filename}"
+												><Icon name="trash" size={15} /></button>
+											</td>
+										</tr>
+									{/each}
+								{/if}
 								{#each pageItems as s (s.id)}
 									<tr oncontextmenu={(e) => onDocContextMenu(e, s)}>
 										<td>
@@ -1401,7 +1435,10 @@
 												aria-label="Select {s.title}"
 											/>
 										</td>
-										<td><a class="title-link" href="/admin/{s.id}" title={s.title}>{s.title}</a></td>
+										<td>
+											<a class="title-link" href="/admin/{s.id}" title={s.title}>{s.title}</a>
+											{#if s.is_private}<span class="private-badge" title="Private" aria-label="Private"><Icon name="lock" size={12} /></span>{/if}
+										</td>
 										<td class="hint">{s.doc_type || '—'}</td>
 										<td class="hint">{s.author || '—'}</td>
 										<td class="hint">{s.uploaded_by || '—'}</td>
@@ -1413,9 +1450,20 @@
 											{#if needsFinalization.has(s.id)}
 												<button class="icon-btn finalize-bell" onclick={() => (placementPreview = s)} title="Review where this was filed" aria-label="Review placement for {s.title}"><Icon name="bell" size={15} /></button>
 											{/if}
-											<a class="icon-btn" href="/admin/{s.id}" title="View document" aria-label="View {s.title}"><Icon name="eye" size={15} /></a>
-											<button class="icon-btn" onclick={() => askMove(s)} title="Move to folder" aria-label="Move {s.title}"><Icon name="folder" size={15} /></button>
-											<button class="icon-btn danger" onclick={() => askDelete(s)} title="Remove from library" aria-label="Remove {s.title}"><Icon name="trash" size={15} /></button>
+											<Menu label="More actions for {s.title}">
+												{#snippet items()}
+													<a href="/admin/{s.id}"><Icon name="eye" size={15} /> View</a>
+													<button onclick={() => askMove(s)}><Icon name="folder" size={15} /> Move to folder…</button>
+													<button onclick={() => setPrivate(s, !s.is_private)}>
+														<Icon name={s.is_private ? 'lock' : 'unlock'} size={15} /> {s.is_private ? 'Make public' : 'Make private'}
+													</button>
+													{#if s.is_private}
+														<button onclick={() => askAccess(s)}><Icon name="users" size={15} /> Edit access…</button>
+													{/if}
+													<button onclick={() => askAssignUploader(s)}><Icon name="user-card" size={15} /> {s.uploaded_by ? 'Reassign uploader…' : 'Assign uploader…'}</button>
+													<button class="danger" onclick={() => askDelete(s)}><Icon name="trash" size={15} /> Remove from library</button>
+												{/snippet}
+											</Menu>
 										</td>
 									</tr>
 								{:else}
@@ -1832,7 +1880,8 @@
 	}
 	.doc-table th { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
 	.doc-table tbody tr:hover { background: var(--panel-2); }
-	.doc-table-actions { display: flex; gap: .2rem; white-space: nowrap; }
+	.doc-table-actions { display: flex; align-items: center; gap: .2rem; white-space: nowrap; }
+	.private-badge { display: inline-flex; color: var(--muted); margin-left: .3rem; vertical-align: middle; }
 	.library-layout { display: flex; gap: var(--space-5); align-items: flex-start; }
 	.folder-sidebar {
 		flex: 0 0 14rem; min-width: 0; border-right: 1px solid var(--line); padding-right: var(--space-4);
@@ -1992,4 +2041,9 @@
 	.job-progress .track { height: 6px; border-radius: 99px; background: var(--panel-2); overflow: hidden; }
 	.job-progress .fill { height: 100%; border-radius: 99px; background: var(--accent); transition: width .3s var(--ease); }
 	.job-error { color: var(--danger); margin-top: .4rem; }
+	.staged-row td { background: var(--panel-2); }
+	.staged-row .pending-title { margin-right: .6rem; }
+	.table-job-progress { display: inline-flex; align-items: center; gap: .5rem; margin-top: 0; }
+	.table-job-progress .track { width: 6rem; height: 5px; border-radius: 99px; background: var(--panel); overflow: hidden; }
+	.table-job-progress .fill { height: 100%; border-radius: 99px; background: var(--accent); transition: width .3s var(--ease); }
 </style>
