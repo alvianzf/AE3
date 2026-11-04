@@ -1,5 +1,13 @@
 # Specs changelog
 
+## 2026-11-04 — v6.17, Table view action parity
+
+See [v6.17/README.md](v6.17/README.md). Closes the single largest gap
+`v6.16`'s PM+QA audit deferred: Table view's row actions were View/
+Move/Delete only, with no private/public toggle, Edit access, or
+uploader assignment, and no visibility into the in-progress ingest
+queue at all. Now uses the same "⋮" Menu as Icons/List, a private-doc
+lock badge, and staged-item rows with progress/Retry/Discard.
 ## 2026-11-04 — v6.16, PM + QA audit (two parallel subagents), fixes
 
 See [v6.16/README.md](v6.16/README.md). User asked for a PM pass and a
