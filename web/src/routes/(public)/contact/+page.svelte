@@ -25,7 +25,7 @@
 	}
 </script>
 
-<Seo title="Contact — Clinic" description="Get in touch with the Clinic team." path="/contact" />
+<Seo title="Contact — Functional Health Collab" description="Get in touch with the Functional Health Collab team." path="/contact" />
 
 <div class="container page">
 	<h1>Contact us</h1>

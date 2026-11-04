@@ -6,7 +6,7 @@
 	// plus pricing/FAQ/contact) live here instead of crowding PublicNav.
 	const groups = [
 		{
-			title: 'Clinic',
+			title: 'Functional Health Collab',
 			links: [
 				{ href: '/practitioners', label: 'Find a practitioner' },
 				{ href: '/join', label: 'For practitioners' },
@@ -30,7 +30,7 @@
 	<div class="container inner">
 		<div class="brand">
 			<Sprig size={20} />
-			<span>Clinic</span>
+			<span>Functional Health Collab</span>
 		</div>
 		{#each groups as g (g.title)}
 			<nav aria-label={g.title}>
@@ -42,7 +42,7 @@
 		{/each}
 	</div>
 	<p class="disclaimer container">
-		Clinic is a decision-support tool for licensed practitioners. It is not
+		Functional Health Collab is a decision-support tool for licensed practitioners. It is not
 		a medical device and does not provide medical advice directly to
 		clients — see our <a href="/terms">Terms of Service</a> for the full
 		disclaimer.

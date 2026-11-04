@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import AppRail from '$lib/components/AppRail.svelte';
-	import TopBar from '$lib/components/TopBar.svelte';
+	import TopNav from '$lib/components/TopNav.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import Tour from '$lib/components/Tour.svelte';
 	import DisclaimerBar from '$lib/components/DisclaimerBar.svelte';
@@ -11,7 +10,7 @@
 	// practitioner actually forms a clinical judgment from.
 	const showDisclaimer = $derived(page.url.pathname.startsWith('/practitioner/consult'));
 
-	// specs/v7/06 — same rail-only scoping as the admin portal's tour;
+	// specs/v7/06 — same nav-only scoping as the admin portal's tour;
 	// see that layout's own comment for why.
 	let tourActive = $state(!data.session?.tour_completed);
 	const tourSteps = [
@@ -28,9 +27,9 @@
 
 	// specs/v8 §9.1 — Consult is the practitioner's actual job-to-be-done
 	// (per this session's own JTBD research) for a Pro practitioner;
-	// Clients is the other primary surface. Everything else is
-	// secondary/account-shaped. A Basic practitioner's own primary items
-	// are locked anyway, so this grouping costs them nothing extra.
+	// Clients is the other primary surface. Everything else lives in the
+	// "More" menu. A Basic practitioner's own primary items are locked
+	// anyway, so this grouping costs them nothing extra.
 	const items = $derived([
 		{ href: '/practitioner/consult', label: 'Consult', icon: 'message', locked: !isPro, navGroup: 'primary' as const },
 		{ href: '/practitioner/clients', label: 'Clients', icon: 'users', locked: !isPro, badge: data.notifications?.unviewed_intake, navGroup: 'primary' as const },
@@ -43,8 +42,8 @@
 	]);
 
 	// specs/v7/06 — same group label convention as locked items' own
-	// title tooltip in AppRail ("label (Pro)") so a palette result makes
-	// the same promise the rail icon it's standing in for already does.
+	// title tooltip in TopNav ("label (Pro)") so a palette result makes
+	// the same promise the nav item it's standing in for already does.
 	const paletteItems = $derived(items.map((i) => ({ ...i, group: i.locked ? 'Pro' : 'Practitioner' })));
 	let paletteOpen = $state(false);
 
@@ -54,8 +53,6 @@
 			paletteOpen = true;
 		}
 	}
-
-	const crumb = $derived(items.find((i) => page.url.pathname === i.href || page.url.pathname.startsWith(i.href + '/'))?.label ?? 'Practitioner portal');
 </script>
 
 <svelte:window onkeydown={onWindowKeydown} />
@@ -64,30 +61,22 @@
 <Tour steps={tourSteps} bind:active={tourActive} />
 
 <div class="shell">
-	<AppRail {items} portalLabel="Practitioner portal" />
-	<div class="col">
-		<TopBar
-			crumbs={[{ label: 'Practitioner portal' }, { label: crumb }]}
-			onCommandPalette={() => (paletteOpen = true)}
-			userLabel={data.profile?.name}
-		/>
-		<main>
-			{@render children()}
-			{#if showDisclaimer}<DisclaimerBar />{/if}
-		</main>
-	</div>
+	<TopNav {items} portalLabel="Practitioner" userLabel={data.profile?.name} onCommandPalette={() => (paletteOpen = true)} />
+	<main>
+		{@render children()}
+		{#if showDisclaimer}<DisclaimerBar />{/if}
+	</main>
 </div>
 
 <style>
 	.shell {
-		display: flex; align-items: flex-start; min-height: 100dvh;
-		/* specs/v4.1/02 — practitioner portal's own rail identity, via the
-		   same CSS custom properties AppRail already reads (a cascade
-		   override, not component-side role logic). */
+		min-height: 100dvh;
+		/* specs/v4.1/02 — practitioner portal's own identity, via the same
+		   CSS custom properties TopNav already reads (a cascade override,
+		   not component-side role logic). */
 		--rail-top: rgba(20, 108, 104, .88);
 		--rail-bottom: rgba(6, 40, 38, .94);
 		--rail-indicator: #7fe0d6;
 	}
-	.col { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; min-height: 100dvh; }
-	main { flex: 1 1 auto; min-width: 0; padding: var(--space-6) var(--space-5); }
+	main { padding: var(--space-6) var(--space-5); }
 </style>

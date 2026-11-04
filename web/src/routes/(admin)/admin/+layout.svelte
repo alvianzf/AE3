@@ -1,7 +1,5 @@
 <script lang="ts">
-	import { page } from '$app/state';
-	import AppRail from '$lib/components/AppRail.svelte';
-	import TopBar from '$lib/components/TopBar.svelte';
+	import TopNav from '$lib/components/TopNav.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import Tour from '$lib/components/Tour.svelte';
 
@@ -9,7 +7,7 @@
 
 	// specs/v7/06 — mounted at the layout level, so step targets are
 	// restricted to elements guaranteed present on every admin page
-	// (the rail itself), not page-specific content like the Library
+	// (the nav bar itself), not page-specific content like the Library
 	// page's own "+ Add resources" button — that only exists while
 	// actually on /admin, and a tour step whose target isn't on the
 	// current page would have nothing to highlight.
@@ -23,16 +21,14 @@
 
 	// specs/v8 §7.1 — Library is the admin portal's actual job-to-be-done
 	// (the most-used surface, per this session's own research), so it's
-	// the primary nav group; everything else is secondary/account-shaped.
+	// the primary nav tab; everything else lives in the "More" menu.
 	const items = [
-		{ href: '/admin', label: 'Library', icon: 'book', group: 'primary' as const },
+		{ href: '/admin', label: 'Library', icon: 'book', navGroup: 'primary' as const },
 		{ href: '/admin/dashboard', label: 'Dashboard', icon: 'home' },
 		{ href: '/admin/users', label: 'Users', icon: 'users' },
 		{ href: '/admin/questionnaires', label: 'Questionnaires', icon: 'clipboard' },
 		{ href: '/admin/audit', label: 'Audit history', icon: 'history' }
 	];
-
-	const crumb = $derived(items.find((i) => page.url.pathname === i.href || page.url.pathname.startsWith(i.href + '/'))?.label ?? 'Admin portal');
 
 	// specs/v7/06 — v1 scope is navigation only; the Library page's own
 	// view modes/tabs (Tree view, Graph view) aren't separate routes to
@@ -76,16 +72,15 @@
 <Tour steps={tourSteps} bind:active={tourActive} />
 
 <div class="shell">
-	<AppRail {items} portalLabel="Admin portal" />
-	<div class="col">
-		<TopBar
-			crumbs={[{ label: 'Admin portal' }, { label: crumb }]}
-			onCommandPalette={() => (paletteOpen = true)}
-			userLabel={data.session?.admin_role}
-			showSwitcher={!!data.session?.has_practitioner_view}
-			switcherTo="practitioner"
-		/>
-		<main>
+	<TopNav
+		{items}
+		portalLabel="Admin"
+		userLabel={data.session?.admin_role}
+		onCommandPalette={() => (paletteOpen = true)}
+		showSwitcher={!!data.session?.has_practitioner_view}
+		switcherTo="practitioner"
+	/>
+	<main>
 		{@render children()}
 		{#if health}
 			<footer class="health-bar">
@@ -95,26 +90,22 @@
 				{/each}
 			</footer>
 		{/if}
-		</main>
-	</div>
+	</main>
 </div>
 
 <style>
 	.shell {
-		display: flex; align-items: flex-start; min-height: 100dvh;
-		/* specs/v4.1/02 — admin portal's own rail identity, via the same
-		   CSS custom properties AppRail already reads. */
+		min-height: 100dvh;
+		/* specs/v4.1/02 — admin portal's own identity, via the same CSS
+		   custom properties TopNav already reads. */
 		--rail-top: rgba(70, 60, 90, .9);
 		--rail-bottom: rgba(20, 16, 30, .95);
 		--rail-indicator: #c9b8ff;
 	}
-	.col { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; min-height: 100dvh; }
 	/* No .container max-width here on purpose: admin screens are data-dense
-	   (tables, a directory grid) and benefit from the full width next to the
-	   label-visible AppRail, unlike the public site's prose-width pages that
-	   .container is tuned for — a fixed 78rem cap left wide empty gutters on
-	   anything wider than a laptop. */
-	main { flex: 1 1 auto; min-width: 0; padding: var(--space-6) var(--space-5); }
+	   (tables, a directory grid) and benefit from the full width, unlike
+	   the public site's prose-width pages that .container is tuned for. */
+	main { padding: var(--space-6) var(--space-5); }
 	.health-bar {
 		position: sticky; bottom: 0; margin: var(--space-6) calc(var(--space-5) * -1) calc(var(--space-6) * -1);
 		display: flex; align-items: center; gap: .4rem; padding: .4rem var(--space-5);

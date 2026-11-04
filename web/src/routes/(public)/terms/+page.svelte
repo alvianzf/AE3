@@ -2,7 +2,7 @@
 	import Seo from '$lib/components/Seo.svelte';
 </script>
 
-<Seo title="Terms of Service — Clinic" description="The terms governing use of Clinic." path="/terms" />
+<Seo title="Terms of Service — Functional Health Collab" description="The terms governing use of Functional Health Collab." path="/terms" />
 
 <div class="container page">
 	<h1>Terms of Service</h1>
@@ -13,10 +13,10 @@
 
 	<h2>Medical disclaimer</h2>
 	<p>
-		Clinic is a decision-support tool for licensed practitioners. It is not
+		Functional Health Collab is a decision-support tool for licensed practitioners. It is not
 		a medical device, and nothing it produces is medical advice to a
 		client. Every answer is grounded in a practitioner's own curated
-		library and independently checked, but the practitioner — not Clinic —
+		library and independently checked, but the practitioner — not Functional Health Collab —
 		remains responsible for the care they provide.
 	</p>
 
@@ -38,7 +38,7 @@
 
 	<h2>Acceptable use</h2>
 	<p>
-		Don't use Clinic to store or process data you don't have the right to
+		Don't use Functional Health Collab to store or process data you don't have the right to
 		process, attempt to access another practitioner's clients, or
 		interfere with the platform's normal operation.
 	</p>

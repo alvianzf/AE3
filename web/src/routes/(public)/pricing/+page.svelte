@@ -17,7 +17,7 @@
 	];
 </script>
 
-<Seo title="Pricing — Clinic" description="Clinic plans for independent practitioners." path="/pricing" />
+<Seo title="Pricing — Functional Health Collab" description="Functional Health Collab plans for independent practitioners." path="/pricing" />
 
 <div class="container page">
 	<h1>Simple, two-tier pricing</h1>

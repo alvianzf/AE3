@@ -48,8 +48,8 @@
 </script>
 
 <Seo
-	title="Join as a practitioner — Clinic"
-	description="Apply to bring your practice onto Clinic: a grounded, cited AI knowledge base you curate and grade yourself, with an independent check on every answer before a client ever sees it."
+	title="Join as a practitioner — Functional Health Collab"
+	description="Apply to bring your practice onto Functional Health Collab: a grounded, cited AI knowledge base you curate and grade yourself, with an independent check on every answer before a client ever sees it."
 	path="/join"
 />
 

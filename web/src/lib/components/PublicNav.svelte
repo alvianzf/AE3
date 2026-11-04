@@ -2,15 +2,20 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import Sprig from './Sprig.svelte';
+	import Icon from './Icon.svelte';
 	import { currentSession, LANDING } from '$lib/session';
 
-	// specs/v4.1/01 — "/" is the information-first landing page now, not
-	// the directory (moved to /practitioners), so it no longer needs its
-	// own nav link (the logo already goes there); browse comes after the
-	// pitch, not before it.
+	// Rebuilt to match the portal TopNav's visual language (same gradient
+	// bar, same hamburger-on-mobile pattern) instead of a lighter, mostly-
+	// unrelated header — and, found live, the old version's nav simply
+	// vanished below 720px with no replacement at all, a real dead end on
+	// a phone. Pricing/FAQ/Contact, previously footer-only, are now
+	// directly in the primary nav too.
 	const links = [
 		{ href: '/practitioners', label: 'Find a practitioner' },
-		{ href: '/join', label: 'For practitioners' }
+		{ href: '/join', label: 'For practitioners' },
+		{ href: '/pricing', label: 'Pricing' },
+		{ href: '/faq', label: 'FAQ' }
 	];
 
 	// Real bug, not cosmetic: this nav always showed "Log in"/"Get started"
@@ -28,15 +33,17 @@
 		session = await currentSession();
 		checked = true;
 	});
+
+	let mobileOpen = $state(false);
 </script>
 
 <header class="topbar">
 	<div class="inner container">
 		<a href="/" class="brand">
 			<Sprig size={22} />
-			<span class="wordmark">Clinic</span>
+			<span class="wordmark">Functional Health Collab</span>
 		</a>
-		<nav aria-label="Main">
+		<nav class="links" aria-label="Main">
 			{#each links as l (l.href)}
 				<a href={l.href} class:on={page.url.pathname === l.href}>{l.label}</a>
 			{/each}
@@ -51,25 +58,60 @@
 				{/if}
 			{/if}
 		</div>
+		<button class="hamburger" onclick={() => (mobileOpen = !mobileOpen)} aria-label="Open menu" aria-expanded={mobileOpen}>
+			<Icon name={mobileOpen ? 'x' : 'menu'} size={20} />
+		</button>
 	</div>
+
+	{#if mobileOpen}
+		<nav class="mobile-sheet" aria-label="Main">
+			{#each links as l (l.href)}
+				<a href={l.href} class:on={page.url.pathname === l.href} onclick={() => (mobileOpen = false)}>{l.label}</a>
+			{/each}
+			<a href="/contact" onclick={() => (mobileOpen = false)}>Contact</a>
+			<hr />
+			{#if checked}
+				{#if session}
+					<a href={LANDING[session.role] ?? '/account'} class="sheet-cta">Dashboard</a>
+				{:else}
+					<a href="/login" onclick={() => (mobileOpen = false)}>Log in</a>
+					<a href="/signup" class="sheet-cta" onclick={() => (mobileOpen = false)}>Get started</a>
+				{/if}
+			{/if}
+		</nav>
+	{/if}
 </header>
 
 <style>
 	.topbar {
-		position: sticky; top: 0; z-index: 40; background: var(--glass);
-		-webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
-		border-bottom: 1px solid var(--glass-line);
+		position: sticky; top: 0; z-index: 40;
+		background: linear-gradient(100deg, var(--rail-top), var(--rail-bottom));
+		box-shadow: var(--shadow);
 	}
-	.inner { display: flex; align-items: center; gap: var(--space-6); padding: var(--space-3) var(--space-5); }
-	.brand { display: flex; align-items: center; gap: .5rem; color: var(--ink); text-decoration: none; font-weight: 700; font-size: var(--text-lg); }
-	nav { display: flex; gap: var(--space-5); margin-right: auto; }
-	nav a { color: var(--ink-2); text-decoration: none; font-size: var(--text-sm); font-weight: 600; }
-	nav a.on { color: var(--accent-ink); }
+	.inner { display: flex; align-items: center; gap: var(--space-6); padding: var(--space-3) var(--space-5); min-height: 3.75rem; }
+	.brand { display: flex; align-items: center; gap: .5rem; color: #fff; text-decoration: none; font-weight: 750; font-size: var(--text-base); }
+	.links { display: flex; gap: var(--space-4); margin-right: auto; }
+	.links a { color: #f7dfe2; text-decoration: none; font-size: var(--text-sm); font-weight: 650; padding: .4rem .2rem; }
+	.links a.on, .links a:hover { color: #fff; }
 	.cta { display: flex; align-items: center; gap: var(--space-4); min-height: 2.2rem; }
-	.ghostlink { color: var(--ink-2); text-decoration: none; font-size: var(--text-sm); font-weight: 600; }
+	.ghostlink { color: #f7dfe2; text-decoration: none; font-size: var(--text-sm); font-weight: 650; }
 	.btn.filled {
-		background: var(--accent); color: #fff; padding: .5rem 1rem; border-radius: 99px;
-		text-decoration: none; font-size: var(--text-sm); font-weight: 700;
+		background: #fff; color: var(--accent-ink); padding: .5rem 1.1rem; border-radius: 99px;
+		text-decoration: none; font-size: var(--text-sm); font-weight: 750;
 	}
-	@media (max-width: 720px) { nav { display: none; } }
+	.hamburger { display: none; color: #fff; background: none; border: none; cursor: pointer; padding: .4rem; }
+	.mobile-sheet {
+		display: flex; flex-direction: column; gap: .1rem; padding: var(--space-2) var(--space-4) var(--space-4);
+	}
+	.mobile-sheet a {
+		color: #f7dfe2; text-decoration: none; padding: .65rem .6rem; border-radius: var(--r);
+		font-size: var(--text-sm); font-weight: 650;
+	}
+	.mobile-sheet a:hover, .mobile-sheet a.on { background: rgba(255, 255, 255, .14); color: #fff; }
+	.mobile-sheet hr { border: none; border-top: 1px solid rgba(255, 255, 255, .2); margin: .4rem 0; }
+	.mobile-sheet .sheet-cta { background: #fff; color: var(--accent-ink); font-weight: 750; text-align: center; }
+	@media (max-width: 760px) {
+		.links, .cta { display: none; }
+		.hamburger { display: flex; }
+	}
 </style>

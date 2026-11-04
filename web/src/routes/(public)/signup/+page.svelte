@@ -66,7 +66,7 @@
 	}
 </script>
 
-<Seo title="Create your account — Clinic" description="Create your client account on Clinic." path="/signup" noindex />
+<Seo title="Create your account — Functional Health Collab" description="Create your client account on Functional Health Collab." path="/signup" noindex />
 
 <div class="container wrap">
 	<section class="card-panel">

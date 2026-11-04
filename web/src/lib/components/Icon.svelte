@@ -45,7 +45,8 @@
 		// and a thin stroked ring reads as a tiny "o", not a filled dot;
 		// a fat round line-cap at a point does read as one.
 		'more-vertical': 'M12 5.5h.01M12 12h.01M12 18.5h.01',
-		switch: 'M7 4l-4 4 4 4M3 8h13M17 20l4-4-4-4M21 16H8'
+		switch: 'M7 4l-4 4 4 4M3 8h13M17 20l4-4-4-4M21 16H8',
+		menu: 'M4 6h16M4 12h16M4 18h16'
 	};
 
 	let { name, size = 17 }: { name: string; size?: number } = $props();

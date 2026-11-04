@@ -4,7 +4,7 @@
 </script>
 
 <Seo
-	title="Application received — Clinic"
+	title="Application received — Functional Health Collab"
 	description="Your practitioner application has been received."
 	path="/join/submitted"
 	noindex

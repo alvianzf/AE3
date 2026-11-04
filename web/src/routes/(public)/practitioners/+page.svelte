@@ -39,8 +39,8 @@
 </script>
 
 <Seo
-	title="Find a practitioner — Clinic"
-	description="Browse independent practitioners using Clinic's grounded, cited AI knowledge base — filter by specialty and language, no account needed to look."
+	title="Find a practitioner — Functional Health Collab"
+	description="Browse independent practitioners using Functional Health Collab's grounded, cited AI knowledge base — filter by specialty and language, no account needed to look."
 	path="/practitioners"
 />
 

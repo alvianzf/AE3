@@ -16,7 +16,7 @@
 	const description = $derived(
 		p.bio?.trim()
 			? p.bio.slice(0, 200)
-			: `${p.name} on Clinic — an AI-assisted, cited knowledge base independent practitioners use with their clients.`
+			: `${p.name} on Functional Health Collab — an AI-assisted, cited knowledge base independent practitioners use with their clients.`
 	);
 	// Person, not ProfessionalService — a coach profile here is an
 	// individual practitioner's page, not a business listing (specialties
@@ -54,7 +54,7 @@
 	}
 </script>
 
-<Seo title="{p.name} — Clinic" {description} path="/coach/{p.id}" image={p.photo_path || undefined} type="profile" />
+<Seo title="{p.name} — Functional Health Collab" {description} path="/coach/{p.id}" image={p.photo_path || undefined} type="profile" />
 <svelte:head>
 	{@html jsonLdScript(personJsonLd)}
 </svelte:head>
