@@ -2,7 +2,7 @@
 	import { goto, invalidateAll } from '$app/navigation';
 	import { api } from '$lib/api';
 	import { toast } from '$lib/stores/toast';
-	import Spotlight from '$lib/components/Spotlight.svelte';
+	import Workspace from '$lib/components/Workspace.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import Chip from '$lib/components/Chip.svelte';
 	import Button from '$lib/components/Button.svelte';
@@ -28,7 +28,7 @@
 
 <svelte:head><title>Contacts — Practitioner portal</title></svelte:head>
 
-<Spotlight title="Contact submissions">
+<Workspace title="Contact submissions" backHref="/practitioner">
 	<DataTable
 		columns={[{ key: 'name', label: 'Name' }, { key: 'email', label: 'Email' }, { key: 'message', label: 'Message' }, { key: 'status', label: 'Status' }, { key: 'actions', label: '' }]}
 		rows={data.contacts}
@@ -46,7 +46,7 @@
 			</td>
 		{/snippet}
 	</DataTable>
-</Spotlight>
+</Workspace>
 
 <style>
 	.msg { max-width: 22rem; white-space: normal; }

@@ -5,7 +5,7 @@
 	import { get, put, post, del, ApiError } from '$lib/api';
 	import { chunkedUpload } from '$lib/chunkedUpload';
 	import { toast } from '$lib/stores/toast';
-	import Spotlight from '$lib/components/Spotlight.svelte';
+	import Workspace from '$lib/components/Workspace.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import Chip from '$lib/components/Chip.svelte';
 	import Dialog from '$lib/components/Dialog.svelte';
@@ -347,7 +347,7 @@
 
 <svelte:head><title>Library weights — Practitioner portal</title></svelte:head>
 
-<Spotlight title="Your knowledge weighting" actions={uploadActions}>
+<Workspace title="Library weighting" backHref="/practitioner" actions={uploadActions}>
 	<p class="hint">Boost or dampen how much each shared library source counts when your consults run.</p>
 
 	{#if data.canUploadLibrary && data.staged?.length}
@@ -476,7 +476,7 @@
 			<button type="button" disabled={shownPage >= totalPages} onclick={() => (page = shownPage + 1)}>Next</button>
 		</div>
 	{/if}
-</Spotlight>
+</Workspace>
 
 {#snippet uploadActions()}
 	{#if data.canUploadLibrary}

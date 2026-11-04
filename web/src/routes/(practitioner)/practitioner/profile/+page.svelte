@@ -2,7 +2,7 @@
 	import { invalidateAll } from '$app/navigation';
 	import { api } from '$lib/api';
 	import { toast } from '$lib/stores/toast';
-	import Spotlight from '$lib/components/Spotlight.svelte';
+	import Workspace from '$lib/components/Workspace.svelte';
 	import TextField from '$lib/components/TextField.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import Toggle from '$lib/components/Toggle.svelte';
@@ -95,7 +95,7 @@
 
 <svelte:head><title>Profile — Practitioner portal</title></svelte:head>
 
-<Spotlight title="Your profile">
+<Workspace title="Your profile" backHref="/practitioner">
 	<form onsubmit={save}>
 		<div class="photo-row">
 			<div class="photo" style={(photoPreview || p?.photo_path) ? `background-image:url(${photoPreview || p?.photo_path})` : ''}>
@@ -148,7 +148,7 @@
 
 		<Button type="submit" loading={saving}>Save</Button>
 	</form>
-</Spotlight>
+</Workspace>
 
 <style>
 	form { display: grid; gap: var(--space-4); margin-top: var(--space-2); max-width: 32rem; }

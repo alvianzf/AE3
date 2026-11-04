@@ -31,7 +31,7 @@
 	]);
 </script>
 
-<svelte:head><title>Dashboard — Client portal</title></svelte:head>
+<svelte:head><title>Home — Client portal</title></svelte:head>
 
 <div class="page-head">
 	<div>

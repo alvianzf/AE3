@@ -6,7 +6,7 @@
 	import { get, post, patch, put, del, ApiError } from '$lib/api';
 	import { chunkedUpload } from '$lib/chunkedUpload';
 	import { toast } from '$lib/stores/toast';
-	import Spotlight from '$lib/components/Spotlight.svelte';
+	import Workspace from '$lib/components/Workspace.svelte';
 	import Tabs from '$lib/components/Tabs.svelte';
 	import Chip from '$lib/components/Chip.svelte';
 	import TextField from '$lib/components/TextField.svelte';
@@ -1063,7 +1063,7 @@
      the library's "+ Add resources" action; audit history and graph stats
      each moved to their own page (removed from here outright, not just
      de-weighted) rather than sitting in a rail panel next to the library. -->
-<Spotlight title="Knowledge library" actions={libraryActions}>
+<Workspace title="Library" backHref="/admin" actions={libraryActions}>
 	<Tabs
 		bind:active={mainTab}
 		tabs={[
@@ -1644,7 +1644,7 @@
 		{/if}
 	{/if}
 	</div>
-</Spotlight>
+</Workspace>
 
 {#snippet libraryActions()}
 	<Button variant="outlined" onclick={() => { maintenanceKind = 'relink'; maintenanceOpen = true; }}>Relink</Button>

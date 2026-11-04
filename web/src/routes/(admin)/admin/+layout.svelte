@@ -1,42 +1,28 @@
 <script lang="ts">
-	import AppRail from '$lib/components/AppRail.svelte';
+	import AccountMenu from '$lib/components/AccountMenu.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import Tour from '$lib/components/Tour.svelte';
+	import Icon from '$lib/components/Icon.svelte';
 
 	let { data, children } = $props();
 
-	// specs/v7/06 — mounted at the layout level, so step targets are
-	// restricted to elements guaranteed present on every admin page
-	// (the sidebar itself), not page-specific content like the Library
-	// page's own "+ Add resources" button — that only exists while
-	// actually on /admin/library, and a tour step whose target isn't on
-	// the current page would have nothing to highlight.
+	// Direct instruction: no persistent nav surface at all — see /admin's
+	// own +page.svelte (the Home launcher) for how navigation actually
+	// works now. The tour below targets the launcher tiles instead of a
+	// rail, since that's the only thing guaranteed present on first login.
 	let tourActive = $state(!data.session?.tour_completed);
 	const tourSteps = [
-		{ selector: 'a[href="/admin"]', title: 'Dashboard', body: 'A quick read on the whole platform — pending applications, new contacts, profile views.' },
 		{ selector: 'a[href="/admin/library"]', title: 'Library', body: 'Upload, organize, and browse the knowledge base — folders, tags, and a live graph view of how it all connects.' },
-		{ selector: '.search-trigger', title: 'Jump anywhere', body: 'Press ⌘K (or Ctrl+K) from any page to jump straight to Library, Users, Questionnaires, or Audit history.' },
 		{ selector: 'a[href="/admin/users"]', title: 'Users', body: 'Review practitioner applications, and manage admin and client accounts.' }
 	];
 
-	// Direct feedback: landing straight in Library's dense tabs/sidebar/
-	// grid gave no "what do I do next" moment — Dashboard (root, "/admin")
-	// is now the actual landing page, with one clear CTA into Library.
-	// Still the primary nav item (it's still the portal's real
-	// job-to-be-done), just not the first thing an admin sees cold.
 	const items = [
-		{ href: '/admin', label: 'Dashboard', icon: 'home' },
-		{ href: '/admin/library', label: 'Library', icon: 'book', navGroup: 'primary' as const },
+		{ href: '/admin', label: 'Home', icon: 'home' },
+		{ href: '/admin/library', label: 'Library', icon: 'book' },
 		{ href: '/admin/users', label: 'Users', icon: 'users' },
 		{ href: '/admin/questionnaires', label: 'Questionnaires', icon: 'clipboard' },
 		{ href: '/admin/audit', label: 'Audit history', icon: 'history' }
 	];
-
-	// specs/v7/06 — v1 scope is navigation only; the Library page's own
-	// view modes/tabs (Tree view, Graph view) aren't separate routes to
-	// jump to yet, so they're not command-palette entries here. Adding a
-	// query-param-addressable deep link for those is a reasonable later
-	// follow-up, not attempted in this first pass.
 	const paletteItems = items.map((i) => ({ ...i, group: 'Admin' }));
 	let paletteOpen = $state(false);
 
@@ -46,81 +32,32 @@
 			paletteOpen = true;
 		}
 	}
-
-	// A slim, persistent status bar on every admin page — replaces the
-	// dashboard-only "System health" block of per-role chips with just a
-	// dot per check; hover (title) for the ms/error detail a chip used to
-	// spell out.
-	const health = $derived(data.health);
-	const checks = $derived.by(() => {
-		if (!health) return [];
-		const rows = [
-			{ label: 'Neo4j', ok: health.checks?.neo4j?.ok, ping: health.checks?.neo4j?.ping_ms },
-			{ label: 'Postgres', ok: health.checks?.postgres?.ok, ping: health.checks?.postgres?.ping_ms }
-		];
-		for (const [role, r] of Object.entries(health.checks?.ai_team?.roles ?? {})) {
-			rows.push({ label: role.replaceAll('_', ' '), ok: (r as any).ok, ping: (r as any).ping_ms });
-		}
-		return rows;
-	});
-	function title(c: any) {
-		return `${c.label}: ${c.ok ? `${c.ping}ms` : 'down'}`;
-	}
 </script>
 
 <svelte:window onkeydown={onWindowKeydown} />
 
 <CommandPalette items={paletteItems} bind:open={paletteOpen} />
 <Tour steps={tourSteps} bind:active={tourActive} />
+<button class="search-trigger" onclick={() => (paletteOpen = true)} aria-label="Search (⌘K)" title="Search (⌘K)">
+	<Icon name="search" size={17} />
+</button>
+<AccountMenu
+	userLabel={data.session?.admin_role}
+	showSwitcher={!!data.session?.has_practitioner_view}
+	switcherTo="practitioner"
+/>
 
-<div class="shell">
-	<AppRail
-		{items}
-		portalLabel="Admin"
-		userLabel={data.session?.admin_role}
-		onCommandPalette={() => (paletteOpen = true)}
-		showSwitcher={!!data.session?.has_practitioner_view}
-		switcherTo="practitioner"
-	/>
-	<main>
-		{@render children()}
-		{#if health}
-			<footer class="health-bar">
-				<span class="overall" class:ok={health.status === 'ok'}>{health.status}</span>
-				{#each checks as c (c.label)}
-					<span class="dot" class:ok={c.ok} title={title(c)}></span>
-				{/each}
-			</footer>
-		{/if}
-	</main>
-</div>
+<main class="container">
+	{@render children()}
+</main>
 
 <style>
-	.shell {
-		display: flex; align-items: flex-start; min-height: 100dvh; background: var(--bg);
-		/* specs/v4.1/02 — admin portal's own identity, via the same CSS
-		   custom properties AppRail already reads. */
-		--rail-top: rgba(70, 60, 90, .9);
-		--rail-bottom: rgba(20, 16, 30, .95);
-		--rail-indicator: #c9b8ff;
+	main { padding: var(--space-6) var(--space-5) var(--space-7); min-height: 100dvh; }
+	.search-trigger {
+		position: fixed; top: var(--space-4); right: 4.2rem; z-index: 50;
+		width: 2.4rem; height: 2.4rem; border-radius: 50%; background: var(--panel);
+		border: 1px solid var(--line); box-shadow: var(--shadow); color: var(--ink-2); cursor: pointer;
+		display: flex; align-items: center; justify-content: center;
 	}
-	/* No .container max-width here on purpose: admin screens are data-dense
-	   (tables, a directory grid) and benefit from the full width next to
-	   the sidebar, unlike the public site's prose-width pages that
-	   .container is tuned for. */
-	main { flex: 1 1 auto; min-width: 0; padding: var(--space-5) var(--space-6) var(--space-6); }
-	@media (max-width: 860px) { main { padding: var(--space-5) var(--space-4) 5.5rem; } }
-	.health-bar {
-		position: sticky; bottom: 0; margin: var(--space-6) calc(var(--space-5) * -1) calc(var(--space-6) * -1);
-		display: flex; align-items: center; gap: .4rem; padding: .4rem var(--space-5);
-		background: var(--panel); border-top: 1px solid var(--line); font-size: var(--text-xs);
-	}
-	.overall {
-		font-weight: 650; text-transform: uppercase; letter-spacing: .03em; color: var(--danger);
-	}
-	.overall.ok { color: var(--ok); }
-	.dot {
-		width: .5rem; height: .5rem; border-radius: 50%; background: var(--danger); flex: 0 0 auto; cursor: default;
-	}
-	.dot.ok { background: var(--ok); }
+	.search-trigger:hover { background: var(--panel-2); }
 </style>
