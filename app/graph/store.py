@@ -896,6 +896,46 @@ def graph_stats() -> dict:
         return dict(rec)
 
 
+def concept_graph(limit: int = 150) -> dict:
+    """A bounded concept-graph view (specs/v6.13) — the knowledge graph
+    this app actually builds at ingest time (typed Entity->Entity
+    relationships), not the citation/retrieval graph. 7905+ entities
+    exist in production; rendering all of them is neither useful nor
+    performant, so this takes the top `limit` by typed-relationship
+    degree (how connected a concept is to *other concepts*, not how
+    often it's merely mentioned — two different things: a generic term
+    can be mentioned constantly across chunks while barely relating to
+    anything else) and every typed edge between two entities both in
+    that set. MENTIONS edges (Chunk->Entity) are deliberately excluded
+    here — this is the concept graph, not the retrieval graph — but
+    each node still carries its own mention count for the frontend's
+    tooltip/sizing use."""
+    with session() as s:
+        nodes = [dict(r) for r in s.run(
+            """
+            MATCH (e:Entity)
+            OPTIONAL MATCH (e)-[r]-(:Entity) WHERE type(r) <> 'MENTIONS'
+            WITH e, count(r) AS degree
+            OPTIONAL MATCH (:Chunk)-[:MENTIONS]->(e)
+            WITH e, degree, count(*) AS mentions
+            ORDER BY degree DESC, mentions DESC
+            LIMIT $limit
+            RETURN e.id AS id, e.name AS name, e.type AS type, degree, mentions
+            """,
+            limit=limit,
+        )]
+        ids = [n["id"] for n in nodes]
+        edges = [dict(r) for r in s.run(
+            """
+            MATCH (a:Entity)-[r]->(b:Entity)
+            WHERE type(r) <> 'MENTIONS' AND a.id IN $ids AND b.id IN $ids
+            RETURN a.id AS source, b.id AS target, type(r) AS rel_type
+            """,
+            ids=ids,
+        )]
+    return {"nodes": nodes, "edges": edges}
+
+
 def coverage() -> list[dict]:
     # "sources", not "documents" — same API-boundary-alias reasoning as
     # list_documents()/_CARD above (admin Library page's frozen layout).
