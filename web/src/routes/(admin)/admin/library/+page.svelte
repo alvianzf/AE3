@@ -11,7 +11,7 @@
 	import Button from '$lib/components/Button.svelte';
 	import Dialog from '$lib/components/Dialog.svelte';
 	import Icon from '$lib/components/Icon.svelte';
-	import FolderTree, { type TreeNode } from '$lib/components/FolderTree.svelte';
+	import type { TreeNode } from '$lib/components/FolderTree.svelte';
 	import GraphView, { type GraphNode, type GraphEdge } from '$lib/components/GraphView.svelte';
 	import Menu from '$lib/components/Menu.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
@@ -345,9 +345,23 @@
 		sortTree(roots);
 		return roots;
 	});
-	// Root-level documents (no folder) — the tree-view tab's top-level
-	// leaf rows, alongside the top-level folder nodes above.
-	const rootDocs = $derived(sortDocs((data.sources ?? []).filter((s: any) => !s.folder_path)));
+	// Direct feedback: the old Folders mode (FolderTree.svelte — nested,
+	// indented, chevron-to-expand) "has the same UI as a computer
+	// folder." Flattened instead: every folder's full path as one plain
+	// row in a single alphabetical list, no nesting/indentation/chevron
+	// at all — a jump-to list, not a file-explorer tree widget.
+	const flatFolders = $derived.by(() => {
+		const out: { path: string; count: number }[] = [];
+		function walk(nodes: TreeNode[]) {
+			for (const n of nodes) {
+				out.push({ path: n.path, count: n.count });
+				walk(n.children);
+			}
+		}
+		walk(folderTree);
+		out.sort((a, b) => a.path.localeCompare(b.path));
+		return out;
+	});
 
 	// specs/v8 §7.4 — Graph view rebuilt on <canvas> (GraphView.svelte),
 	// re-added as a third tab alongside Library/Tree view. Concepts only
@@ -1219,22 +1233,29 @@
 					</div>
 				{/if}
 			{:else if mainTab === 'tree'}
-				<div class="tree-row">
-					<button class="tree-root" onclick={() => handleDropOnFolder('')}>
-						<Icon name="folder" size={14} /> Library <span class="row-sub">{data.sources.length}</span>
-					</button>
-					<FolderTree
-						nodes={folderTree}
-						activePath={currentPath}
-						docs={rootDocs}
-						showDocs
-						onSelect={(path) => { currentPath = path; mainTab = 'library'; page = 1; }}
-						onDrop={handleDropOnFolder}
-						onRename={askRenameFolder}
-						onPrivatize={setFolderPrivate}
-						onDelete={(path, count) => askDeleteFolder(path, count)}
-					/>
-				</div>
+				<button class="list-row folder-row" onclick={() => { currentPath = ''; mainTab = 'library'; page = 1; }}>
+					<Icon name="folder" size={15} />
+					<span class="row-title">All documents</span>
+					<span class="row-sub">{data.sources.length}</span>
+				</button>
+				{#each flatFolders as f (f.path)}
+					<div class="list-row doc-row">
+						<button class="row-main" onclick={() => { currentPath = f.path; mainTab = 'library'; page = 1; }}>
+							<span class="row-title">{f.path}</span>
+							<span class="row-sub">{f.count} document{f.count === 1 ? '' : 's'}</span>
+						</button>
+						<Menu label="More actions for {f.path}">
+							{#snippet items()}
+								<button onclick={() => askRenameFolder(f.path)}><Icon name="edit" size={14} />Rename</button>
+								<button onclick={() => setFolderPrivate(f.path, true)}><Icon name="lock" size={14} />Make private</button>
+								<button onclick={() => setFolderPrivate(f.path, false)}><Icon name="unlock" size={14} />Make public</button>
+								<button class="danger" onclick={() => askDeleteFolder(f.path, f.count)}><Icon name="trash" size={14} />Delete</button>
+							{/snippet}
+						</Menu>
+					</div>
+				{:else}
+					<p class="hint" style="padding: var(--space-4)">No folders yet — move a document into one from the List view.</p>
+				{/each}
 			{:else if mainTab === 'graph'}
 				{#if data.graph}
 					<p class="hint graph-stats">{data.graph.entities ?? 0} concepts · {data.graph.mentions ?? 0} links · {(data.graph.unlinked ?? []).length} unlinked</p>
@@ -1662,8 +1683,6 @@
 	.pager button { border: 1px solid var(--line); background: var(--panel); cursor: pointer; padding: .2rem .6rem; }
 	.pager button:disabled { opacity: .4; cursor: not-allowed; }
 
-	.tree-row { padding: var(--space-3); }
-	.tree-root { display: flex; align-items: center; gap: .4rem; border: none; background: none; cursor: pointer; font: inherit; color: var(--ink); padding: .3rem 0; margin-bottom: .3rem; }
 
 	/* ── Detail pane: one document's full, always-visible editable
 	   fields — no per-field "edit" toggle, there's only one open at a
