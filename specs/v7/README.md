@@ -46,6 +46,10 @@ documents are reviewed and approved, phase by phase, per
   [06-impl-command-palette.md](06-impl-command-palette.md),
   practitioner + client portals in
   [06-impl-command-palette-all-portals.md](06-impl-command-palette-all-portals.md).
+  **Phase 7 (onboarding) implemented, all three portals** — see
+  [06-impl-onboarding-tours.md](06-impl-onboarding-tours.md), which
+  also includes the one named backend addition (a per-account
+  `tour_completed` flag) `00-overview.md` called out in advance.
 - [**07 · Implementation phasing**](07-implementation-phasing.md) —
   the shipping plan: 8 phases (design system → landing page → admin
   Library → rest of admin → practitioner → client → command palette →
