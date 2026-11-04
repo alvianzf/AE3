@@ -1,8 +1,24 @@
 <script lang="ts">
 	import AppRail from '$lib/components/AppRail.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
+	import Tour from '$lib/components/Tour.svelte';
 
 	let { data, children } = $props();
+
+	// specs/v7/05 — onboarding matters most on this portal of the three
+	// (a client didn't choose this software, their practitioner did) —
+	// warmer copy than the other two portals' tours, and the Health
+	// record step folds in the trust/privacy note specs/v7/06 called
+	// out explicitly, since there's no separate page to put it on at
+	// this (rail-only, see specs/v7/06's admin-layout comment for why)
+	// scope.
+	let tourActive = $state(!data.session?.tour_completed);
+	const tourSteps = [
+		{ selector: 'a[href="/client/dashboard"]', title: 'Welcome', body: 'Start here each time you log in — a quick look at what’s new.' },
+		{ selector: 'a[href="/client/questionnaire"]', title: 'Questionnaire', body: 'Your practitioner uses this to understand your health history.' },
+		{ selector: 'a[href="/client/record"]', title: 'Health record', body: 'Only you and your practitioner can see what’s here — never shared beyond your own care.' },
+		{ selector: 'a[href="/client/files"]', title: 'Files', body: 'Documents your practitioner has shared with you, in one place.' }
+	];
 
 	const items = [
 		{ href: '/client/dashboard', label: 'Dashboard', icon: 'home' },
@@ -30,6 +46,7 @@
 <svelte:window onkeydown={onWindowKeydown} />
 
 <CommandPalette items={paletteItems} bind:open={paletteOpen} />
+<Tour steps={tourSteps} bind:active={tourActive} />
 
 <div class="shell">
 	<!-- No role-specific rail colors needed here — the global --rail-top/

@@ -2,8 +2,19 @@
 	import { page } from '$app/state';
 	import AppRail from '$lib/components/AppRail.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
+	import Tour from '$lib/components/Tour.svelte';
 
 	let { data, children } = $props();
+
+	// specs/v7/06 — same rail-only scoping as the admin portal's tour;
+	// see that layout's own comment for why.
+	let tourActive = $state(!data.session?.tour_completed);
+	const tourSteps = [
+		{ selector: 'a[href="/practitioner/dashboard"]', title: 'Dashboard', body: 'Your at-a-glance view — new contacts, unread client intake, and more.' },
+		{ selector: 'a[href="/practitioner/consult"]', title: 'Consult', body: 'Ask grounded, cited questions about a client — this is where you’ll spend most of your time.' },
+		{ selector: 'a[href="/practitioner/clients"]', title: 'Clients', body: 'Review and manage each client’s record — conditions, medications, and notes.' },
+		{ selector: '.search-trigger', title: 'Jump anywhere', body: 'Press ⌘K (or Ctrl+K) from any page to jump straight to any section.' }
+	];
 
 	// Consult/Clients/Knowledge 403 for a Basic-plan practitioner
 	// (require_pro_practitioner) — previously that was only discoverable by
@@ -38,6 +49,7 @@
 <svelte:window onkeydown={onWindowKeydown} />
 
 <CommandPalette items={paletteItems} bind:open={paletteOpen} />
+<Tour steps={tourSteps} bind:active={tourActive} />
 
 <div class="shell">
 	<AppRail {items} portalLabel="Practitioner portal" userLabel={data.profile?.name} onCommandPalette={() => (paletteOpen = true)} />

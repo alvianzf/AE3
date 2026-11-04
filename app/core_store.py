@@ -77,6 +77,18 @@ def ensure_schema() -> None:
             ALTER TABLE practitioners ADD COLUMN IF NOT EXISTS
                 can_upload_library BOOLEAN NOT NULL DEFAULT FALSE;
 
+            -- specs/v7/06 — the onboarding tour's "has this account
+            -- already dismissed/finished the first-run tour" flag.
+            -- Persisted server-side, not localStorage — a practitioner
+            -- (or admin, or client) switching devices shouldn't see the
+            -- tour replay from scratch, and a plain boolean is enough
+            -- since each account type only ever has one portal's tour
+            -- relevant to it (no multi-portal case to track per account).
+            ALTER TABLE admins ADD COLUMN IF NOT EXISTS
+                tour_completed BOOLEAN NOT NULL DEFAULT FALSE;
+            ALTER TABLE practitioners ADD COLUMN IF NOT EXISTS
+                tour_completed BOOLEAN NOT NULL DEFAULT FALSE;
+
             -- Routing only: which vault schema a client's login belongs
             -- to. No clinical content — that lives in the vault itself.
             CREATE TABLE IF NOT EXISTS client_directory (
@@ -425,6 +437,13 @@ def set_admin_password(admin_id: str, password_hash: str) -> None:
         )
 
 
+def set_admin_tour_completed(admin_id: str) -> None:
+    with core_connection() as conn:
+        conn.execute(
+            "UPDATE admins SET tour_completed = TRUE WHERE id = %s", (admin_id,)
+        )
+
+
 # --- Practitioners ---------------------------------------------------------
 
 def _decode_practitioner(row: dict) -> dict:
@@ -592,6 +611,14 @@ def set_practitioner_password(practitioner_id: str, password_hash: str) -> None:
         conn.execute(
             "UPDATE practitioners SET password_hash = %s WHERE id = %s",
             (password_hash, practitioner_id),
+        )
+
+
+def set_practitioner_tour_completed(practitioner_id: str) -> None:
+    with core_connection() as conn:
+        conn.execute(
+            "UPDATE practitioners SET tour_completed = TRUE WHERE id = %s",
+            (practitioner_id,),
         )
 
 

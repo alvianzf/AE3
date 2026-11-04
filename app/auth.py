@@ -350,4 +350,41 @@ def register(app: FastAPI) -> None:
         session = current_session(request)
         if session is None:
             raise HTTPException(status_code=401, detail="Not logged in.")
-        return session
+        # tour_completed is live (not part of the signed cookie payload
+        # itself, which is deliberately minimal) — every portal's own
+        # +layout.ts already calls this route on every navigation, so
+        # enriching it here costs no extra round trip anywhere, unlike a
+        # dedicated endpoint each portal would otherwise need to add.
+        tour_completed = False
+        if session["role"] == "admin":
+            admin = core_store.get_admin(session["id"])
+            tour_completed = bool(admin and admin.get("tour_completed"))
+        elif session["role"] == "practitioner":
+            practitioner = core_store.get_practitioner(session["id"])
+            tour_completed = bool(practitioner and practitioner.get("tour_completed"))
+        elif session["role"] == "client":
+            from . import vault
+            client = vault.get_client(session["practitioner_id"], session["id"])
+            tour_completed = bool(client and client.get("tour_completed"))
+        return {**session, "tour_completed": tour_completed}
+
+    @app.post("/api/auth/tour-completed")
+    async def tour_completed(request: Request):
+        """specs/v7/06 — marks the current account's onboarding tour as
+        dismissed/finished, whichever of the three portals it belongs
+        to. One role-dispatching route rather than three near-identical
+        ones, since the only difference between them is which store
+        function to call."""
+        session = current_session(request)
+        if session is None:
+            raise HTTPException(status_code=401, detail="Not logged in.")
+        if session["role"] == "admin":
+            core_store.set_admin_tour_completed(session["id"])
+        elif session["role"] == "practitioner":
+            core_store.set_practitioner_tour_completed(session["id"])
+        elif session["role"] == "client":
+            from . import vault
+            vault.set_client_tour_completed(session["practitioner_id"], session["id"])
+        else:
+            raise HTTPException(status_code=400, detail=f"unknown role: {session['role']}")
+        return {"ok": True}

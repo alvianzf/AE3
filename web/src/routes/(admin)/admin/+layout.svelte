@@ -1,8 +1,23 @@
 <script lang="ts">
 	import AppRail from '$lib/components/AppRail.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
+	import Tour from '$lib/components/Tour.svelte';
 
 	let { data, children } = $props();
+
+	// specs/v7/06 — mounted at the layout level, so step targets are
+	// restricted to elements guaranteed present on every admin page
+	// (the rail itself), not page-specific content like the Library
+	// page's own "+ Add resources" button — that only exists while
+	// actually on /admin, and a tour step whose target isn't on the
+	// current page would have nothing to highlight.
+	let tourActive = $state(!data.session?.tour_completed);
+	const tourSteps = [
+		{ selector: 'a[href="/admin/dashboard"]', title: 'Dashboard', body: 'A quick read on the whole platform — pending applications, new contacts, profile views.' },
+		{ selector: 'a[href="/admin"]', title: 'Library', body: 'Upload, organize, and browse the knowledge base — folders, tags, and a live graph view of how it all connects.' },
+		{ selector: '.search-trigger', title: 'Jump anywhere', body: 'Press ⌘K (or Ctrl+K) from any page to jump straight to Library, Users, Questionnaires, or Audit history.' },
+		{ selector: 'a[href="/admin/users"]', title: 'Users', body: 'Review practitioner applications, and manage admin and client accounts.' }
+	];
 
 	const items = [
 		{ href: '/admin/dashboard', label: 'Dashboard', icon: 'home' },
@@ -51,6 +66,7 @@
 <svelte:window onkeydown={onWindowKeydown} />
 
 <CommandPalette items={paletteItems} bind:open={paletteOpen} />
+<Tour steps={tourSteps} bind:active={tourActive} />
 
 <div class="shell">
 	<AppRail {items} portalLabel="Admin portal" userLabel={data.session?.admin_role} onCommandPalette={() => (paletteOpen = true)} />

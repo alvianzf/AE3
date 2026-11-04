@@ -79,6 +79,11 @@ _SCHEMA_DDL = """
             -- module's own docstring already calls out for password_set —
             -- so apply it explicitly for every vault, new or old.
             ALTER TABLE clients ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE;
+            -- specs/v7/06 — same onboarding-tour flag as admins/
+            -- practitioners (app/core_store.py), applied here too since a
+            -- client's own account lives in this per-practitioner vault
+            -- schema, not core_store.
+            ALTER TABLE clients ADD COLUMN IF NOT EXISTS tour_completed BOOLEAN NOT NULL DEFAULT FALSE;
             CREATE TABLE IF NOT EXISTS record_entries (
                 id TEXT PRIMARY KEY,
                 client_id TEXT NOT NULL REFERENCES clients(id),
@@ -323,6 +328,13 @@ def set_client_active(practitioner_id: str, client_id: str, active: bool) -> dic
         )
         row = conn.execute("SELECT * FROM clients WHERE id = %s", (client_id,)).fetchone()
     return dict(row)
+
+
+def set_client_tour_completed(practitioner_id: str, client_id: str) -> None:
+    with vault_connection(practitioner_id) as conn:
+        conn.execute(
+            "UPDATE clients SET tour_completed = TRUE WHERE id = %s", (client_id,)
+        )
 
 
 def delete_client(practitioner_id: str, client_id: str) -> bool:
