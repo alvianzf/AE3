@@ -5,11 +5,10 @@
 	import Icon from './Icon.svelte';
 	import { currentSession, LANDING } from '$lib/session';
 
-	// Rebuilt to match the portal TopNav's visual language (same gradient
-	// bar, same hamburger-on-mobile pattern) instead of a lighter, mostly-
-	// unrelated header — and, found live, the old version's nav simply
-	// vanished below 720px with no replacement at all, a real dead end on
-	// a phone. Pricing/FAQ/Contact, previously footer-only, are now
+	// Rebuilt with the same gradient-bar identity the portal sidebar uses,
+	// plus a real mobile menu — the old version's nav simply vanished
+	// below 720px with no replacement at all, a real dead end on a
+	// phone. Pricing/FAQ/Contact, previously footer-only, are now
 	// directly in the primary nav too.
 	const links = [
 		{ href: '/practitioners', label: 'Find a practitioner' },

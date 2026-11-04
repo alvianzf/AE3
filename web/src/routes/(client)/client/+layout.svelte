@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import TopNav from '$lib/components/TopNav.svelte';
+	import AppRail from '$lib/components/AppRail.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import Tour from '$lib/components/Tour.svelte';
 	import DisclaimerBar from '$lib/components/DisclaimerBar.svelte';
@@ -16,7 +16,7 @@
 	// warmer copy than the other two portals' tours, and the Health
 	// record step folds in the trust/privacy note specs/v7/06 called out
 	// explicitly, since there's no separate page to put it on at this
-	// nav-only scope.
+	// sidebar-only scope.
 	let tourActive = $state(!data.session?.tour_completed);
 	const tourSteps = [
 		{ selector: 'a[href="/client/dashboard"]', title: 'Welcome', body: 'Start here each time you log in — a quick look at what’s new.' },
@@ -34,7 +34,7 @@
 	];
 
 	// specs/v7/06 — included for consistency across all three portals even
-	// though a 5-item nav barely needs a search palette on its own
+	// though a 5-item sidebar barely needs a search palette on its own
 	// (specs/v7/05's own stated lower priority here) — same component,
 	// same shortcut everywhere a user might look for it.
 	const paletteItems = items.map((i) => ({ ...i, group: 'Client' }));
@@ -58,7 +58,7 @@
 	     --rail-bottom/--rail-indicator defaults (app.css) already are the
 	     client portal's identity; practitioner and admin override them on
 	     their own .shell instead. -->
-	<TopNav {items} portalLabel="Client" userLabel={data.session?.name} onCommandPalette={() => (paletteOpen = true)} />
+	<AppRail {items} portalLabel="Client" userLabel={data.session?.name} onCommandPalette={() => (paletteOpen = true)} />
 	<main>
 		{@render children()}
 		{#if showDisclaimer}<DisclaimerBar />{/if}
@@ -66,6 +66,6 @@
 </div>
 
 <style>
-	.shell { min-height: 100dvh; }
-	main { padding: var(--space-6) var(--space-5); }
+	.shell { display: flex; align-items: flex-start; min-height: 100dvh; }
+	main { flex: 1 1 auto; min-width: 0; padding: var(--space-6) var(--space-5); }
 </style>

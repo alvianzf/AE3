@@ -1,5 +1,5 @@
 <script lang="ts">
-	import TopNav from '$lib/components/TopNav.svelte';
+	import AppRail from '$lib/components/AppRail.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import Tour from '$lib/components/Tour.svelte';
 
@@ -7,24 +7,26 @@
 
 	// specs/v7/06 — mounted at the layout level, so step targets are
 	// restricted to elements guaranteed present on every admin page
-	// (the nav bar itself), not page-specific content like the Library
+	// (the sidebar itself), not page-specific content like the Library
 	// page's own "+ Add resources" button — that only exists while
-	// actually on /admin, and a tour step whose target isn't on the
-	// current page would have nothing to highlight.
+	// actually on /admin/library, and a tour step whose target isn't on
+	// the current page would have nothing to highlight.
 	let tourActive = $state(!data.session?.tour_completed);
 	const tourSteps = [
-		{ selector: 'a[href="/admin/dashboard"]', title: 'Dashboard', body: 'A quick read on the whole platform — pending applications, new contacts, profile views.' },
-		{ selector: 'a[href="/admin"]', title: 'Library', body: 'Upload, organize, and browse the knowledge base — folders, tags, and a live graph view of how it all connects.' },
+		{ selector: 'a[href="/admin"]', title: 'Dashboard', body: 'A quick read on the whole platform — pending applications, new contacts, profile views.' },
+		{ selector: 'a[href="/admin/library"]', title: 'Library', body: 'Upload, organize, and browse the knowledge base — folders, tags, and a live graph view of how it all connects.' },
 		{ selector: '.search-trigger', title: 'Jump anywhere', body: 'Press ⌘K (or Ctrl+K) from any page to jump straight to Library, Users, Questionnaires, or Audit history.' },
 		{ selector: 'a[href="/admin/users"]', title: 'Users', body: 'Review practitioner applications, and manage admin and client accounts.' }
 	];
 
-	// specs/v8 §7.1 — Library is the admin portal's actual job-to-be-done
-	// (the most-used surface, per this session's own research), so it's
-	// the primary nav tab; everything else lives in the "More" menu.
+	// Direct feedback: landing straight in Library's dense tabs/sidebar/
+	// grid gave no "what do I do next" moment — Dashboard (root, "/admin")
+	// is now the actual landing page, with one clear CTA into Library.
+	// Still the primary nav item (it's still the portal's real
+	// job-to-be-done), just not the first thing an admin sees cold.
 	const items = [
-		{ href: '/admin', label: 'Library', icon: 'book', navGroup: 'primary' as const },
-		{ href: '/admin/dashboard', label: 'Dashboard', icon: 'home' },
+		{ href: '/admin', label: 'Dashboard', icon: 'home' },
+		{ href: '/admin/library', label: 'Library', icon: 'book', navGroup: 'primary' as const },
 		{ href: '/admin/users', label: 'Users', icon: 'users' },
 		{ href: '/admin/questionnaires', label: 'Questionnaires', icon: 'clipboard' },
 		{ href: '/admin/audit', label: 'Audit history', icon: 'history' }
@@ -72,7 +74,7 @@
 <Tour steps={tourSteps} bind:active={tourActive} />
 
 <div class="shell">
-	<TopNav
+	<AppRail
 		{items}
 		portalLabel="Admin"
 		userLabel={data.session?.admin_role}
@@ -95,17 +97,18 @@
 
 <style>
 	.shell {
-		min-height: 100dvh;
+		display: flex; align-items: flex-start; min-height: 100dvh;
 		/* specs/v4.1/02 — admin portal's own identity, via the same CSS
-		   custom properties TopNav already reads. */
+		   custom properties AppRail already reads. */
 		--rail-top: rgba(70, 60, 90, .9);
 		--rail-bottom: rgba(20, 16, 30, .95);
 		--rail-indicator: #c9b8ff;
 	}
 	/* No .container max-width here on purpose: admin screens are data-dense
-	   (tables, a directory grid) and benefit from the full width, unlike
-	   the public site's prose-width pages that .container is tuned for. */
-	main { padding: var(--space-6) var(--space-5); }
+	   (tables, a directory grid) and benefit from the full width next to
+	   the sidebar, unlike the public site's prose-width pages that
+	   .container is tuned for. */
+	main { flex: 1 1 auto; min-width: 0; padding: var(--space-6) var(--space-5); }
 	.health-bar {
 		position: sticky; bottom: 0; margin: var(--space-6) calc(var(--space-5) * -1) calc(var(--space-6) * -1);
 		display: flex; align-items: center; gap: .4rem; padding: .4rem var(--space-5);
