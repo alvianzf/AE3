@@ -14,7 +14,6 @@
 	import Dialog from '$lib/components/Dialog.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import FolderTree, { type TreeNode } from '$lib/components/FolderTree.svelte';
-	import GraphView, { type GraphNode, type GraphEdge } from '$lib/components/GraphView.svelte';
 	import Menu from '$lib/components/Menu.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 
@@ -332,58 +331,6 @@
 		(data.sources ?? []).filter((s: any) => !s.folder_path).sort((a: any, b: any) => a.title.localeCompare(b.title))
 	);
 	// Graph view (specs/v6.13) — two switchable layers in one tab.
-	// "Documents & folders" is free: the exact same folderTree/rootDocs
-	// this page already builds for the Tree view tab, just handed to
-	// GraphView as nodes/edges instead of a nested list — no new fetch.
-	// "Concepts" is a real network call (the knowledge graph itself
-	// lives in Neo4j, not anything already loaded here) and only runs
-	// once the admin actually picks that layer, not on every page load.
-	let graphLayer = $state<'documents' | 'concepts'>('documents');
-	let conceptGraph = $state<{ nodes: GraphNode[]; edges: GraphEdge[] } | null>(null);
-	let conceptGraphLoading = $state(false);
-	async function loadConceptGraph() {
-		if (conceptGraph || conceptGraphLoading) return;
-		conceptGraphLoading = true;
-		try {
-			const res = await get(fetch, '/graph/concepts');
-			conceptGraph = {
-				nodes: (res.nodes ?? []).map((n: any) => ({
-					id: n.id, label: n.name, group: n.type, size: 3 + Math.min(7, Math.sqrt(n.mentions ?? 1))
-				})),
-				edges: (res.edges ?? []).map((e: any) => ({ source: e.source, target: e.target, label: e.rel_type }))
-			};
-		} catch (err: any) {
-			toast(err.message, 'alert');
-		} finally {
-			conceptGraphLoading = false;
-		}
-	}
-	const documentGraph = $derived.by(() => {
-		const nodes: GraphNode[] = [];
-		const edges: GraphEdge[] = [];
-		function walk(tn: TreeNode, parentId: string | null) {
-			const id = `folder:${tn.path}`;
-			nodes.push({ id, label: tn.name, group: 'folder', size: 5 });
-			if (parentId) edges.push({ source: parentId, target: id });
-			for (const doc of tn.docs) {
-				nodes.push({ id: `doc:${doc.id}`, label: doc.title, group: 'document', size: 3 });
-				edges.push({ source: id, target: `doc:${doc.id}` });
-			}
-			for (const child of tn.children) walk(child, id);
-		}
-		nodes.push({ id: 'root', label: 'Library', group: 'folder', size: 6 });
-		for (const tn of folderTree) walk(tn, 'root');
-		for (const doc of rootDocs) {
-			nodes.push({ id: `doc:${doc.id}`, label: doc.title, group: 'document', size: 3 });
-			edges.push({ source: 'root', target: `doc:${doc.id}` });
-		}
-		return { nodes, edges };
-	});
-	function onGraphNodeClick(n: GraphNode) {
-		if (n.id.startsWith('doc:')) window.open(`/admin/${n.id.slice(4)}`, '_blank');
-		else if (n.id.startsWith('folder:')) { currentPath = n.id.slice(7); mainTab = 'library'; page = 1; }
-	}
-
 	// Every known folder path, flat and including subfolders at every
 	// depth — the "Move to..." dialog's quick-pick suggestions, so moving
 	// a document doesn't require typing out a deep path by hand.
@@ -1047,8 +994,7 @@
 		bind:active={mainTab}
 		tabs={[
 			{ id: 'library', label: 'Library' },
-			{ id: 'tree', label: 'Tree view' },
-			{ id: 'graph', label: 'Graph view' }
+			{ id: 'tree', label: 'Tree view' }
 		]}
 	/>
 
@@ -1572,30 +1518,6 @@
 				onDelete={(path, count) => askDeleteFolder(path, count)}
 			/>
 		</div>
-	{:else if mainTab === 'graph'}
-		<!-- Two switchable layers (specs/v6.13): "Documents & folders" is
-		     the same folderTree/rootDocs the Tree view tab already builds
-		     client-side (no new fetch); "Concepts" is the actual knowledge
-		     graph (typed Entity->Entity relationships), fetched once on
-		     first pick via GET /api/graph/concepts and cached. -->
-		{#if data.graph}
-			<!-- Found in review: this line already existed (the Library
-			     tab, above) but not here — an admin who clicks straight
-			     into Graph view to judge graph health had no count of
-			     unlinked sources/concepts/links anywhere on this tab. -->
-			<p class="hint graph-stats">{data.graph.concepts ?? 0} concepts · {data.graph.mentions ?? 0} links · {(data.graph.unlinked ?? []).length} unlinked sources</p>
-		{/if}
-		<div class="graph-layer-toggle" role="group" aria-label="Graph layer">
-			<button class:active={graphLayer === 'documents'} onclick={() => (graphLayer = 'documents')}>Documents &amp; folders</button>
-			<button class:active={graphLayer === 'concepts'} onclick={() => { graphLayer = 'concepts'; loadConceptGraph(); }}>Concepts</button>
-		</div>
-		{#if graphLayer === 'documents'}
-			<GraphView nodes={documentGraph.nodes} edges={documentGraph.edges} onNodeClick={onGraphNodeClick} />
-		{:else if conceptGraphLoading}
-			<p class="hint">Loading the concept graph…</p>
-		{:else}
-			<GraphView nodes={conceptGraph?.nodes ?? []} edges={conceptGraph?.edges ?? []} />
-		{/if}
 	{/if}
 	</div>
 </Spotlight>
@@ -1893,13 +1815,6 @@
 	}
 	.view-toggle button.active { color: var(--accent); background: var(--accent-soft); }
 	.view-toggle button:hover:not(.active) { background: var(--panel-2); }
-	.graph-layer-toggle { display: inline-flex; gap: .1rem; border: 1px solid var(--line-2); border-radius: var(--r-lg); padding: .2rem; margin-bottom: var(--space-3); }
-	.graph-layer-toggle button {
-		border: none; background: none; cursor: pointer; color: var(--muted); padding: .4rem .8rem;
-		border-radius: var(--r); font: inherit; font-size: var(--text-sm);
-	}
-	.graph-layer-toggle button.active { color: var(--accent); background: var(--accent-soft); }
-	.graph-layer-toggle button:hover:not(.active) { background: var(--panel-2); }
 	.search:focus {
 		outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft);
 	}
