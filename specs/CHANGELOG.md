@@ -1,5 +1,23 @@
 # Specs changelog
 
+## 2026-11-04 — v7, full UI/UX redesign (spec only, not implemented)
+
+See [v7/README.md](v7/README.md). Direct request: redesign the whole
+app — landing page and all three portals — to be interactive, user-
+friendly, modern, and professional. Per explicit instruction ("create
+the specs first, do not implement"), this is scoping/design
+documentation only — nothing built. User's explicit choices: all four
+surfaces in one combined spec (not staged by surface), keep the
+current brand/palette and modernize execution rather than rebrand, and
+prioritize micro-animations/transitions, onboarding/guided flows, and
+a command palette as the interactivity additions. 8 files: an
+overview, design-system foundations, one spec per surface, a
+cross-cutting interactivity spec, and an 8-phase implementation plan
+(design system → landing page → admin Library → rest of admin →
+practitioner → client → command palette → onboarding), each phase its
+own independently reviewable/deployable PR per this repo's existing
+norm.
+
 ## 2026-11-04 — v6.19, local-embedder OOM fix, menu reliability rewrite
 
 See [v6.19/README.md](v6.19/README.md). Two live production incidents:
