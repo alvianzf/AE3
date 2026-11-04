@@ -1,5 +1,16 @@
 # Specs changelog
 
+## 2026-11-04 — v6.14, doc-card "⋮" menu, uploader claim/assign
+
+See [v6.14/README.md](v6.14/README.md). Two direct requests: tidy the
+doc-card's 5-6 always-visible action icons into a "⋮" dropdown (new
+`Menu.svelte`, native `popover`), and let an admin assign who uploaded
+a document. Checked the audit log before building the second one —
+every "ingest" event's actor is hardcoded to the literal string
+"admin" (verified live: 21/21), so there's no real history to backfill
+from; shipped as a manual claim/assign instead, per the user's choice
+when told that.
+
 ## 2026-11-04 — v6.13, knowledge-base graph view
 
 See [v6.13/README.md](v6.13/README.md). Direct request, user chose

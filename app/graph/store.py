@@ -705,6 +705,22 @@ def set_doc_type(document_id: str, doc_type: str) -> dict | None:
     return get_document(document_id)
 
 
+def set_uploaded_by(document_id: str, uploaded_by: str) -> dict | None:
+    """An admin claiming or assigning who uploaded a document — not a
+    Reader suggestion like doc_type/grade/folder/topics (there's nothing
+    for the Reader to suggest here), but the same "an admin's edit is
+    final" shape. Specifically for the documents v6.11's uploaded_by
+    capture predates (ingested before that PR, so it's genuinely blank
+    with nothing recoverable — found live, 2026-11-04: the audit log's
+    'ingest' events all carry the literal string actor='admin', never
+    real per-user attribution, so there's no history to backfill from)."""
+    with session() as s:
+        s.run("MATCH (doc:Document {id: $id}) SET doc.uploaded_by = $uploaded_by",
+              id=document_id, uploaded_by=uploaded_by.strip())
+    log("admin", "set uploaded_by", f"{document_id} → '{uploaded_by.strip()}'")
+    return get_document(document_id)
+
+
 def set_private(document_id: str, is_private: bool) -> dict | None:
     """An admin's privacy call (specs/v6.9/01) — who specifically can
     still see it despite this is a separate action

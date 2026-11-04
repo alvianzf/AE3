@@ -1415,6 +1415,22 @@ def set_source_doc_type(source_id: str, body: DocTypeUpdate,
     return source
 
 
+class UploadedByUpdate(BaseModel):
+    uploaded_by: str
+
+
+@app.patch("/api/sources/{source_id}/uploaded-by")
+def set_source_uploaded_by(source_id: str, body: UploadedByUpdate,
+                           _admin: dict = Depends(auth.require_admin)) -> dict:
+    """Claim or assign who uploaded a document — specifically for
+    documents ingested before v6.11 (uploaded_by is already captured
+    automatically for anything ingested since)."""
+    source = store.set_uploaded_by(source_id, body.uploaded_by)
+    if source is None:
+        raise HTTPException(404, "no such source")
+    return source
+
+
 class FolderCreate(BaseModel):
     folder_path: str
 
