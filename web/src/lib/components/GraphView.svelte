@@ -45,6 +45,8 @@
 	let rootGroup = $state<SVGGElement>();
 	let width = $state(800);
 	let height = $state(560);
+	let zoomScale = $state(1);
+	let hoveredId = $state<string | null>(null);
 
 	// $state, not a plain array — d3-force writes x/y/vx/vy directly onto
 	// each node every tick, and $state's proxy makes that in-place
@@ -53,6 +55,20 @@
 	// "something changed" counter to force it.
 	let simNodes = $state<(GraphNode & { x?: number; y?: number; fx?: number | null; fy?: number | null })[]>([]);
 	let simEdges = $state<any[]>([]);
+
+	// Labels are the single heaviest thing rendered here (stroke-outlined
+	// text — expensive to rasterize — at up to ~150 nodes for the
+	// concept layer) — found live: "graph is really heavy on the
+	// browser." Past a node-count threshold, only show a label while
+	// zoomed in enough to actually read it, or on hover — not for every
+	// node on every frame regardless of whether it's legible or even
+	// visible at the current zoom level. Small graphs (the common case
+	// for the document/folder layer) always show every label; nothing
+	// about this path is worth hiding at that size.
+	const labelsAlwaysOn = $derived(simNodes.length <= 60);
+	function showLabel(n: any): boolean {
+		return labelsAlwaysOn || zoomScale > 0.8 || hoveredId === n.id;
+	}
 
 	const COLORS: Record<string, string> = {
 		folder: 'var(--accent)',
@@ -163,10 +179,23 @@
 			.scaleExtent([0.1, 4])
 			.on('zoom', (e: D3ZoomEvent<SVGSVGElement, unknown>) => {
 				select(rootGroup!).attr('transform', e.transform.toString());
+				zoomScale = e.transform.k;
 			});
 		select(svgEl).call(zoomBehavior);
 		fitToView();
 	});
+
+	// Explicit +/-/reset controls, not just implicit wheel-to-zoom/drag-
+	// to-pan — found live ("needs to be scrollable and interactive"):
+	// wheel-zooms alone weren't a visible enough affordance that this
+	// graph is a navigable thing, not a static image.
+	function zoomBy(factor: number) {
+		if (!svgEl || !zoomBehavior) return;
+		select(svgEl).transition().duration(200).call(zoomBehavior.scaleBy, factor);
+	}
+	function resetView() {
+		fitToView();
+	}
 
 	function dragNode(el: SVGGElement, node: any) {
 		select(el).call(
@@ -208,6 +237,11 @@
 	{#if !nodes.length}
 		<p class="hint">Nothing to show yet.</p>
 	{:else}
+		<div class="zoom-controls" role="group" aria-label="Zoom">
+			<button type="button" onclick={() => zoomBy(1.4)} title="Zoom in" aria-label="Zoom in">+</button>
+			<button type="button" onclick={() => zoomBy(1 / 1.4)} title="Zoom out" aria-label="Zoom out">&minus;</button>
+			<button type="button" onclick={resetView} title="Reset view" aria-label="Reset view">⤢</button>
+		</div>
 		<svg bind:this={svgEl} {width} {height} role="img" aria-label="Graph view">
 			<g bind:this={rootGroup}>
 				{#each simEdges as e (e.source.id ?? e.source)}
@@ -223,12 +257,16 @@
 						transform="translate({n.x ?? 0},{n.y ?? 0})"
 						use:dragNode={n}
 						onclick={() => onNodeClick?.(n)}
+						onmouseenter={() => (hoveredId = n.id)}
+						onmouseleave={() => (hoveredId = null)}
 						role="button"
 						tabindex="0"
 						onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter') onNodeClick?.(n); }}
 					>
 						<circle r={n.size ?? 6} fill={colorFor(n.group)} />
-						<text dy={-((n.size ?? 6) + 4)}>{n.label}</text>
+						{#if showLabel(n)}
+							<text dy={-((n.size ?? 6) + 4)}>{n.label}</text>
+						{/if}
 					</g>
 				{/each}
 			</g>
@@ -248,9 +286,24 @@
 </div>
 
 <style>
-	.graph-wrap { width: 100%; min-height: 360px; border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; background: var(--panel); }
-	svg { display: block; cursor: grab; }
-	.edge { stroke: var(--line-2); stroke-width: 1; }
+	.graph-wrap { position: relative; width: 100%; min-height: 360px; max-height: 70vh; border: 1px solid var(--line); border-radius: var(--r-lg); overflow: auto; background: var(--panel); }
+	svg { display: block; cursor: grab; touch-action: none; }
+	.zoom-controls {
+		position: absolute; top: .6rem; right: .6rem; z-index: 1; display: flex; flex-direction: column; gap: .2rem;
+		border: 1px solid var(--line); border-radius: var(--r); background: var(--panel); box-shadow: var(--shadow);
+	}
+	.zoom-controls button {
+		width: 1.8rem; height: 1.8rem; border: none; background: none; cursor: pointer;
+		font-size: 1.1rem; line-height: 1; color: var(--ink); display: flex; align-items: center; justify-content: center;
+	}
+	.zoom-controls button:hover { background: var(--panel-2); }
+	/* var(--line-2) at 1px (the first version of this) was functionally
+	   invisible — a pale tan-gray (#d9d4cc) 1px line on a white panel,
+	   found live: "why does the graph view not have any connecting
+	   dots/lines?" The edges were always there (every node always gets
+	   one, per documentGraph/concept_graph's own construction) — they
+	   just didn't render visibly. */
+	.edge { stroke: var(--muted); stroke-width: 1.2; opacity: .5; }
 	.node { cursor: pointer; }
 	.node circle { stroke: var(--panel); stroke-width: 1.5; }
 	.node text {
