@@ -2,7 +2,7 @@
 	import { invalidateAll } from '$app/navigation';
 	import { post, put } from '$lib/api';
 	import { toast } from '$lib/stores/toast';
-	import Quiet from '$lib/components/Quiet.svelte';
+	import Workspace from '$lib/components/Workspace.svelte';
 	import Tabs from '$lib/components/Tabs.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import Chip from '$lib/components/Chip.svelte';
@@ -210,7 +210,7 @@
 
 <!-- specs/v4/03: Tier 2 on this screen — a datatable an admin revisits many
      times a day doesn't need the red band's attention-getting weight. -->
-<Quiet title="Users">
+<Workspace title="Users" backHref="/admin">
 	<Tabs bind:active tabs={[{ id: 'practitioners', label: 'Practitioners' }, { id: 'admins', label: 'Admins' }, { id: 'clients', label: 'Clients' }]} />
 
 	{#if active === 'practitioners'}
@@ -332,7 +332,7 @@
 			{/snippet}
 		</DataTable>
 	{/if}
-</Quiet>
+</Workspace>
 
 <Dialog bind:open={openNew} title="New practitioner">
 	<form onsubmit={createPractitioner} id="np-form">

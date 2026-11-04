@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { get } from '$lib/api';
-	import Spotlight from '$lib/components/Spotlight.svelte';
+	import Workspace from '$lib/components/Workspace.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import Chip from '$lib/components/Chip.svelte';
 	import Button from '$lib/components/Button.svelte';
@@ -39,7 +39,7 @@
      6-row inline preview crowded a narrow rail panel. Full history (up to
      the 100 most recent events GET /api/audit returns) gets its own screen
      instead. -->
-<Spotlight title="Audit history">
+<Workspace title="Audit history" backHref="/admin">
 	<p class="hint">Library-only events — who changed what in the knowledge base, and when. Each Pro practitioner's own patient-vault activity is separate and isn't shown here.</p>
 
 	<DataTable
@@ -80,7 +80,7 @@
 			</div>
 		{/if}
 	{/if}
-</Spotlight>
+</Workspace>
 
 <style>
 	.hint { margin-bottom: var(--space-4); }

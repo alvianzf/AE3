@@ -1,11 +1,11 @@
 <script lang="ts">
-	import Spotlight from '$lib/components/Spotlight.svelte';
+	import Workspace from '$lib/components/Workspace.svelte';
 	import Sprig from '$lib/components/Sprig.svelte';
 </script>
 
 <svelte:head><title>Wearables — Client portal</title></svelte:head>
 
-<Spotlight title="Connect a wearable">
+<Workspace title="Connect a wearable" backHref="/client">
 	<!-- Wearable OAuth connect is real (app/wearables.py) but what happens after
 	     is fixture data, not a live vendor pull (see that module's docstring).
 	     Showing a working "Connect" button here would let a client believe
@@ -20,7 +20,7 @@
 			connect Oura, Whoop, or Garmin here and share your data with your practitioner.
 		</p>
 	</div>
-</Spotlight>
+</Workspace>
 
 <style>
 	.soon {

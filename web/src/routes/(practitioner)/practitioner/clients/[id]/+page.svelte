@@ -2,8 +2,8 @@
 	import { PUBLIC_API_BASE } from '$env/static/public';
 	import { post, del } from '$lib/api';
 	import { toast } from '$lib/stores/toast';
-	import Quiet from '$lib/components/Quiet.svelte';
-	import Spotlight from '$lib/components/Spotlight.svelte';
+	import Workspace from '$lib/components/Workspace.svelte';
+	import Section from '$lib/components/Section.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import Select from '$lib/components/Select.svelte';
 	import TextField from '$lib/components/TextField.svelte';
@@ -101,82 +101,82 @@
 
 <svelte:head><title>{data.client.name} — Practitioner portal</title></svelte:head>
 
-<Quiet title="Client overview">
+<Workspace title={data.client.name} backHref="/practitioner/clients">
 	<p><strong>{data.client.name}</strong> — {data.client.email}</p>
 	<p class="hint">{data.client.country ?? 'Country not set'} · DOB {data.client.dob ?? 'not set'}</p>
-</Quiet>
 
-<div class="rail-layout">
-	<div class="rail">
-		<Quiet title="Files">
-			{#if !data.files?.length}
-				<p class="hint">No files uploaded yet.</p>
+	<div class="rail-layout">
+		<div class="rail">
+			<Section title="Files">
+				{#if !data.files?.length}
+					<p class="hint">No files uploaded yet.</p>
+				{:else}
+					<ul class="list">
+						{#each data.files as f (f.id)}
+							<li><a href={fileUrl(f)} target="_blank" rel="noopener">{f.original_name}</a> <span class="hint">{f.uploaded_at ?? ''}</span></li>
+						{/each}
+					</ul>
+				{/if}
+			</Section>
+
+			<Section title="Documents">
+				{#if !data.documents?.length}
+					<p class="hint">No documents yet.</p>
+				{:else}
+					<ul class="list">
+						{#each data.documents as d (d.id)}<li>{d.filename ?? d.kind}</li>{/each}
+					</ul>
+				{/if}
+			</Section>
+
+			<Section title="Record">
+				<form class="entry-form" onsubmit={addEntry}>
+					<Select label="Kind" bind:value={entryKind} disabled={addingEntry}
+						options={Object.entries(KIND_LABELS).map(([value, label]) => ({ value, label }))} />
+					<TextField label="Details" type="textarea" bind:value={entryContent} required disabled={addingEntry}
+						placeholder="e.g. Fasting glucose 92 mg/dL, 2026-09-14" />
+					<Button type="submit" loading={addingEntry}>Add to record</Button>
+				</form>
+
+				{#if entries.length}
+					<ul class="list entries">
+						{#each entries as e (e.id)}
+							<li class="entry">
+								<div class="er">
+									<Chip tone="neutral">{KIND_LABELS[e.kind] ?? e.kind}</Chip>
+									{#if isPatientReported(e.content)}<Chip tone="accent">Patient-reported</Chip>{/if}
+									<span class="hint">{e.created_at?.slice(0, 10)}</span>
+									<button type="button" class="remove" onclick={() => removeEntry(e.id)} disabled={deletingEntry === e.id} title="Remove">×</button>
+								</div>
+								<p class="content">{entryText(e.content)}</p>
+							</li>
+						{/each}
+					</ul>
+				{:else}
+					<p class="hint" style="margin-top: var(--space-3)">Nothing recorded yet — conditions, medications, and labs added here shape what the consult pipeline considers when answering.</p>
+				{/if}
+			</Section>
+		</div>
+
+		<Section title="Sessions">
+			{#if !data.sessions?.length}
+				<p class="hint">No consultation sessions yet.</p>
 			{:else}
 				<ul class="list">
-					{#each data.files as f (f.id)}
-						<li><a href={fileUrl(f)} target="_blank" rel="noopener">{f.original_name}</a> <span class="hint">{f.uploaded_at ?? ''}</span></li>
-					{/each}
-				</ul>
-			{/if}
-		</Quiet>
-
-		<Quiet title="Documents">
-			{#if !data.documents?.length}
-				<p class="hint">No documents yet.</p>
-			{:else}
-				<ul class="list">
-					{#each data.documents as d (d.id)}<li>{d.filename ?? d.kind}</li>{/each}
-				</ul>
-			{/if}
-		</Quiet>
-
-		<Quiet title="Record">
-			<form class="entry-form" onsubmit={addEntry}>
-				<Select label="Kind" bind:value={entryKind} disabled={addingEntry}
-					options={Object.entries(KIND_LABELS).map(([value, label]) => ({ value, label }))} />
-				<TextField label="Details" type="textarea" bind:value={entryContent} required disabled={addingEntry}
-					placeholder="e.g. Fasting glucose 92 mg/dL, 2026-09-14" />
-				<Button type="submit" loading={addingEntry}>Add to record</Button>
-			</form>
-
-			{#if entries.length}
-				<ul class="list entries">
-					{#each entries as e (e.id)}
-						<li class="entry">
-							<div class="er">
-								<Chip tone="neutral">{KIND_LABELS[e.kind] ?? e.kind}</Chip>
-								{#if isPatientReported(e.content)}<Chip tone="accent">Patient-reported</Chip>{/if}
-								<span class="hint">{e.created_at?.slice(0, 10)}</span>
-								<button type="button" class="remove" onclick={() => removeEntry(e.id)} disabled={deletingEntry === e.id} title="Remove">×</button>
+					{#each data.sessions as s (s.id)}
+						<li class="session">
+							<div class="sr">
+								<a href="/practitioner/consult?client={data.client.id}&session={s.id}">{s.title ?? s.last_question ?? s.id}</a>
+								<Button variant="outlined" onclick={() => summarize(s.id)} loading={summarizing === s.id}>Summarize</Button>
 							</div>
-							<p class="content">{entryText(e.content)}</p>
+							{#if summaries[s.id]}<p class="summary">{summaries[s.id]}</p>{/if}
 						</li>
 					{/each}
 				</ul>
-			{:else}
-				<p class="hint" style="margin-top: var(--space-3)">Nothing recorded yet — conditions, medications, and labs added here shape what the consult pipeline considers when answering.</p>
 			{/if}
-		</Quiet>
+		</Section>
 	</div>
-
-	<Spotlight title="Sessions">
-		{#if !data.sessions?.length}
-			<p class="hint">No consultation sessions yet.</p>
-		{:else}
-			<ul class="list">
-				{#each data.sessions as s (s.id)}
-					<li class="session">
-						<div class="sr">
-							<a href="/practitioner/consult?client={data.client.id}&session={s.id}">{s.title ?? s.last_question ?? s.id}</a>
-							<Button variant="outlined" onclick={() => summarize(s.id)} loading={summarizing === s.id}>Summarize</Button>
-						</div>
-						{#if summaries[s.id]}<p class="summary">{summaries[s.id]}</p>{/if}
-					</li>
-				{/each}
-			</ul>
-		{/if}
-	</Spotlight>
-</div>
+</Workspace>
 
 <style>
 	.list { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }

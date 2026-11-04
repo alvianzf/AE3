@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import AppRail from '$lib/components/AppRail.svelte';
+	import AccountMenu from '$lib/components/AccountMenu.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import Tour from '$lib/components/Tour.svelte';
 	import DisclaimerBar from '$lib/components/DisclaimerBar.svelte';
+	import Icon from '$lib/components/Icon.svelte';
 
 	// specs/v8 §8.5 — surfaced on the two client-facing record pages the
 	// spec names specifically, not every page in the portal.
@@ -11,32 +12,22 @@
 
 	let { data, children } = $props();
 
-	// specs/v7/05 — onboarding matters most on this portal of the three
-	// (a client didn't choose this software, their practitioner did) —
-	// warmer copy than the other two portals' tours, and the Health
-	// record step folds in the trust/privacy note specs/v7/06 called out
-	// explicitly, since there's no separate page to put it on at this
-	// sidebar-only scope.
+	// Direct instruction: no persistent nav surface — "Your care" (this
+	// portal's own root +page.svelte) is the one place a client starts
+	// from and returns to.
 	let tourActive = $state(!data.session?.tour_completed);
 	const tourSteps = [
-		{ selector: 'a[href="/client/dashboard"]', title: 'Welcome', body: 'Start here each time you log in — a quick look at what’s new.' },
 		{ selector: 'a[href="/client/questionnaire"]', title: 'Questionnaire', body: 'Your practitioner uses this to understand your health history.' },
-		{ selector: 'a[href="/client/record"]', title: 'Health record', body: 'Only you and your practitioner can see what’s here — never shared beyond your own care.' },
-		{ selector: 'a[href="/client/files"]', title: 'Files', body: 'Documents your practitioner has shared with you, in one place.' }
+		{ selector: 'a[href="/client/record"]', title: 'Health record', body: 'Only you and your practitioner can see what’s here — never shared beyond your own care.' }
 	];
 
 	const items = [
-		{ href: '/client/dashboard', label: 'Dashboard', icon: 'home', navGroup: 'primary' as const },
+		{ href: '/client', label: 'Home', icon: 'home' },
 		{ href: '/client/questionnaire', label: 'Questionnaire', icon: 'clipboard' },
 		{ href: '/client/record', label: 'Health record', icon: 'user-card' },
 		{ href: '/client/files', label: 'Files', icon: 'folder' },
 		{ href: '/client/wearables', label: 'Wearables', icon: 'watch' }
 	];
-
-	// specs/v7/06 — included for consistency across all three portals even
-	// though a 5-item sidebar barely needs a search palette on its own
-	// (specs/v7/05's own stated lower priority here) — same component,
-	// same shortcut everywhere a user might look for it.
 	const paletteItems = items.map((i) => ({ ...i, group: 'Client' }));
 	let paletteOpen = $state(false);
 
@@ -52,21 +43,23 @@
 
 <CommandPalette items={paletteItems} bind:open={paletteOpen} />
 <Tour steps={tourSteps} bind:active={tourActive} />
+<button class="search-trigger" onclick={() => (paletteOpen = true)} aria-label="Search (⌘K)" title="Search (⌘K)">
+	<Icon name="search" size={17} />
+</button>
+<AccountMenu userLabel={data.session?.name} />
 
-<div class="shell">
-	<!-- No role-specific color override here — the global --rail-top/
-	     --rail-bottom/--rail-indicator defaults (app.css) already are the
-	     client portal's identity; practitioner and admin override them on
-	     their own .shell instead. -->
-	<AppRail {items} portalLabel="Client" userLabel={data.session?.name} onCommandPalette={() => (paletteOpen = true)} />
-	<main>
-		{@render children()}
-		{#if showDisclaimer}<DisclaimerBar />{/if}
-	</main>
-</div>
+<main class="container">
+	{@render children()}
+	{#if showDisclaimer}<DisclaimerBar />{/if}
+</main>
 
 <style>
-	.shell { display: flex; align-items: flex-start; min-height: 100dvh; background: var(--bg); }
-	main { flex: 1 1 auto; min-width: 0; padding: var(--space-5) var(--space-6) var(--space-6); }
-	@media (max-width: 860px) { main { padding: var(--space-5) var(--space-4) 5.5rem; } }
+	main { padding: var(--space-6) var(--space-5) var(--space-7); min-height: 100dvh; }
+	.search-trigger {
+		position: fixed; top: var(--space-4); right: 4.2rem; z-index: 50;
+		width: 2.4rem; height: 2.4rem; border-radius: 50%; background: var(--panel);
+		border: 1px solid var(--line); box-shadow: var(--shadow); color: var(--ink-2); cursor: pointer;
+		display: flex; align-items: center; justify-content: center;
+	}
+	.search-trigger:hover { background: var(--panel-2); }
 </style>

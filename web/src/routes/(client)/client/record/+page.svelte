@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { post, del } from '$lib/api';
 	import { toast } from '$lib/stores/toast';
-	import Spotlight from '$lib/components/Spotlight.svelte';
+	import Workspace from '$lib/components/Workspace.svelte';
 	import Select from '$lib/components/Select.svelte';
 	import TextField from '$lib/components/TextField.svelte';
 	import Button from '$lib/components/Button.svelte';
@@ -60,7 +60,7 @@
 
 <svelte:head><title>Health record — Client portal</title></svelte:head>
 
-<Spotlight title="Your health record">
+<Workspace title="Your health record" backHref="/client">
 	<p class="hint">
 		Add labs, conditions, medications, or anything else your practitioner should know about
 		before your next consult. Your practitioner can see everything here; you can only remove
@@ -91,7 +91,7 @@
 	{:else}
 		<p class="hint" style="margin-top: var(--space-4)">Nothing added yet.</p>
 	{/if}
-</Spotlight>
+</Workspace>
 
 <style>
 	.entry-form { display: grid; gap: var(--space-3); margin: var(--space-4) 0; }

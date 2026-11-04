@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { PUBLIC_API_BASE } from '$env/static/public';
-	import Quiet from '$lib/components/Quiet.svelte';
+	import Workspace from '$lib/components/Workspace.svelte';
 	import Chip from '$lib/components/Chip.svelte';
 
 	let { data } = $props();
@@ -55,7 +55,7 @@
 
 <svelte:head><title>{source?.title ?? 'Source'} — Practitioner portal</title></svelte:head>
 
-<Quiet title={source?.error ? 'Could not load' : source?.title}>
+<Workspace title={source?.error ? 'Could not load' : (source?.title ?? '')} backHref="/practitioner/knowledge">
 	{#if source?.error}
 		<p class="hint">Could not load this source: {source.error}</p>
 	{:else if source}
@@ -88,7 +88,7 @@
 			</div>
 		{/if}
 	{/if}
-</Quiet>
+</Workspace>
 
 <style>
 	.doc-body { white-space: pre-wrap; font-size: var(--text-sm); line-height: 1.6; max-height: 75vh; overflow-y: auto; }
