@@ -2,8 +2,10 @@
 	import { PUBLIC_SITE_URL } from '$env/static/public';
 	import Sprig from '$lib/components/Sprig.svelte';
 	import Chip from '$lib/components/Chip.svelte';
+	import Icon from '$lib/components/Icon.svelte';
 	import Seo from '$lib/components/Seo.svelte';
 	import { jsonLdScript } from '$lib/seo';
+	import { reveal } from '$lib/actions/reveal';
 
 	const description =
 		"Clinic gives independent practitioners an AI assistant grounded in their own curated library — every answer cited, independently checked, and never sourced from the open internet.";
@@ -22,18 +24,22 @@
 
 	const pillars = [
 		{
+			icon: 'book',
 			title: 'Trained on what you teach it',
 			body: 'Every answer comes from your clinic’s own curated library — never the open internet, never a guess.'
 		},
 		{
+			icon: 'file',
 			title: 'Every claim is cited',
 			body: 'Click a citation, jump straight to the source passage — page number included. Nothing is taken on faith.'
 		},
 		{
+			icon: 'check',
 			title: 'An independent check, every time',
 			body: 'A second AI verifies each answer against its sources before a practitioner ever sees it, and says so when it can’t confirm a claim.'
 		},
 		{
+			icon: 'settings',
 			title: 'You set the bar',
 			body: 'A reliability grade on every source, and a slider that controls what’s reachable — your clinic decides what the AI is allowed to use.'
 		}
@@ -73,7 +79,7 @@
 </section>
 
 <div class="container about">
-	<section class="pitch">
+	<section class="pitch" use:reveal>
 		<p class="lede">
 			Generic AI tools answer from whatever they happened to absorb during
 			training — no way to know if it’s current, sourced, or safe to act
@@ -84,8 +90,9 @@
 	</section>
 
 	<section class="pillars">
-		{#each pillars as p (p.title)}
-			<div class="pillar">
+		{#each pillars as p, i (p.title)}
+			<div class="pillar" use:reveal style="--reveal-delay: {i * 60}ms">
+				<span class="pillar-icon"><Icon name={p.icon} size={20} /></span>
 				<h3>{p.title}</h3>
 				<p>{p.body}</p>
 			</div>
@@ -115,7 +122,7 @@
 		</div>
 	</section>
 
-	<section class="cta">
+	<section class="cta" use:reveal>
 		<div>
 			<p>Ready to look for a practitioner?</p>
 			<a class="btn filled" href="/practitioners">Browse practitioners</a>
@@ -144,12 +151,38 @@
 	.pillars { display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
 	.pillar {
 		padding: var(--space-4); border: 1px solid var(--line); border-radius: var(--r-lg);
-		background: var(--panel); animation: liftIn .4s var(--ease) both;
+		background: var(--panel);
+	}
+	.pillar-icon {
+		display: inline-flex; align-items: center; justify-content: center;
+		width: 2.4rem; height: 2.4rem; border-radius: var(--r); margin-bottom: var(--space-2);
+		background: var(--accent-soft); color: var(--accent-ink);
 	}
 	.pillar h3 { font-size: var(--text-base); margin-bottom: .4rem; }
 	.pillar p { color: var(--muted); font-size: var(--text-sm); }
 
 	.chip-row { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: var(--space-4); }
+
+	/* specs/v7/06 — scroll-triggered reveal: every use:reveal element
+	   starts invisible/offset and only plays liftIn once the reveal
+	   action adds .revealed (on scroll-into-view, or immediately for
+	   prefers-reduced-motion — see reveal.ts). --reveal-delay staggers
+	   the pillar grid's four cards instead of having them all pop at
+	   once. .trust is deliberately NOT part of this — it already has
+	   its own mount-time entrance via the shared .card-panel class
+	   (app.css), and a "both" fill-mode keyframe animation finishing on
+	   mount would leave it at opacity:1 well before it scrolls into
+	   view, defeating (and visually conflicting with) a second,
+	   scroll-gated opacity:0 start state layered on top. Scoped to this
+	   page's own elements, not a global rule — a future page adopting
+	   this pattern gets the same two rules copied in deliberately, per
+	   specs/v7/07's "port each page's own styling, don't globalize
+	   blind" phasing norm. */
+	.pitch, .pillar, .cta { opacity: 0; }
+	.pitch:global(.revealed), .pillar:global(.revealed), .cta:global(.revealed) {
+		animation: liftIn var(--duration-slow) var(--ease) both;
+		animation-delay: var(--reveal-delay, 0ms);
+	}
 
 	.cta { display: flex; align-items: center; gap: var(--space-6); flex-wrap: wrap; }
 	.cta > div { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }

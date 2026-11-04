@@ -21,6 +21,10 @@ documents are reviewed and approved, phase by phase, per
 - [**02 · Public site**](02-public-site.md) — landing page (icon
   pillars, a real product glimpse, scroll-triggered reveals),
   `/practitioners`, `/join`/`/login`/`/signup`, `PublicNav.svelte`.
+  **Phase 1 implemented, partial** (icon pillars + scroll reveals
+  only — the product glimpse and social proof remain a content
+  decision for the user) — see
+  [02-impl-landing-page.md](02-impl-landing-page.md).
 - [**03 · Admin portal**](03-admin-portal.md) — Library (highest
   priority: component consolidation, not new features), Dashboard,
   Users, Questionnaires, Audit history, the nav rail.
