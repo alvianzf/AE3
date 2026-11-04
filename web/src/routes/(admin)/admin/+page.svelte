@@ -347,7 +347,7 @@
 			const res = await get(fetch, '/graph/concepts');
 			conceptGraph = {
 				nodes: (res.nodes ?? []).map((n: any) => ({
-					id: n.id, label: n.name, group: n.type, size: 5 + Math.min(14, Math.sqrt(n.mentions ?? 1) * 2)
+					id: n.id, label: n.name, group: n.type, size: 3 + Math.min(7, Math.sqrt(n.mentions ?? 1))
 				})),
 				edges: (res.edges ?? []).map((e: any) => ({ source: e.source, target: e.target, label: e.rel_type }))
 			};
@@ -362,18 +362,18 @@
 		const edges: GraphEdge[] = [];
 		function walk(tn: TreeNode, parentId: string | null) {
 			const id = `folder:${tn.path}`;
-			nodes.push({ id, label: tn.name, group: 'folder', size: 7 });
+			nodes.push({ id, label: tn.name, group: 'folder', size: 5 });
 			if (parentId) edges.push({ source: parentId, target: id });
 			for (const doc of tn.docs) {
-				nodes.push({ id: `doc:${doc.id}`, label: doc.title, group: 'document', size: 4 });
+				nodes.push({ id: `doc:${doc.id}`, label: doc.title, group: 'document', size: 3 });
 				edges.push({ source: id, target: `doc:${doc.id}` });
 			}
 			for (const child of tn.children) walk(child, id);
 		}
-		nodes.push({ id: 'root', label: 'Library', group: 'folder', size: 8 });
+		nodes.push({ id: 'root', label: 'Library', group: 'folder', size: 6 });
 		for (const tn of folderTree) walk(tn, 'root');
 		for (const doc of rootDocs) {
-			nodes.push({ id: `doc:${doc.id}`, label: doc.title, group: 'document', size: 4 });
+			nodes.push({ id: `doc:${doc.id}`, label: doc.title, group: 'document', size: 3 });
 			edges.push({ source: 'root', target: `doc:${doc.id}` });
 		}
 		return { nodes, edges };

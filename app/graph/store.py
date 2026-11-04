@@ -921,7 +921,7 @@ def graph_stats() -> dict:
         return dict(rec)
 
 
-def concept_graph(limit: int = 150) -> dict:
+def concept_graph(limit: int = 80) -> dict:
     """A bounded concept-graph view (specs/v6.13) — the knowledge graph
     this app actually builds at ingest time (typed Entity->Entity
     relationships), not the citation/retrieval graph. 7905+ entities

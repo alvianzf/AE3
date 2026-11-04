@@ -1,5 +1,16 @@
 # Specs changelog
 
+## 2026-11-04 — v6.18, Graph view visibility/sizing/perf/zoom controls
+
+See [v6.18/README.md](v6.18/README.md). Four pieces of direct/live
+feedback on the Graph view in one pass: edges that existed in the data
+but were rendered with a near-invisible stroke color (not a missing-
+connections bug), oversized nodes, no visible scroll/zoom affordance
+(added explicit controls + a scrollable container), and real browser
+performance cost from unconditional stroke-outlined text labels —
+fixed with zoom/hover-gated label rendering past a 60-node threshold,
+plus lowering the concept layer's default node limit 150→80.
+
 ## 2026-11-04 — v6.17, Table view action parity
 
 See [v6.17/README.md](v6.17/README.md). Closes the single largest gap
