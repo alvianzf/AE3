@@ -2,17 +2,22 @@
 	// A generic force-directed node-link view — used for both the
 	// concept-graph and document/folder-graph layers of the admin
 	// Library's Graph tab (specs/v6.13). Deliberately hand-rolled on
-	// d3-force/d3-drag/d3-zoom/d3-selection (the physics/interaction
-	// primitives only) rather than a wrapper graph library (force-graph,
-	// cytoscape, ...) — those pull in a canvas renderer and styling
-	// opinions of their own plus a much larger transitive dependency
-	// tree (lodash, tween.js, bezier-js, ...) for a feature this app
-	// only needs at this one spot; four focused d3 modules is a smaller,
-	// more inspectable dependency than one wrapper around them.
+	// d3-force/d3-drag/d3-zoom/d3-selection/d3-transition (the physics/
+	// interaction primitives only) rather than a wrapper graph library
+	// (force-graph, cytoscape, ...) — those pull in a canvas renderer
+	// and styling opinions of their own plus a much larger transitive
+	// dependency tree (lodash, tween.js, bezier-js, ...) for a feature
+	// this app only needs at this one spot; five focused d3 modules is
+	// a smaller, more inspectable dependency than one wrapper around
+	// them.
 	import { forceSimulation, forceLink, forceManyBody, forceCenter, forceCollide } from 'd3-force';
 	import { select } from 'd3-selection';
 	import { drag, type D3DragEvent } from 'd3-drag';
 	import { zoom, zoomIdentity, type D3ZoomEvent } from 'd3-zoom';
+	// Side-effect import, not referenced by name — attaches .transition()
+	// onto d3-selection's Selection prototype (and its TS types), used
+	// by fitToView() below for a smooth pan/zoom instead of a snap-cut.
+	import 'd3-transition';
 
 	export interface GraphNode {
 		id: string;
@@ -58,6 +63,31 @@
 	}
 
 	let simulation: ReturnType<typeof forceSimulation> | null = null;
+	let zoomBehavior: ReturnType<typeof zoom<SVGSVGElement, unknown>> | null = null;
+
+	// Centers and scales the view to fit every current node, with
+	// padding — forceCenter() only pulls the *center of mass* toward
+	// width/2,height/2, it doesn't guarantee the whole (possibly much
+	// wider, after forceManyBody's repulsion spreads things out) graph
+	// actually fits inside the viewport at zoom 1:1. Without this, a
+	// bigger graph (concepts: 150 nodes, ~2900 edges) just ran off the
+	// edges at whatever random scale it happened to land at — "a mess"
+	// (found live, 2026-11-04).
+	function fitToView() {
+		if (!svgEl || !zoomBehavior || !simNodes.length) return;
+		const pad = 40;
+		const xs = simNodes.map((n) => n.x ?? 0);
+		const ys = simNodes.map((n) => n.y ?? 0);
+		const x0 = Math.min(...xs) - pad, x1 = Math.max(...xs) + pad;
+		const y0 = Math.min(...ys) - pad, y1 = Math.max(...ys) + pad;
+		const w = Math.max(1, x1 - x0), h = Math.max(1, y1 - y0);
+		const scale = Math.min(2, width / w, height / h);
+		const tx = width / 2 - scale * (x0 + w / 2);
+		const ty = height / 2 - scale * (y0 + h / 2);
+		select(svgEl)
+			.transition().duration(250)
+			.call(zoomBehavior.transform, zoomIdentity.translate(tx, ty).scale(scale));
+	}
 
 	$effect(() => {
 		// Re-reads whenever `nodes`/`edges` props change identity (a new
@@ -71,24 +101,42 @@
 			.filter((e) => byId.has(e.source) && byId.has(e.target))
 			.map((e) => ({ ...e }));
 
+		// Only the simulation's first settle (the initial layout) should
+		// recenter the view — a later 'end' (the simulation re-heats to
+		// alphaTarget 0.3 on every node drag, per dragNode() below, then
+		// cools back down once released) must NOT re-trigger this, or
+		// releasing a dragged node would silently reset whatever pan/zoom
+		// the admin had set.
+		let fitted = false;
 		simulation?.stop();
 		simulation = forceSimulation(simNodes as any)
 			.force('link', forceLink(simEdges).id((d: any) => d.id).distance(70).strength(0.4))
 			.force('charge', forceManyBody().strength(-140))
 			.force('center', forceCenter(width / 2, height / 2))
-			.force('collide', forceCollide().radius((d: any) => (d.size ?? 6) + 10));
+			.force('collide', forceCollide().radius((d: any) => (d.size ?? 6) + 10))
+			.on('end', () => { if (!fitted) { fitted = true; fitToView(); } });
+
+		// Pre-settle synchronously (d3-force's own default settling time,
+		// ~300 ticks at the default alphaDecay) before the first paint —
+		// without this, the initial random starting positions and a
+		// strong charge force produce a visibly chaotic expansion on
+		// every layer switch, not just an unfit one.
+		for (let i = 0; i < 300 && (simulation.alpha() ?? 0) > simulation.alphaMin(); i++) simulation.tick();
+		fitted = true;
+		fitToView();
 
 		return () => simulation?.stop();
 	});
 
 	$effect(() => {
 		if (!svgEl || !rootGroup) return;
-		const zoomBehavior = zoom<SVGSVGElement, unknown>()
-			.scaleExtent([0.2, 4])
+		zoomBehavior = zoom<SVGSVGElement, unknown>()
+			.scaleExtent([0.1, 4])
 			.on('zoom', (e: D3ZoomEvent<SVGSVGElement, unknown>) => {
 				select(rootGroup!).attr('transform', e.transform.toString());
 			});
-		select(svgEl).call(zoomBehavior).call(zoomBehavior.transform, zoomIdentity);
+		select(svgEl).call(zoomBehavior);
+		fitToView();
 	});
 
 	function dragNode(el: SVGGElement, node: any) {

@@ -954,6 +954,29 @@
 		}
 	}
 
+	// "Retry all" — every staged item currently sitting in status='error'
+	// (an interrupted/failed job, e.g. the Nebius billing exhaustion that
+	// produced a real 15-item backlog, 2026-11-03), retried one call each
+	// rather than a dedicated bulk endpoint — there's no batch-retry
+	// route and reusing ingestOne() per id keeps this consistent with
+	// the single-item Retry button right next to it.
+	let retryingAll = $state(false);
+	const erroredStagedIds = $derived(
+		(data.staged ?? [])
+			.filter((item: any) => jobsByStagedId[item.id]?.status === 'error')
+			.map((item: any) => item.id)
+	);
+	async function retryAll() {
+		const ids = erroredStagedIds;
+		if (!ids.length) return;
+		retryingAll = true;
+		try {
+			await Promise.all(ids.map((id: string) => ingestOne(id)));
+		} finally {
+			retryingAll = false;
+		}
+	}
+
 	async function replaceDuplicate() {
 		if (!duplicateStagedId || !duplicateOf) return;
 		const id = duplicateStagedId;
@@ -1008,13 +1031,20 @@
 	<div class="tab-panel">
 	{#if mainTab === 'library'}
 		{#if (data.staged?.length ?? 0) > 0 || (queueStats?.queued_count ?? 0) > 0 || (queueStats?.processing_count ?? 0) > 0}
-			<p class="queue-status hint">
-				{data.sources.length} ingested
-				· {(queueStats?.queued_count ?? 0) + (queueStats?.processing_count ?? 0)} in queue
-				{#if queueStats?.processing_count}({queueStats.processing_count} processing){/if}
-				{#if queueStats?.total_queued_chars}· {formatChars(queueStats.total_queued_chars)} queued{/if}
-				{#if queueStats?.estimated_seconds_remaining != null}· est. {formatEta(queueStats.estimated_seconds_remaining)} remaining{/if}
-			</p>
+			<div class="queue-status-row">
+				<p class="queue-status hint">
+					{data.sources.length} ingested
+					· {(queueStats?.queued_count ?? 0) + (queueStats?.processing_count ?? 0)} in queue
+					{#if queueStats?.processing_count}({queueStats.processing_count} processing){/if}
+					{#if queueStats?.total_queued_chars}· {formatChars(queueStats.total_queued_chars)} queued{/if}
+					{#if queueStats?.estimated_seconds_remaining != null}· est. {formatEta(queueStats.estimated_seconds_remaining)} remaining{/if}
+				</p>
+				{#if erroredStagedIds.length}
+					<Button variant="outlined" onclick={retryAll} loading={retryingAll}>
+						Retry all ({erroredStagedIds.length})
+					</Button>
+				{/if}
+			</div>
 		{/if}
 		<div class="search-bar">
 			<div class="search-input-wrap">
@@ -1296,9 +1326,16 @@
 								<span class="hint">{(s.created_at ?? '').slice(0, 10)}</span>
 							</div>
 							{#if s.author || s.uploaded_by}
-								<p class="doc-card-meta hint">
-									{#if s.author}By {s.author}{/if}{#if s.author && s.uploaded_by} · {/if}{#if s.uploaded_by}Uploaded by {s.uploaded_by}{/if}
-								</p>
+								<div class="doc-card-meta">
+									<!-- Separate lines with their own icon + color, not one
+									     run-on sentence (found live: "hard to distinguish them,
+									     color and fonts are the same") — author (the book's own
+									     byline) and uploader (who put it in this library) are
+									     different facts about a document, not two clauses of
+									     the same one. -->
+									{#if s.author}<p class="meta-line"><Icon name="book" size={11} /> {s.author}</p>{/if}
+									{#if s.uploaded_by}<p class="meta-line meta-uploader"><Icon name="user-card" size={11} /> {s.uploaded_by}</p>{/if}
+								</div>
 							{/if}
 						</div>
 					{:else}
@@ -1837,7 +1874,7 @@
 	.access-list { max-height: 50vh; overflow-y: auto; display: grid; gap: .4rem; list-style: none; padding: 0; }
 	.access-list label { display: flex; align-items: center; gap: .5rem; }
 	.doc-card {
-		display: flex; flex-direction: column; gap: .5rem; padding: var(--space-4);
+		display: flex; flex-direction: column; gap: .4rem; padding: var(--space-3);
 		border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--panel-2);
 	}
 	.doc-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-2); }
@@ -1855,17 +1892,19 @@
 	}
 	.doc-card-actions { display: flex; gap: .3rem; flex: 0 0 auto; }
 	.doc-card-foot { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin-top: auto; padding-top: .3rem; }
-	.grade-label { display: flex; align-items: center; gap: .35rem; font-size: var(--text-xs); color: var(--muted); }
-	.folder-label { display: flex; align-items: center; gap: .3rem; font-size: var(--text-xs); color: var(--muted); }
+	.grade-label { display: flex; align-items: center; gap: .3rem; font-size: var(--text-xs); color: var(--muted); }
+	.folder-label { display: flex; align-items: center; gap: .25rem; font-size: var(--text-xs); color: var(--muted); }
 	.folder-input {
-		width: 9rem; border: 1px solid var(--line-2); border-radius: var(--r);
-		padding: .3rem .4rem; font: inherit; font-size: var(--text-xs); color: var(--ink); background: var(--panel);
+		width: 7.5rem; border: 1px solid var(--line-2); border-radius: var(--r);
+		padding: .2rem .35rem; font: inherit; font-size: var(--text-xs); color: var(--ink); background: var(--panel);
 	}
 	.doc-type-select {
-		border: 1px solid var(--line-2); border-radius: var(--r); padding: .25rem .4rem;
+		border: 1px solid var(--line-2); border-radius: var(--r); padding: .15rem .35rem;
 		font: inherit; font-size: var(--text-xs); color: var(--ink); background: var(--panel); cursor: pointer;
 	}
-	.doc-card-meta { margin: -.1rem 0 0; }
+	.doc-card-meta { margin: -.1rem 0 0; display: grid; gap: .15rem; }
+	.meta-line { display: flex; align-items: center; gap: .3rem; margin: 0; font-size: var(--text-xs); color: var(--muted); }
+	.meta-uploader { color: var(--accent); }
 	.pager { display: flex; align-items: center; justify-content: center; gap: var(--space-4); margin-top: var(--space-5); }
 	.facet-row { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
 	.facet-label {
@@ -1880,16 +1919,16 @@
 	}
 	.fchip:hover { border-color: var(--accent); }
 	.fchip.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
-	.tags { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; margin-top: .3rem; }
+	.tags { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem; margin-top: .25rem; }
 	.tag {
-		font: inherit; font-size: var(--text-xs); cursor: pointer; display: inline-flex; align-items: center; gap: .25rem;
+		font: inherit; font-size: var(--text-xs); cursor: pointer; display: inline-flex; align-items: center; gap: .2rem;
 		border: 1px solid var(--line); background: var(--panel-2); color: var(--muted);
-		border-radius: 99px; padding: .15rem .55rem;
+		border-radius: 99px; padding: .08rem .45rem; line-height: 1.5;
 	}
 	.tag:hover { border-color: var(--danger); color: var(--danger); }
 	.tag-input {
 		font: inherit; font-size: var(--text-xs); border: 1px dashed var(--line-2); border-radius: 99px;
-		padding: .15rem .55rem; background: transparent; color: var(--ink); width: 5.5rem;
+		padding: .08rem .45rem; background: transparent; color: var(--ink); width: 5rem;
 	}
 	.view {
 		font: inherit; font-size: var(--text-sm); font-weight: 650; cursor: pointer;
@@ -1919,7 +1958,8 @@
 		padding: .3rem .4rem; font: inherit; color: var(--ink); background: var(--panel);
 	}
 	.view:disabled { opacity: .5; cursor: not-allowed; }
-	.queue-status { margin: 0 0 var(--space-3); }
+	.queue-status-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; margin-bottom: var(--space-3); }
+	.queue-status { margin: 0; }
 	.doc-card-pending { opacity: .85; border-style: dashed; }
 	.pending-title { font-weight: 650; overflow-wrap: anywhere; }
 	.finalize-bell { color: var(--accent); }
