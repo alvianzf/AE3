@@ -984,13 +984,29 @@ def create_staged_source(
 def list_staged_sources(created_by: str | None = None) -> list[dict]:
     """created_by=None is the admin view — every staged item, as today.
     A permitted practitioner passes their own id so they only ever see what
-    they themselves staged, never another practitioner's or admin's."""
-    query = "SELECT * FROM staged_sources"
+    they themselves staged, never another practitioner's or admin's.
+
+    Each row carries its latest ingestion_jobs status/error (specs/v6.12)
+    — a staged item is now shown as an in-progress card right in the
+    Library grid instead of a separate reviewable list, so the frontend
+    needs to tell "never actually started" (job_status is null — auto-
+    kick it) apart from "errored, waiting on the admin" (job_status =
+    'error' — show the error, don't silently retry) without a second
+    round trip per item."""
+    query = (
+        "SELECT s.*, j.status AS job_status, j.step AS job_step, "
+        "j.step_detail AS job_step_detail, j.error_message AS job_error_message "
+        "FROM staged_sources s "
+        "LEFT JOIN LATERAL ("
+        "  SELECT status, step, step_detail, error_message FROM ingestion_jobs "
+        "  WHERE staged_id = s.id ORDER BY created_at DESC LIMIT 1"
+        ") j ON true"
+    )
     params: tuple = ()
     if created_by is not None:
-        query += " WHERE created_by = %s"
+        query += " WHERE s.created_by = %s"
         params = (created_by,)
-    query += " ORDER BY created_at DESC"
+    query += " ORDER BY s.created_at DESC"
     with core_connection() as conn:
         rows = conn.execute(query, params).fetchall()
     return [_decode_staged(r) for r in rows]
@@ -1127,7 +1143,12 @@ def list_active_ingestion_jobs(owner: str | None = None) -> list[dict]:
     scopes to just their own — same owner semantics as list_staged_sources.
     Lets the frontend reattach to an in-progress job after a page reload
     without the client having to remember a job id anywhere itself."""
-    query = "SELECT * FROM ingestion_jobs WHERE status = 'running'"
+    # 'queued' too, not just 'running' — found live, specs/v6.12: a job
+    # still waiting for a concurrency slot (app/ingestion/queue.py) was
+    # invisible to a page reload until a worker actually picked it up,
+    # even though fail_orphaned_ingestion_jobs() above already treats
+    # 'queued' as just as real an in-flight state as 'running'.
+    query = "SELECT * FROM ingestion_jobs WHERE status IN ('running', 'queued')"
     params: tuple = ()
     if owner is not None:
         query += " AND owner = %s"
@@ -1136,3 +1157,59 @@ def list_active_ingestion_jobs(owner: str | None = None) -> list[dict]:
     with core_connection() as conn:
         rows = conn.execute(query, params).fetchall()
     return [dict(r) for r in rows]
+
+
+def ingestion_queue_stats(owner: str | None = None) -> dict:
+    """The status bar's numbers (specs/v6.12) — queued/processing counts,
+    how many characters are still waiting to be read, and a rough ETA
+    from how long the last few completed jobs actually took. Duration is
+    computed in Python from the ISO timestamps _now() already writes,
+    not SQL date math, so this doesn't care which of sqlite/Postgres
+    core_connection() is backed by this run."""
+    active_filter = "status IN ('running', 'queued')"
+    owner_filter = " AND owner = %s" if owner is not None else ""
+    params: tuple = (owner,) if owner is not None else ()
+    with core_connection() as conn:
+        queued = conn.execute(
+            f"SELECT status FROM ingestion_jobs WHERE {active_filter}{owner_filter}",
+            params,
+        ).fetchall()
+        # char_count lives on staged_sources, not ingestion_jobs — joined
+        # by id, same relationship _run_staged_ingest_job's own staged_id
+        # lookups already rely on. A staged row still exists for exactly
+        # as long as its job is active (deleted only once the job's
+        # _run_ingest call actually succeeds), so this join never misses
+        # an active job's size.
+        chars_row = conn.execute(
+            f"SELECT COALESCE(SUM(s.char_count), 0) AS total FROM ingestion_jobs j "
+            f"JOIN staged_sources s ON s.id = j.staged_id WHERE j.{active_filter}{owner_filter}",
+            params,
+        ).fetchone()
+        # Last 10 completed jobs (any owner — a small sample of only one
+        # practitioner's jobs would be a noisy ETA): real wall-clock time
+        # from queued to done, not a per-stage breakdown.
+        recent = conn.execute(
+            "SELECT created_at, updated_at FROM ingestion_jobs "
+            "WHERE status = 'done' ORDER BY updated_at DESC LIMIT 10"
+        ).fetchall()
+    queued_count = sum(1 for r in queued if r["status"] == "queued")
+    processing_count = sum(1 for r in queued if r["status"] == "running")
+    durations = []
+    for r in recent:
+        try:
+            started = datetime.fromisoformat(r["created_at"])
+            finished = datetime.fromisoformat(r["updated_at"])
+            durations.append((finished - started).total_seconds())
+        except (TypeError, ValueError):
+            continue
+    avg_seconds = sum(durations) / len(durations) if durations else None
+    active_count = queued_count + processing_count
+    return {
+        "queued_count": queued_count,
+        "processing_count": processing_count,
+        "total_queued_chars": int(chars_row["total"] or 0),
+        "avg_seconds_per_job": avg_seconds,
+        "estimated_seconds_remaining": (
+            avg_seconds * active_count if avg_seconds is not None and active_count else None
+        ),
+    }

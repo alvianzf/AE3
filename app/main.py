@@ -1134,6 +1134,17 @@ def list_active_ingestion_jobs(
     return core_store.list_active_ingestion_jobs(_staged_owner_filter(_caller))
 
 
+@app.get("/api/ingestion-jobs/stats")
+def ingestion_queue_stats(
+    _caller: dict = Depends(auth.require_admin_or_pro_practitioner),
+) -> dict:
+    """The Library page's status bar (specs/v6.12) — queued/processing
+    counts, characters still waiting, and a rough ETA from the last few
+    completed jobs' real durations. Same owner scoping as the /active
+    route above, for the same reason."""
+    return core_store.ingestion_queue_stats(_staged_owner_filter(_caller))
+
+
 @app.get("/api/ingestion-jobs/{job_id}")
 def get_ingestion_job(
     job_id: str,

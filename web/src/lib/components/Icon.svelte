@@ -38,7 +38,8 @@
 		file: 'M6 3.5h8l4 4v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1zM14 3.5V8h4.5',
 		grid: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
 		list: 'M4 6h16M4 12h16M4 18h16',
-		table: 'M4 4h16v16H4zM4 10h16M10 4v16'
+		table: 'M4 4h16v16H4zM4 10h16M10 4v16',
+		bell: 'M6 10a6 6 0 1 1 12 0v5l2 3H4l2-3zM9.5 20a2.5 2.5 0 0 0 5 0'
 	};
 
 	let { name, size = 17 }: { name: string; size?: number } = $props();
