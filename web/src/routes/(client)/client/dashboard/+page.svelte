@@ -33,8 +33,12 @@
 
 <svelte:head><title>Dashboard — Client portal</title></svelte:head>
 
-<h1>Your care</h1>
-<p class="hint">What's next, at a glance.</p>
+<div class="page-head">
+	<div>
+		<h1>Your care</h1>
+		<p>What's next, at a glance.</p>
+	</div>
+</div>
 
 <div class="stream">
 	{#each items as it (it.href)}
@@ -60,7 +64,6 @@
 </div>
 
 <style>
-	h1 { margin-bottom: .2rem; }
 	.stream { display: grid; gap: var(--space-3); margin-top: var(--space-5); max-width: 36rem; }
 	.row {
 		display: flex; align-items: center; gap: var(--space-4); text-decoration: none; color: inherit;

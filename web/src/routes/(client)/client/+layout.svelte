@@ -66,6 +66,7 @@
 </div>
 
 <style>
-	.shell { display: flex; align-items: flex-start; min-height: 100dvh; }
-	main { flex: 1 1 auto; min-width: 0; padding: var(--space-6) var(--space-5); }
+	.shell { display: flex; align-items: flex-start; min-height: 100dvh; background: var(--bg); }
+	main { flex: 1 1 auto; min-width: 0; padding: var(--space-5) var(--space-6) var(--space-6); }
+	@media (max-width: 860px) { main { padding: var(--space-5) var(--space-4) 5.5rem; } }
 </style>

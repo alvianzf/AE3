@@ -11,7 +11,7 @@
 
 <section class="card-panel" class:leafmark={leaf}>
 	{#if title}
-		<div class="ph botanic">
+		<div class="ph">
 			<h2>{title}</h2>
 			{#if actions}<div class="actions">{@render actions()}</div>{/if}
 		</div>

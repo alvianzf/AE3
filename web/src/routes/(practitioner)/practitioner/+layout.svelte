@@ -68,7 +68,7 @@
 
 <style>
 	.shell {
-		display: flex; align-items: flex-start; min-height: 100dvh;
+		display: flex; align-items: flex-start; min-height: 100dvh; background: var(--bg);
 		/* specs/v4.1/02 — practitioner portal's own identity, via the same
 		   CSS custom properties AppRail already reads (a cascade override,
 		   not component-side role logic). */
@@ -76,5 +76,6 @@
 		--rail-bottom: rgba(6, 40, 38, .94);
 		--rail-indicator: #7fe0d6;
 	}
-	main { flex: 1 1 auto; min-width: 0; padding: var(--space-6) var(--space-5); }
+	main { flex: 1 1 auto; min-width: 0; padding: var(--space-5) var(--space-6) var(--space-6); }
+	@media (max-width: 860px) { main { padding: var(--space-5) var(--space-4) 5.5rem; } }
 </style>

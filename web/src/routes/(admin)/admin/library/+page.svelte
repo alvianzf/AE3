@@ -1105,26 +1105,25 @@
 					<button class="search-clear" onclick={() => { q = ''; page = 1; }} aria-label="Clear search">&times;</button>
 				{/if}
 			</div>
-			<div class="sort-control">
-				<select bind:value={sortBy} aria-label="Sort by">
-					<option value="title">Name</option>
-					<option value="created_at">Date ingested</option>
-				</select>
-				<button
-					class="sort-dir"
-					class:desc={sortDir === 'desc'}
-					onclick={() => (sortDir = sortDir === 'asc' ? 'desc' : 'asc')}
-					title={sortDir === 'asc' ? 'Ascending' : 'Descending'}
-					aria-label={sortDir === 'asc' ? 'Sort ascending' : 'Sort descending'}
-				>
-					<Icon name="chevron" size={13} />
-				</button>
-			</div>
-			<div class="view-toggle" role="group" aria-label="Document view">
-				<button class:active={viewMode === 'icons'} onclick={() => (viewMode = 'icons')} title="Icons" aria-label="Icons view"><Icon name="grid" size={15} /></button>
-				<button class:active={viewMode === 'list'} onclick={() => (viewMode = 'list')} title="List" aria-label="List view"><Icon name="list" size={15} /></button>
-				<button class:active={viewMode === 'table'} onclick={() => (viewMode = 'table')} title="Columns" aria-label="Columns view"><Icon name="table" size={15} /></button>
-			</div>
+			<!-- Ground-up pass: the sort select+direction-button and the
+			     3-button view-mode toggle used to sit side by side as 5
+			     separate controls, always visible — direct feedback was
+			     "too much on one screen." One "View" menu now covers both
+			     jobs; nothing lost, just not all open at once by default. -->
+			<Menu label="View">
+				{#snippet items()}
+					<div class="menu-section-label">Sort by</div>
+					<button onclick={() => (sortBy = 'title')} class="menu-choice" class:menu-active={sortBy === 'title'}>Name</button>
+					<button onclick={() => (sortBy = 'created_at')} class="menu-choice" class:menu-active={sortBy === 'created_at'}>Date ingested</button>
+					<button onclick={() => (sortDir = sortDir === 'asc' ? 'desc' : 'asc')}>
+						<Icon name="chevron" size={14} />{sortDir === 'asc' ? 'Ascending' : 'Descending'} (click to flip)
+					</button>
+					<div class="menu-section-label">Show as</div>
+					<button onclick={() => (viewMode = 'icons')} class="menu-choice" class:menu-active={viewMode === 'icons'}><Icon name="grid" size={14} />Icons</button>
+					<button onclick={() => (viewMode = 'list')} class="menu-choice" class:menu-active={viewMode === 'list'}><Icon name="list" size={14} />List</button>
+					<button onclick={() => (viewMode = 'table')} class="menu-choice" class:menu-active={viewMode === 'table'}><Icon name="table" size={14} />Table</button>
+				{/snippet}
+			</Menu>
 		</div>
 
 		{#if data.graph}
@@ -1933,31 +1932,11 @@
 		color: var(--ink);
 		transition: border-color .15s var(--ease), box-shadow .15s var(--ease);
 	}
-	.sort-control {
-		display: flex; align-items: center; gap: .2rem; flex: 0 0 auto;
-		border: 1px solid var(--line-2); border-radius: var(--r-lg); padding: .2rem .2rem .2rem .5rem;
+	.menu-section-label {
+		padding: .4rem .6rem .2rem; font-size: var(--text-xs); font-weight: 650; text-transform: uppercase;
+		letter-spacing: .04em; color: var(--muted);
 	}
-	.sort-control select {
-		border: none; background: none; font: inherit; font-size: var(--text-sm); color: var(--ink); cursor: pointer;
-	}
-	.sort-dir {
-		display: inline-flex; align-items: center; justify-content: center;
-		width: 1.6rem; height: 1.6rem; border: none; background: none; cursor: pointer;
-		color: var(--muted); border-radius: var(--r);
-		transition: transform var(--duration-fast, .12s) var(--ease);
-	}
-	.sort-dir:hover { background: var(--panel-2); color: var(--accent); }
-	/* The chevron icon points down natively — that's already correct for
-	   descending; rotated 180deg (pointing up) for ascending. */
-	.sort-dir:not(.desc) { transform: rotate(180deg); }
-	.sort-dir:not(.desc):hover { transform: rotate(180deg); }
-	.view-toggle { display: flex; gap: .1rem; border: 1px solid var(--line-2); border-radius: var(--r-lg); padding: .2rem; flex: 0 0 auto; }
-	.view-toggle button {
-		border: none; background: none; cursor: pointer; color: var(--muted); padding: .5rem .6rem;
-		border-radius: var(--r); display: inline-flex;
-	}
-	.view-toggle button.active { color: var(--accent); background: var(--accent-soft); }
-	.view-toggle button:hover:not(.active) { background: var(--panel-2); }
+	.menu-choice.menu-active { color: var(--accent-ink); background: var(--accent-soft); }
 	.search:focus {
 		outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft);
 	}

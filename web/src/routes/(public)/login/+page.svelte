@@ -37,7 +37,7 @@
 
 <div class="container wrap">
 	<section class="card-panel">
-		<div class="ph botanic"><h2><Sprig /> Log in</h2></div>
+		<div class="ph"><h2><Sprig /> Log in</h2></div>
 		<form class="pb" onsubmit={submit}>
 			<TextField label="Email" type="email" bind:value={email} required />
 			<TextField label="Password" type="password" bind:value={password} required />

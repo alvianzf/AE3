@@ -1,6 +1,10 @@
-/* Clinic v4 — tokens carried forward from static/style.css (specs/v4/01),
-   composition redesigned (specs/v4/03 mechanism, genuinely new layouts
-   per the live-review directive: same gradient + logo, new everything else). */
+/* Ground-up remodel, direct instruction: "ditch everything... only
+   reserve the colors, logo, and the floating leaves." Every custom
+   property below that names a color is untouched on purpose — these are
+   the literal values preserved. Radius/shadow/surface treatment below
+   this block is new: flatter, airier, no frosted-glass/gradient-header
+   chrome, which is what made every prior pass still read as "the same
+   app" even after the nav shape changed twice. */
 :root {
   --bg: #f7f5f2;
   --panel: #fff;
@@ -21,16 +25,16 @@
   --danger: #b13434;
   --danger-soft: #fbe8e8;
 
-  --r: 8px;
-  --r-lg: 14px;
-  --r-xl: 20px;
-  --shadow: 0 1px 2px rgba(34, 31, 27, .03), 0 6px 22px rgba(34, 31, 27, .06);
-  --shadow-lg: 0 18px 50px rgba(34, 31, 27, .18);
+  /* Bigger radii, softer/more diffuse shadows, no backdrop blur anywhere
+     — the old frosted-glass card was the single biggest "this still
+     looks the same" offender since it painted every panel regardless
+     of what sat inside it. */
+  --r: 10px;
+  --r-lg: 18px;
+  --r-xl: 28px;
+  --shadow: 0 1px 2px rgba(34, 31, 27, .02), 0 2px 8px rgba(34, 31, 27, .04);
+  --shadow-lg: 0 8px 28px rgba(34, 31, 27, .10), 0 24px 56px rgba(34, 31, 27, .08);
 
-  --glass: rgba(255, 255, 255, .72);
-  --glass-2: rgba(255, 255, 255, .55);
-  --glass-line: rgba(255, 255, 255, .65);
-  --blur: saturate(1.15) blur(16px);
   --ease: cubic-bezier(.22, .68, 0, 1);
 
   /* sidebar gradient — kept literal per spec (rejected any reinterpretation).
@@ -115,22 +119,12 @@ a { color: var(--accent-ink); }
 h1, h2, h3, h4 { margin: 0; line-height: 1.2; letter-spacing: -.01em; }
 p { margin: 0; }
 
-body::before {
-  content: ''; position: fixed; inset: -20vmax; z-index: -2; pointer-events: none;
-  background:
-    radial-gradient(38vmax 30vmax at 12% 8%, rgba(156, 63, 90, .10), transparent 60%),
-    radial-gradient(34vmax 28vmax at 88% 14%, rgba(47, 122, 79, .09), transparent 60%),
-    radial-gradient(40vmax 32vmax at 70% 92%, rgba(168, 106, 18, .07), transparent 62%);
-  animation: drift 34s ease-in-out infinite alternate;
-}
-body::after {
-  content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: .5;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'><g fill='none' stroke='%239c3f5a' stroke-opacity='.07' stroke-width='1.1' stroke-linecap='round'><path d='M30 150V96'/><path d='M30 122c0-13 9-23 25-26-1 14-10 24-25 26z'/><path d='M30 110c0-13-9-23-25-26 1 14 10 24 25 26z'/><path d='M132 74V26'/><path d='M132 52c0-11 8-20 22-23-1 12-9 21-22 23z'/><path d='M132 42c0-11-8-20-22-23 1 12 9 21 22 23z'/></g></svg>");
-}
-@keyframes drift {
-  from { transform: translate3d(-2%, -1%, 0) scale(1); }
-  to   { transform: translate3d(2%, 2%, 0) scale(1.06); }
-}
+/* The old ambient radial-gradient drift + botanical line-texture
+   background is retired — not one of the three things kept (colors,
+   logo, the floating leaves), and it painted on every single page
+   regardless of content, part of what made everything look alike.
+   LeafField.svelte is now the only decorative background motion, and
+   only where it's actually placed (the public landing hero). */
 @keyframes liftIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes fadeIn  { from { opacity: 0; } to { opacity: 1; } }
 @keyframes sway    { 0%,100% { transform: rotate(-1.5deg); } 50% { transform: rotate(1.5deg); } }
@@ -141,28 +135,36 @@ body::after {
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 svg { flex: 0 0 auto; }
 
-/* ── Two-tier surfaces ─────────────────────────────────────────────── */
-.card-panel {
-  background: var(--glass); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
-  border: 1px solid var(--glass-line); border-radius: var(--r-xl); box-shadow: var(--shadow);
-  animation: liftIn .5s var(--ease) both;
-}
-.panel {
-  background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r-lg);
-  animation: fadeIn .4s var(--ease) both;
+/* ── Flat surfaces, replacing the old frosted-glass card + colored
+   gradient header bar on every panel. A page's own <h1>/.page-head
+   (below) now carries the visual weight a colored bar used to — the
+   card underneath it is just a plain, quiet container. */
+.card-panel, .panel {
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-xl);
+  box-shadow: var(--shadow);
+  animation: fadeIn .3s var(--ease) both;
 }
 .ph {
   display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
-  padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--glass-line);
+  padding: var(--space-5) var(--space-6) var(--space-4);
 }
-.ph h2, .ph h3 { font-size: var(--text-lg); }
-.ph.botanic {
-  background: linear-gradient(135deg, var(--rail-top), var(--rail-bottom));
-  color: #fdf1f2; border-radius: var(--r-xl) var(--r-xl) 0 0; border-bottom: none;
+.ph h2, .ph h3 { font-size: var(--text-xl); font-weight: var(--weight-bold); }
+.panel > .ph { padding: var(--space-4) var(--space-5) var(--space-3); }
+.pb { padding: 0 var(--space-6) var(--space-6); }
+.pb.tight { padding: 0 var(--space-4) var(--space-4); }
+.panel > .pb { padding: 0 var(--space-5) var(--space-4); }
+.panel > .pb.tight { padding: 0 var(--space-4) var(--space-4); }
+
+/* ── A page's own top-of-content header: icon + title + subtitle on the
+   left, one primary action on the right. Replaces the scattered
+   "<h1>...</h1><p class='hint'>...</p>" each page previously hand-rolled
+   a little differently. */
+.page-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: var(--space-4); flex-wrap: wrap; margin-bottom: var(--space-6);
 }
-.panel > .ph { background: none; color: var(--ink-2); border-bottom: 1px solid var(--line); padding: var(--space-3) var(--space-4); }
-.pb { padding: var(--space-4) var(--space-5); }
-.pb.tight { padding: var(--space-3) var(--space-4); }
+.page-head h1 { font-size: var(--text-2xl); font-weight: var(--weight-bold); }
+.page-head p { color: var(--muted); margin-top: .3rem; }
 
 /* ── Buttons/forms baseline (component-level detail lives in .svelte files) */
 button, input, select, textarea { font: inherit; color: inherit; }

@@ -97,7 +97,7 @@
 
 <style>
 	.shell {
-		display: flex; align-items: flex-start; min-height: 100dvh;
+		display: flex; align-items: flex-start; min-height: 100dvh; background: var(--bg);
 		/* specs/v4.1/02 — admin portal's own identity, via the same CSS
 		   custom properties AppRail already reads. */
 		--rail-top: rgba(70, 60, 90, .9);
@@ -108,7 +108,8 @@
 	   (tables, a directory grid) and benefit from the full width next to
 	   the sidebar, unlike the public site's prose-width pages that
 	   .container is tuned for. */
-	main { flex: 1 1 auto; min-width: 0; padding: var(--space-6) var(--space-5); }
+	main { flex: 1 1 auto; min-width: 0; padding: var(--space-5) var(--space-6) var(--space-6); }
+	@media (max-width: 860px) { main { padding: var(--space-5) var(--space-4) 5.5rem; } }
 	.health-bar {
 		position: sticky; bottom: 0; margin: var(--space-6) calc(var(--space-5) * -1) calc(var(--space-6) * -1);
 		display: flex; align-items: center; gap: .4rem; padding: .4rem var(--space-5);
