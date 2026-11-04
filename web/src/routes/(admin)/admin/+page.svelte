@@ -14,6 +14,7 @@
 	import Dialog from '$lib/components/Dialog.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import FolderTree, { type TreeNode } from '$lib/components/FolderTree.svelte';
+	import GraphView, { type GraphNode, type GraphEdge } from '$lib/components/GraphView.svelte';
 	import Menu from '$lib/components/Menu.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 
@@ -359,6 +360,36 @@
 	// Root-level documents (no folder) — the tree-view tab's top-level
 	// leaf rows, alongside the top-level folder nodes above.
 	const rootDocs = $derived(sortDocs((data.sources ?? []).filter((s: any) => !s.folder_path)));
+
+	// specs/v8 §7.4 — Graph view rebuilt on <canvas> (GraphView.svelte),
+	// re-added as a third tab alongside Library/Tree view. Concepts only
+	// now — the document/folder layer the original two-layer version also
+	// offered is redundant with the Tree view tab right next to it, and
+	// dropping it is one less thing to keep light. A real network call
+	// (the knowledge graph lives in Neo4j, not anything already loaded
+	// here), so it only runs once the admin actually opens this tab.
+	let conceptGraph = $state<{ nodes: GraphNode[]; edges: GraphEdge[] } | null>(null);
+	let conceptGraphLoading = $state(false);
+	$effect(() => {
+		if (mainTab === 'graph') loadConceptGraph();
+	});
+	async function loadConceptGraph() {
+		if (conceptGraph || conceptGraphLoading) return;
+		conceptGraphLoading = true;
+		try {
+			const res = await get(fetch, '/graph/concepts');
+			conceptGraph = {
+				nodes: (res.nodes ?? []).map((n: any) => ({
+					id: n.id, label: n.name, group: n.type, size: 3 + Math.min(7, Math.sqrt(n.mentions ?? 1))
+				})),
+				edges: (res.edges ?? []).map((e: any) => ({ source: e.source, target: e.target, label: e.rel_type }))
+			};
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		} finally {
+			conceptGraphLoading = false;
+		}
+	}
 	// Graph view (specs/v6.13) — two switchable layers in one tab.
 	// Every known folder path, flat and including subfolders at every
 	// depth — the "Move to..." dialog's quick-pick suggestions, so moving
@@ -1024,7 +1055,8 @@
 		bind:active={mainTab}
 		tabs={[
 			{ id: 'library', label: 'Library' },
-			{ id: 'tree', label: 'Tree view' }
+			{ id: 'tree', label: 'Tree view' },
+			{ id: 'graph', label: 'Graph view' }
 		]}
 	/>
 
@@ -1569,6 +1601,15 @@
 				onDelete={(path, count) => askDeleteFolder(path, count)}
 			/>
 		</div>
+	{:else if mainTab === 'graph'}
+		{#if data.graph}
+			<p class="hint graph-stats">{data.graph.entities ?? 0} concepts · {data.graph.mentions ?? 0} links · {(data.graph.unlinked ?? []).length} unlinked sources</p>
+		{/if}
+		{#if conceptGraphLoading}
+			<p class="hint">Loading the concept graph…</p>
+		{:else}
+			<GraphView nodes={conceptGraph?.nodes ?? []} edges={conceptGraph?.edges ?? []} />
+		{/if}
 	{/if}
 	</div>
 </Spotlight>

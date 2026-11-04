@@ -1,7 +1,14 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import AppRail from '$lib/components/AppRail.svelte';
+	import TopBar from '$lib/components/TopBar.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import Tour from '$lib/components/Tour.svelte';
+	import DisclaimerBar from '$lib/components/DisclaimerBar.svelte';
+
+	// specs/v8 §8.5 — surfaced on the two client-facing record pages the
+	// spec names specifically, not every page in the portal.
+	const showDisclaimer = $derived(['/client/questionnaire', '/client/record'].some((p) => page.url.pathname.startsWith(p)));
 
 	let { data, children } = $props();
 
@@ -21,12 +28,14 @@
 	];
 
 	const items = [
-		{ href: '/client/dashboard', label: 'Dashboard', icon: 'home' },
+		{ href: '/client/dashboard', label: 'Dashboard', icon: 'home', navGroup: 'primary' as const },
 		{ href: '/client/questionnaire', label: 'Questionnaire', icon: 'clipboard' },
 		{ href: '/client/record', label: 'Health record', icon: 'user-card' },
 		{ href: '/client/files', label: 'Files', icon: 'folder' },
 		{ href: '/client/wearables', label: 'Wearables', icon: 'watch' }
 	];
+
+	const crumb = $derived(items.find((i) => page.url.pathname === i.href || page.url.pathname.startsWith(i.href + '/'))?.label ?? 'Client portal');
 
 	// specs/v7/06 — included for consistency across all three portals even
 	// though a 5-item rail barely needs a search palette on its own
@@ -53,13 +62,22 @@
 	     --rail-bottom/--rail-indicator defaults (app.css) already are the
 	     client portal's identity; practitioner and admin override them on
 	     their own .shell instead. -->
-	<AppRail {items} portalLabel="Client portal" userLabel={data.session?.name} onCommandPalette={() => (paletteOpen = true)} />
-	<main>
-		{@render children()}
-	</main>
+	<AppRail {items} portalLabel="Client portal" />
+	<div class="col">
+		<TopBar
+			crumbs={[{ label: 'Client portal' }, { label: crumb }]}
+			onCommandPalette={() => (paletteOpen = true)}
+			userLabel={data.session?.name}
+		/>
+		<main>
+			{@render children()}
+			{#if showDisclaimer}<DisclaimerBar />{/if}
+		</main>
+	</div>
 </div>
 
 <style>
 	.shell { display: flex; align-items: flex-start; min-height: 100dvh; }
+	.col { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; min-height: 100dvh; }
 	main { flex: 1 1 auto; min-width: 0; padding: var(--space-6) var(--space-5); }
 </style>

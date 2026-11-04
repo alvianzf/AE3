@@ -46,6 +46,28 @@
 <h1>Site stats</h1>
 <p class="hint">A quick read on the whole platform.</p>
 
+<!-- specs/v8 §6 Dashboard/Overview template — "needs your attention" comes
+     first, above the passive at-a-glance grid below it, not buried inside
+     a tile among equally-weighted stats an admin has to read past. -->
+{#if (s.pending_practitioners ?? 0) > 0 || (s.new_contacts ?? 0) > 0}
+	<div class="attention">
+		<h2 class="section-title">Needs your attention</h2>
+		<div class="attention-row">
+			{#if (s.pending_practitioners ?? 0) > 0}
+				<a class="attention-item" href="/admin/users">
+					<strong>{s.pending_practitioners}</strong> practitioner application{s.pending_practitioners === 1 ? '' : 's'} pending review
+				</a>
+			{/if}
+			{#if (s.new_contacts ?? 0) > 0}
+				<a class="attention-item" href="/admin/users">
+					<strong>{s.new_contacts}</strong> new contact submission{s.new_contacts === 1 ? '' : 's'}
+				</a>
+			{/if}
+		</div>
+	</div>
+{/if}
+
+<h2 class="section-title">At a glance</h2>
 <div class="grid-auto tiles">
 	<StatTile
 		label="Pending applications"
@@ -95,7 +117,16 @@
 
 <style>
 	.tiles { margin-top: var(--space-5); }
-	.section-title { margin-top: var(--space-6); margin-bottom: var(--space-2); }
+	.section-title { margin-top: var(--space-6); margin-bottom: var(--space-2); font-size: var(--text-base); }
+	.attention { margin-top: var(--space-4); }
+	.attention-row { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+	.attention-item {
+		display: flex; align-items: center; gap: .4rem; text-decoration: none; color: var(--ink);
+		background: var(--warn-soft); border: 1px solid var(--line); border-radius: var(--r-lg);
+		padding: var(--space-3) var(--space-4); font-size: var(--text-sm);
+	}
+	.attention-item strong { color: var(--warn); font-size: var(--text-lg); }
+	.attention-item:hover { border-color: var(--line-2); }
 	.check-row { display: flex; align-items: center; gap: .5rem; }
 	.provider-row { margin-top: var(--space-3); }
 </style>

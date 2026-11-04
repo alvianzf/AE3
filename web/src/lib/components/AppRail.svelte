@@ -1,36 +1,24 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { post } from '$lib/api';
 	import Sprig from './Sprig.svelte';
 	import Icon from './Icon.svelte';
 
-	interface NavItem { href: string; label: string; icon: string; locked?: boolean; badge?: number }
-	// onCommandPalette — optional (specs/v7/06): a portal that's wired up
-	// a CommandPalette.svelte passes a handler here to get a visible
-	// trigger button in the rail, not just the Cmd/Ctrl+K shortcut a
-	// first-time user has no way to discover on their own. Omitted
-	// entirely (not just hidden) for a portal that hasn't adopted this
-	// yet, so AppRail's existing behavior for those portals is unchanged.
-	let {
-		items, portalLabel, userLabel, onCommandPalette
-	}: { items: NavItem[]; portalLabel: string; userLabel?: string; onCommandPalette?: () => void } = $props();
+	interface NavItem { href: string; label: string; icon: string; locked?: boolean; badge?: number; navGroup?: 'primary' | 'secondary' }
+	// specs/v8 §5.1 — label-visible by default now (not icon-only with a
+	// hover tooltip): an icon-only rail needed a tour/tooltip to be
+	// legible at all, which was compensating for an information-scent
+	// problem at the source instead of fixing it. Items split into a
+	// primary group (the portal's actual job-to-be-done) and a secondary
+	// group (account/settings-shaped pages), separated by a divider —
+	// unmarked items default to secondary.
+	let { items, portalLabel }: { items: NavItem[]; portalLabel: string } = $props();
 
-	// specs/v4.1/02 — one visual identity per user type. Colors come from
-	// --rail-top/--rail-bottom/--rail-indicator, the same CSS custom
-	// properties this component already read before role-theming existed
-	// — each portal's own +layout.svelte sets them on its .shell wrapper
-	// (a plain cascade override, not a second JS-side theming mechanism),
-	// so this component stays role-agnostic rather than needing a `role`
-	// prop and a color lookup table of its own.
+	const primary = $derived(items.filter((i) => i.navGroup === 'primary'));
+	const secondary = $derived(items.filter((i) => i.navGroup !== 'primary'));
 
-	// specs/v4.1/03 CR1 — the sign-out form used to just preventDefault and
-	// never call the endpoint, so the session cookie outlived the click.
-	async function logout(e: Event) {
-		e.preventDefault();
-		await post(fetch, '/auth/logout').catch(() => {});
-		goto('/login', { invalidateAll: true });
-	}
+	// specs/v4.1/02 — one visual identity per user type, via the
+	// --rail-top/--rail-bottom/--rail-indicator custom properties each
+	// portal's own +layout.svelte sets on its .shell wrapper.
 
 	// Most-specific href wins, not "any prefix match" — found live: the
 	// admin rail's Library item (href '/admin') is a prefix of every
@@ -48,66 +36,53 @@
 	}
 </script>
 
-<!-- Redesigned nav: a slim fixed icon rail (not a full labeled sidebar) —
-     keeps the gradient identity, but the shell is genuinely restructured:
-     icons + tooltips at rest, label revealed on hover/focus, content column
-     gets the width back instead of losing 14.5rem to a permanent sidebar. -->
+{#snippet navItem(it: NavItem)}
+	<li>
+		<a href={it.href} class:on={isActive(it.href)} title={it.locked ? `${it.label} (Pro)` : it.label}>
+			<span class="ic">
+				<Icon name={it.icon} />
+				{#if it.locked}<span class="lock" aria-hidden="true">★</span>{/if}
+				{#if it.badge}<span class="badge">{it.badge > 99 ? '99+' : it.badge}</span>{/if}
+			</span>
+			<span class="lbl">{it.label}{#if it.locked} <span class="pro">Pro</span>{/if}</span>
+		</a>
+	</li>
+{/snippet}
+
 <nav class="rail" aria-label="{portalLabel} navigation">
-	<a href="/" class="mark" aria-label="Clinic home"><Sprig size={22} /></a>
+	<a href="/" class="mark" aria-label="Clinic home"><Sprig size={22} /><span class="wordmark">Clinic</span></a>
 	<span class="portal-label">{portalLabel}</span>
-	{#if onCommandPalette}
-		<button class="search-trigger" onclick={onCommandPalette} title="Search (⌘K)" aria-label="Open command palette">
-			<Icon name="search" size={18} />
-		</button>
-	{/if}
-	<ul>
-		{#each items as it (it.href)}
-			<li>
-				<a href={it.href} class:on={isActive(it.href)} title={it.locked ? `${it.label} (Pro)` : it.label}>
-					<span class="ic">
-						<Icon name={it.icon} />
-						{#if it.locked}<span class="lock" aria-hidden="true">★</span>{/if}
-						{#if it.badge}<span class="badge">{it.badge > 99 ? '99+' : it.badge}</span>{/if}
-					</span>
-					<span class="lbl">{it.label}{#if it.locked} <span class="pro">Pro</span>{/if}</span>
-				</a>
-			</li>
-		{/each}
+	<ul class="group">
+		{#each primary as it (it.href)}{@render navItem(it)}{/each}
 	</ul>
-	<div class="foot">
-		{#if userLabel}<span class="who">{userLabel}</span>{/if}
-		<form method="post" action="/api/auth/logout" onsubmit={logout}>
-			<button type="submit" class="logout" title="Sign out">⏻</button>
-		</form>
-	</div>
+	{#if primary.length && secondary.length}<hr />{/if}
+	<ul class="group">
+		{#each secondary as it (it.href)}{@render navItem(it)}{/each}
+	</ul>
 </nav>
 
 <style>
 	.rail {
-		position: sticky; top: 0; align-self: flex-start; height: 100dvh; width: 4.75rem; flex: 0 0 auto;
-		display: flex; flex-direction: column; align-items: center; gap: var(--space-4); padding: var(--space-4) 0;
+		position: sticky; top: 0; align-self: flex-start; height: 100dvh;
+		width: var(--rail-w-expanded); flex: 0 0 auto;
+		display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-4) var(--space-3);
 		background: linear-gradient(180deg, var(--rail-top), var(--rail-bottom));
-		color: #fdf1f2; z-index: 40;
+		color: #fdf1f2; z-index: 40; overflow-y: auto;
 	}
-	.mark { color: #fff; display: flex; padding: .4rem; }
-	.search-trigger {
-		display: flex; align-items: center; justify-content: center;
-		width: 2.2rem; height: 2.2rem; border-radius: 50%; border: none;
-		background: rgba(255, 255, 255, .12); color: #f7dfe2; cursor: pointer;
-		transition: background var(--duration-fast, .12s) var(--ease);
-	}
-	.search-trigger:hover, .search-trigger:focus-visible { background: rgba(255, 255, 255, .22); }
+	.mark { color: #fff; display: flex; align-items: center; gap: .5rem; padding: .3rem .2rem; text-decoration: none; }
+	.wordmark { font-weight: 750; font-size: var(--text-base); }
 	.portal-label {
-		writing-mode: vertical-rl; text-orientation: mixed; transform: rotate(180deg);
-		font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
-		color: #f7dfe2; opacity: .85; max-height: 5.5rem; overflow: hidden;
+		font-size: .65rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
+		color: #f7dfe2; opacity: .75; padding: 0 .2rem;
 	}
-	ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .35rem; width: 100%; }
+	hr { border: none; border-top: 1px solid rgba(255, 255, 255, .18); width: 100%; margin: 0; }
+	.group { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .15rem; width: 100%; }
 	li a {
-		display: flex; align-items: center; gap: .6rem; color: #f7dfe2; text-decoration: none;
-		padding: .6rem 0; justify-content: center; position: relative; font-size: var(--text-sm);
+		display: flex; align-items: center; gap: .75rem; color: #f7dfe2; text-decoration: none;
+		padding: .55rem .6rem; border-radius: var(--r); position: relative; font-size: var(--text-sm);
 	}
-	.ic { display: flex; position: relative; }
+	li a:hover { background: rgba(255, 255, 255, .08); }
+	.ic { display: flex; position: relative; flex: 0 0 auto; }
 	.lock {
 		position: absolute; top: -.35rem; right: -.5rem; font-size: .55rem; line-height: 1;
 		color: #ffd76b;
@@ -122,26 +97,17 @@
 		font-size: .65rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
 		opacity: .8;
 	}
-	.lbl {
-		position: absolute; left: 100%; margin-left: .5rem; background: var(--ink); color: #fff;
-		padding: .3rem .6rem; border-radius: var(--r); white-space: nowrap; font-size: var(--text-xs);
-		opacity: 0; pointer-events: none; transition: opacity .12s var(--ease); box-shadow: var(--shadow);
-	}
-	li a:hover .lbl, li a:focus-visible .lbl { opacity: 1; }
-	li a.on { color: #fff; }
+	.lbl { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+	li a.on { color: #fff; background: rgba(255, 255, 255, .14); }
 	li a.on::before {
-		content: ''; position: absolute; left: 0; top: .3rem; bottom: .3rem; width: 3px;
+		content: ''; position: absolute; left: -.1rem; top: .35rem; bottom: .35rem; width: 3px;
 		background: var(--rail-indicator, #ff8fa3); border-radius: 2px;
 	}
-	.foot { margin-top: auto; display: flex; flex-direction: column; align-items: center; gap: .5rem; width: 100%; }
-	.who { font-size: var(--text-xs); color: #d9a2aa; writing-mode: vertical-rl; text-orientation: mixed; max-height: 6rem; overflow: hidden; }
-	.logout {
-		color: #f7dfe2; font-size: 1.1rem; background: none; border: none; padding: 0;
-		cursor: pointer; font-family: inherit; line-height: 1;
-	}
 	@media (max-width: 720px) {
-		.rail { position: fixed; bottom: 0; top: auto; width: 100%; height: auto; flex-direction: row; padding: .5rem; }
-		ul { flex-direction: row; justify-content: space-around; }
-		.mark, .foot { display: none; }
+		.rail { position: fixed; bottom: 0; top: auto; width: 100%; height: auto; flex-direction: row; padding: .5rem; overflow: visible; }
+		.mark, .portal-label, hr { display: none; }
+		.group { flex-direction: row; justify-content: space-around; }
+		.lbl { display: none; }
+		li a { flex-direction: column; gap: .2rem; padding: .3rem .5rem; }
 	}
 </style>

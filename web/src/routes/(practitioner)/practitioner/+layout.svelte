@@ -1,10 +1,15 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import AppRail from '$lib/components/AppRail.svelte';
+	import TopBar from '$lib/components/TopBar.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import Tour from '$lib/components/Tour.svelte';
+	import DisclaimerBar from '$lib/components/DisclaimerBar.svelte';
 
 	let { data, children } = $props();
+	// specs/v8 §8.5 — surfaced specifically on Consult, the page a
+	// practitioner actually forms a clinical judgment from.
+	const showDisclaimer = $derived(page.url.pathname.startsWith('/practitioner/consult'));
 
 	// specs/v7/06 — same rail-only scoping as the admin portal's tour;
 	// see that layout's own comment for why.
@@ -21,10 +26,15 @@
 	// clicking in and hitting the error toast (specs/v4/04-known-issues.md#m15).
 	const isPro = $derived(data.profile?.plan === 'pro');
 
+	// specs/v8 §9.1 — Consult is the practitioner's actual job-to-be-done
+	// (per this session's own JTBD research) for a Pro practitioner;
+	// Clients is the other primary surface. Everything else is
+	// secondary/account-shaped. A Basic practitioner's own primary items
+	// are locked anyway, so this grouping costs them nothing extra.
 	const items = $derived([
+		{ href: '/practitioner/consult', label: 'Consult', icon: 'message', locked: !isPro, navGroup: 'primary' as const },
+		{ href: '/practitioner/clients', label: 'Clients', icon: 'users', locked: !isPro, badge: data.notifications?.unviewed_intake, navGroup: 'primary' as const },
 		{ href: '/practitioner/dashboard', label: 'Dashboard', icon: 'home' },
-		{ href: '/practitioner/clients', label: 'Clients', icon: 'users', locked: !isPro, badge: data.notifications?.unviewed_intake },
-		{ href: '/practitioner/consult', label: 'Consult', icon: 'message', locked: !isPro },
 		{ href: '/practitioner/contacts', label: 'Contacts', icon: 'mail', badge: data.notifications?.new_contacts },
 		{ href: '/practitioner/knowledge', label: 'Library weights', icon: 'book', locked: !isPro },
 		{ href: '/practitioner/questionnaires', label: 'Questionnaires', icon: 'clipboard', locked: !isPro },
@@ -44,6 +54,8 @@
 			paletteOpen = true;
 		}
 	}
+
+	const crumb = $derived(items.find((i) => page.url.pathname === i.href || page.url.pathname.startsWith(i.href + '/'))?.label ?? 'Practitioner portal');
 </script>
 
 <svelte:window onkeydown={onWindowKeydown} />
@@ -52,10 +64,18 @@
 <Tour steps={tourSteps} bind:active={tourActive} />
 
 <div class="shell">
-	<AppRail {items} portalLabel="Practitioner portal" userLabel={data.profile?.name} onCommandPalette={() => (paletteOpen = true)} />
-	<main>
-		{@render children()}
-	</main>
+	<AppRail {items} portalLabel="Practitioner portal" />
+	<div class="col">
+		<TopBar
+			crumbs={[{ label: 'Practitioner portal' }, { label: crumb }]}
+			onCommandPalette={() => (paletteOpen = true)}
+			userLabel={data.profile?.name}
+		/>
+		<main>
+			{@render children()}
+			{#if showDisclaimer}<DisclaimerBar />{/if}
+		</main>
+	</div>
 </div>
 
 <style>
@@ -68,5 +88,6 @@
 		--rail-bottom: rgba(6, 40, 38, .94);
 		--rail-indicator: #7fe0d6;
 	}
+	.col { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; min-height: 100dvh; }
 	main { flex: 1 1 auto; min-width: 0; padding: var(--space-6) var(--space-5); }
 </style>

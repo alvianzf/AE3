@@ -67,6 +67,22 @@
 		}
 	}
 
+	// specs/v8 §4.1/§7.2 — an optional link from an admin account to an
+	// existing practitioner profile (not all admins are practitioners).
+	// Superadmin-only, same gating as every other admin-account action
+	// on this tab.
+	async function setLinkedPractitioner(adminId: string, practitionerId: string) {
+		try {
+			await put(fetch, `/superadmin/admins/${adminId}/link-practitioner`, {
+				practitioner_id: practitionerId || null
+			});
+			toast(practitionerId ? 'Linked to a practitioner profile.' : 'Unlinked.');
+			await invalidateAll();
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		}
+	}
+
 	async function setAdminRole(id: string, role: string) {
 		try {
 			await put(fetch, `/superadmin/admins/${id}/role`, { role });
@@ -253,7 +269,7 @@
 			</div>
 		{/if}
 		<DataTable
-			columns={[{ key: 'name', label: 'Name' }, { key: 'email', label: 'Email' }, { key: 'role', label: 'Role' }, { key: 'is_active', label: 'Status' }, { key: 'actions', label: '' }]}
+			columns={[{ key: 'name', label: 'Name' }, { key: 'email', label: 'Email' }, { key: 'role', label: 'Role' }, { key: 'practitioner_link', label: 'Practitioner profile' }, { key: 'is_active', label: 'Status' }, { key: 'actions', label: '' }]}
 			rows={data.admins}
 			empty="No admins yet."
 		>
@@ -268,6 +284,19 @@
 						</select>
 					{:else}
 						{a.role}
+					{/if}
+				</td>
+				<td>
+					{#if isSuperadmin}
+						<!-- specs/v8 §4.1 — optional, not all admins are
+						     practitioners: "None" is a real, default option,
+						     not just a placeholder. -->
+						<select value={a.linked_practitioner_id ?? ''} onchange={(e) => setLinkedPractitioner(a.id as string, (e.target as HTMLSelectElement).value)}>
+							<option value="">None</option>
+							{#each data.practitioners as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
+						</select>
+					{:else}
+						{data.practitioners.find((p: any) => p.id === a.linked_practitioner_id)?.name ?? '—'}
 					{/if}
 				</td>
 				<td><Chip tone={a.is_active ? 'ok' : 'danger'}>{a.is_active ? 'active' : 'suspended'}</Chip></td>
