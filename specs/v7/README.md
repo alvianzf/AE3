@@ -16,7 +16,8 @@ documents are reviewed and approved, phase by phase, per
   shared type scale, spacing/breakpoint documentation, motion tokens,
   and new/promoted component inventory (`Card`, `EmptyState`,
   `Skeleton`, `Breadcrumb`, `CommandPalette`) every other section
-  builds on.
+  builds on. **Phase 0 implemented** — see
+  [01-impl-design-system.md](01-impl-design-system.md).
 - [**02 · Public site**](02-public-site.md) — landing page (icon
   pillars, a real product glimpse, scroll-triggered reveals),
   `/practitioners`, `/join`/`/login`/`/signup`, `PublicNav.svelte`.

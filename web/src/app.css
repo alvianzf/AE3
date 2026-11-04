@@ -43,10 +43,50 @@
 
   --space-1: .25rem; --space-2: .5rem; --space-3: .75rem;
   --space-4: 1rem;   --space-5: 1.5rem; --space-6: 2rem; --space-7: 3rem;
+  /* specs/v7/01 — documented, not changed: the ratio between adjacent
+     steps already tightens at the low end and loosens at the high end
+     (~1.13 xs->sm->base, ~1.16 base->lg, ~1.27-1.37 lg->xl->2xl->3xl)
+     rather than one constant ratio throughout — body-text-adjacent
+     sizes stay close together for readability, display sizes get more
+     headroom between them. Values unchanged from v4 — this comment is
+     the only addition, so nothing currently on screen shifts. */
   --text-xs: .74rem; --text-sm: .84rem; --text-base: .95rem;
   --text-lg: 1.1rem; --text-xl: 1.4rem; --text-2xl: 1.9rem; --text-3xl: 2.6rem;
+  /* specs/v7/01 — named weights, replacing the 600/650/700/750 literals
+     scattered component-by-component with no stated reason for the
+     specific values. 750 matches the heaviest weight already in real
+     use (hero headings, several card titles) — not a new value, a name
+     for an existing one. Adopting these into existing components is a
+     later v7 phase, not part of this additive, zero-visual-change one. */
+  --weight-regular: 400;
+  --weight-medium: 600;
+  --weight-bold: 750;
+  /* specs/v7/01 — named durations/easing curves for consistent motion
+     app-wide. --duration-fast matches the ~120ms most hover-state
+     transitions already use as a literal; --duration-slow matches
+     liftIn's own existing .4s-.5s range. --ease (below) stays the
+     default for anything not specifically an entrance or exit —
+     --ease-in/--ease-out are new, for motion that should read
+     differently depending on direction (an entrance easing out of a
+     fast start; a dismiss easing into a fast end), which nothing uses
+     yet — adopting them is a later v7 phase. */
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-slow: 400ms;
+  --ease-out: cubic-bezier(.16, 1, .3, 1);
+  --ease-in: cubic-bezier(.7, 0, .84, 0);
   --tap-min: 2.25rem;
+  --container-max: 78rem;
 }
+
+/* specs/v7/01 — breakpoint convention, documented here rather than as
+   custom properties (a media query's own condition can't read a CSS
+   custom property) so a future page has one place to check instead of
+   inventing an eighth arbitrary value:
+     720px  — AppRail.svelte's icon-rail -> bottom-bar collapse
+     900px  — the admin Library folder-sidebar layout's single-column
+              collapse (web/src/routes/(admin)/admin/+page.svelte)
+     960px  — .rail-layout's (below) single-column collapse */
 
 * { box-sizing: border-box; }
 html, body { height: 100%; }
@@ -130,7 +170,7 @@ label { font-size: var(--text-sm); font-weight: 600; color: var(--ink-2); }
   background-repeat: no-repeat; pointer-events: none;
 }
 
-.container { max-width: 78rem; margin: 0 auto; padding: 0 var(--space-5); }
+.container { max-width: var(--container-max); margin: 0 auto; padding: 0 var(--space-5); }
 .grid-auto { display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); }
 /* A narrow rail + a wide main column — several portal screens (admin
    Knowledge, practitioner Dashboard/Consult/client-detail) stack a
