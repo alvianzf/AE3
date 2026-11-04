@@ -399,6 +399,7 @@ def _run_ingest(
     on_progress=lambda step, detail=None: None,
     pre_write_check=lambda: True,
     owner_practitioner_id: str | None = None,
+    uploaded_by: str = "",
 ) -> dict:
     """Read → tag → grade → split into passages → write — the slow half of
     ingestion, run synchronously by the direct-upload routes below but
@@ -513,6 +514,7 @@ def _run_ingest(
             folder_path="" if owner_practitioner_id else card["suggested_folder"],
             owner_practitioner_id=owner_practitioner_id,
             is_private=owner_practitioner_id is not None,
+            doc_type=card.get("doc_type", ""), uploaded_by=uploaded_by,
         )
     except neo4j.exceptions.ConstraintError:
         # Another upload of the same body landed between our check and our write.
@@ -552,6 +554,7 @@ def _run_ingest(
 def _ingest_pages(
     pages: list[tuple[int | None, str]], filename: str, kind: str, origin: str,
     replaces: str, original: tuple[bytes | Path, str, str] | None,
+    uploaded_by: str = "",
 ) -> dict:
     """Full synchronous pipeline — duplicate check + the slow read/chunk/
     embed/extract/write chain, all inside one call. Shared by the
@@ -563,7 +566,7 @@ def _ingest_pages(
     half can be backgrounded (see _promote_staged_async below)."""
     body, digest, page_count = _prep_and_check_duplicate(pages, filename, replaces)
     return _run_ingest(pages, body, digest, page_count, filename, kind, origin,
-                        replaces, original)
+                        replaces, original, uploaded_by=uploaded_by)
 
 
 @app.post("/api/sources")
@@ -602,7 +605,8 @@ async def add_source(
         filename = "pasted text"
         pages = [(None, text)]
 
-    return _ingest_pages(pages, filename, kind, origin, replaces, original)
+    return _ingest_pages(pages, filename, kind, origin, replaces, original,
+                          uploaded_by=_caller_identity(_admin))
 
 
 class SourceUploadInit(BaseModel):
@@ -648,7 +652,8 @@ def source_upload_complete(
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
         original = (path, filename, meta["content_type"] or _media_type(filename))
-        return _ingest_pages(pages, filename, body.kind, body.origin, body.replaces, original)
+        return _ingest_pages(pages, filename, body.kind, body.origin, body.replaces, original,
+                              uploaded_by=_caller_identity(_caller))
     finally:
         # _ingest_pages() archives the file (originals.save_from_path, a
         # copy) before we get here, so the staging copy is always safe to
@@ -666,6 +671,18 @@ def source_upload_complete(
 # stage first (no Reader call, no Neo4j write yet), let several items pile
 # up, then promote a chosen subset — the "stack the resources... ingest all
 # to the KB, or one at a time" flow.
+
+def _caller_identity(caller: dict) -> str:
+    """A human-readable "who did this" for Document.uploaded_by — the
+    session cookie itself only carries role/id (app/auth.py's
+    _set_session_cookie), not an email or name, so this is one extra
+    lookup, not a free read off the caller dict."""
+    if caller["role"] == "admin":
+        admin = core_store.get_admin(caller["id"])
+        return admin["email"] if admin else ""
+    practitioner = core_store.get_practitioner(caller["id"])
+    return practitioner["name"] if practitioner else ""
+
 
 def _staged_owner_filter(caller: dict) -> str | None:
     """None (admin's own reach: everything) vs. the caller's own id (a
@@ -694,6 +711,7 @@ def _run_staged_ingest_job(
     filename: str, kind: str, origin: str, replaces: str,
     original: tuple[bytes | Path, str, str] | None,
     personal: bool = False,
+    uploaded_by: str = "",
 ) -> None:
     """Runs in Starlette's threadpool after the response for
     POST /api/staged/{id}/ingest (or the batch route) has already been sent
@@ -734,6 +752,7 @@ def _run_staged_ingest_job(
             on_progress=progress,
             pre_write_check=lambda: core_store.get_staged_source(staged_id, owner) is not None,
             owner_practitioner_id=owner if personal else None,
+            uploaded_by=uploaded_by,
         )
         # _run_ingest() archives its own copy of the file under the *new*
         # source's id (originals.save_from_path) — the staged copy under the
@@ -751,7 +770,7 @@ def _run_staged_ingest_job(
 
 def _promote_staged_async(
     staged_id: str, kind: str, origin: str, owner: str | None,
-    replaces: str, personal: bool = False,
+    replaces: str, personal: bool = False, uploaded_by: str = "",
 ) -> dict:
     """Looks up the staged item and runs the same synchronous duplicate
     check _ingest_pages() always has, then hands the slow remainder to
@@ -781,7 +800,7 @@ def _promote_staged_async(
     ingestion_queue.enqueue(
         job["id"], _run_staged_ingest_job, job["id"], staged_id, owner, staged["kind"],
         pages, body, digest, page_count, filename, kind, origin, replaces, original,
-        personal=personal,
+        personal=personal, uploaded_by=uploaded_by,
     )
     return {"job_id": job["id"]}
 
@@ -940,7 +959,8 @@ def promote_staged(
     GET /api/ingestion-jobs/{job_id} for progress, not the ingested
     document itself."""
     return _promote_staged_async(staged_id, body.kind, body.origin,
-                                  _staged_owner_filter(_caller), body.replaces)
+                                  _staged_owner_filter(_caller), body.replaces,
+                                  uploaded_by=_caller_identity(_caller))
 
 
 class StagedBatchIngestBody(BaseModel):
@@ -960,6 +980,7 @@ def promote_staged_batch(
     `{"ingested": [...], "failed": [...]}` shape, since nothing here
     finishes ingesting before the response goes out any more."""
     owner = _staged_owner_filter(_caller)
+    uploaded_by = _caller_identity(_caller)
     jobs, duplicates, failed = [], [], []
     # Two identical staged items selected in the same batch both pass
     # _prep_and_check_duplicate's store.find_by_hash check, since neither
@@ -985,7 +1006,8 @@ def promote_staged_batch(
                 }})
                 continue
             seen_digests.add(digest)
-            enqueued = _promote_staged_async(staged_id, body.kind, body.origin, owner, "")
+            enqueued = _promote_staged_async(staged_id, body.kind, body.origin, owner, "",
+                                              uploaded_by=uploaded_by)
             jobs.append({"staged_id": staged_id, "job_id": enqueued["job_id"]})
         except HTTPException as exc:
             if exc.status_code == 409:
@@ -1076,7 +1098,8 @@ def promote_own_staged(
         if existing is None or existing.get("owner_practitioner_id") != session["id"]:
             raise HTTPException(404, "no such source")
     return _promote_staged_async(staged_id, body.kind, body.origin, session["id"],
-                                 body.replaces, personal=True)
+                                 body.replaces, personal=True,
+                                 uploaded_by=_caller_identity(session))
 
 
 @app.delete("/api/me/knowledge/{source_id}")
@@ -1342,6 +1365,31 @@ def set_source_topics(source_id: str, body: TopicsUpdate,
     topics at ingest time are only a suggested starting point, same
     relationship it already has to suggested_folder/suggested_grade."""
     source = store.set_topics(source_id, body.topics)
+    if source is None:
+        raise HTTPException(404, "no such source")
+    return source
+
+
+class DocTypeUpdate(BaseModel):
+    doc_type: str
+
+
+@app.get("/api/doc-types")
+def list_doc_types() -> dict:
+    return {"doc_types": store.DOC_TYPES}
+
+
+@app.patch("/api/sources/{source_id}/doc-type")
+def set_source_doc_type(source_id: str, body: DocTypeUpdate,
+                        _admin: dict = Depends(auth.require_admin)) -> dict:
+    """Content-type classification (article/book/presentation/protocol/
+    etc.) is editable by an admin — the Reader's doc_type at ingest time
+    is only a suggested starting point, same relationship it already has
+    to suggested_folder/suggested_grade/topics."""
+    try:
+        source = store.set_doc_type(source_id, body.doc_type)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     if source is None:
         raise HTTPException(404, "no such source")
     return source

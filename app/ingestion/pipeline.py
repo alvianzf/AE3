@@ -41,9 +41,14 @@ READER_SCHEMA = {
                            "invent a folder name close to but different from an "
                            "existing one.",
         },
+        "doc_type": {
+            "type": "string",
+            "enum": list(store.DOC_TYPES),
+            "description": "What kind of source this is.",
+        },
     },
     "required": ["title", "summary", "topics", "suggested_grade", "author",
-                 "published", "reference", "suggested_folder"],
+                 "published", "reference", "suggested_folder", "doc_type"],
     "additionalProperties": False,
 }
 

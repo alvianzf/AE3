@@ -193,6 +193,8 @@ def ingest_document(
     folder_path: str = "",
     owner_practitioner_id: str | None = None,
     is_private: bool = False,
+    doc_type: str = "",
+    uploaded_by: str = "",
 ) -> dict:
     """Write a read-and-graded document plus its chunks, entities, and
     typed relationships. Idempotent: content_hash is a uniqueness
@@ -232,7 +234,8 @@ def ingest_document(
                                   reference: $reference, page_count: $page_count,
                                   char_count: $char_count, passage_count: $total,
                                   folder_path: $folder_path, is_private: $is_private,
-                                  owner_practitioner_id: $owner_practitioner_id})
+                                  owner_practitioner_id: $owner_practitioner_id,
+                                  doc_type: $doc_type, uploaded_by: $uploaded_by})
             FOREACH (row IN $rows |
               CREATE (c:Chunk {id: row.id, text: row.text, chunk_index: row.chunk_index,
                                page_start: row.page_start, page_end: row.page_end,
@@ -245,6 +248,7 @@ def ingest_document(
             reference=reference, page_count=page_count, char_count=len(body),
             total=total, rows=rows, folder_path=normalize_folder_path(folder_path),
             is_private=is_private, owner_practitioner_id=owner_practitioner_id,
+            doc_type=doc_type if doc_type in DOC_TYPES else "", uploaded_by=uploaded_by,
         )
         _link_chunks_in_order(s, document_id)
         if entity_rows:
@@ -421,8 +425,20 @@ _CARD = """
     doc.original_bytes AS original_bytes,
     coalesce(doc.folder_path, '') AS folder_path,
     coalesce(doc.is_private, false) AS is_private,
-    doc.owner_practitioner_id AS owner_practitioner_id
+    doc.owner_practitioner_id AS owner_practitioner_id,
+    coalesce(doc.doc_type, '') AS doc_type,
+    coalesce(doc.uploaded_by, '') AS uploaded_by
 """
+
+# The content-type taxonomy a document can be tagged with (specs/v6.11's
+# "where do I choose if the source is an article, book, protocol..." gap
+# — `kind` is the upload *method* (file/pasted_text/scraped_url), not
+# this). Fixed, not free text: a fixed set is both easier to filter by
+# and what the Reader can reliably classify into.
+DOC_TYPES = [
+    "article", "book", "presentation", "education material",
+    "lecture notes", "protocol", "picture", "chart", "other",
+]
 
 
 def normalize_folder_path(path: str) -> str:
@@ -674,6 +690,19 @@ def rename_folder(old_path: str, new_path: str) -> int:
     count = result["n"] if result else 0
     log("admin", "rename folder", f"'{old}' → '{new}' ({count} document(s))")
     return count
+
+
+def set_doc_type(document_id: str, doc_type: str) -> dict | None:
+    """An admin's classification always wins over whatever the Reader
+    suggested at ingest time — same "suggestion is just the initial
+    value" relationship grade/folder/topics already have."""
+    if doc_type and doc_type not in DOC_TYPES:
+        raise ValueError(f"unknown doc_type: {doc_type!r}")
+    with session() as s:
+        s.run("MATCH (doc:Document {id: $id}) SET doc.doc_type = $doc_type",
+              id=document_id, doc_type=doc_type)
+    log("admin", "set doc_type", f"{document_id} → '{doc_type}'")
+    return get_document(document_id)
 
 
 def set_private(document_id: str, is_private: bool) -> dict | None:

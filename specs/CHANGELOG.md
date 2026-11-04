@@ -1,5 +1,28 @@
 # Specs changelog
 
+## 2026-11-04 — v6.11, Library tree-view tab, icon-drift/placement-UX fix
+
+Three separate pieces of direct/live feedback, shipped as three PRs:
+
+- **Tree view tab** (`v6.8/01` addendum) — a new admin Library tab
+  showing folders and documents together as a unified tree, defaulting
+  to 3 levels deep with a chevron to go further. Built entirely from
+  already-loaded `data.sources`/`data.folders` (no new fetch), to meet
+  an explicit "<100ms load" requirement.
+- **Icon drift + post-ingest placement UX** (found live, with a
+  screenshot) — a long doc-card title wrapping into many short lines
+  next to the always-visible action icons, stretching the card and
+  pinning the icons to its top; fixed with a 2-line clamp + ellipsis.
+  Also: finishing an ingest now opens a "Placed in library" dialog
+  showing the Reader's suggested folder/tags (editable in place), and
+  the completion toast now names where the document landed.
+- **`v6.11` — document metadata + view modes** — see
+  [v6.11/README.md](v6.11/README.md). A real gap-check against live
+  feedback: tags already worked, but content-type classification,
+  author display, and "who uploaded this" all turned out to be genuine
+  gaps, not just hidden UI — confirmed by reading the ingest pipeline
+  rather than assumed.
+
 ## 2026-11-03 — admin portal polish, tags, folder tree, HHEM removal
 
 A batch of direct requests, no new spec version (maintenance/UX on
