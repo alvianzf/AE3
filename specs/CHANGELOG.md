@@ -1,5 +1,18 @@
 # Specs changelog
 
+## 2026-11-04 — v6.12, removed the staging/review step
+
+See [v6.12/README.md](v6.12/README.md). Direct request: no more
+separate "Staged for review" tab or manual "Ingest" click — every
+upload auto-queues immediately, shown as a progress-bar card right in
+the Library grid, with a server-side status bar (counts, chars queued,
+ETA) and a finalize bell instead of the old auto-popped placement
+dialog. Found and fixed a real bug along the way (`'queued'` jobs
+invisible to `GET /api/ingestion-jobs/active`) and a real prod backlog
+(17 pre-existing staged items, most errored from the Nebius billing
+exhaustion) that the new "every staged item shows its real state"
+design had to account for rather than assume away.
+
 ## 2026-11-04 — v6.11, Library tree-view tab, icon-drift/placement-UX fix
 
 Three separate pieces of direct/live feedback, shipped as three PRs:

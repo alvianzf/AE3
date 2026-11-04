@@ -3,7 +3,7 @@ import { get } from '$lib/api';
 export const ssr = false;
 
 export async function load({ fetch }) {
-	const [sourcesRes, graph, coverage, facets, staged, activeJobs, practitioners] = await Promise.all([
+	const [sourcesRes, graph, coverage, facets, staged, activeJobs, practitioners, queueStats] = await Promise.all([
 		get(fetch, '/sources?per_page=200').catch(() => ({ sources: [], total: 0 })),
 		get(fetch, '/graph').catch(() => null),
 		get(fetch, '/coverage').catch(() => []),
@@ -17,7 +17,9 @@ export async function load({ fetch }) {
 		// For the private-document access-grant picker (specs/v6.9/01) —
 		// same practitioner list web/src/routes/(admin)/admin/users/
 		// +page.svelte already loads.
-		get(fetch, '/admin/practitioners').catch(() => [])
+		get(fetch, '/admin/practitioners').catch(() => []),
+		// The status bar's counts/ETA (specs/v6.12).
+		get(fetch, '/ingestion-jobs/stats').catch(() => null)
 	]);
 	return {
 		sources: sourcesRes?.sources ?? sourcesRes ?? [],
@@ -31,6 +33,7 @@ export async function load({ fetch }) {
 		folders: facets?.folders ?? [],
 		staged,
 		activeJobs,
-		practitioners
+		practitioners,
+		queueStats
 	};
 }

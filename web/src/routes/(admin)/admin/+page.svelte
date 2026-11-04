@@ -52,14 +52,13 @@
 	let staging = $state(false);
 	let stageProgress = $state<{ sent: number; total: number } | null>(null);
 
-	// Staged items — uploaded/pasted but not yet promoted into the graph
-	// (app/main.py's /api/staged*, specs/v3/18-document-ingest-upgrade.md).
-	// "Ingest" below always meant "stage" too until now: every add
-	// immediately ran the full Reader/chunk/write pipeline, one at a time,
-	// with no way to pile several up first and review before committing.
-	let selected = $state<Set<string>>(new Set());
+	// Staged items — uploaded/pasted, auto-enqueued for ingestion
+	// immediately (specs/v6.12: no manual "Ingest" click or review-before-
+	// committing step any more — a staged item IS the in-queue state,
+	// shown as a progress card right in the Library grid, not a separate
+	// tab). `data.staged` shrinks as each job finishes and its staged row
+	// is deleted (app/main.py's _run_staged_ingest_job).
 	let promotingId = $state<string | null>(null);
-	let promotingBatch = $state(false);
 
 	// Ingestion jobs: promoting a staged item now returns a job id
 	// immediately (app/main.py's POST /api/staged/{id}/ingest, backgrounded
@@ -78,6 +77,16 @@
 	// topics), but nothing surfaced that choice to the admin before this;
 	// the toast alone named the action, not the result.
 	let placementPreview = $state<any | null>(null);
+	// Document ids whose ingest just finished and haven't had their
+	// Reader-suggested folder/tags/type reviewed yet — shown as a bell
+	// icon on the card (specs/v6.12), dismissed by opening (or
+	// explicitly skipping) the placement dialog. Per-browser only, not
+	// persisted — a one-time nudge, not queue state (which is fully
+	// server-side via ingestion_jobs/staged_sources already).
+	let needsFinalization = $state<Set<string>>(new Set());
+	function dismissFinalization(id: string) {
+		needsFinalization = new Set([...needsFinalization].filter((x) => x !== id));
+	}
 	// setFolder/addTag/removeTag write through `data.sources` (invalidateAll),
 	// not through placementPreview's own object reference — without this,
 	// clicking a folder-suggestion chip or adding a tag moves/tags the
@@ -134,6 +143,17 @@
 		return Math.min(100, Math.round((idx * stepSpan + within * stepSpan) * 100));
 	}
 
+	function formatEta(seconds: number | null | undefined): string {
+		if (seconds == null) return '';
+		if (seconds < 60) return `~${Math.max(1, Math.round(seconds))}s`;
+		const mins = Math.round(seconds / 60);
+		return mins < 60 ? `~${mins}m` : `~${Math.round(mins / 60)}h`;
+	}
+
+	function formatChars(n: number): string {
+		return n >= 1000 ? `~${Math.round(n / 1000)}k chars` : `${n} chars`;
+	}
+
 	function watchJob(stagedId: string, jobId: string) {
 		if (pollTimers[stagedId]) clearInterval(pollTimers[stagedId]);
 		// Set synchronously, before the first poll's network round-trip
@@ -159,7 +179,13 @@
 							? `"${placed.title.slice(0, 40)}" ingested — filed in ${placed.folder_path || '(root)'}.`
 							: 'Ingested into the library.'
 					);
-					if (placed) placementPreview = placed;
+					// A bell icon on the card, not an auto-opened dialog
+					// (specs/v6.12) — with auto-ingest-on-upload, a finished
+					// job isn't necessarily something the admin is watching
+					// for any more; popping a dialog over whatever else
+					// they're doing is the wrong interruption now that
+					// uploads queue up unattended.
+					if (placed) needsFinalization = new Set([...needsFinalization, placed.id]);
 				} else if (job.status === 'error') {
 					clearInterval(pollTimers[stagedId]);
 					delete pollTimers[stagedId];
@@ -181,6 +207,24 @@
 		jobsByStagedId = { ...jobsByStagedId, [job.staged_id]: job };
 		watchJob(job.staged_id, job.id);
 	}
+	// Every staged item now carries its latest job's status (app/
+	// core_store.py's list_staged_sources LATERAL join) — an errored one
+	// (job_status='error') shows that error without polling (no active
+	// job to poll); one with job_status=null never actually got a job at
+	// all (specs/v6.12: pre-dates auto-ingest-on-stage, or a request that
+	// failed between staging and the auto-ingest call) and is kicked off
+	// here instead of sitting stuck forever with nothing to start it.
+	for (const item of data.staged ?? []) {
+		if (jobsByStagedId[item.id]) continue;
+		if (item.job_status === 'error') {
+			jobsByStagedId = {
+				...jobsByStagedId,
+				[item.id]: { status: 'error', step: 'error', error_message: item.job_error_message }
+			};
+		} else if (!item.job_status) {
+			ingestOne(item.id);
+		}
+	}
 
 	// Nothing else clears these on navigation — without this, leaving the
 	// page while a job is running leaves its 2s poll loop running forever
@@ -190,12 +234,15 @@
 		for (const t of Object.values(pollTimers)) clearInterval(t);
 	});
 
-	function toggleSelected(id: string) {
-		const next = new Set(selected);
-		if (next.has(id)) next.delete(id);
-		else next.add(id);
-		selected = next;
-	}
+	// Status bar counts/ETA (specs/v6.12) — refreshed on its own interval
+	// rather than piggybacking on watchJob's per-item 2s poll, since this
+	// has to stay correct even when this browser isn't watching any job
+	// at all (another admin's upload, a different device).
+	let queueStats = $state(data.queueStats);
+	const statsInterval = setInterval(async () => {
+		try { queueStats = await get(fetch, '/ingestion-jobs/stats'); } catch {}
+	}, 5000);
+	onDestroy(() => clearInterval(statsInterval));
 
 	function stagedFileUrl(item: any) {
 		// #toolbar=0&navpanes=0: no PDF-viewer chrome/sidebar on this preview either.
@@ -722,14 +769,16 @@
 			// Chunked regardless of size: one code path, always shows
 			// progress, and never risks a single >200MB-capable request
 			// hitting nginx's body-size limit (app/uploads.py, web/src/lib/
-			// chunkedUpload.ts). 'stage' instead of 'complete' — lands in
-			// the staged list below, not ingested yet.
-			await chunkedUpload('/sources', selectedFile, {}, (p) => (stageProgress = p), 'stage');
-			toast('Added to the staged list.');
+			// chunkedUpload.ts). 'stage' (reads/stores the file, no Reader
+			// call yet) then ingestOne() right below auto-queues it —
+			// specs/v6.12: no separate staged-review step any more, the
+			// card shows up with a progress bar immediately.
+			const staged = await chunkedUpload('/sources', selectedFile, {}, (p) => (stageProgress = p), 'stage');
 			pickFile(null);
 			if (fileInput) fileInput.value = '';
 			ingestOpen = false;
 			await invalidateAll();
+			if (staged?.id) ingestOne(staged.id);
 		} catch (err: any) {
 			toast(err.message, 'alert');
 		} finally {
@@ -751,10 +800,11 @@
 				const body = await res.json().catch(() => ({}));
 				throw new Error(body?.detail?.message || body?.detail || 'Staging failed.');
 			}
-			toast('Added to the staged list.');
+			const staged = await res.json();
 			text = '';
 			ingestOpen = false;
 			await invalidateAll();
+			if (staged?.id) ingestOne(staged.id);
 		} catch (err: any) {
 			toast(err.message, 'alert');
 		} finally {
@@ -772,11 +822,11 @@
 		if (!url.trim()) return;
 		scraping = true;
 		try {
-			await post(fetch, '/scrape', { url: url.trim() });
-			toast('Scraped and added to the staged list.');
+			const staged = await post(fetch, '/scrape', { url: url.trim() });
 			url = '';
 			ingestOpen = false;
 			await invalidateAll();
+			if (staged?.id) ingestOne(staged.id);
 		} catch (err: any) {
 			toast(err.message, 'alert');
 		} finally {
@@ -846,52 +896,10 @@
 		await discardStaged(id);
 	}
 
-	async function ingestSelected() {
-		if (!selected.size) return;
-		// An item already mid-ingest (single-item Ingest, or resumed from a
-		// prior page load) can still be sitting in `selected` from before its
-		// job started — the checkbox disables once jobsByStagedId picks it
-		// up, but that doesn't retroactively uncheck one already selected,
-		// so filter here rather than trust the UI state alone.
-		const ids = [...selected].filter((id) => jobsByStagedId[id]?.status !== 'running');
-		if (!ids.length) {
-			toast('Everything selected is already being ingested.', 'alert');
-			return;
-		}
-		promotingBatch = true;
-		try {
-			const res = await post(fetch, '/staged/ingest', { ids });
-			// Each id either got its own background job (jobs) or 409'd as a
-			// duplicate (duplicates, resolvable individually via the single-item
-			// Ingest button above, same as before) — nothing here has actually
-			// finished ingesting yet, unlike the old response shape.
-			for (const j of res.jobs ?? []) watchJob(j.staged_id, j.job_id);
-			const dupes = res.duplicates ?? [];
-			const failed = res.failed ?? [];
-			const alreadyRunning = selected.size - ids.length;
-			let msg = `${res.jobs?.length ?? 0} started`;
-			if (alreadyRunning) msg += `, ${alreadyRunning} already ingesting (skipped)`;
-			if (dupes.length) msg += `, ${dupes.length} duplicate(s) skipped (resolve individually)`;
-			if (failed.length) msg += `, ${failed.length} failed`;
-			toast(msg + '.', dupes.length || failed.length || alreadyRunning ? 'alert' : undefined);
-			selected = new Set();
-			clearFiltersAfterIngest();
-		} catch (err: any) {
-			toast(err.message, 'alert');
-		} finally {
-			promotingBatch = false;
-		}
-	}
-
 	async function discardStaged(id: string) {
 		try {
 			await del(fetch, `/staged/${id}`);
 			toast('Discarded.');
-			if (selected.has(id)) {
-				const next = new Set(selected);
-				next.delete(id);
-				selected = next;
-			}
 			await invalidateAll();
 		} catch (err: any) {
 			toast(err.message, 'alert');
@@ -911,13 +919,21 @@
 		bind:active={mainTab}
 		tabs={[
 			{ id: 'library', label: 'Library' },
-			{ id: 'tree', label: 'Tree view' },
-			{ id: 'staged', label: data.staged?.length ? `Staged for review (${data.staged.length})` : 'Staged for review' }
+			{ id: 'tree', label: 'Tree view' }
 		]}
 	/>
 
 	<div class="tab-panel">
 	{#if mainTab === 'library'}
+		{#if (data.staged?.length ?? 0) > 0 || (queueStats?.queued_count ?? 0) > 0 || (queueStats?.processing_count ?? 0) > 0}
+			<p class="queue-status hint">
+				{data.sources.length} ingested
+				· {(queueStats?.queued_count ?? 0) + (queueStats?.processing_count ?? 0)} in queue
+				{#if queueStats?.processing_count}({queueStats.processing_count} processing){/if}
+				{#if queueStats?.total_queued_chars}· {formatChars(queueStats.total_queued_chars)} queued{/if}
+				{#if queueStats?.estimated_seconds_remaining != null}· est. {formatEta(queueStats.estimated_seconds_remaining)} remaining{/if}
+			</p>
+		{/if}
 		<div class="search-bar">
 			<div class="search-input-wrap">
 				<input
@@ -1072,6 +1088,50 @@
 							</div>
 						{/each}
 					{/if}
+					<!-- Staged items as cards, right in the grid — specs/v6.12:
+					     no separate "staged for review" tab or manual Ingest
+					     click any more. A staged item IS the in-queue state;
+					     this card disappears on its own once the job finishes
+					     and the real document takes its place in `pageItems`
+					     (app/main.py's _run_staged_ingest_job deletes the
+					     staged row on success). Root only — a staged item has
+					     no folder_path yet — and not in table view (its own
+					     column set doesn't fit a progress bar well; icons/list
+					     cover the common case). -->
+					{#if !searching && !currentPath && viewMode !== 'table'}
+						{#each data.staged ?? [] as item (item.id)}
+							<div class="doc-card doc-card-pending">
+								<div class="doc-card-head">
+									<span class="title-link pending-title">{item.filename ?? item.source_url ?? 'Pasted text'}</span>
+									{#if item.kind === 'file'}
+										<a class="icon-btn" href={stagedFileUrl(item)} target="_blank" rel="noopener" title="Preview the original file" aria-label="Preview {item.filename}"><Icon name="eye" /></a>
+									{:else if item.kind === 'scraped_url'}
+										<a class="icon-btn" href={item.source_url} target="_blank" rel="noopener" title="Open the source page" aria-label="Open source"><Icon name="external-link" /></a>
+									{/if}
+								</div>
+								{#if jobsByStagedId[item.id]?.status === 'error'}
+									<p class="hint job-error">{jobLabel(jobsByStagedId[item.id])}</p>
+									<div class="doc-card-foot">
+										<button class="view" onclick={() => ingestOne(item.id)} disabled={promotingId === item.id}>Retry</button>
+										<button class="view danger" onclick={() => discardStaged(item.id)}>Discard</button>
+									</div>
+								{:else}
+									<div class="job-progress">
+										<div class="track"><div class="fill" style="width: {jobProgressPercent(jobsByStagedId[item.id] ?? { step: 'queued' })}%"></div></div>
+										<span class="hint">{jobLabel(jobsByStagedId[item.id] ?? { status: 'queued', step: 'queued' })}</span>
+									</div>
+									<div class="doc-card-foot">
+										<button
+											class="view danger"
+											onclick={() => discardStaged(item.id)}
+											disabled={jobActive(jobsByStagedId[item.id])}
+											title={jobActive(jobsByStagedId[item.id]) ? 'Already queued or running' : undefined}
+										>Discard</button>
+									</div>
+								{/if}
+							</div>
+						{/each}
+					{/if}
 					{#if viewMode !== 'table'}
 					{#each pageItems as s (s.id)}
 						<div
@@ -1090,6 +1150,9 @@
 								/>
 								<a class="title-link" href="/admin/{s.id}" title={s.title}>{s.title}</a>
 								<div class="doc-card-actions">
+									{#if needsFinalization.has(s.id)}
+										<button class="icon-btn finalize-bell" onclick={() => (placementPreview = s)} title="Review where this was filed" aria-label="Review placement for {s.title}"><Icon name="bell" /></button>
+									{/if}
 									<a class="icon-btn" href="/admin/{s.id}" title="View document" aria-label="View {s.title}"><Icon name="eye" /></a>
 									<button class="icon-btn" onclick={() => askMove(s)} title="Move to folder (or right-click the card)" aria-label="Move {s.title}">
 										<Icon name="folder" />
@@ -1210,6 +1273,9 @@
 										<td class="hint">{s.grade}</td>
 										<td class="hint">{(s.created_at ?? '').slice(0, 10)}</td>
 										<td class="doc-table-actions">
+											{#if needsFinalization.has(s.id)}
+												<button class="icon-btn finalize-bell" onclick={() => (placementPreview = s)} title="Review where this was filed" aria-label="Review placement for {s.title}"><Icon name="bell" size={15} /></button>
+											{/if}
 											<a class="icon-btn" href="/admin/{s.id}" title="View document" aria-label="View {s.title}"><Icon name="eye" size={15} /></a>
 											<button class="icon-btn" onclick={() => askMove(s)} title="Move to folder" aria-label="Move {s.title}"><Icon name="folder" size={15} /></button>
 											<button class="icon-btn danger" onclick={() => askDelete(s)} title="Remove from library" aria-label="Remove {s.title}"><Icon name="trash" size={15} /></button>
@@ -1261,68 +1327,6 @@
 				onDelete={(path, count) => askDeleteFolder(path, count)}
 			/>
 		</div>
-	{:else}
-		{#if data.staged?.length}
-			<div class="staged">
-				<div class="staged-head">
-					<strong>{data.staged.length} not yet in the library</strong>
-					<Button variant="outlined" onclick={ingestSelected} loading={promotingBatch} disabled={!selected.size}>
-						Ingest selected ({selected.size})
-					</Button>
-				</div>
-				<ul class="staged-list">
-					{#each data.staged as item (item.id)}
-						<li class="staged-item">
-							<input
-								type="checkbox"
-								checked={selected.has(item.id)}
-								onchange={() => toggleSelected(item.id)}
-								disabled={jobActive(jobsByStagedId[item.id])}
-								aria-label="Select {item.filename ?? 'pasted text'}"
-							/>
-							<div class="staged-body">
-								<div class="staged-title">
-									{item.filename ?? item.source_url ?? 'Pasted text'}
-									<Chip tone="neutral">{item.kind === 'scraped_url' ? 'scraped' : item.kind}</Chip>
-									{#if item.page_count}<span class="hint">{item.page_count} page(s)</span>{/if}
-								</div>
-								<p class="staged-preview">{item.preview}{item.preview?.length >= 280 ? '…' : ''}</p>
-								{#if jobsByStagedId[item.id] && jobsByStagedId[item.id].status !== 'error'}
-									<div class="job-progress">
-										<div class="track"><div class="fill" style="width: {jobProgressPercent(jobsByStagedId[item.id])}%"></div></div>
-										<span class="hint">{jobLabel(jobsByStagedId[item.id])}</span>
-									</div>
-								{:else if jobsByStagedId[item.id]}
-									<p class="hint job-error">{jobLabel(jobsByStagedId[item.id])}</p>
-								{/if}
-							</div>
-							<div class="staged-actions">
-								{#if item.kind === 'file'}
-									<a class="view" href={stagedFileUrl(item)} target="_blank" rel="noopener">View</a>
-								{:else if item.kind === 'scraped_url'}
-									<a class="view" href={item.source_url} target="_blank" rel="noopener">Source</a>
-								{/if}
-								<button
-									class="view"
-									onclick={() => ingestOne(item.id)}
-									disabled={promotingId === item.id || jobActive(jobsByStagedId[item.id])}
-								>
-									{jobActive(jobsByStagedId[item.id]) ? (jobsByStagedId[item.id]?.status === 'queued' ? 'Queued…' : 'Ingesting…') : 'Ingest'}
-								</button>
-								<button
-								class="view danger"
-								onclick={() => discardStaged(item.id)}
-								disabled={jobActive(jobsByStagedId[item.id])}
-								title={jobActive(jobsByStagedId[item.id]) ? 'Ingestion is already queued or running for this item' : undefined}
-							>Discard</button>
-							</div>
-						</li>
-					{/each}
-				</ul>
-			</div>
-		{:else}
-			<p class="hint">Nothing staged. Use "+ Add resources" above to upload a document, paste text, or scrape a URL — it lands here for review before it's ingested.</p>
-		{/if}
 	{/if}
 	</div>
 </Spotlight>
@@ -1382,12 +1386,12 @@
 			{/if}
 			<div class="dz-actions">
 				{#if selectedFile}<Button variant="ghost" onclick={() => pickFile(null)}>Clear</Button>{/if}
-				<Button onclick={stageFile} loading={staging} disabled={!selectedFile}>Add to staged list</Button>
+				<Button onclick={stageFile} loading={staging} disabled={!selectedFile}>Upload and queue for ingestion</Button>
 			</div>
 		{:else if ingestTab === 'text'}
 			<form onsubmit={stageText} class="ingest">
 				<TextField label="Paste text" type="textarea" bind:value={text} placeholder="Paste an article, note, or transcript…" />
-				<Button type="submit" loading={staging}>Add to staged list</Button>
+				<Button type="submit" loading={staging}>Add and queue for ingestion</Button>
 			</form>
 		{:else if ingestTab === 'url'}
 			<form onsubmit={scrapeUrl} class="ingest">
@@ -1397,7 +1401,7 @@
 					<div class="scrape-progress" aria-hidden="true"><div class="bar"></div></div>
 					<p class="hint">Fetching and extracting…</p>
 				{/if}
-				<Button type="submit" loading={scraping}>Scrape and add to staged list</Button>
+				<Button type="submit" loading={scraping}>Scrape and queue for ingestion</Button>
 			</form>
 		{/if}
 	</div>
@@ -1476,7 +1480,7 @@
      opens, so this is "here's where it landed, adjust if you want" rather
      than a pre-commit approval gate. Reuses the same setFolder/addTag/
      removeTag writes the library's own doc-cards already use. -->
-<Dialog bind:open={() => !!placementPreview, (v) => { if (!v) placementPreview = null; }} title="Placed in library">
+<Dialog bind:open={() => !!placementPreview, (v) => { if (!v) { if (placementPreview) dismissFinalization(placementPreview.id); placementPreview = null; } }} title="Placed in library">
 	{#if placementPreview}
 		<p class="hint">"{placementPreview.title.slice(0, 80)}" was ingested and filed as shown below — the Reader suggested these, adjust them if needed.</p>
 		<select
@@ -1520,7 +1524,7 @@
 		</div>
 	{/if}
 	{#snippet footer()}
-		<Button onclick={() => (placementPreview = null)}>Got it</Button>
+		<Button onclick={() => { if (placementPreview) dismissFinalization(placementPreview.id); placementPreview = null; }}>Got it</Button>
 	{/snippet}
 </Dialog>
 
@@ -1792,16 +1796,12 @@
 		width: 3.5rem; border: 1px solid var(--line-2); border-radius: var(--r);
 		padding: .3rem .4rem; font: inherit; color: var(--ink); background: var(--panel);
 	}
-	.staged { display: grid; gap: var(--space-3); }
-	.staged-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
-	.staged-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
-	.staged-item { display: flex; gap: var(--space-3); align-items: flex-start; padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--r); }
-	.staged-item input[type='checkbox'] { margin-top: .3rem; }
-	.staged-body { flex: 1 1 auto; min-width: 0; }
-	.staged-title { display: flex; align-items: center; gap: .4rem; font-weight: 650; flex-wrap: wrap; }
-	.staged-preview { margin: .3rem 0 0; font-size: var(--text-sm); color: var(--muted); overflow-wrap: anywhere; }
-	.staged-actions { display: flex; gap: .35rem; flex: 0 0 auto; flex-wrap: wrap; }
 	.view:disabled { opacity: .5; cursor: not-allowed; }
+	.queue-status { margin: 0 0 var(--space-3); }
+	.doc-card-pending { opacity: .85; border-style: dashed; }
+	.pending-title { font-weight: 650; overflow-wrap: anywhere; }
+	.finalize-bell { color: var(--accent); }
+	.finalize-bell:hover { color: var(--accent); }
 	.upload-progress {
 		display: flex; align-items: center; gap: var(--space-3);
 		background: var(--panel-2); border-radius: 99px; padding: .35rem .35rem .35rem .1rem;
