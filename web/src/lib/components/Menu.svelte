@@ -2,32 +2,72 @@
 	import type { Snippet } from 'svelte';
 	import Icon from './Icon.svelte';
 
-	// A tidy "⋮" dropdown for a card's action row (specs/v6.14) — built on
-	// the native `popover` attribute rather than a hand-rolled click-
-	// outside/Escape/z-index listener set: the browser already gives a
-	// popover light-dismiss (outside click or Escape closes it) and top-
-	// layer stacking for free, the same reason Dialog.svelte already
-	// leans on the native <dialog> element instead of reimplementing a
-	// modal. Positioned with a plain CSS override (position: absolute
-	// relative to the wrapper) rather than full CSS anchor positioning —
-	// browser support for anchor positioning isn't there yet; a simple
-	// "below and right-aligned to the trigger" placement is enough for
-	// a card-corner menu that never needs to flip sides.
+	// A tidy "⋮" dropdown for a card's action row (specs/v6.14). Explicit
+	// $state-driven open/close, not the native `popover` attribute this
+	// component first shipped with — found live, 2026-11-04: the popover
+	// build either rendered open by default (an earlier CSS bug, fixed)
+	// or, for at least one real user, didn't open on click at all —
+	// almost certainly a Popover API support/behavior gap in that
+	// browser, which a native-attribute approach has no fallback for.
+	// This menu now gates core actions (Move, Delete, Private/public,
+	// Edit access, Assign uploader) on every doc row across the whole
+	// Library, so "guaranteed to work everywhere" beats "less code" —
+	// explicit state + a window click/Escape listener works identically
+	// in any browser this app already supports, no feature-detection
+	// needed.
 	let {
 		label,
 		items
 	}: { label: string; items: Snippet } = $props();
 
-	const id = `menu-${Math.random().toString(36).slice(2)}`;
+	let open = $state(false);
+	let wrapEl = $state<HTMLDivElement>();
+
+	function toggle(e: MouseEvent) {
+		e.stopPropagation();
+		open = !open;
+	}
+	function close() {
+		open = false;
+	}
+
+	$effect(() => {
+		if (!open) return;
+		// Capture phase, not bubble — a menu item's own onclick (e.g.
+		// askDelete) should close the menu too, and listening on
+		// 'click' in the bubble phase after the item's handler already
+		// ran risks the item's own state change (a dialog opening, say)
+		// racing this listener's close(). Capture fires before any of
+		// that, so close() always runs first and consistently.
+		function onDocClick(e: MouseEvent) {
+			if (wrapEl && !wrapEl.contains(e.target as Node)) close();
+		}
+		function onKeydown(e: KeyboardEvent) {
+			if (e.key === 'Escape') close();
+		}
+		document.addEventListener('click', onDocClick, true);
+		document.addEventListener('keydown', onKeydown);
+		return () => {
+			document.removeEventListener('click', onDocClick, true);
+			document.removeEventListener('keydown', onKeydown);
+		};
+	});
 </script>
 
-<div class="menu-wrap">
-	<button class="icon-btn" popovertarget={id} title={label} aria-label={label}>
+<div class="menu-wrap" bind:this={wrapEl}>
+	<button class="icon-btn" onclick={toggle} title={label} aria-label={label} aria-expanded={open}>
 		<Icon name="more-vertical" />
 	</button>
-	<div {id} popover class="menu-pop" role="menu">
-		{@render items()}
-	</div>
+	{#if open}
+		<!-- Not role="menu"/"menuitem" — that ARIA pattern expects roving-
+		     tabindex arrow-key navigation between items, which this
+		     doesn't implement; each item is already its own real,
+		     individually-focusable <button>/<a>, which is accessible on
+		     its own without that extra scaffolding half-built on top. -->
+		<div class="menu-pop" onclick={close}>
+			{@render items()}
+		</div>
+	{/if}
 </div>
 
 <style>
@@ -36,15 +76,8 @@
 		position: absolute; top: 100%; right: 0; left: auto; bottom: auto; margin: .25rem 0 0;
 		padding: .3rem; border: 1px solid var(--line); border-radius: var(--r-lg);
 		background: var(--panel); box-shadow: var(--shadow-lg); min-width: 11rem;
-		gap: .1rem;
+		display: grid; gap: .1rem; z-index: 30;
 	}
-	/* display must stay OUT of the base rule above — found live: an
-	   unconditional `display: grid` there is author-origin CSS, which
-	   always beats the UA stylesheet's default `[popover]:not(:popover-
-	   open) { display: none }` regardless of selector specificity (author
-	   styles win over user-agent styles in the cascade), so the menu
-	   rendered open on every page load instead of only once triggered. */
-	.menu-pop:popover-open { display: grid; }
 	/* Each item is whatever the caller renders (a <button> or <a>, danger
 	   or not) — this just normalizes their shared layout so callers don't
 	   repeat it at every call site. */

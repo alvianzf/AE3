@@ -47,17 +47,36 @@ class LocalEmbedderClient:
         if not texts:
             return []
         tokenizer, model = _load()
-        encoded = tokenizer(texts, padding=True, truncation=True, max_length=512,
-                            return_tensors="pt")
-        with torch.no_grad():
-            output = model(**encoded)
-        # Mean-pool token embeddings over real (non-padding) tokens, then
-        # L2-normalize so cosine similarity (the Neo4j vector index's
-        # configured metric) behaves the same way it would for a model
-        # that normalizes natively.
-        mask = encoded["attention_mask"].unsqueeze(-1).float()
-        summed = (output.last_hidden_state * mask).sum(dim=1)
-        counts = mask.sum(dim=1).clamp(min=1e-9)
-        pooled = summed / counts
-        normalized = torch.nn.functional.normalize(pooled, p=2, dim=1)
-        return normalized.tolist()
+        # Batched, not one forward pass over the whole document — found
+        # live, 2026-11-04: a single large book's passage list (671 pages,
+        # thousands of passages) ran through tokenizer(texts, padding=
+        # True, ...) + model(**encoded) as ONE batch. padding=True pads
+        # every sequence to the longest in the batch (up to 512 tokens),
+        # so activation memory for that single forward pass scales with
+        # batch_size * seq_len — for a batch in the thousands, that's
+        # gigabytes held at once on CPU, independent of anything else in
+        # the ingest pipeline (this call is synchronous, unaffected by
+        # app/ingestion/queue.py's own concurrency cap or the KG-
+        # extraction ThreadPoolExecutor's worker count). This was the
+        # actual OOM driver DEPLOY.md's MemoryMax raises kept working
+        # around rather than fixing. A fixed batch size keeps peak memory
+        # roughly constant regardless of how many passages a document has.
+        _BATCH = 32
+        out: list[list[float]] = []
+        for i in range(0, len(texts), _BATCH):
+            batch = texts[i:i + _BATCH]
+            encoded = tokenizer(batch, padding=True, truncation=True, max_length=512,
+                                return_tensors="pt")
+            with torch.no_grad():
+                output = model(**encoded)
+            # Mean-pool token embeddings over real (non-padding) tokens,
+            # then L2-normalize so cosine similarity (the Neo4j vector
+            # index's configured metric) behaves the same way it would
+            # for a model that normalizes natively.
+            mask = encoded["attention_mask"].unsqueeze(-1).float()
+            summed = (output.last_hidden_state * mask).sum(dim=1)
+            counts = mask.sum(dim=1).clamp(min=1e-9)
+            pooled = summed / counts
+            normalized = torch.nn.functional.normalize(pooled, p=2, dim=1)
+            out.extend(normalized.tolist())
+        return out

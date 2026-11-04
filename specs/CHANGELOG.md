@@ -1,5 +1,19 @@
 # Specs changelog
 
+## 2026-11-04 — v6.19, local-embedder OOM fix, menu reliability rewrite
+
+See [v6.19/README.md](v6.19/README.md). Two live production incidents:
+a 502-causing OOM crash loop, root-caused via `journalctl`/`dmesg` to
+`LocalEmbedderClient.embed()` running an entire large book's passage
+list through one unbatched CPU forward pass (fixed: batched at 32,
+independent of the ingestion queue's own concurrency cap, which was
+not the actual cause despite being the natural first suspect given
+prior OOM history); and `Menu.svelte` rewritten off the native
+`popover` attribute onto explicit Svelte state after a live report it
+didn't open on click — it now gates core per-document actions across
+every Library view, so removing any dependency on Popover API browser
+support was judged worth the extra code.
+
 ## 2026-11-04 — v6.18, Graph view visibility/sizing/perf/zoom controls
 
 See [v6.18/README.md](v6.18/README.md). Four pieces of direct/live
