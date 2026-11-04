@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import AppRail from '$lib/components/AppRail.svelte';
+	import CommandPalette from '$lib/components/CommandPalette.svelte';
 
 	let { data, children } = $props();
 
@@ -19,10 +20,27 @@
 		{ href: '/practitioner/profile', label: 'Profile', icon: 'settings' },
 		{ href: '/practitioner/upgrade', label: 'Upgrade', icon: 'star' }
 	]);
+
+	// specs/v7/06 — same group label convention as locked items' own
+	// title tooltip in AppRail ("label (Pro)") so a palette result makes
+	// the same promise the rail icon it's standing in for already does.
+	const paletteItems = $derived(items.map((i) => ({ ...i, group: i.locked ? 'Pro' : 'Practitioner' })));
+	let paletteOpen = $state(false);
+
+	function onWindowKeydown(e: KeyboardEvent) {
+		if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+			e.preventDefault();
+			paletteOpen = true;
+		}
+	}
 </script>
 
+<svelte:window onkeydown={onWindowKeydown} />
+
+<CommandPalette items={paletteItems} bind:open={paletteOpen} />
+
 <div class="shell">
-	<AppRail {items} portalLabel="Practitioner portal" userLabel={data.profile?.name} />
+	<AppRail {items} portalLabel="Practitioner portal" userLabel={data.profile?.name} onCommandPalette={() => (paletteOpen = true)} />
 	<main>
 		{@render children()}
 	</main>
