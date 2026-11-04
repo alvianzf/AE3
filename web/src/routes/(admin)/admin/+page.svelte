@@ -257,7 +257,6 @@
 	// (README "Deliberate PoC limits") and +page.ts already loads up to 200.
 	let q = $state('');
 	let activeTopic = $state('');
-	let activeKind = $state('');
 	// Icons (the original card grid) / list (same cards, one per row) /
 	// table (a compact Explorer-style "Details" view with its own
 	// columns) — the three view modes any desktop file browser offers.
@@ -437,7 +436,6 @@
 		const needle = q.trim().toLowerCase();
 		return (data.sources ?? []).filter((s: any) => {
 			if (activeTopic && !(s.topics ?? []).includes(activeTopic)) return false;
-			if (activeKind && s.kind !== activeKind) return false;
 			if (searching) {
 				// Omni search: every field a document has, not just a fixed
 				// subset — folder path and tags included, so typing a folder
@@ -612,7 +610,17 @@
 			});
 			toast(`Moved ${result.moved} source${result.moved === 1 ? '' : 's'} to "${newPath || '(root)'}".`);
 			if (currentPath === oldPath) currentPath = newPath;
-			else if (currentPath.startsWith(`${oldPath}/`)) currentPath = newPath + currentPath.slice(oldPath.length);
+			else if (currentPath.startsWith(`${oldPath}/`)) {
+				// Drop oldPath AND its following slash before re-prefixing
+				// with newPath — found in review: when newPath is '' (moved
+				// to root), the old `newPath + currentPath.slice(oldPath.
+				// length)` kept that slash (slice(oldPath.length) includes
+				// it), producing a currentPath like "/B/C" that no real
+				// folder_path value ever has, so nothing in the library
+				// matched it until the admin manually navigated away.
+				const suffix = currentPath.slice(oldPath.length + 1);
+				currentPath = newPath ? `${newPath}/${suffix}` : suffix;
+			}
 			await invalidateAll();
 		} catch (err: any) {
 			toast(err.message, 'alert');
@@ -765,6 +773,7 @@
 			await put(fetch, `/sources/${accessEditing.id}/access`, { practitioner_ids: [...accessSelected] });
 			toast('Access updated.');
 			accessOpen = false;
+			await invalidateAll();
 		} catch (err: any) {
 			toast(err.message, 'alert');
 		} finally {
@@ -916,11 +925,11 @@
 	}
 
 	function clearFiltersAfterIngest() {
-		// An active category/kind filter could otherwise hide a source
-		// that was just ingested, with nothing telling the admin why it
-		// isn't in the list (specs/v4/04-known-issues.md#m16, found in
-		// this page's own initial review).
-		q = activeTopic = activeKind = '';
+		// An active category filter could otherwise hide a source that
+		// was just ingested, with nothing telling the admin why it isn't
+		// in the list (specs/v4/04-known-issues.md#m16, found in this
+		// page's own initial review).
+		q = activeTopic = '';
 	}
 
 	// Duplicate-on-ingest: _ingest_pages() (app/main.py) 409s with
@@ -971,7 +980,21 @@
 		if (!ids.length) return;
 		retryingAll = true;
 		try {
-			await Promise.all(ids.map((id: string) => ingestOne(id)));
+			// Sequential, not Promise.all — ingestOne() writes to shared
+			// state (promotingId, and the duplicateStagedId/duplicateOf/
+			// duplicateMessage/duplicateOpen quartet for a 409). Running
+			// several concurrently let one duplicate's dialog silently
+			// clobber another's before the admin ever saw it (found in
+			// review). Sequential alone isn't quite enough either —
+			// ingestOne() doesn't block on the dialog being resolved, it
+			// just opens it and returns — so also stop the batch the
+			// moment one opens, instead of racing straight into the next
+			// item's dialog too. Whatever's left over is still 'error'
+			// and picked up by the next Retry all (or individually).
+			for (const id of ids) {
+				await ingestOne(id);
+				if (duplicateOpen) break;
+			}
 		} finally {
 			retryingAll = false;
 		}
@@ -1140,18 +1163,6 @@
 						<Button variant="text" onclick={() => { newFolderName = ''; newFolderOpen = true; }}>
 							<Icon name="folder" size={13} />+ New folder
 						</Button>
-					</div>
-				{/if}
-
-				{#if data.kinds.length}
-					<div class="facets">
-						<div class="facet-row">
-							<span class="facet-label">Kind</span>
-							<button class="fchip" class:active={!activeKind} onclick={() => { activeKind = ''; page = 1; }}>All</button>
-							{#each data.kinds as k (k)}
-								<button class="fchip" class:active={activeKind === k} onclick={() => { activeKind = activeKind === k ? '' : k; page = 1; }}>{k}</button>
-							{/each}
-						</div>
 					</div>
 				{/if}
 
@@ -1339,7 +1350,14 @@
 							{/if}
 						</div>
 					{:else}
-						{#if !visibleSubfolders.length}
+						<!-- searching always shows feedback here even when
+						     visibleSubfolders.length > 0 — found in review:
+						     subfolder tiles are already hidden while
+						     searching (the {#if !searching} above), so a
+						     search that matches zero documents used to leave
+						     this whole area blank with no "nothing matches"
+						     message, indistinguishable from a stuck page. -->
+						{#if searching || !visibleSubfolders.length}
 							<p class="hint">
 								{#if !data.sources.length}Nothing ingested yet — use "+ Add resources" to start teaching Clinic.
 								{:else if searching}Nothing matches that search.
@@ -1452,6 +1470,13 @@
 		     client-side (no new fetch); "Concepts" is the actual knowledge
 		     graph (typed Entity->Entity relationships), fetched once on
 		     first pick via GET /api/graph/concepts and cached. -->
+		{#if data.graph}
+			<!-- Found in review: this line already existed (the Library
+			     tab, above) but not here — an admin who clicks straight
+			     into Graph view to judge graph health had no count of
+			     unlinked sources/concepts/links anywhere on this tab. -->
+			<p class="hint graph-stats">{data.graph.concepts ?? 0} concepts · {data.graph.mentions ?? 0} links · {(data.graph.unlinked ?? []).length} unlinked sources</p>
+		{/if}
 		<div class="graph-layer-toggle" role="group" aria-label="Graph layer">
 			<button class:active={graphLayer === 'documents'} onclick={() => (graphLayer = 'documents')}>Documents &amp; folders</button>
 			<button class:active={graphLayer === 'concepts'} onclick={() => { graphLayer = 'concepts'; loadConceptGraph(); }}>Concepts</button>
@@ -1797,7 +1822,6 @@
 		border-radius: 99px; padding: .1rem .45rem;
 	}
 	.dir-tile.active .dir-count { color: inherit; background: rgba(255, 255, 255, .35); }
-	.facets { display: grid; gap: var(--space-2); margin-bottom: var(--space-4); }
 	.doc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: var(--space-3); }
 	.doc-grid.list-view { grid-template-columns: 1fr; }
 	.doc-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r-lg); }
@@ -1906,11 +1930,6 @@
 	.meta-line { display: flex; align-items: center; gap: .3rem; margin: 0; font-size: var(--text-xs); color: var(--muted); }
 	.meta-uploader { color: var(--accent); }
 	.pager { display: flex; align-items: center; justify-content: center; gap: var(--space-4); margin-top: var(--space-5); }
-	.facet-row { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
-	.facet-label {
-		font-size: var(--text-xs); font-weight: 650; text-transform: uppercase; letter-spacing: .04em;
-		color: var(--muted); margin-right: .3rem;
-	}
 	.fchip {
 		font: inherit; font-size: var(--text-sm); cursor: pointer;
 		border: 1px solid var(--line); background: var(--panel-2); color: var(--ink);
@@ -1918,7 +1937,6 @@
 		transition: background .15s var(--ease), border-color .15s var(--ease), color .15s var(--ease);
 	}
 	.fchip:hover { border-color: var(--accent); }
-	.fchip.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
 	.tags { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem; margin-top: .25rem; }
 	.tag {
 		font: inherit; font-size: var(--text-xs); cursor: pointer; display: inline-flex; align-items: center; gap: .2rem;

@@ -1,5 +1,21 @@
 # Specs changelog
 
+## 2026-11-04 — v6.16, PM + QA audit (two parallel subagents), fixes
+
+See [v6.16/README.md](v6.16/README.md). User asked for a PM pass and a
+QA pass over everything shipped today as separate subagents, run in
+parallel with no visibility into each other, then reconciled. Highest-
+severity QA finding: a double-ingest race (no backend guard against
+two jobs for the same staged item) that could report a genuinely
+successful ingest as a failure. Also fixed: the Graph view's own
+`v6.15` centering fix being itself buggy for large graphs, a blank
+search dead-end, folder-move path corruption on move-to-root, a
+missing `invalidateAll()`, audit-log entries for nonexistent-document
+edits, dead "Kind" filter chips, missing Graph-tab stats, and
+undifferentiated concept-graph node colors. Real findings from both
+passes were deferred rather than fixed — see `01`'s "Deferred" list,
+headlined by Table view's missing action parity with Icons/List.
+
 ## 2026-11-04 — v6.15, retry all, graph centering, nav bug, card polish
 
 See [v6.15/README.md](v6.15/README.md). Four pieces of direct/live

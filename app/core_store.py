@@ -1111,6 +1111,26 @@ def get_ingestion_job(job_id: str) -> dict | None:
     return dict(row) if row else None
 
 
+def get_active_job_for_staged(staged_id: str) -> dict | None:
+    """Found live, specs/v6.16: nothing stopped two ingestion jobs from
+    being created for the same staged item (a double-click on Retry, or
+    the page-load auto-kick racing a manual click) — the frontend's
+    polling is keyed by staged_id, so starting a second job silently
+    stops tracking the first. If the first then wins the Neo4j write,
+    its completion is never observed; the second's ConstraintError 409
+    reports the whole thing as a failure even though the document was
+    actually ingested. _promote_staged_async checks this before
+    creating a new job, so a duplicate attempt reattaches to the
+    existing one instead of racing it."""
+    with core_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM ingestion_jobs WHERE staged_id = %s "
+            "AND status IN ('queued', 'running') ORDER BY created_at DESC LIMIT 1",
+            (staged_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
 def fail_orphaned_ingestion_jobs() -> int:
     """Called once at boot (app/main.py's lifespan). A job's background
     thread lives inside one worker process — a SIGHUP graceful reload
