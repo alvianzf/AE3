@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import AppRail from '$lib/components/AppRail.svelte';
-	import TopBar from '$lib/components/TopBar.svelte';
+	import TopNav from '$lib/components/TopNav.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import Tour from '$lib/components/Tour.svelte';
 	import DisclaimerBar from '$lib/components/DisclaimerBar.svelte';
@@ -15,10 +14,9 @@
 	// specs/v7/05 — onboarding matters most on this portal of the three
 	// (a client didn't choose this software, their practitioner did) —
 	// warmer copy than the other two portals' tours, and the Health
-	// record step folds in the trust/privacy note specs/v7/06 called
-	// out explicitly, since there's no separate page to put it on at
-	// this (rail-only, see specs/v7/06's admin-layout comment for why)
-	// scope.
+	// record step folds in the trust/privacy note specs/v7/06 called out
+	// explicitly, since there's no separate page to put it on at this
+	// nav-only scope.
 	let tourActive = $state(!data.session?.tour_completed);
 	const tourSteps = [
 		{ selector: 'a[href="/client/dashboard"]', title: 'Welcome', body: 'Start here each time you log in — a quick look at what’s new.' },
@@ -35,10 +33,8 @@
 		{ href: '/client/wearables', label: 'Wearables', icon: 'watch' }
 	];
 
-	const crumb = $derived(items.find((i) => page.url.pathname === i.href || page.url.pathname.startsWith(i.href + '/'))?.label ?? 'Client portal');
-
 	// specs/v7/06 — included for consistency across all three portals even
-	// though a 5-item rail barely needs a search palette on its own
+	// though a 5-item nav barely needs a search palette on its own
 	// (specs/v7/05's own stated lower priority here) — same component,
 	// same shortcut everywhere a user might look for it.
 	const paletteItems = items.map((i) => ({ ...i, group: 'Client' }));
@@ -58,26 +54,18 @@
 <Tour steps={tourSteps} bind:active={tourActive} />
 
 <div class="shell">
-	<!-- No role-specific rail colors needed here — the global --rail-top/
+	<!-- No role-specific color override here — the global --rail-top/
 	     --rail-bottom/--rail-indicator defaults (app.css) already are the
 	     client portal's identity; practitioner and admin override them on
 	     their own .shell instead. -->
-	<AppRail {items} portalLabel="Client portal" />
-	<div class="col">
-		<TopBar
-			crumbs={[{ label: 'Client portal' }, { label: crumb }]}
-			onCommandPalette={() => (paletteOpen = true)}
-			userLabel={data.session?.name}
-		/>
-		<main>
-			{@render children()}
-			{#if showDisclaimer}<DisclaimerBar />{/if}
-		</main>
-	</div>
+	<TopNav {items} portalLabel="Client" userLabel={data.session?.name} onCommandPalette={() => (paletteOpen = true)} />
+	<main>
+		{@render children()}
+		{#if showDisclaimer}<DisclaimerBar />{/if}
+	</main>
 </div>
 
 <style>
-	.shell { display: flex; align-items: flex-start; min-height: 100dvh; }
-	.col { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; min-height: 100dvh; }
-	main { flex: 1 1 auto; min-width: 0; padding: var(--space-6) var(--space-5); }
+	.shell { min-height: 100dvh; }
+	main { padding: var(--space-6) var(--space-5); }
 </style>

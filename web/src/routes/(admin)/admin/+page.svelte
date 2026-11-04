@@ -480,6 +480,19 @@
 	// grade/folder already have to their own Reader suggestions.
 	let newTagText: Record<string, string> = $state({});
 
+	// Direct feedback: the card showed every editable field at once (type
+	// select, grade input, folder input, an always-open tag-adder) with no
+	// visual hierarchy — "confusing." The read-only facts (title, type,
+	// date, author) now render as plain text/chips by default; the actual
+	// editing controls open on demand via "Edit details," one card at a
+	// time, instead of every card always being a small form.
+	let cardEditOpen = $state<Set<string>>(new Set());
+	function toggleCardEdit(id: string) {
+		const next = new Set(cardEditOpen);
+		if (next.has(id)) next.delete(id); else next.add(id);
+		cardEditOpen = next;
+	}
+
 	async function setTopics(s: any, topics: string[]) {
 		try {
 			await patch(fetch, `/sources/${s.id}/topics`, { topics });
@@ -1046,7 +1059,7 @@
 <svelte:head><title>Knowledge — Admin portal</title></svelte:head>
 
 <!-- specs/v4/03: library list stays Tier 1 (the actual work surface).
-     Teaching Clinic (upload/paste/scrape) is an on-demand modal reached via
+     Teaching Functional Health Collab (upload/paste/scrape) is an on-demand modal reached via
      the library's "+ Add resources" action; audit history and graph stats
      each moved to their own page (removed from here outright, not just
      de-weighted) rather than sitting in a rail panel next to the library. -->
@@ -1149,7 +1162,7 @@
 			     with the full icon/headline/CTA treatment; this row stays a
 			     plain hint rather than a second, redundant copy of the
 			     same "start here" block stacked right above it. -->
-			<p class="hint">Nothing ingested yet — use "+ Add resources" to start teaching Clinic.</p>
+			<p class="hint">Nothing ingested yet — use "+ Add resources" to start teaching Functional Health Collab.</p>
 		{/if}
 
 		<div class="library-layout">
@@ -1327,50 +1340,70 @@
 									</Menu>
 								</div>
 							</div>
-							<div class="tags">
-								{#each s.topics ?? [] as tag (tag)}
-									<button class="tag" onclick={() => removeTag(s, tag)} title="Remove tag">
-										{tag} <span aria-hidden="true">&times;</span>
-									</button>
-								{/each}
-								<input
-									class="tag-input"
-									type="text" placeholder="+ tag"
-									value={newTagText[s.id] ?? ''}
-									oninput={(e) => (newTagText = { ...newTagText, [s.id]: (e.target as HTMLInputElement).value })}
-									onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag(s); } }}
-									onblur={() => addTag(s)}
-								/>
-							</div>
-							<div class="doc-card-foot">
-								<select
-									class="doc-type-select"
-									value={s.doc_type ?? ''}
-									onchange={(e) => setDocType(s, (e.target as HTMLSelectElement).value)}
-									aria-label="Content type for {s.title}"
-								>
-									<option value="">(type unset)</option>
-									{#each DOC_TYPES as t (t)}<option value={t}>{t}</option>{/each}
-								</select>
+							<!-- Default face: read-only facts only (chips/text), no
+							     inline form controls — a browsing card, not a small
+							     editor by default. "Edit details" below opens the
+							     one place all the editable fields live. -->
+							<div class="doc-card-summary">
+								{#if s.doc_type}<Chip>{s.doc_type}</Chip>{/if}
 								{#if s.is_private}<Chip tone="warn">private</Chip>{/if}
-								<label class="grade-label">
-									Grade
-									<input
-										class="grade"
-										type="number" min="1" max="10" value={s.grade}
-										onchange={(e) => regrade(s, Number((e.target as HTMLInputElement).value))}
-									/>
-								</label>
-								<label class="folder-label">
-									<Icon name="folder" size={13} />
-									<input
-										class="folder-input"
-										type="text" placeholder="(root)" value={s.folder_path ?? ''}
-										onblur={(e) => setFolder(s, (e.target as HTMLInputElement).value)}
-									/>
-								</label>
+								<Chip tone="accent">Grade {s.grade}</Chip>
+								{#if s.folder_path}<span class="hint folder-hint"><Icon name="folder" size={12} /> {s.folder_path}</span>{/if}
 								<span class="hint">{(s.created_at ?? '').slice(0, 10)}</span>
 							</div>
+							{#if (s.topics ?? []).length}
+								<div class="tags-readonly">
+									{#each s.topics as tag (tag)}<Chip>{tag}</Chip>{/each}
+								</div>
+							{/if}
+
+							{#if cardEditOpen.has(s.id)}
+								<div class="tags">
+									{#each s.topics ?? [] as tag (tag)}
+										<button class="tag" onclick={() => removeTag(s, tag)} title="Remove tag">
+											{tag} <span aria-hidden="true">&times;</span>
+										</button>
+									{/each}
+									<input
+										class="tag-input"
+										type="text" placeholder="+ tag"
+										value={newTagText[s.id] ?? ''}
+										oninput={(e) => (newTagText = { ...newTagText, [s.id]: (e.target as HTMLInputElement).value })}
+										onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag(s); } }}
+										onblur={() => addTag(s)}
+									/>
+								</div>
+								<div class="doc-card-foot">
+									<select
+										class="doc-type-select"
+										value={s.doc_type ?? ''}
+										onchange={(e) => setDocType(s, (e.target as HTMLSelectElement).value)}
+										aria-label="Content type for {s.title}"
+									>
+										<option value="">(type unset)</option>
+										{#each DOC_TYPES as t (t)}<option value={t}>{t}</option>{/each}
+									</select>
+									<label class="grade-label">
+										Grade
+										<input
+											class="grade"
+											type="number" min="1" max="10" value={s.grade}
+											onchange={(e) => regrade(s, Number((e.target as HTMLInputElement).value))}
+										/>
+									</label>
+									<label class="folder-label">
+										<Icon name="folder" size={13} />
+										<input
+											class="folder-input"
+											type="text" placeholder="(root)" value={s.folder_path ?? ''}
+											onblur={(e) => setFolder(s, (e.target as HTMLInputElement).value)}
+										/>
+									</label>
+								</div>
+							{/if}
+							<button class="edit-toggle" onclick={() => toggleCardEdit(s.id)}>
+								{cardEditOpen.has(s.id) ? 'Done editing' : 'Edit details'}
+							</button>
 							{#if s.author || s.uploaded_by}
 								<div class="doc-card-meta">
 									<!-- Separate lines with their own icon + color, not one
@@ -1404,7 +1437,7 @@
 									<EmptyState
 										icon="book"
 										title="Your library is empty"
-										body='Upload a document, paste text, or scrape a URL to start teaching Clinic.'
+										body='Upload a document, paste text, or scrape a URL to start teaching Functional Health Collab.'
 									>
 										{#snippet action()}
 											<Button onclick={() => (ingestOpen = true)}>+ Add resources</Button>
@@ -1537,7 +1570,7 @@
 											<EmptyState
 												icon="book"
 												title="Your library is empty"
-												body='Upload a document, paste text, or scrape a URL to start teaching Clinic.'
+												body='Upload a document, paste text, or scrape a URL to start teaching Functional Health Collab.'
 											>
 												{#snippet action()}
 													<Button onclick={() => (ingestOpen = true)}>+ Add resources</Button>
@@ -2051,6 +2084,14 @@
 	}
 	.doc-card-actions { display: flex; gap: .3rem; flex: 0 0 auto; }
 	.doc-card-foot { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin-top: auto; padding-top: .3rem; }
+	.doc-card-summary { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; }
+	.folder-hint { display: inline-flex; align-items: center; gap: .25rem; }
+	.tags-readonly { display: flex; flex-wrap: wrap; gap: .3rem; }
+	.edit-toggle {
+		align-self: flex-start; border: none; background: none; cursor: pointer; padding: 0;
+		color: var(--accent-ink); font-size: var(--text-xs); font-weight: 650; margin-top: .2rem;
+	}
+	.edit-toggle:hover { text-decoration: underline; }
 	.grade-label { display: flex; align-items: center; gap: .3rem; font-size: var(--text-xs); color: var(--muted); }
 	.folder-label { display: flex; align-items: center; gap: .25rem; font-size: var(--text-xs); color: var(--muted); }
 	.folder-input {

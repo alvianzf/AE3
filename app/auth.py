@@ -22,8 +22,8 @@ from .config import get_config
 
 cfg = get_config()
 
-COOKIE = "clinic_session"
-_SALT = "clinic-session"
+COOKIE = "fhc_session"
+_SALT = "fhc-session"
 _MAX_AGE = 60 * 60 * 12
 
 _serializer = URLSafeTimedSerializer(cfg.session_secret, salt=_SALT)

@@ -1,4 +1,4 @@
-"""Environment-driven configuration for the clinic platform PoC."""
+"""Environment-driven configuration for the Functional Health Collab platform PoC."""
 import os
 from functools import lru_cache
 

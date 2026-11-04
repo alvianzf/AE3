@@ -2,7 +2,7 @@
 	import Seo from '$lib/components/Seo.svelte';
 </script>
 
-<Seo title="Privacy Policy — Clinic" description="How Clinic collects, uses, and protects your data." path="/privacy" />
+<Seo title="Privacy Policy — Functional Health Collab" description="How Functional Health Collab collects, uses, and protects your data." path="/privacy" />
 
 <div class="container page">
 	<h1>Privacy Policy</h1>

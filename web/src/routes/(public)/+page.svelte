@@ -6,7 +6,7 @@
 	import Chip from '$lib/components/Chip.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import Seo from '$lib/components/Seo.svelte';
-	import ParticleField from '$lib/components/ParticleField.svelte';
+	import LeafField from '$lib/components/LeafField.svelte';
 	import { jsonLdScript } from '$lib/seo';
 	import { reveal } from '$lib/actions/reveal';
 
@@ -23,7 +23,7 @@
 	const available = $derived((practitioners ?? []).filter((p: any) => p.accepting_new_clients).slice(0, 4));
 
 	const description =
-		"Clinic gives independent practitioners an AI assistant grounded in their own curated library — every answer cited, independently checked, and never sourced from the open internet.";
+		"Functional Health Collab gives independent practitioners an AI assistant grounded in their own curated library — every answer cited, independently checked, and never sourced from the open internet.";
 
 	// Organization schema — the baseline structured-data signal search
 	// engines and AI answer engines (GEO) both use to understand what the
@@ -31,7 +31,7 @@
 	const orgJsonLd = {
 		'@context': 'https://schema.org',
 		'@type': 'Organization',
-		name: 'Clinic',
+		name: 'Functional Health Collab',
 		url: PUBLIC_SITE_URL,
 		description,
 		logo: `${PUBLIC_SITE_URL}/favicon.svg`
@@ -41,7 +41,7 @@
 		{
 			icon: 'book',
 			title: 'Trained on what you teach it',
-			body: 'Every answer comes from your clinic’s own curated library — never the open internet, never a guess.'
+			body: 'Every answer comes from your own curated library — never the open internet, never a guess.'
 		},
 		{
 			icon: 'file',
@@ -56,13 +56,13 @@
 		{
 			icon: 'settings',
 			title: 'You set the bar',
-			body: 'A reliability grade on every source, and a slider that controls what’s reachable — your clinic decides what the AI is allowed to use.'
+			body: 'A reliability grade on every source, and a slider that controls what’s reachable — you decide what the AI is allowed to use.'
 		}
 	];
 </script>
 
 <Seo
-	title="Clinic — grounded, cited AI for independent practitioners"
+	title="Functional Health Collab — grounded, cited AI for independent practitioners"
 	{description}
 	path="/"
 />
@@ -78,12 +78,12 @@
      former root content (search/filter/grid) moved to /practitioners
      unchanged; /about redirects here rather than duplicating this pitch. -->
 <section class="hero">
-	<ParticleField />
+	<LeafField />
 	<div class="container heroin">
 		<span class="sprigbig"><Sprig size={30} /></span>
 		<h1>An AI assistant practitioners can put their name behind.</h1>
 		<p>
-			Clinic connects clients with independent practitioners and gives every
+			Functional Health Collab connects clients with independent practitioners and gives every
 			one of them an AI-assisted knowledge base — grounded, cited, and
 			checked before a single word reaches a client record.
 		</p>
@@ -99,8 +99,8 @@
 		<p class="lede">
 			Generic AI tools answer from whatever they happened to absorb during
 			training — no way to know if it’s current, sourced, or safe to act
-			on. Clinic works differently: a practitioner’s AI can only ever answer
-			from the library their clinic curated and graded itself, and every
+			on. Functional Health Collab works differently: a practitioner’s AI can only ever answer
+			from the library they curated and graded themselves, and every
 			answer ships with the receipts.
 		</p>
 	</section>

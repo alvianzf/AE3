@@ -1,4 +1,4 @@
-"""Clinic — FastAPI app for the online clinic platform.
+"""Functional Health Collab — FastAPI app for the online practitioner platform.
 
 v2: a public website, an admin portal (practitioner management + the
 knowledge library, unchanged from v1), a practitioner portal (Basic profile
@@ -125,7 +125,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Clinic — Online Clinic Platform", lifespan=lifespan)
+app = FastAPI(title="Functional Health Collab", lifespan=lifespan)
 # No response compression existed anywhere in the stack — every HTML/JS/CSS
 # response (now including the SvelteKit web-build's JS bundles, specs/v4)
 # shipped uncompressed. Real, measured cause of "web is too slow": curl

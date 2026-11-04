@@ -20,12 +20,12 @@
 		},
 		{
 			q: 'Is this a substitute for medical advice?',
-			a: 'No. Clinic is a decision-support tool for a licensed practitioner — it is not a source of direct medical advice, and nothing it produces replaces a professional’s own judgment.'
+			a: 'No. Functional Health Collab is a decision-support tool for a licensed practitioner — it is not a source of direct medical advice, and nothing it produces replaces a professional’s own judgment.'
 		}
 	];
 </script>
 
-<Seo title="FAQ — Clinic" description="Frequently asked questions about Clinic." path="/faq" />
+<Seo title="FAQ — Functional Health Collab" description="Frequently asked questions about Functional Health Collab." path="/faq" />
 
 <div class="container page">
 	<h1>Frequently asked questions</h1>

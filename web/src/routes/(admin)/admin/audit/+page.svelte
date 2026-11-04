@@ -35,7 +35,7 @@
 
 <svelte:head><title>Audit history — Admin portal</title></svelte:head>
 
-<!-- Pulled out of "2 · What Clinic knows" on the Knowledge page, where a
+<!-- Pulled out of "2 · What Functional Health Collab knows" on the Knowledge page, where a
      6-row inline preview crowded a narrow rail panel. Full history (up to
      the 100 most recent events GET /api/audit returns) gets its own screen
      instead. -->

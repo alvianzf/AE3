@@ -33,7 +33,7 @@
 	}
 </script>
 
-<Seo title="Log in — Clinic" description="Log in to your Clinic account." path="/login" noindex />
+<Seo title="Log in — Functional Health Collab" description="Log in to your Functional Health Collab account." path="/login" noindex />
 
 <div class="container wrap">
 	<section class="card-panel">
