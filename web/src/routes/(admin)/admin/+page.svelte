@@ -209,6 +209,16 @@
 	let q = $state('');
 	let activeTopic = $state('');
 	let activeKind = $state('');
+	// Icons (the original card grid) / list (same cards, one per row) /
+	// table (a compact Explorer-style "Details" view with its own
+	// columns) — the three view modes any desktop file browser offers.
+	// Persisted locally only (per-browser convenience, not server state).
+	let viewMode = $state<'icons' | 'list' | 'table'>(
+		(typeof localStorage !== 'undefined' && (localStorage.getItem('admin-library-view') as any)) || 'icons'
+	);
+	$effect(() => {
+		try { localStorage.setItem('admin-library-view', viewMode); } catch {}
+	});
 	// The folder currently being browsed — a real Finder/Nautilus-style
 	// "current directory", not a filter chip: '' is root. Navigating into
 	// a folder shows exactly its direct contents (subfolders + the
@@ -327,8 +337,12 @@
 			if (activeTopic && !(s.topics ?? []).includes(activeTopic)) return false;
 			if (activeKind && s.kind !== activeKind) return false;
 			if (searching) {
-				return [s.title, s.summary, s.origin, s.author, s.filename]
-					.some((v) => (v ?? '').toLowerCase().includes(needle));
+				// Omni search: every field a document has, not just a fixed
+				// subset — folder path and tags included, so typing a folder
+				// name or a tag surfaces its documents the same as a title
+				// or summary match would.
+				const haystack = [s.title, s.summary, s.origin, s.author, s.filename, s.folder_path, s.kind, ...(s.topics ?? [])];
+				return haystack.some((v) => (v ?? '').toLowerCase().includes(needle));
 			}
 			return (s.folder_path || '') === currentPath;
 		});
@@ -428,6 +442,24 @@
 		try {
 			await patch(fetch, `/sources/${s.id}/folder`, { folder_path: next });
 			toast(`"${s.title.slice(0, 40)}" moved to ${next || '(root)'}.`);
+			await invalidateAll();
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		}
+	}
+
+	// Content-type classification (article/book/presentation/protocol/
+	// etc.) — an admin's call always wins over the Reader's own
+	// suggestion at ingest time, same relationship folder/grade/topics
+	// already have to their own Reader suggestions.
+	const DOC_TYPES = [
+		'article', 'book', 'presentation', 'education material',
+		'lecture notes', 'protocol', 'picture', 'chart', 'other'
+	];
+	async function setDocType(s: any, docType: string) {
+		if (docType === (s.doc_type ?? '')) return;
+		try {
+			await patch(fetch, `/sources/${s.id}/doc-type`, { doc_type: docType });
 			await invalidateAll();
 		} catch (err: any) {
 			toast(err.message, 'alert');
@@ -887,17 +919,24 @@
 	<div class="tab-panel">
 	{#if mainTab === 'library'}
 		<div class="search-bar">
-			<input
-				class="search"
-				type="search"
-				placeholder="Search titles, summaries, origins, authors…"
-				bind:value={q}
-				oninput={() => (page = 1)}
-				aria-label="Search the library"
-			/>
-			{#if q}
-				<button class="search-clear" onclick={() => { q = ''; page = 1; }} aria-label="Clear search">&times;</button>
-			{/if}
+			<div class="search-input-wrap">
+				<input
+					class="search"
+					type="search"
+					placeholder="Search titles, summaries, origins, authors, folders, tags…"
+					bind:value={q}
+					oninput={() => (page = 1)}
+					aria-label="Search the library"
+				/>
+				{#if q}
+					<button class="search-clear" onclick={() => { q = ''; page = 1; }} aria-label="Clear search">&times;</button>
+				{/if}
+			</div>
+			<div class="view-toggle" role="group" aria-label="Document view">
+				<button class:active={viewMode === 'icons'} onclick={() => (viewMode = 'icons')} title="Icons" aria-label="Icons view"><Icon name="grid" size={15} /></button>
+				<button class:active={viewMode === 'list'} onclick={() => (viewMode = 'list')} title="List" aria-label="List view"><Icon name="list" size={15} /></button>
+				<button class:active={viewMode === 'table'} onclick={() => (viewMode = 'table')} title="Columns" aria-label="Columns view"><Icon name="table" size={15} /></button>
+			</div>
 		</div>
 
 		{#if data.graph}
@@ -1000,7 +1039,7 @@
 				<!-- Documents (and, while browsing, subfolders) as cards/tiles —
 				     sits directly below the breadcrumb/Kind facet rather than
 				     behind a drill-down click. -->
-				<div class="doc-grid">
+				<div class="doc-grid" class:list-view={viewMode === 'list'}>
 					{#if !searching}
 						{#each visibleSubfolders as node (node.path)}
 							<div
@@ -1033,6 +1072,7 @@
 							</div>
 						{/each}
 					{/if}
+					{#if viewMode !== 'table'}
 					{#each pageItems as s (s.id)}
 						<div
 							oncontextmenu={(e) => onDocContextMenu(e, s)}
@@ -1082,7 +1122,15 @@
 								/>
 							</div>
 							<div class="doc-card-foot">
-								<Chip tone="neutral">{s.kind}</Chip>
+								<select
+									class="doc-type-select"
+									value={s.doc_type ?? ''}
+									onchange={(e) => setDocType(s, (e.target as HTMLSelectElement).value)}
+									aria-label="Content type for {s.title}"
+								>
+									<option value="">(type unset)</option>
+									{#each DOC_TYPES as t (t)}<option value={t}>{t}</option>{/each}
+								</select>
 								{#if s.is_private}<Chip tone="warn">private</Chip>{/if}
 								<label class="grade-label">
 									Grade
@@ -1102,6 +1150,11 @@
 								</label>
 								<span class="hint">{(s.created_at ?? '').slice(0, 10)}</span>
 							</div>
+							{#if s.author || s.uploaded_by}
+								<p class="doc-card-meta hint">
+									{#if s.author}By {s.author}{/if}{#if s.author && s.uploaded_by} · {/if}{#if s.uploaded_by}Uploaded by {s.uploaded_by}{/if}
+								</p>
+							{/if}
 						</div>
 					{:else}
 						{#if !visibleSubfolders.length}
@@ -1112,7 +1165,67 @@
 							</p>
 						{/if}
 					{/each}
+					{/if}
 				</div>
+
+				{#if viewMode === 'table'}
+					<!-- Explorer/Finder "Details"/"Columns" view — a compact
+					     sortable-by-eye table instead of the card grid, same
+					     underlying pageItems and same edit affordances (tags
+					     stay comma-joined/read-only here; use Icons or List to
+					     edit them inline). -->
+					<div class="doc-table-wrap">
+						<table class="doc-table">
+							<thead>
+								<tr>
+									<th></th>
+									<th>Title</th>
+									<th>Type</th>
+									<th>Author</th>
+									<th>Uploaded by</th>
+									<th>Folder</th>
+									<th>Tags</th>
+									<th>Grade</th>
+									<th>Date</th>
+									<th></th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each pageItems as s (s.id)}
+									<tr oncontextmenu={(e) => onDocContextMenu(e, s)}>
+										<td>
+											<input
+												type="checkbox"
+												checked={librarySelected.has(s.id)}
+												onchange={() => toggleLibrarySelected(s.id)}
+												aria-label="Select {s.title}"
+											/>
+										</td>
+										<td><a class="title-link" href="/admin/{s.id}" title={s.title}>{s.title}</a></td>
+										<td class="hint">{s.doc_type || '—'}</td>
+										<td class="hint">{s.author || '—'}</td>
+										<td class="hint">{s.uploaded_by || '—'}</td>
+										<td class="hint">{s.folder_path || '(root)'}</td>
+										<td class="hint">{(s.topics ?? []).join(', ') || '—'}</td>
+										<td class="hint">{s.grade}</td>
+										<td class="hint">{(s.created_at ?? '').slice(0, 10)}</td>
+										<td class="doc-table-actions">
+											<a class="icon-btn" href="/admin/{s.id}" title="View document" aria-label="View {s.title}"><Icon name="eye" size={15} /></a>
+											<button class="icon-btn" onclick={() => askMove(s)} title="Move to folder" aria-label="Move {s.title}"><Icon name="folder" size={15} /></button>
+											<button class="icon-btn danger" onclick={() => askDelete(s)} title="Remove from library" aria-label="Remove {s.title}"><Icon name="trash" size={15} /></button>
+										</td>
+									</tr>
+								{:else}
+									<tr><td colspan="10" class="hint">
+										{#if !data.sources.length}Nothing ingested yet — use "+ Add resources" to start teaching Clinic.
+										{:else if searching}Nothing matches that search.
+										{:else}This folder is empty.{/if}
+									</td></tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+				{/if}
 
 				{#if totalPages > 1}
 					<div class="pager">
@@ -1366,6 +1479,15 @@
 <Dialog bind:open={() => !!placementPreview, (v) => { if (!v) placementPreview = null; }} title="Placed in library">
 	{#if placementPreview}
 		<p class="hint">"{placementPreview.title.slice(0, 80)}" was ingested and filed as shown below — the Reader suggested these, adjust them if needed.</p>
+		<select
+			class="doc-type-select"
+			value={placementPreview.doc_type ?? ''}
+			onchange={(e) => setDocType(placementPreview, (e.target as HTMLSelectElement).value)}
+			aria-label="Content type"
+		>
+			<option value="">(type unset)</option>
+			{#each DOC_TYPES as t (t)}<option value={t}>{t}</option>{/each}
+		</select>
 		<label class="folder-label">
 			<Icon name="folder" size={13} />
 			<input
@@ -1466,7 +1588,8 @@
 	@media (prefers-reduced-motion: reduce) {
 		.scrape-progress .bar { animation: none; width: 100%; }
 	}
-	.search-bar { position: relative; margin-bottom: var(--space-4); }
+	.search-bar { margin-bottom: var(--space-4); display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+	.search-input-wrap { position: relative; flex: 1 1 16rem; min-width: 0; }
 	.graph-stats { margin: 0 0 var(--space-4); }
 	.search {
 		width: 100%; font-size: var(--text-lg); padding: var(--space-4) var(--space-5) var(--space-4) var(--space-4);
@@ -1474,6 +1597,13 @@
 		color: var(--ink);
 		transition: border-color .15s var(--ease), box-shadow .15s var(--ease);
 	}
+	.view-toggle { display: flex; gap: .1rem; border: 1px solid var(--line-2); border-radius: var(--r-lg); padding: .2rem; flex: 0 0 auto; }
+	.view-toggle button {
+		border: none; background: none; cursor: pointer; color: var(--muted); padding: .5rem .6rem;
+		border-radius: var(--r); display: inline-flex;
+	}
+	.view-toggle button.active { color: var(--accent); background: var(--accent-soft); }
+	.view-toggle button:hover:not(.active) { background: var(--panel-2); }
 	.search:focus {
 		outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft);
 	}
@@ -1506,6 +1636,16 @@
 	.dir-tile.active .dir-count { color: inherit; background: rgba(255, 255, 255, .35); }
 	.facets { display: grid; gap: var(--space-2); margin-bottom: var(--space-4); }
 	.doc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: var(--space-3); }
+	.doc-grid.list-view { grid-template-columns: 1fr; }
+	.doc-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r-lg); }
+	.doc-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+	.doc-table th, .doc-table td {
+		padding: .5rem .6rem; text-align: left; border-bottom: 1px solid var(--line);
+		white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 16rem;
+	}
+	.doc-table th { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+	.doc-table tbody tr:hover { background: var(--panel-2); }
+	.doc-table-actions { display: flex; gap: .2rem; white-space: nowrap; }
 	.library-layout { display: flex; gap: var(--space-5); align-items: flex-start; }
 	.folder-sidebar {
 		flex: 0 0 14rem; min-width: 0; border-right: 1px solid var(--line); padding-right: var(--space-4);
@@ -1595,6 +1735,11 @@
 		width: 9rem; border: 1px solid var(--line-2); border-radius: var(--r);
 		padding: .3rem .4rem; font: inherit; font-size: var(--text-xs); color: var(--ink); background: var(--panel);
 	}
+	.doc-type-select {
+		border: 1px solid var(--line-2); border-radius: var(--r); padding: .25rem .4rem;
+		font: inherit; font-size: var(--text-xs); color: var(--ink); background: var(--panel); cursor: pointer;
+	}
+	.doc-card-meta { margin: -.1rem 0 0; }
 	.pager { display: flex; align-items: center; justify-content: center; gap: var(--space-4); margin-top: var(--space-5); }
 	.facet-row { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
 	.facet-label {

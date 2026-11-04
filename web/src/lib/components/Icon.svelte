@@ -35,7 +35,10 @@
 		'external-link': 'M14 4h6v6M20 4L10 14M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6',
 		lock: 'M6 11V8a6 6 0 1 1 12 0v3M5 11h14v9H5zM12 15v2',
 		unlock: 'M6 11V8a6 6 0 0 1 11-3.6M5 11h14v9H5zM12 15v2',
-		file: 'M6 3.5h8l4 4v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1zM14 3.5V8h4.5'
+		file: 'M6 3.5h8l4 4v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1zM14 3.5V8h4.5',
+		grid: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
+		list: 'M4 6h16M4 12h16M4 18h16',
+		table: 'M4 4h16v16H4zM4 10h16M10 4v16'
 	};
 
 	let { name, size = 17 }: { name: string; size?: number } = $props();
