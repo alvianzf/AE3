@@ -100,8 +100,13 @@
 				if (job.status === 'done') {
 					clearInterval(pollTimers[stagedId]);
 					delete pollTimers[stagedId];
-					toast('Ingested into the library.');
 					await invalidateAll();
+					const placed = (data.sources ?? []).find((x: any) => x.id === job.result_document_id);
+					toast(
+						placed
+							? `"${placed.title.slice(0, 40)}" ingested — filed in ${placed.folder_path || '(root)'}.`
+							: 'Ingested into the library.'
+					);
 				} else if (job.status === 'error') {
 					clearInterval(pollTimers[stagedId]);
 					delete pollTimers[stagedId];
