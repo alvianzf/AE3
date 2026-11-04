@@ -1,5 +1,6 @@
 <script lang="ts">
 	import AppRail from '$lib/components/AppRail.svelte';
+	import CommandPalette from '$lib/components/CommandPalette.svelte';
 
 	let { data, children } = $props();
 
@@ -10,6 +11,21 @@
 		{ href: '/admin/questionnaires', label: 'Questionnaires', icon: 'clipboard' },
 		{ href: '/admin/audit', label: 'Audit history', icon: 'history' }
 	];
+
+	// specs/v7/06 — v1 scope is navigation only; the Library page's own
+	// view modes/tabs (Tree view, Graph view) aren't separate routes to
+	// jump to yet, so they're not command-palette entries here. Adding a
+	// query-param-addressable deep link for those is a reasonable later
+	// follow-up, not attempted in this first pass.
+	const paletteItems = items.map((i) => ({ ...i, group: 'Admin' }));
+	let paletteOpen = $state(false);
+
+	function onWindowKeydown(e: KeyboardEvent) {
+		if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+			e.preventDefault();
+			paletteOpen = true;
+		}
+	}
 
 	// A slim, persistent status bar on every admin page — replaces the
 	// dashboard-only "System health" block of per-role chips with just a
@@ -32,8 +48,12 @@
 	}
 </script>
 
+<svelte:window onkeydown={onWindowKeydown} />
+
+<CommandPalette items={paletteItems} bind:open={paletteOpen} />
+
 <div class="shell">
-	<AppRail {items} portalLabel="Admin portal" userLabel={data.session?.admin_role} />
+	<AppRail {items} portalLabel="Admin portal" userLabel={data.session?.admin_role} onCommandPalette={() => (paletteOpen = true)} />
 	<main>
 		{@render children()}
 		{#if health}

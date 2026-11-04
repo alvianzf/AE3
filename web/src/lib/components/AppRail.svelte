@@ -6,7 +6,15 @@
 	import Icon from './Icon.svelte';
 
 	interface NavItem { href: string; label: string; icon: string; locked?: boolean; badge?: number }
-	let { items, portalLabel, userLabel }: { items: NavItem[]; portalLabel: string; userLabel?: string } = $props();
+	// onCommandPalette — optional (specs/v7/06): a portal that's wired up
+	// a CommandPalette.svelte passes a handler here to get a visible
+	// trigger button in the rail, not just the Cmd/Ctrl+K shortcut a
+	// first-time user has no way to discover on their own. Omitted
+	// entirely (not just hidden) for a portal that hasn't adopted this
+	// yet, so AppRail's existing behavior for those portals is unchanged.
+	let {
+		items, portalLabel, userLabel, onCommandPalette
+	}: { items: NavItem[]; portalLabel: string; userLabel?: string; onCommandPalette?: () => void } = $props();
 
 	// specs/v4.1/02 — one visual identity per user type. Colors come from
 	// --rail-top/--rail-bottom/--rail-indicator, the same CSS custom
@@ -47,6 +55,11 @@
 <nav class="rail" aria-label="{portalLabel} navigation">
 	<a href="/" class="mark" aria-label="Clinic home"><Sprig size={22} /></a>
 	<span class="portal-label">{portalLabel}</span>
+	{#if onCommandPalette}
+		<button class="search-trigger" onclick={onCommandPalette} title="Search (⌘K)" aria-label="Open command palette">
+			<Icon name="search" size={18} />
+		</button>
+	{/if}
 	<ul>
 		{#each items as it (it.href)}
 			<li>
@@ -77,6 +90,13 @@
 		color: #fdf1f2; z-index: 40;
 	}
 	.mark { color: #fff; display: flex; padding: .4rem; }
+	.search-trigger {
+		display: flex; align-items: center; justify-content: center;
+		width: 2.2rem; height: 2.2rem; border-radius: 50%; border: none;
+		background: rgba(255, 255, 255, .12); color: #f7dfe2; cursor: pointer;
+		transition: background var(--duration-fast, .12s) var(--ease);
+	}
+	.search-trigger:hover, .search-trigger:focus-visible { background: rgba(255, 255, 255, .22); }
 	.portal-label {
 		writing-mode: vertical-rl; text-orientation: mixed; transform: rotate(180deg);
 		font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
