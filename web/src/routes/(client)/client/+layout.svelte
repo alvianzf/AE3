@@ -1,10 +1,9 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import AccountMenu from '$lib/components/AccountMenu.svelte';
+	import Rail from '$lib/components/Rail.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import Tour from '$lib/components/Tour.svelte';
 	import DisclaimerBar from '$lib/components/DisclaimerBar.svelte';
-	import Icon from '$lib/components/Icon.svelte';
 
 	// specs/v8 §8.5 — surfaced on the two client-facing record pages the
 	// spec names specifically, not every page in the portal.
@@ -12,9 +11,6 @@
 
 	let { data, children } = $props();
 
-	// Direct instruction: no persistent nav surface — "Your care" (this
-	// portal's own root +page.svelte) is the one place a client starts
-	// from and returns to.
 	let tourActive = $state(!data.session?.tour_completed);
 	const tourSteps = [
 		{ selector: 'a[href="/client/questionnaire"]', title: 'Questionnaire', body: 'Your practitioner uses this to understand your health history.' },
@@ -43,23 +39,9 @@
 
 <CommandPalette items={paletteItems} bind:open={paletteOpen} />
 <Tour steps={tourSteps} bind:active={tourActive} />
-<button class="search-trigger" onclick={() => (paletteOpen = true)} aria-label="Search (⌘K)" title="Search (⌘K)">
-	<Icon name="search" size={17} />
-</button>
-<AccountMenu userLabel={data.session?.name} />
 
-<main class="container">
+<div class="app-shell">
+	<Rail {items} onCommandPalette={() => (paletteOpen = true)} userLabel={data.session?.name} />
 	{@render children()}
-	{#if showDisclaimer}<DisclaimerBar />{/if}
-</main>
-
-<style>
-	main { padding: var(--space-6) var(--space-5) var(--space-7); min-height: 100dvh; }
-	.search-trigger {
-		position: fixed; top: var(--space-4); right: 4.2rem; z-index: 50;
-		width: 2.4rem; height: 2.4rem; border-radius: 50%; background: var(--panel);
-		border: 1px solid var(--line); box-shadow: var(--shadow); color: var(--ink-2); cursor: pointer;
-		display: flex; align-items: center; justify-content: center;
-	}
-	.search-trigger:hover { background: var(--panel-2); }
-</style>
+</div>
+{#if showDisclaimer}<DisclaimerBar />{/if}

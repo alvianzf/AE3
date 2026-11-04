@@ -3,7 +3,6 @@
 	import { PUBLIC_API_BASE } from '$env/static/public';
 	import { chunkedUpload } from '$lib/chunkedUpload';
 	import { toast } from '$lib/stores/toast';
-	import Workspace from '$lib/components/Workspace.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import Icon from '$lib/components/Icon.svelte';
@@ -41,7 +40,7 @@
 
 <svelte:head><title>Files — Client portal</title></svelte:head>
 
-<Workspace title="Your files" backHref="/client">
+<div class="pane-row"><div class="detail-pane"><div class="detail-head"><div><h1>Your files</h1></div></div>
 	<div class="uploader">
 		<div class="uploader-row">
 			<input type="file" bind:this={fileInput} />
@@ -67,7 +66,7 @@
 			<td><a class="view" href={viewUrl(f)} target="_blank" rel="noopener">View</a></td>
 		{/snippet}
 	</DataTable>
-</Workspace>
+</div></div>
 
 <style>
 	.uploader { display: grid; gap: .5rem; margin-bottom: var(--space-4); }

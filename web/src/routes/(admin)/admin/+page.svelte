@@ -1,63 +1,43 @@
 <script lang="ts">
-	import HomeGrid, { type Tile } from '$lib/components/HomeGrid.svelte';
-
 	let { data } = $props();
 	const s = $derived(data.stats ?? {});
-	const isSuperadmin = $derived(data.session?.admin_role === 'superadmin');
 
-	// The whole of "where do I go" for the admin portal — one launcher,
-	// no separate always-visible nav listing the same five destinations
-	// on every single page. Each tile carries its own live status where
-	// one exists, so "what needs attention" is readable from here alone.
-	const tiles = $derived.by(() => {
-		const t: Tile[] = [
-			{
-				href: '/admin/library', label: 'Library', icon: 'book', tone: 'accent',
-				status: 'Upload, organize & browse'
-			},
-			{
-				href: '/admin/users', label: 'Users', icon: 'users',
-				tone: (s.pending_practitioners ?? 0) > 0 ? 'warn' : 'accent',
-				status: (s.pending_practitioners ?? 0) > 0
-					? `${s.pending_practitioners} application${s.pending_practitioners === 1 ? '' : 's'} pending`
-					: `${s.approved_practitioners ?? 0} approved practitioners`
-			},
-			{
-				href: '/admin/questionnaires', label: 'Questionnaires', icon: 'clipboard', tone: 'accent',
-				status: 'Manage the default questionnaire'
-			},
-			{
-				href: '/admin/audit', label: 'Audit history', icon: 'history', tone: 'accent',
-				status: 'Library event log'
-			}
-		];
-		if (isSuperadmin) {
-			t.push({ href: '/admin/settings', label: 'Settings', icon: 'settings', tone: 'accent', status: 'AI provider & system health' });
-		}
-		return t;
-	});
+	// Rail navigation reaches every section directly now — this page is
+	// just a quick read on the platform, not a launcher. A flat list of
+	// facts, not stat tiles in boxes.
+	const rows = $derived([
+		{ label: 'Pending applications', value: s.pending_practitioners ?? 0, href: '/admin/users', warn: (s.pending_practitioners ?? 0) > 0 },
+		{ label: 'Approved practitioners', value: s.approved_practitioners ?? 0, href: '/admin/users' },
+		{ label: 'New contact submissions', value: s.new_contacts ?? 0, href: '/admin/users', warn: (s.new_contacts ?? 0) > 0 },
+		{ label: 'Total profile views', value: s.total_views ?? 0 }
+	]);
 </script>
 
-<svelte:head><title>Home — Admin portal</title></svelte:head>
+<svelte:head><title>Overview — Admin portal</title></svelte:head>
 
-<h1 class="page-title">Welcome back</h1>
-<p class="page-sub">Pick where you're going.</p>
-
-{#if (s.new_contacts ?? 0) > 0}
-	<a class="attention" href="/admin/users">
-		<strong>{s.new_contacts}</strong> new contact submission{s.new_contacts === 1 ? '' : 's'} →
-	</a>
-{/if}
-
-<HomeGrid {tiles} />
+<div class="pane-row">
+	<div class="detail-pane">
+		<div class="detail-head"><div><h1>Overview</h1><p>A quick read on the whole platform.</p></div></div>
+		<div class="stat-list">
+			{#each rows as r (r.label)}
+				{#if r.href}
+					<a class="stat-row" class:warn={r.warn} href={r.href}>
+						<span>{r.label}</span><strong>{r.value}</strong>
+					</a>
+				{:else}
+					<div class="stat-row"><span>{r.label}</span><strong>{r.value}</strong></div>
+				{/if}
+			{/each}
+		</div>
+	</div>
+</div>
 
 <style>
-	.page-title { font-size: var(--text-3xl); font-weight: var(--weight-bold); margin-bottom: .3rem; }
-	.page-sub { color: var(--muted); margin-bottom: var(--space-5); }
-	.attention {
-		display: inline-flex; align-items: center; gap: .4rem; text-decoration: none; color: var(--ink);
-		background: var(--warn-soft); border-radius: var(--r-lg); padding: var(--space-3) var(--space-4);
-		font-size: var(--text-sm); margin-bottom: var(--space-5);
+	.stat-list { border-top: 1px solid var(--line); max-width: 28rem; }
+	.stat-row {
+		display: flex; align-items: center; justify-content: space-between; padding: var(--space-3) 0;
+		border-bottom: 1px solid var(--line); color: var(--ink); text-decoration: none;
 	}
-	.attention strong { color: var(--warn); font-size: var(--text-lg); }
+	.stat-row.warn strong { color: var(--warn); }
+	a.stat-row:hover { color: var(--accent-ink); }
 </style>
