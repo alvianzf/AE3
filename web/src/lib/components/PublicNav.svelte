@@ -5,11 +5,10 @@
 	import Icon from './Icon.svelte';
 	import { currentSession, LANDING } from '$lib/session';
 
-	// Rebuilt with the same gradient-bar identity the portal sidebar uses,
-	// plus a real mobile menu — the old version's nav simply vanished
-	// below 720px with no replacement at all, a real dead end on a
-	// phone. Pricing/FAQ/Contact, previously footer-only, are now
-	// directly in the primary nav too.
+	// Flat white bar now, matching the portal dock's language (a small
+	// gradient badge behind the logo only, not a full-width painted
+	// band) — part of the ground-up pass retiring every surface that
+	// used to paint the brand gradient across its whole area.
 	const links = [
 		{ href: '/practitioners', label: 'Find a practitioner' },
 		{ href: '/join', label: 'For practitioners' },
@@ -22,11 +21,6 @@
 	// valid the whole time — `/api/auth/me` returns 200 — the nav just
 	// never checked). Read as "why do I need to log in again."
 	let session = $state<{ role: string } | null>(null);
-	// `checked` gates rendering either CTA state until the session check
-	// resolves — without it, an already-logged-in visitor still saw (and
-	// could click) "Log in" for one round trip on every load, a narrower
-	// version of the same bug the fix above already covers for the
-	// *permanent* case (specs/v4/04-known-issues.md#m17).
 	let checked = $state(false);
 	onMount(async () => {
 		session = await currentSession();
@@ -39,7 +33,7 @@
 <header class="topbar">
 	<div class="inner container">
 		<a href="/" class="brand">
-			<Sprig size={22} />
+			<span class="mark"><Sprig size={18} /></span>
 			<span class="wordmark">Functional Health Collab</span>
 		</a>
 		<nav class="links" aria-label="Main">
@@ -82,33 +76,33 @@
 </header>
 
 <style>
-	.topbar {
-		position: sticky; top: 0; z-index: 40;
-		background: linear-gradient(100deg, var(--rail-top), var(--rail-bottom));
-		box-shadow: var(--shadow);
-	}
+	.topbar { position: sticky; top: 0; z-index: 40; background: var(--panel); border-bottom: 1px solid var(--line); }
 	.inner { display: flex; align-items: center; gap: var(--space-6); padding: var(--space-3) var(--space-5); min-height: 3.75rem; }
-	.brand { display: flex; align-items: center; gap: .5rem; color: #fff; text-decoration: none; font-weight: 750; font-size: var(--text-base); }
+	.brand { display: flex; align-items: center; gap: .6rem; color: var(--ink); text-decoration: none; font-weight: 750; font-size: var(--text-base); }
+	.mark {
+		display: flex; align-items: center; justify-content: center; width: 2rem; height: 2rem;
+		border-radius: var(--r); color: #fff;
+		background: linear-gradient(135deg, var(--rail-top), var(--rail-bottom));
+	}
 	.links { display: flex; gap: var(--space-4); margin-right: auto; }
-	.links a { color: #f7dfe2; text-decoration: none; font-size: var(--text-sm); font-weight: 650; padding: .4rem .2rem; }
-	.links a.on, .links a:hover { color: #fff; }
+	.links a { color: var(--ink-2); text-decoration: none; font-size: var(--text-sm); font-weight: 650; padding: .4rem .2rem; }
+	.links a.on, .links a:hover { color: var(--accent-ink); }
 	.cta { display: flex; align-items: center; gap: var(--space-4); min-height: 2.2rem; }
-	.ghostlink { color: #f7dfe2; text-decoration: none; font-size: var(--text-sm); font-weight: 650; }
+	.ghostlink { color: var(--ink-2); text-decoration: none; font-size: var(--text-sm); font-weight: 650; }
 	.btn.filled {
-		background: #fff; color: var(--accent-ink); padding: .5rem 1.1rem; border-radius: 99px;
+		background: var(--accent); color: #fff; padding: .5rem 1.1rem; border-radius: 99px;
 		text-decoration: none; font-size: var(--text-sm); font-weight: 750;
 	}
-	.hamburger { display: none; color: #fff; background: none; border: none; cursor: pointer; padding: .4rem; }
-	.mobile-sheet {
-		display: flex; flex-direction: column; gap: .1rem; padding: var(--space-2) var(--space-4) var(--space-4);
-	}
+	.btn.filled:hover { background: var(--accent-ink); }
+	.hamburger { display: none; color: var(--ink); background: none; border: none; cursor: pointer; padding: .4rem; }
+	.mobile-sheet { display: flex; flex-direction: column; gap: .1rem; padding: var(--space-2) var(--space-4) var(--space-4); }
 	.mobile-sheet a {
-		color: #f7dfe2; text-decoration: none; padding: .65rem .6rem; border-radius: var(--r);
+		color: var(--ink-2); text-decoration: none; padding: .65rem .6rem; border-radius: var(--r);
 		font-size: var(--text-sm); font-weight: 650;
 	}
-	.mobile-sheet a:hover, .mobile-sheet a.on { background: rgba(255, 255, 255, .14); color: #fff; }
-	.mobile-sheet hr { border: none; border-top: 1px solid rgba(255, 255, 255, .2); margin: .4rem 0; }
-	.mobile-sheet .sheet-cta { background: #fff; color: var(--accent-ink); font-weight: 750; text-align: center; }
+	.mobile-sheet a:hover, .mobile-sheet a.on { background: var(--panel-2); color: var(--accent-ink); }
+	.mobile-sheet hr { border: none; border-top: 1px solid var(--line); margin: .4rem 0; }
+	.mobile-sheet .sheet-cta { background: var(--accent); color: #fff; font-weight: 750; text-align: center; }
 	@media (max-width: 760px) {
 		.links, .cta { display: none; }
 		.hamburger { display: flex; }

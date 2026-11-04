@@ -45,10 +45,10 @@
 
 <svelte:head><title>Dashboard — Admin portal</title></svelte:head>
 
-<div class="hero-row">
+<div class="page-head">
 	<div>
 		<h1>Dashboard</h1>
-		<p class="hint">A quick read on the whole platform.</p>
+		<p>A quick read on the whole platform.</p>
 	</div>
 	<Button href="/admin/library"><Icon name="book" size={15} /> Go to Library</Button>
 </div>
@@ -123,7 +123,6 @@
 {/if}
 
 <style>
-	.hero-row { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap; }
 	.tiles { margin-top: var(--space-5); }
 	.section-title { margin-top: var(--space-6); margin-bottom: var(--space-2); font-size: var(--text-base); }
 	.attention { margin-top: var(--space-4); }

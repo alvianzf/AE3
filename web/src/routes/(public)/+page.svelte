@@ -81,7 +81,7 @@
 	<LeafField />
 	<div class="container heroin">
 		<span class="sprigbig"><Sprig size={30} /></span>
-		<h1>An AI assistant practitioners can put their name behind.</h1>
+		<h1>An AI assistant practitioners can <span class="accent-word">put their name behind</span>.</h1>
 		<p>
 			Functional Health Collab connects clients with independent practitioners and gives every
 			one of them an AI-assisted knowledge base — grounded, cited, and
@@ -116,7 +116,7 @@
 	</section>
 
 	<section class="trust card-panel leafmark">
-		<div class="ph botanic"><h2><Sprig /> One accountable AI team</h2></div>
+		<div class="ph"><h2><Sprig /> One accountable AI team</h2></div>
 		<div class="pb">
 			<p>
 				Every role on the team — the one that reads a new source, the one
@@ -173,15 +173,22 @@
 </div>
 
 <style>
+	/* Ground-up pass: the hero no longer paints the brand gradient across
+	   its whole background (that pattern is retired everywhere) — a
+	   plain, light surface with the leaves drifting over it, and the
+	   gradient reserved for the one accent word in the heading. */
 	.hero {
-		position: relative; overflow: hidden;
-		background: linear-gradient(135deg, var(--rail-top), var(--rail-bottom));
-		color: #fdf1f2; padding: var(--space-7) 0; margin-bottom: var(--space-6);
+		position: relative; overflow: hidden; background: var(--panel-2);
+		padding: var(--space-7) 0; margin-bottom: var(--space-6); border-bottom: 1px solid var(--line);
 	}
 	.heroin { position: relative; z-index: 1; display: flex; flex-direction: column; gap: var(--space-3); max-width: 42rem; }
-	.sprigbig { color: #ffb9c4; }
-	.hero h1 { font-size: var(--text-3xl); font-weight: 750; }
-	.hero p { color: #f7dfe2; font-size: var(--text-lg); }
+	.sprigbig { color: var(--accent); }
+	.hero h1 { font-size: var(--text-3xl); font-weight: 750; color: var(--ink); }
+	.hero h1 .accent-word {
+		background: linear-gradient(135deg, var(--rail-top), var(--rail-bottom));
+		-webkit-background-clip: text; background-clip: text; color: transparent;
+	}
+	.hero p { color: var(--ink-2); font-size: var(--text-lg); }
 	.hero-cta { display: flex; gap: var(--space-3); flex-wrap: wrap; margin-top: var(--space-2); }
 
 	.about { max-width: 46rem; padding-bottom: var(--space-7); display: grid; gap: var(--space-6); }
@@ -250,6 +257,5 @@
 		font-size: var(--text-sm); font-weight: 700;
 	}
 	.btn.filled { background: var(--accent); color: #fff; }
-	.btn.ghost { border: 1px solid var(--line-2); color: var(--ink); }
-	.hero .btn.ghost { border-color: rgba(255, 255, 255, .5); color: #fdf1f2; }
+	.btn.ghost { border: 1px solid var(--line-2); color: var(--ink); background: var(--panel); }
 </style>

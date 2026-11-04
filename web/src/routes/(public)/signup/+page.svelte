@@ -70,7 +70,7 @@
 
 <div class="container wrap">
 	<section class="card-panel">
-		<div class="ph botanic"><h2><Sprig /> Create your account</h2></div>
+		<div class="ph"><h2><Sprig /> Create your account</h2></div>
 		<form class="pb" onsubmit={submit}>
 			{#if loadingPractitioners}
 				<p class="hint">Loading practitioners…</p>

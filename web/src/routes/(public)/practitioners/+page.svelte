@@ -91,14 +91,11 @@
 </div>
 
 <style>
-	.hero {
-		background: linear-gradient(135deg, var(--rail-top), var(--rail-bottom));
-		color: #fdf1f2; padding: var(--space-7) 0; margin-bottom: var(--space-6);
-	}
+	.hero { background: var(--panel-2); border-bottom: 1px solid var(--line); padding: var(--space-7) 0; margin-bottom: var(--space-6); }
 	.heroin { display: flex; flex-direction: column; gap: var(--space-3); max-width: 40rem; }
-	.sprigbig { color: #ffb9c4; }
+	.sprigbig { color: var(--accent); }
 	h1 { font-size: var(--text-3xl); font-weight: 750; }
-	.hero p { color: #f7dfe2; font-size: var(--text-lg); }
+	.hero p { color: var(--ink-2); font-size: var(--text-lg); }
 	.filters { display: flex; gap: var(--space-3); margin-bottom: var(--space-5); flex-wrap: wrap; }
 	.filters input, .filters select {
 		border: 1px solid var(--line-2); border-radius: 99px; padding: .6rem 1.1rem;

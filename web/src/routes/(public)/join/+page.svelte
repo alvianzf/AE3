@@ -55,7 +55,7 @@
 
 <div class="container wrap">
 	<section class="card-panel leafmark">
-		<div class="ph botanic"><h2><Sprig /> Apply as a practitioner</h2></div>
+		<div class="ph"><h2><Sprig /> Apply as a practitioner</h2></div>
 		<form class="pb" onsubmit={submit}>
 			<TextField label="Full name" bind:value={name} required />
 			<TextField label="Email" type="email" bind:value={email} required />

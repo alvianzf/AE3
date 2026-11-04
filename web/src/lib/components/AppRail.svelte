@@ -6,13 +6,13 @@
 	import Icon from './Icon.svelte';
 	import Menu from './Menu.svelte';
 
-	// Restored per direct instruction: a persistent left sidebar for the
-	// three authenticated portals (the public site keeps its own top bar —
-	// standard for a marketing site). Label-visible and grouped
-	// (primary/secondary + a divider), not the original icon-only+tooltip
-	// version — search, the dual-role switcher, and sign-out now live in
-	// the sidebar's own footer instead of a separate top bar, so this is
-	// the one and only nav surface per portal.
+	// Ground-up rebuild, direct instruction: keep a sidebar, but don't
+	// increment the old one — this is a different object entirely. A
+	// narrow, icon-only floating dock (inset from the viewport edge, its
+	// own rounded card with a shadow) instead of a flush, full-height,
+	// solid-gradient panel. The brand gradient still shows — as a small
+	// highlight behind the active/hovered icon, not painted across the
+	// whole surface. Tooltips (title attr) replace labels at this width.
 	interface NavItem { href: string; label: string; icon: string; locked?: boolean; badge?: number; navGroup?: 'primary' | 'secondary' }
 	let {
 		items, portalLabel, userLabel, onCommandPalette,
@@ -44,24 +44,22 @@
 
 {#snippet navItem(it: NavItem)}
 	<li>
-		<a href={it.href} class:on={isActive(it.href)} title={it.locked ? `${it.label} (Pro)` : it.label}>
-			<span class="ic">
-				<Icon name={it.icon} />
-				{#if it.locked}<span class="lock" aria-hidden="true">★</span>{/if}
-				{#if it.badge}<span class="badge">{it.badge > 99 ? '99+' : it.badge}</span>{/if}
-			</span>
-			<span class="lbl">{it.label}{#if it.locked} <span class="pro">Pro</span>{/if}</span>
+		<a href={it.href} class:on={isActive(it.href)} title="{it.label}{it.locked ? ' (Pro)' : ''}" aria-label={it.label}>
+			<Icon name={it.icon} size={19} />
+			{#if it.locked}<span class="lock" aria-hidden="true">★</span>{/if}
+			{#if it.badge}<span class="badge">{it.badge > 99 ? '99+' : it.badge}</span>{/if}
 		</a>
 	</li>
 {/snippet}
 
-<nav class="rail" aria-label="{portalLabel} navigation">
-	<a href="/" class="mark" aria-label="Functional Health Collab home"><Sprig size={22} /><span class="wordmark">Functional Health Collab</span></a>
-	<span class="portal-label">{portalLabel}</span>
+<nav class="dock" aria-label="{portalLabel} navigation">
+	<a href="/" class="mark" aria-label="Functional Health Collab home" title="Functional Health Collab">
+		<Sprig size={20} />
+	</a>
 
 	{#if onCommandPalette}
-		<button class="search-trigger" onclick={onCommandPalette}>
-			<Icon name="search" size={15} /> <span>Search…</span>
+		<button class="dock-btn search-trigger" onclick={onCommandPalette} title="Search" aria-label="Search">
+			<Icon name="search" size={17} />
 		</button>
 	{/if}
 
@@ -75,8 +73,8 @@
 
 	<div class="foot">
 		{#if showSwitcher}
-			<a class="switcher" href={switcherTo === 'admin' ? '/admin' : '/practitioner/dashboard'}>
-				<Icon name="switch" size={15} /> <span>{switcherTo === 'admin' ? 'Admin view' : 'Practitioner view'}</span>
+			<a class="dock-btn switcher" href={switcherTo === 'admin' ? '/admin' : '/practitioner/dashboard'} title="{switcherTo === 'admin' ? 'Switch to admin view' : 'Switch to practitioner view'}">
+				<Icon name="switch" size={17} />
 			</a>
 		{/if}
 		<Menu label="Account">
@@ -91,69 +89,61 @@
 </nav>
 
 <style>
-	.rail {
-		position: sticky; top: 0; align-self: flex-start; height: 100dvh;
-		width: 14.5rem; flex: 0 0 auto;
-		display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4) var(--space-3);
-		background: linear-gradient(180deg, var(--rail-top), var(--rail-bottom));
-		color: #fdf1f2; z-index: 40; overflow-y: auto;
+	.dock {
+		position: sticky; top: var(--space-5); align-self: flex-start;
+		height: calc(100dvh - var(--space-5) * 2);
+		width: 4.5rem; flex: 0 0 auto;
+		display: flex; flex-direction: column; align-items: center; gap: var(--space-2);
+		padding: var(--space-3) 0; margin-left: var(--space-5);
+		background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-xl);
+		box-shadow: var(--shadow-lg); z-index: 40; overflow-y: auto;
 	}
-	.mark { color: #fff; display: flex; align-items: center; gap: .5rem; padding: .3rem .2rem; text-decoration: none; }
-	.wordmark { font-weight: 750; font-size: var(--text-sm); line-height: 1.2; }
-	.portal-label {
-		font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
-		color: #f7dfe2; opacity: .75; padding: 0 .2rem;
+	.mark {
+		display: flex; align-items: center; justify-content: center; width: 2.6rem; height: 2.6rem;
+		border-radius: var(--r-lg); color: #fff; text-decoration: none; margin-bottom: var(--space-2);
+		background: linear-gradient(135deg, var(--rail-top), var(--rail-bottom));
 	}
-	.search-trigger {
-		display: flex; align-items: center; gap: .55rem; border: 1px solid rgba(255, 255, 255, .25);
-		border-radius: var(--r-lg); background: rgba(255, 255, 255, .08); color: #fdf1f2;
-		padding: .5rem .6rem; font: inherit; font-size: var(--text-sm); cursor: pointer; margin: .2rem 0;
+	.dock-btn {
+		display: flex; align-items: center; justify-content: center; width: 2.6rem; height: 2.6rem;
+		border-radius: var(--r-lg); border: none; background: none; color: var(--ink-2);
+		cursor: pointer; text-decoration: none;
 	}
-	.search-trigger:hover, .search-trigger:focus-visible { background: rgba(255, 255, 255, .16); }
-	hr { border: none; border-top: 1px solid rgba(255, 255, 255, .18); width: 100%; margin: 0; }
-	.group { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .15rem; width: 100%; }
+	.dock-btn:hover { background: var(--panel-2); color: var(--ink); }
+	hr { border: none; border-top: 1px solid var(--line); width: 2rem; margin: var(--space-1) 0; }
+	.group { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .3rem; align-items: center; }
 	li a {
-		display: flex; align-items: center; gap: .75rem; color: #f7dfe2; text-decoration: none;
-		padding: .55rem .6rem; border-radius: var(--r); position: relative; font-size: var(--text-sm);
+		display: flex; align-items: center; justify-content: center; width: 2.6rem; height: 2.6rem;
+		color: var(--ink-2); text-decoration: none; border-radius: var(--r-lg); position: relative;
 	}
-	li a:hover { background: rgba(255, 255, 255, .08); }
-	.ic { display: flex; position: relative; flex: 0 0 auto; }
-	.lock { position: absolute; top: -.35rem; right: -.5rem; font-size: .55rem; line-height: 1; color: #ffd76b; }
+	li a:hover { background: var(--panel-2); color: var(--ink); }
+	.lock { position: absolute; top: -.2rem; right: -.1rem; font-size: .6rem; line-height: 1; color: var(--warn); }
 	.badge {
-		position: absolute; top: -.4rem; right: -.55rem; min-width: 1.05rem; height: 1.05rem;
-		padding: 0 .25rem; border-radius: 99px; background: var(--danger, #b13434);
+		position: absolute; top: -.25rem; right: -.25rem; min-width: 1.05rem; height: 1.05rem;
+		padding: 0 .25rem; border-radius: 99px; background: var(--danger);
 		color: #fff; font-size: .6rem; font-weight: 700; line-height: 1.05rem; text-align: center;
-		box-shadow: 0 0 0 2px var(--rail-top, transparent);
+		box-shadow: 0 0 0 2px var(--panel);
 	}
-	.pro { font-size: .65rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; opacity: .8; }
-	.lbl { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-	li a.on { color: #fff; background: rgba(255, 255, 255, .14); }
-	li a.on::before {
-		content: ''; position: absolute; left: -.1rem; top: .35rem; bottom: .35rem; width: 3px;
-		background: var(--rail-indicator, #ff8fa3); border-radius: 2px;
+	li a.on {
+		color: #fff;
+		background: linear-gradient(135deg, var(--rail-top), var(--rail-bottom));
+		box-shadow: var(--shadow);
 	}
-	.foot { margin-top: auto; display: flex; flex-direction: column; gap: .4rem; width: 100%; }
-	.switcher {
-		display: flex; align-items: center; gap: .55rem; color: #fff; text-decoration: none;
-		padding: .5rem .6rem; border-radius: var(--r-lg); background: rgba(255, 255, 255, .14);
-		font-size: var(--text-sm); font-weight: 650;
-	}
-	.foot :global(.menu-wrap) { width: 100%; }
+	.foot { margin-top: auto; display: flex; flex-direction: column; align-items: center; gap: .2rem; }
 	.foot :global(.menu-wrap .icon-btn) {
-		width: 100%; height: auto; border-radius: var(--r); justify-content: flex-start; gap: .55rem;
-		padding: .5rem .6rem; color: #f7dfe2;
+		width: 2.6rem; height: 2.6rem; border-radius: var(--r-lg); color: var(--ink-2);
 	}
-	.foot :global(.menu-wrap .icon-btn:hover) { background: rgba(255, 255, 255, .1); }
-	.foot :global(.menu-wrap .menu-pop) { left: 0; right: auto; bottom: 100%; top: auto; margin: 0 0 .25rem; }
-	.who-row { display: flex; align-items: center; gap: .5rem; padding: .5rem .6rem; font-size: var(--text-sm); color: var(--muted); }
+	.foot :global(.menu-wrap .icon-btn:hover) { background: var(--panel-2); color: var(--ink); }
+	.foot :global(.menu-wrap .menu-pop) { left: 100%; right: auto; bottom: 0; top: auto; margin: 0 0 0 .5rem; }
+	.who-row { display: flex; align-items: center; gap: .5rem; padding: .5rem .6rem; font-size: var(--text-sm); color: var(--muted); white-space: nowrap; }
 	@media (max-width: 860px) {
-		.rail { position: fixed; bottom: 0; top: auto; width: 100%; height: auto; flex-direction: row; align-items: center; padding: .5rem; overflow: visible; }
-		.mark, .portal-label, hr, .search-trigger, .switcher { display: none; }
-		.group { flex-direction: row; justify-content: space-around; flex: 1 1 auto; }
-		.lbl { display: none; }
-		li a { flex-direction: column; gap: .2rem; padding: .3rem .5rem; }
-		.foot { margin-top: 0; width: auto; flex: 0 0 auto; }
-		.foot :global(.menu-wrap .icon-btn) { width: 2.4rem; height: 2.4rem; justify-content: center; }
-		.foot :global(.menu-wrap .menu-pop) { left: auto; right: 0; bottom: 100%; margin: 0 0 .25rem; }
+		.dock {
+			position: fixed; bottom: var(--space-3); top: auto; left: var(--space-3); right: var(--space-3);
+			margin-left: 0; height: auto; width: auto; flex-direction: row; justify-content: space-around;
+			padding: var(--space-2); overflow: visible;
+		}
+		.mark, hr, .search-trigger, .switcher { display: none; }
+		.group { flex-direction: row; }
+		.foot { margin-top: 0; }
+		.foot :global(.menu-wrap .menu-pop) { left: auto; right: 0; bottom: 100%; margin: 0 0 .5rem; }
 	}
 </style>
