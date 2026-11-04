@@ -15,6 +15,7 @@
 	import Icon from '$lib/components/Icon.svelte';
 	import FolderTree, { type TreeNode } from '$lib/components/FolderTree.svelte';
 	import GraphView, { type GraphNode, type GraphEdge } from '$lib/components/GraphView.svelte';
+	import Menu from '$lib/components/Menu.svelte';
 
 	let { data } = $props();
 
@@ -771,6 +772,32 @@
 		}
 	}
 
+	// Claim/assign an uploader — specifically for documents ingested
+	// before v6.11 (uploaded_by is captured automatically for anything
+	// after). No real history to prefill from: the audit log's "ingest"
+	// events all carry the literal actor="admin", never a real per-user
+	// identity (checked live, 2026-11-04) — so this is a plain admin
+	// override, not a pick-from-a-list of known candidates.
+	let uploadedByEditing = $state<any>(null);
+	let uploadedByOpen = $state(false);
+	let uploadedByValue = $state('');
+	function askAssignUploader(s: any) {
+		uploadedByEditing = s;
+		uploadedByValue = s.uploaded_by ?? '';
+		uploadedByOpen = true;
+	}
+	async function confirmAssignUploader(e: Event) {
+		e.preventDefault();
+		if (!uploadedByEditing) return;
+		try {
+			await patch(fetch, `/sources/${uploadedByEditing.id}/uploaded-by`, { uploaded_by: uploadedByValue });
+			uploadedByOpen = false;
+			await invalidateAll();
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		}
+	}
+
 	let deleting = $state<any>(null);
 	let confirmingDelete = $state(false);
 
@@ -1208,20 +1235,20 @@
 									{#if needsFinalization.has(s.id)}
 										<button class="icon-btn finalize-bell" onclick={() => (placementPreview = s)} title="Review where this was filed" aria-label="Review placement for {s.title}"><Icon name="bell" /></button>
 									{/if}
-									<a class="icon-btn" href="/admin/{s.id}" title="View document" aria-label="View {s.title}"><Icon name="eye" /></a>
-									<button class="icon-btn" onclick={() => askMove(s)} title="Move to folder (or right-click the card)" aria-label="Move {s.title}">
-										<Icon name="folder" />
-									</button>
-									<button
-										class="icon-btn"
-										onclick={() => setPrivate(s, !s.is_private)}
-										title={s.is_private ? 'Make public' : 'Make private'}
-										aria-label={s.is_private ? `Make ${s.title} public` : `Make ${s.title} private`}
-									><Icon name={s.is_private ? 'lock' : 'unlock'} /></button>
-									{#if s.is_private}
-										<button class="icon-btn" onclick={() => askAccess(s)} title="Edit access" aria-label="Edit access for {s.title}"><Icon name="users" /></button>
-									{/if}
-									<button class="icon-btn danger" onclick={() => askDelete(s)} title="Remove from library" aria-label="Remove {s.title}"><Icon name="trash" /></button>
+									<Menu label="More actions for {s.title}">
+										{#snippet items()}
+											<a href="/admin/{s.id}"><Icon name="eye" size={15} /> View</a>
+											<button onclick={() => askMove(s)}><Icon name="folder" size={15} /> Move to folder…</button>
+											<button onclick={() => setPrivate(s, !s.is_private)}>
+												<Icon name={s.is_private ? 'lock' : 'unlock'} size={15} /> {s.is_private ? 'Make public' : 'Make private'}
+											</button>
+											{#if s.is_private}
+												<button onclick={() => askAccess(s)}><Icon name="users" size={15} /> Edit access…</button>
+											{/if}
+											<button onclick={() => askAssignUploader(s)}><Icon name="user-card" size={15} /> {s.uploaded_by ? 'Reassign uploader…' : 'Assign uploader…'}</button>
+											<button class="danger" onclick={() => askDelete(s)}><Icon name="trash" size={15} /> Remove from library</button>
+										{/snippet}
+									</Menu>
 								</div>
 							</div>
 							<div class="tags">
@@ -1544,6 +1571,22 @@
 	{#snippet footer()}
 		<Button variant="ghost" onclick={() => (movingOpen = false)}>Cancel</Button>
 		<Button onclick={confirmMove}>Move</Button>
+	{/snippet}
+</Dialog>
+
+<Dialog bind:open={uploadedByOpen} title="Assign uploader">
+	{#if uploadedByEditing}
+		<form onsubmit={confirmAssignUploader} id="ub-form">
+			<p class="hint">
+				Who uploaded "{uploadedByEditing.title.slice(0, 60)}"? Nothing is recoverable automatically for
+				this document — uploader is only captured going forward (specs/v6.11).
+			</p>
+			<TextField label="Uploaded by" bind:value={uploadedByValue} placeholder="name or email" />
+		</form>
+	{/if}
+	{#snippet footer()}
+		<Button variant="ghost" onclick={() => (uploadedByOpen = false)}>Cancel</Button>
+		<Button onclick={confirmAssignUploader}>Save</Button>
 	{/snippet}
 </Dialog>
 

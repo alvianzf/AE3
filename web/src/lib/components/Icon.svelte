@@ -39,7 +39,12 @@
 		grid: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
 		list: 'M4 6h16M4 12h16M4 18h16',
 		table: 'M4 4h16v16H4zM4 10h16M10 4v16',
-		bell: 'M6 10a6 6 0 1 1 12 0v5l2 3H4l2-3zM9.5 20a2.5 2.5 0 0 0 5 0'
+		bell: 'M6 10a6 6 0 1 1 12 0v5l2 3H4l2-3zM9.5 20a2.5 2.5 0 0 0 5 0',
+		// Three zero-length round-capped segments, not circles — this is a
+		// stroke-only icon set (the <svg> wrapper below has fill="none"),
+		// and a thin stroked ring reads as a tiny "o", not a filled dot;
+		// a fat round line-cap at a point does read as one.
+		'more-vertical': 'M12 5.5h.01M12 12h.01M12 18.5h.01'
 	};
 
 	let { name, size = 17 }: { name: string; size?: number } = $props();
@@ -47,5 +52,5 @@
 
 <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
      stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-	<path d={PATHS[name] ?? PATHS.home} />
+	<path d={PATHS[name] ?? PATHS.home} stroke-width={name === 'more-vertical' ? 3.5 : undefined} />
 </svg>
