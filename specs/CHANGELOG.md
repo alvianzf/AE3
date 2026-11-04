@@ -1,5 +1,16 @@
 # Specs changelog
 
+## 2026-11-04 — v6.15, retry all, graph centering, nav bug, card polish
+
+See [v6.15/README.md](v6.15/README.md). Four pieces of direct/live
+feedback: a bulk "Retry all" for the errored-queue-item backlog; a
+real root-cause fix for the Graph view not fitting its own viewport
+("a mess"); a real bug found in the shared nav rail (`AppRail.svelte`)
+where the admin Library item showed as active on every admin page, a
+plain prefix-match bug now fixed generally (most-specific-href wins);
+and doc-card density/clarity polish (author vs. uploader now visually
+distinct by icon and color, tags/forms tightened).
+
 ## 2026-11-04 — v6.14, doc-card "⋮" menu, uploader claim/assign
 
 See [v6.14/README.md](v6.14/README.md). Two direct requests: tidy the

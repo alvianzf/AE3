@@ -23,6 +23,21 @@
 		await post(fetch, '/auth/logout').catch(() => {});
 		goto('/login', { invalidateAll: true });
 	}
+
+	// Most-specific href wins, not "any prefix match" — found live: the
+	// admin rail's Library item (href '/admin') is a prefix of every
+	// other admin route ('/admin/dashboard', '/admin/users', ...), so a
+	// plain `pathname.startsWith(href + '/')` lit Library up on every
+	// admin page, not just the library page itself.
+	function isActive(href: string): boolean {
+		const path = page.url.pathname;
+		if (path !== href && !path.startsWith(href + '/')) return false;
+		return !items.some(
+			(other) =>
+				other.href !== href && other.href.length > href.length &&
+				(path === other.href || path.startsWith(other.href + '/'))
+		);
+	}
 </script>
 
 <!-- Redesigned nav: a slim fixed icon rail (not a full labeled sidebar) —
@@ -35,7 +50,7 @@
 	<ul>
 		{#each items as it (it.href)}
 			<li>
-				<a href={it.href} class:on={page.url.pathname === it.href || page.url.pathname.startsWith(it.href + '/')} title={it.locked ? `${it.label} (Pro)` : it.label}>
+				<a href={it.href} class:on={isActive(it.href)} title={it.locked ? `${it.label} (Pro)` : it.label}>
 					<span class="ic">
 						<Icon name={it.icon} />
 						{#if it.locked}<span class="lock" aria-hidden="true">★</span>{/if}
