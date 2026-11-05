@@ -115,8 +115,10 @@ _SCHEMA_DDL = """
                 client_id TEXT NOT NULL,
                 title TEXT NOT NULL,
                 started_at TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'in_progress'
+                status TEXT NOT NULL DEFAULT 'in_progress',
+                initial_summary TEXT
             );
+            ALTER TABLE sessions ADD COLUMN IF NOT EXISTS initial_summary TEXT;
             CREATE INDEX IF NOT EXISTS sessions_by_client
                 ON sessions(client_id, started_at);
             -- One clinician note + one client report per session, each with
@@ -432,14 +434,38 @@ def delete_entry(practitioner_id: str, client_id: str, entry_id: str) -> bool:
 SESSION_STATUSES = ("in_progress", "done")
 
 
-def create_session(practitioner_id: str, client_id: str, title: str) -> dict:
-    row = {"id": str(uuid.uuid4()), "client_id": client_id,
-           "title": title[:90], "started_at": _now(), "status": "in_progress"}
+def create_session(
+    practitioner_id: str,
+    client_id: str,
+    title: str,
+    initial_summary: str | None = None,
+    started_at: str | None = None,
+) -> dict:
+    row = {
+        "id": str(uuid.uuid4()),
+        "client_id": client_id,
+        "title": title[:90],
+        "started_at": started_at or _now(),
+        "status": "in_progress",
+        "initial_summary": initial_summary,
+    }
     with vault_connection(practitioner_id) as conn:
         conn.execute(
-            "INSERT INTO sessions (id, client_id, title, started_at, status) "
-            "VALUES (%(id)s, %(client_id)s, %(title)s, %(started_at)s, %(status)s)", row)
+            "INSERT INTO sessions (id, client_id, title, started_at, status, initial_summary) "
+            "VALUES (%(id)s, %(client_id)s, %(title)s, %(started_at)s, %(status)s, %(initial_summary)s)",
+            row,
+        )
     return row
+
+
+def update_session_title(practitioner_id: str, session_id: str, title: str) -> None:
+    with vault_connection(practitioner_id) as conn:
+        conn.execute("UPDATE sessions SET title = %s WHERE id = %s", (title[:90], session_id))
+
+
+def update_session_initial_summary(practitioner_id: str, session_id: str, initial_summary: str) -> None:
+    with vault_connection(practitioner_id) as conn:
+        conn.execute("UPDATE sessions SET initial_summary = %s WHERE id = %s", (initial_summary, session_id))
 
 
 def set_session_status(practitioner_id: str, session_id: str, status: str) -> dict | None:
@@ -502,7 +528,7 @@ def list_sessions(practitioner_id: str, client_id: str) -> list[dict]:
     with vault_connection(practitioner_id) as conn:
         rows = conn.execute(
             """
-            SELECT s.id, s.title, s.started_at, s.status,
+            SELECT s.id, s.title, s.started_at, s.status, s.initial_summary,
                    (SELECT count(*) FROM session_turns t WHERE t.session_id = s.id)
                        AS turns,
                    (SELECT t.question FROM session_turns t WHERE t.session_id = s.id
@@ -516,6 +542,69 @@ def list_sessions(practitioner_id: str, client_id: str) -> list[dict]:
             (client_id,),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def get_patient_history_up_to(practitioner_id: str, client_id: str, consultation_point: str) -> dict:
+    """Collects client profile, clinical entries, intake notes, questionnaires,
+    and prior consultations strictly recorded on or before consultation_point."""
+    with vault_connection(practitioner_id) as conn:
+        client = conn.execute(
+            "SELECT id, name, email, dob, country, created_at FROM clients WHERE id = %s",
+            (client_id,),
+        ).fetchone()
+        if not client:
+            return {}
+
+        entries = conn.execute(
+            "SELECT id, kind, content, created_at FROM record_entries "
+            "WHERE client_id = %s AND created_at <= %s ORDER BY created_at ASC",
+            (client_id, consultation_point),
+        ).fetchall()
+
+        intake_notes = conn.execute(
+            "SELECT theme, note, updated_at FROM intake_notes "
+            "WHERE client_id = %s AND updated_at <= %s ORDER BY theme ASC",
+            (client_id, consultation_point),
+        ).fetchall()
+
+        questionnaire = conn.execute(
+            "SELECT questionnaire_id, answers_json, submitted_at FROM questionnaire_responses "
+            "WHERE client_id = %s AND submitted_at <= %s ORDER BY submitted_at DESC LIMIT 1",
+            (client_id, consultation_point),
+        ).fetchone()
+
+        prior_sessions = conn.execute(
+            """
+            SELECT s.id, s.title, s.started_at, s.status, s.initial_summary,
+                   (SELECT count(*) FROM session_turns t WHERE t.session_id = s.id) AS turns,
+                   (SELECT e.content FROM record_entries e
+                       WHERE e.session_id = s.id AND e.kind = 'session_summary'
+                       ORDER BY e.created_at DESC LIMIT 1) AS summary
+            FROM sessions s
+            WHERE s.client_id = %s AND s.started_at < %s
+            ORDER BY s.started_at ASC
+            """,
+            (client_id, consultation_point),
+        ).fetchall()
+
+    parsed_answers = {}
+    if questionnaire and questionnaire["answers_json"]:
+        try:
+            parsed_answers = json.loads(questionnaire["answers_json"])
+        except Exception:
+            parsed_answers = {}
+
+    return {
+        "client": dict(client),
+        "entries": [dict(e) for e in entries],
+        "intake_notes": [dict(n) for n in intake_notes],
+        "questionnaire": {
+            "id": questionnaire["questionnaire_id"],
+            "submitted_at": questionnaire["submitted_at"],
+            "answers": parsed_answers,
+        } if questionnaire else None,
+        "prior_sessions": [dict(s) for s in prior_sessions],
+    }
 
 
 def get_session(practitioner_id: str, session_id: str) -> dict | None:

@@ -6,6 +6,8 @@ per-hop relevance judging at query time) is deliberately cheap and fast.
 """
 from __future__ import annotations
 
+import json
+import logging
 from dataclasses import dataclass
 
 from ..clients.llm_client import Role, get_client
@@ -139,3 +141,126 @@ def summarize_session(transcript: str) -> str:
     text, _usage = get_client(Role.REASONER).chat_text(
         SUMMARY_SYSTEM, transcript, max_tokens=100_000, extra_body=_NO_THINKING)
     return text
+
+
+CONSULT_INTAKE_SYSTEM = (
+    "You are a senior clinical consultant preparing a practitioner for a consultation session.\n"
+    "Synthesize a clear, structured clinical briefing of the patient and their full consultation and health history "
+    "up until this consultation point.\n\n"
+    "Structure your summary in Markdown with the following exact section headings:\n"
+    "## Patient Overview\n"
+    "Concise overview of patient demographics (name, DOB, country) and key baseline presentation.\n\n"
+    "## Active Clinical Profile\n"
+    "- Active conditions (or state 'None recorded')\n"
+    "- Current medications and dosages (or state 'None recorded')\n"
+    "- Recent laboratory / diagnostic findings (or state 'None recorded')\n"
+    "- Clinical notes and intake responses (or state 'None recorded')\n\n"
+    "## Prior Consultations & Clinical Trajectory\n"
+    "Chronological synthesis of all prior consultation sessions and outcomes up to this consultation point.\n"
+    "If no prior consultations exist, state plainly: 'No prior consultation sessions recorded before this consultation.'\n"
+    "If prior consultations exist, summarize what was discussed, advice given, and longitudinal progress.\n\n"
+    "## Consultation Focus & Recommendations\n"
+    "Concrete, high-value clinical considerations, key check-ins, or areas to investigate in today's consult.\n\n"
+    "Rules:\n"
+    "- Terse, professional, clinical prose. No fluff, pleasantries, or preamble.\n"
+    "- Strictly grounded only in the provided patient data and history up to the consultation point."
+)
+
+
+def format_deterministic_consult_summary(history_data: dict, consultation_point: str) -> str:
+    client = history_data.get("client") or {}
+    name = client.get("name", "Patient")
+    dob = client.get("dob") or "Not recorded"
+    country = client.get("country") or "Not recorded"
+
+    entries = history_data.get("entries") or []
+    conditions = [e["content"] for e in entries if e["kind"] == "condition"]
+    medications = [e["content"] for e in entries if e["kind"] == "medication"]
+    labs = [f"{e['content']} ({e['created_at'][:10]})" for e in entries if e["kind"] == "lab"]
+    legacy_notes = [f"[{e['kind']}] {e['content']}" for e in entries if e["kind"] in ("history", "note")]
+
+    intake_notes = history_data.get("intake_notes") or []
+    questionnaire = history_data.get("questionnaire")
+    prior_sessions = history_data.get("prior_sessions") or []
+
+    ts_label = consultation_point[:19].replace("T", " ") if consultation_point else "Current"
+
+    lines = [
+        "## Patient Overview",
+        f"- **Patient**: {name}",
+        f"- **Date of Birth**: {dob}",
+        f"- **Country**: {country}",
+        f"- **Consultation Point**: {ts_label}",
+        "",
+        "## Active Clinical Profile",
+        f"- **Active Conditions**: {', '.join(conditions) if conditions else 'None recorded'}",
+        f"- **Current Medications**: {', '.join(medications) if medications else 'None recorded'}",
+        f"- **Recent Labs & Diagnostics**: {'; '.join(labs) if labs else 'None recorded'}",
+    ]
+
+    clinical_notes = []
+    if legacy_notes:
+        clinical_notes.extend(legacy_notes)
+    if intake_notes:
+        for n in intake_notes:
+            clinical_notes.append(f"{n['theme'].capitalize()}: {n['note']}")
+    if questionnaire and questionnaire.get("answers"):
+        for q, a in questionnaire["answers"].items():
+            clinical_notes.append(f"{q}: {a}")
+
+    if clinical_notes:
+        lines.append("- **Clinical Notes & Intake**:")
+        for cn in clinical_notes:
+            lines.append(f"  - {cn}")
+    else:
+        lines.append("- **Clinical Notes & Intake**: None recorded")
+
+    lines.append("")
+    lines.append("## Prior Consultations & Clinical Trajectory")
+    if prior_sessions:
+        lines.append(f"Recorded prior consultations up to this point ({len(prior_sessions)} session{'s' if len(prior_sessions) != 1 else ''}):")
+        for s in prior_sessions:
+            s_date = s["started_at"][:10] if s.get("started_at") else "Date unrecorded"
+            s_title = s.get("title") or "Consultation"
+            s_summary = s.get("summary") or s.get("initial_summary") or f"{s.get('turns', 0)} turn(s) recorded"
+            lines.append(f"- **{s_date} — {s_title}**: {s_summary}")
+    else:
+        lines.append("No prior consultation sessions recorded before this consultation point.")
+
+    lines.append("")
+    lines.append("## Consultation Focus & Recommendations")
+    focal_points = []
+    if conditions:
+        focal_points.append(f"Review progress and symptom control for active conditions: {', '.join(conditions)}.")
+    if medications:
+        focal_points.append(f"Evaluate therapeutic adherence, efficacy, and side-effect profile for current medications: {', '.join(medications)}.")
+    if labs:
+        focal_points.append("Review recent laboratory results and assess if follow-up diagnostic panels are indicated.")
+    if prior_sessions:
+        focal_points.append("Assess clinical continuity, follow-up actions, and patient response from prior consultation sessions.")
+    if not focal_points:
+        focal_points.append("Establish baseline clinical history, current chief concerns, and diagnostic goals for this consultation.")
+
+    for fp in focal_points:
+        lines.append(f"- {fp}")
+
+    return "\n".join(lines)
+
+
+def generate_consult_intake_summary(history_data: dict, consultation_point: str) -> str:
+    fallback = format_deterministic_consult_summary(history_data, consultation_point)
+    prompt = (
+        f"Generate the consultation opening summary for this patient based strictly on their clinical "
+        f"data and prior history recorded up to consultation point {consultation_point}:\n\n"
+        f"Clinical & History Data:\n{json.dumps(history_data, indent=2, default=str)}\n\n"
+        f"Draft summary baseline:\n{fallback}"
+    )
+    try:
+        text, _usage = get_client(Role.REASONER).chat_text(
+            CONSULT_INTAKE_SYSTEM, prompt, max_tokens=100_000, extra_body=_NO_THINKING
+        )
+        if text and text.strip():
+            return text.strip()
+    except Exception as exc:
+        logging.getLogger(__name__).warning("Consult intake summary LLM call failed, using fallback: %s", exc)
+    return fallback
