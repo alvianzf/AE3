@@ -13,6 +13,7 @@
 
 	let tourActive = $state(!data.session?.tour_completed);
 	const tourSteps = [
+		{ selector: '.search-trigger', title: 'Jump to a page', body: 'Press ⌘K (or Ctrl+K) anytime to jump straight to any page in your portal.' },
 		{ selector: 'a[href="/client/questionnaire"]', title: 'Questionnaire', body: 'Your practitioner uses this to understand your health history.' },
 		{ selector: 'a[href="/client/record"]', title: 'Health record', body: 'Only you and your practitioner can see what’s here — never shared beyond your own care.' }
 	];
