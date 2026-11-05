@@ -72,7 +72,7 @@
 	<Rail
 		{items}
 		onCommandPalette={openPalette}
-		userLabel={data.session?.admin_role}
+		userLabel={data.session?.name ?? data.session?.admin_role}
 		showSwitcher={!!data.session?.has_practitioner_view}
 		switcherTo="practitioner"
 	/>

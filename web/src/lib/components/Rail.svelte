@@ -76,10 +76,20 @@
 </nav>
 
 <style>
+	/* A patterned gradient tinted by each portal's own --rail-indicator
+	   (set per layout: violet for admin, teal for practitioner, the
+	   default pink for client) — so the rail reads as a different role
+	   at a glance, not just a different highlighted nav item. A faint
+	   diagonal hairline repeat gives it the "patterned" texture on top
+	   of the gradient wash, subtle enough not to compete with the icons. */
 	.rail {
 		width: var(--rail-w); flex: 0 0 auto; position: sticky; top: 0; height: 100dvh;
 		display: flex; flex-direction: column; align-items: center; gap: var(--space-3);
-		padding: var(--space-3) 0; background: rgba(28, 26, 24, .82); color: var(--rail-ink); z-index: 40;
+		padding: var(--space-3) 0; color: var(--rail-ink); z-index: 40;
+		background:
+			repeating-linear-gradient(135deg, rgba(255, 255, 255, .035) 0 2px, transparent 2px 10px),
+			linear-gradient(165deg, color-mix(in srgb, var(--rail-indicator) 30%, transparent), transparent 60%),
+			rgba(28, 26, 24, .82);
 		backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
 		border-right: 1px solid rgba(255, 255, 255, .08);
 	}

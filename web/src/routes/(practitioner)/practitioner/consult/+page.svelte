@@ -9,6 +9,7 @@
 	import Button from '$lib/components/Button.svelte';
 	import Chip from '$lib/components/Chip.svelte';
 	import Icon from '$lib/components/Icon.svelte';
+	import Spinner from '$lib/components/Spinner.svelte';
 	import { renderAnswerHtml } from '$lib/markdown';
 
 	let { data } = $props();
@@ -505,7 +506,7 @@
 						</button>
 					</li>
 				{:else}
-					<li class="hint">{loadingSessions ? 'Loading…' : 'No consultations yet.'}</li>
+					<li class="hint">{#if loadingSessions}<Spinner size={12} /> Loading…{:else}No consultations yet.{/if}</li>
 				{/each}
 			</ul>
 		</div>

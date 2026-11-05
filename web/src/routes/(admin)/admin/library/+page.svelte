@@ -15,6 +15,7 @@
 	import GraphView, { type GraphNode, type GraphEdge } from '$lib/components/GraphView.svelte';
 	import Menu from '$lib/components/Menu.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
+	import Spinner from '$lib/components/Spinner.svelte';
 
 	let { data } = $props();
 
@@ -263,6 +264,16 @@
 		try { localStorage.setItem('admin-library-view', viewMode); } catch {}
 	});
 
+	// The quick-access tree sidebar is always there (Icon or List view
+	// alike — only the Concept graph has no use for it), collapsible
+	// with its own chevron rather than tied to the view toggle.
+	let sidebarCollapsed = $state(
+		typeof localStorage !== 'undefined' && localStorage.getItem('admin-library-sidebar') === 'collapsed'
+	);
+	$effect(() => {
+		try { localStorage.setItem('admin-library-sidebar', sidebarCollapsed ? 'collapsed' : 'open'); } catch {}
+	});
+
 	// Sort — file name or date ingested, each ascending/descending. Not
 	// "date uploaded" as a third, separate option: checked the data
 	// model first (found live, "sort by... date uploaded" asked) — a
@@ -292,6 +303,24 @@
 			if (sortBy === 'title') return a.title.localeCompare(b.title) * dir;
 			return ((a.created_at ?? '') < (b.created_at ?? '') ? -1 : (a.created_at ?? '') > (b.created_at ?? '') ? 1 : 0) * dir;
 		});
+	}
+	const EXT_ICON: Record<string, string> = {
+		jpg: 'image', jpeg: 'image', png: 'image', gif: 'image', webp: 'image', svg: 'image', heic: 'image',
+		ppt: 'slide', pptx: 'slide', key: 'slide',
+		xls: 'table', xlsx: 'table', csv: 'table',
+		mp3: 'audio', wav: 'audio', m4a: 'audio', aac: 'audio',
+		mp4: 'video', mov: 'video', webm: 'video', avi: 'video',
+		zip: 'archive', rar: 'archive', '7z': 'archive', tar: 'archive', gz: 'archive'
+	};
+	// A distinct icon per file kind — by extension when there's a real
+	// filename, falling back to the doc_type category for sources that
+	// never had one (pasted text, a scraped URL).
+	function fileIcon(s: any): string {
+		const ext = (s.filename ?? '').split('.').pop()?.toLowerCase();
+		if (ext && EXT_ICON[ext]) return EXT_ICON[ext];
+		if (s.doc_type === 'picture' || s.doc_type === 'chart') return 'image';
+		if (s.doc_type === 'presentation') return 'slide';
+		return 'file';
 	}
 	// The folder currently being browsed — a real Finder/Nautilus-style
 	// "current directory", not a filter chip: '' is root. Navigating into
@@ -431,7 +460,6 @@
 		const parent = currentPath.includes('/') ? currentPath.slice(0, currentPath.lastIndexOf('/')) : '';
 		currentPath = parent;
 		selectedFolderPath = null;
-		page = 1;
 	}
 
 	// A non-empty search box switches to a flat, library-wide result list
@@ -459,19 +487,9 @@
 		return sortDocs(matches);
 	});
 
-	// Paginated client-side too, same reasoning as the filtering above — the
-	// full (filtered) set is already in memory, no reason to round-trip the
-	// server for a page change. `page` un-clamped in state, clamped only at
-	// read time so a filter that shrinks the result set can't strand it past
-	// the new last page.
-	const DOCS_PER_PAGE = 12;
-	let page = $state(1);
-	const totalPages = $derived(Math.max(1, Math.ceil(filtered.length / DOCS_PER_PAGE)));
-	const shownPage = $derived(Math.min(page, totalPages));
-	const pageItems = $derived.by(() => {
-		const start = (shownPage - 1) * DOCS_PER_PAGE;
-		return filtered.slice(start, start + DOCS_PER_PAGE);
-	});
+	// A folder's whole contents render at once (infinite scroll within
+	// .finder-content's own overflow-y, not a separate scroll region) —
+	// no page-by-page pagination, direct instruction.
 
 	// Regrade/delete: PATCH and DELETE /api/sources/{id} always existed on the
 	// backend (the pre-rewrite admin page used both, static/app.js) but had no
@@ -488,9 +506,9 @@
 	// cards all being small forms at once; there's only ever one
 	// detail pane open now).
 	let selectedDocId = $state<string | null>(null);
-	const selectedDoc = $derived(pageItems.find((d: any) => d.id === selectedDocId) ?? null);
+	const selectedDoc = $derived(filtered.find((d: any) => d.id === selectedDocId) ?? null);
 	$effect(() => {
-		if (!selectedDocId && pageItems.length) selectedDocId = pageItems[0].id;
+		if (!selectedDocId && filtered.length) selectedDocId = filtered[0].id;
 	});
 
 	async function setTopics(s: any, topics: string[]) {
@@ -1085,7 +1103,7 @@
 		<button class="tb-btn" onclick={goUp} disabled={!currentPath || mainTab !== 'library'} title="Back" aria-label="Up one level">
 			<Icon name="chevron" size={14} />
 		</button>
-		<span class="tb-title">{mainTab === 'graph' ? 'Concept graph' : mainTab === 'tree' ? 'Folder tree' : currentFolderName}</span>
+		<span class="tb-title">{mainTab === 'graph' ? 'Concept graph' : currentFolderName}</span>
 		<div class="tb-spacer"></div>
 		{#if mainTab === 'library'}
 			<div class="tb-view-toggle" role="group" aria-label="View">
@@ -1103,13 +1121,10 @@
 			</Menu>
 			<div class="tb-search">
 				<Icon name="search" size={13} />
-				<input type="search" placeholder="Search" bind:value={q} oninput={() => (page = 1)} aria-label="Search the library" />
-				{#if q}<button class="search-clear" onclick={() => { q = ''; page = 1; }} aria-label="Clear search">&times;</button>{/if}
+				<input type="search" placeholder="Search" bind:value={q} aria-label="Search the library" />
+				{#if q}<button class="search-clear" onclick={() => { q = ''; }} aria-label="Clear search">&times;</button>{/if}
 			</div>
 		{/if}
-		<button class="tb-btn" class:on={mainTab === 'tree'} onclick={() => (mainTab = mainTab === 'tree' ? 'library' : 'tree')} title="Tree view" aria-label="Toggle tree view">
-			<Icon name="tree" size={15} />
-		</button>
 		<button class="tb-btn" class:on={mainTab === 'graph'} onclick={() => (mainTab = mainTab === 'graph' ? 'library' : 'graph')} title="Concept graph" aria-label="Toggle concept graph">
 			<Icon name="globe" size={15} />
 		</button>
@@ -1132,7 +1147,7 @@
 		<nav class="pathbar" aria-label="Folder path">
 			<button
 				class="crumb" class:drag-target={dragOverPath === ''}
-				onclick={() => { currentPath = ''; selectedFolderPath = null; page = 1; }}
+				onclick={() => { currentPath = ''; selectedFolderPath = null; }}
 				ondragover={(e) => { e.preventDefault(); dragOverPath = ''; }}
 				ondragleave={() => (dragOverPath = null)}
 				ondrop={(e) => { e.preventDefault(); handleDropOnFolder(''); }}
@@ -1142,7 +1157,7 @@
 				<Icon name="chevron" size={10} />
 				<button
 					class="crumb" class:drag-target={dragOverPath === crumb.path}
-					onclick={() => { currentPath = crumb.path; selectedFolderPath = null; page = 1; }}
+					onclick={() => { currentPath = crumb.path; selectedFolderPath = null; }}
 					ondragover={(e) => { e.preventDefault(); dragOverPath = crumb.path; }}
 					ondragleave={() => (dragOverPath = null)}
 					ondrop={(e) => { e.preventDefault(); handleDropOnFolder(crumb.path); }}
@@ -1174,6 +1189,44 @@
 	{/if}
 
 	<div class="finder-body">
+		{#if mainTab === 'library' && !searching}
+			<!-- Finder's left sidebar: a permanent quick-access tree
+			     (favorites/locations in a real Finder window) — present
+			     in Icon or List view alike (only the Concept graph has no
+			     use for it), collapsible with its own chevron rather than
+			     tied to the view toggle. -->
+			{#if sidebarCollapsed}
+				<button class="sidebar-expand" onclick={() => (sidebarCollapsed = false)} title="Show sidebar" aria-label="Show sidebar">
+					<Icon name="chevron" size={13} />
+				</button>
+			{:else}
+				<aside class="finder-sidebar">
+					<div class="sidebar-head">
+						<button
+							class="tree-root"
+							class:active={!currentPath}
+							ondragover={(e) => e.preventDefault()}
+							ondrop={(e) => { e.preventDefault(); handleDropOnFolder(''); }}
+							onclick={() => { currentPath = ''; selectedFolderPath = null; }}
+						>
+							<Icon name="folder" size={14} /> Library <span class="row-sub">{data.sources.length}</span>
+						</button>
+						<button class="sidebar-collapse" onclick={() => (sidebarCollapsed = true)} title="Hide sidebar" aria-label="Hide sidebar">
+							<Icon name="chevron" size={13} />
+						</button>
+					</div>
+					<FolderTree
+						nodes={folderTree}
+						activePath={currentPath}
+						onSelect={(path) => { currentPath = path; selectedFolderPath = null; }}
+						onDrop={handleDropOnFolder}
+						onRename={askRenameFolder}
+						onPrivatize={setFolderPrivate}
+						onDelete={(path, count) => askDeleteFolder(path, count)}
+					/>
+				</aside>
+			{/if}
+		{/if}
 		<div class="finder-content" class:grid-mode={mainTab === 'library' && viewMode === 'icons'}>
 			{#if mainTab === 'graph'}
 				<div class="graph-pane">
@@ -1181,38 +1234,10 @@
 						<p class="hint graph-stats">{data.graph.entities ?? 0} concepts · {data.graph.mentions ?? 0} links · {(data.graph.unlinked ?? []).length} unlinked</p>
 					{/if}
 					{#if conceptGraphLoading}
-						<p class="hint">Loading the concept graph…</p>
+						<p class="hint"><Spinner size={13} /> Loading the concept graph…</p>
 					{:else}
 						<GraphView nodes={conceptGraph?.nodes ?? []} edges={conceptGraph?.edges ?? []} />
 					{/if}
-				</div>
-			{:else if mainTab === 'tree'}
-				<!-- The whole hierarchy at once — every folder, nested and
-				     expandable — as a quick-overview supplement to Icon/
-				     List view's one-level-at-a-time browsing. Clicking a
-				     folder here jumps straight into List/Icon view
-				     already at that path; clicking a document opens its
-				     full detail page. -->
-				<div class="tree-pane">
-					<button
-						class="tree-root"
-						ondragover={(e) => e.preventDefault()}
-						ondrop={(e) => { e.preventDefault(); handleDropOnFolder(''); }}
-						onclick={() => { currentPath = ''; mainTab = 'library'; page = 1; }}
-					>
-						<Icon name="folder" size={14} /> Library <span class="row-sub">{data.sources.length}</span>
-					</button>
-					<FolderTree
-						nodes={folderTree}
-						activePath={currentPath}
-						docs={rootDocs}
-						showDocs
-						onSelect={(path) => { currentPath = path; mainTab = 'library'; page = 1; }}
-						onDrop={handleDropOnFolder}
-						onRename={askRenameFolder}
-						onPrivatize={setFolderPrivate}
-						onDelete={(path, count) => askDeleteFolder(path, count)}
-					/>
 				</div>
 			{:else if viewMode === 'icons'}
 				<div class="icon-grid">
@@ -1229,7 +1254,7 @@
 								ondragleave={() => (dragOverPath = null)}
 								ondrop={(e) => { e.preventDefault(); handleDropOnFolder(node.path); }}
 								onclick={() => (selectedFolderPath = node.path)}
-								ondblclick={() => { currentPath = node.path; selectedFolderPath = null; page = 1; }}
+								ondblclick={() => { currentPath = node.path; selectedFolderPath = null; }}
 							>
 								<Icon name="folder" size={40} />
 								<span class="tile-label">{node.name}</span>
@@ -1251,7 +1276,7 @@
 							</div>
 						{/each}
 					{/if}
-					{#each pageItems as s (s.id)}
+					{#each filtered as s (s.id)}
 						<button
 							class="icon-tile doc-tile"
 							class:on={selectedDocId === s.id}
@@ -1263,7 +1288,7 @@
 							ondblclick={() => window.open(`/admin/${s.id}`, '_blank')}
 						>
 							<span class="tile-icon">
-								<Icon name="file" size={40} />
+								<Icon name={fileIcon(s)} size={40} />
 								{#if s.is_private}<span class="tile-badge"><Icon name="lock" size={10} /></span>{/if}
 								{#if needsFinalization.has(s.id)}<span class="tile-badge bell"><Icon name="bell" size={10} /></span>{/if}
 							</span>
@@ -1277,7 +1302,7 @@
 								</EmptyState>
 							{:else if searching}
 								<EmptyState icon="search" title="Nothing matches that search" body="Try a different term, or clear the search.">
-									{#snippet action()}<Button variant="ghost" onclick={() => { q = ''; page = 1; }}>Clear search</Button>{/snippet}
+									{#snippet action()}<Button variant="ghost" onclick={() => { q = ''; }}>Clear search</Button>{/snippet}
 								</EmptyState>
 							{:else if !visibleSubfolders.length}
 								<EmptyState icon="folder" title="This folder is empty" body="Upload a document here, or browse to another folder.">
@@ -1308,7 +1333,7 @@
 									ondragleave={() => (dragOverPath = null)}
 									ondrop={(e) => { e.preventDefault(); handleDropOnFolder(node.path); }}
 									onclick={() => (selectedFolderPath = node.path)}
-									ondblclick={() => { currentPath = node.path; selectedFolderPath = null; page = 1; }}
+									ondblclick={() => { currentPath = node.path; selectedFolderPath = null; }}
 								>
 									<td><Icon name="folder" size={16} /></td>
 									<td>{node.name}</td>
@@ -1318,7 +1343,7 @@
 								</tr>
 							{/each}
 						{/if}
-						{#each pageItems as s (s.id)}
+						{#each filtered as s (s.id)}
 							<tr
 								class="doc-tr"
 								class:on={selectedDocId === s.id}
@@ -1339,7 +1364,7 @@
 									/>
 								</td>
 								<td>
-									<Icon name="file" size={14} />
+									<Icon name={fileIcon(s)} size={14} />
 									{s.title}
 									{#if needsFinalization.has(s.id)}<Icon name="bell" size={11} />{/if}
 									{#if s.is_private}<Icon name="lock" size={11} />{/if}
@@ -1357,7 +1382,7 @@
 										</EmptyState>
 									{:else if searching}
 										<EmptyState icon="search" title="Nothing matches that search" body="Try a different term, or clear the search.">
-											{#snippet action()}<Button variant="ghost" onclick={() => { q = ''; page = 1; }}>Clear search</Button>{/snippet}
+											{#snippet action()}<Button variant="ghost" onclick={() => { q = ''; }}>Clear search</Button>{/snippet}
 										</EmptyState>
 									{:else if !visibleSubfolders.length}
 										<EmptyState icon="folder" title="This folder is empty" body="Upload a document here, or browse to another folder.">
@@ -1369,13 +1394,6 @@
 						{/each}
 					</tbody>
 				</table>
-			{/if}
-			{#if mainTab === 'library' && totalPages > 1}
-				<div class="pager">
-					<button onclick={() => (page = shownPage - 1)} disabled={shownPage <= 1}>←</button>
-					<span class="hint">{shownPage} / {totalPages}</span>
-					<button onclick={() => (page = shownPage + 1)} disabled={shownPage >= totalPages}>→</button>
-				</div>
 			{/if}
 		</div>
 
@@ -1515,7 +1533,7 @@
 				<p class="hint">Fetches the page and extracts its content only — no navigation, headers, footers, or ads — via a bounded AI pass. Nothing is summarized or rephrased.</p>
 				{#if scraping}
 					<div class="scrape-progress" aria-hidden="true"><div class="bar"></div></div>
-					<p class="hint">Fetching and extracting…</p>
+					<p class="hint"><Spinner size={13} /> Fetching and extracting…</p>
 				{/if}
 				<Button type="submit" loading={scraping}>Scrape and queue for ingestion</Button>
 			</form>
@@ -1799,17 +1817,29 @@
 
 	.finder-body { display: flex; flex: 1 1 auto; min-height: 0; }
 	.finder-content { flex: 1 1 auto; min-width: 0; overflow-y: auto; }
-	.pager { display: flex; align-items: center; justify-content: center; gap: var(--space-3); padding: var(--space-3); }
-	.pager button { border: 1px solid var(--line); background: var(--panel); cursor: pointer; padding: .2rem .6rem; }
-	.pager button:disabled { opacity: .4; cursor: not-allowed; }
 	.list-empty { grid-column: 1 / -1; padding: var(--space-6) var(--space-4); width: 100%; }
 	.graph-pane { padding: var(--space-3); height: 100%; display: flex; flex-direction: column; }
-	.tree-pane { padding: var(--space-3); max-width: 36rem; }
+	.finder-sidebar {
+		width: 14rem; flex: 0 0 auto; border-right: 1px solid var(--glass-border); background: var(--panel-2);
+		padding: var(--space-3); overflow-y: auto;
+		backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+	}
+	.sidebar-head { display: flex; align-items: center; gap: .2rem; margin-bottom: .3rem; }
 	.tree-root {
 		display: flex; align-items: center; gap: .4rem; border: none; background: none; cursor: pointer;
-		font: inherit; color: var(--ink); padding: .3rem 0; margin-bottom: .3rem; width: 100%; text-align: left;
+		font: inherit; color: var(--ink); padding: .3rem 0; flex: 1 1 auto; min-width: 0; text-align: left;
 	}
-	.tree-root:hover { color: var(--accent-ink); }
+	.tree-root:hover, .tree-root.active { color: var(--accent-ink); }
+	.sidebar-collapse, .sidebar-expand {
+		display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
+		width: 1.6rem; height: 1.6rem; border: none; background: none; color: var(--muted); cursor: pointer; border-radius: var(--r);
+	}
+	.sidebar-collapse:hover, .sidebar-expand:hover { background: var(--panel); color: var(--ink); }
+	.sidebar-collapse :global(svg) { transform: rotate(180deg); }
+	.sidebar-expand {
+		align-self: flex-start; margin: var(--space-2) 0 0 .2rem; border: 1px solid var(--glass-border);
+		background: var(--panel-2);
+	}
 
 	/* ── Finder's Icon View: a grid of tiles. Folders are tinted the
 	   familiar Finder blue; files are a plain document icon; the label
