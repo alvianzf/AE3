@@ -1870,7 +1870,7 @@
 	}
 	.inspector-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-2); margin-bottom: .2rem; }
 	.inspector-head h2 { font-size: var(--text-base); font-weight: var(--weight-bold); }
-	.inspector-actions { display: flex; gap: .4rem; margin: var(--space-3) 0; }
+	.inspector-actions { display: flex; justify-content: flex-end; gap: .4rem; margin: var(--space-3) 0; }
 	.icon-btn {
 		display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
 		border: 1px solid var(--line); background: var(--panel); color: var(--ink-2);
