@@ -30,7 +30,7 @@
 
 <div class="pane-row">
 	<div class="detail-pane">
-		<div class="detail-head"><div><h1>Overview</h1><p>Welcome back.</p></div></div>
+		<div class="detail-head"><div class="head-title"><span class="head-ico"><Icon name="home" size={16} /></span><div><h1>Overview</h1><p>Welcome back.</p></div></div></div>
 
 		{#if showChecklist}
 			<div class="checklist">

@@ -49,7 +49,7 @@
 
 <div class="pane-row">
 <div class="detail-pane">
-<div class="detail-head"><div><h1>Settings</h1></div></div>
+<div class="detail-head"><div class="head-title"><span class="head-ico"><Icon name="settings" size={16} /></span><h1>Settings</h1></div></div>
 
 	<section class="block">
 		<div class="block-head">
@@ -94,7 +94,6 @@
 	.block {
 		margin-bottom: var(--space-5); padding: var(--space-4) var(--space-5);
 		border: 1px solid var(--glass-border); border-radius: var(--r-lg); background: var(--panel-2);
-		max-width: 40rem;
 	}
 	.block-head { display: flex; align-items: center; gap: .5rem; margin-bottom: var(--space-3); }
 	.block-ico {

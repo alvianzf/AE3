@@ -39,7 +39,7 @@
      sticky-header treatment the rest of the portal gets. -->
 <div class="pane-row">
 	<div class="detail-pane">
-		<div class="detail-head"><div><h1>Your care</h1><p>What's next, at a glance.</p></div></div>
+		<div class="detail-head"><div class="head-title"><span class="head-ico"><Icon name="home" size={16} /></span><div><h1>Your care</h1><p>What's next, at a glance.</p></div></div></div>
 
 		<div class="stream">
 			{#each items as it (it.href)}

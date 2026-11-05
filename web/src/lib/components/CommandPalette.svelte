@@ -86,7 +86,7 @@
 		<input
 			bind:this={inputEl}
 			type="text"
-			placeholder="Jump to…"
+			placeholder="Search everything…"
 			bind:value={query}
 			oninput={() => (activeIndex = 0)}
 			onkeydown={onKeydown}
@@ -127,6 +127,7 @@
 	}
 	.search-row input {
 		flex: 1; border: none; background: none; font: inherit; font-size: var(--text-lg); color: var(--ink);
+		text-align: left;
 	}
 	.search-row input:focus { outline: none; }
 	.results { list-style: none; margin: 0; padding: var(--space-2); max-height: 60vh; overflow-y: auto; }

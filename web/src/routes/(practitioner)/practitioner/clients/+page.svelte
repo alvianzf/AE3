@@ -73,7 +73,7 @@
 
 <svelte:head><title>Clients — Practitioner portal</title></svelte:head>
 
-<div class="pane-row"><div class="detail-pane"><div class="detail-head"><div><h1>Clients</h1></div></div>
+<div class="pane-row"><div class="detail-pane"><div class="detail-head"><div class="head-title"><span class="head-ico"><Icon name="users" size={16} /></span><h1>Clients</h1></div></div>
 	{#snippet actions()}
 		<Button variant="filled" onclick={() => (open = true)}><Icon name="plus" size={15} />Add client</Button>
 	{/snippet}

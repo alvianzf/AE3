@@ -40,7 +40,7 @@
 
 <svelte:head><title>Files — Client portal</title></svelte:head>
 
-<div class="pane-row"><div class="detail-pane"><div class="detail-head"><div><h1>Your files</h1></div></div>
+<div class="pane-row"><div class="detail-pane"><div class="detail-head"><div class="head-title"><span class="head-ico"><Icon name="folder" size={16} /></span><h1>Your files</h1></div></div>
 	<div class="uploader">
 		<div class="uploader-row">
 			<input type="file" bind:this={fileInput} />

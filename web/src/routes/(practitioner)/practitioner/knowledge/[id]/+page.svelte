@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { PUBLIC_API_BASE } from '$env/static/public';
 	import Chip from '$lib/components/Chip.svelte';
+	import Icon from '$lib/components/Icon.svelte';
 
 	let { data } = $props();
 	const source = $derived(data.source);
@@ -55,7 +56,7 @@
 <svelte:head><title>{source?.title ?? 'Source'} — Practitioner portal</title></svelte:head>
 
 <div class="pane-row"><div class="detail-pane">
-<div class="detail-head"><div><h1>{source?.error ? 'Could not load' : (source?.title ?? '')}</h1></div></div>
+<div class="detail-head"><div class="head-title"><span class="head-ico"><Icon name="file" size={16} /></span><h1>{source?.error ? 'Could not load' : (source?.title ?? '')}</h1></div></div>
 	{#if source?.error}
 		<p class="hint">Could not load this source: {source.error}</p>
 	{:else if source}

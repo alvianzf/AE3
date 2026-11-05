@@ -347,7 +347,7 @@
 <svelte:head><title>Library weights — Practitioner portal</title></svelte:head>
 
 <div class="pane-row"><div class="detail-pane">
-<div class="detail-head"><div><h1>Library weighting</h1></div>{@render uploadActions()}</div>
+<div class="detail-head"><div class="head-title"><span class="head-ico"><Icon name="book" size={16} /></span><h1>Library weighting</h1></div>{@render uploadActions()}</div>
 	<p class="hint">Boost or dampen how much each shared library source counts when your consults run.</p>
 
 	{#if data.canUploadLibrary && data.staged?.length}

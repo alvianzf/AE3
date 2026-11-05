@@ -2,6 +2,7 @@
 	import { PUBLIC_API_BASE } from '$env/static/public';
 	import { post, del } from '$lib/api';
 	import { toast } from '$lib/stores/toast';
+	import Icon from '$lib/components/Icon.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import Select from '$lib/components/Select.svelte';
 	import TextField from '$lib/components/TextField.svelte';
@@ -99,7 +100,7 @@
 
 <svelte:head><title>{data.client.name} — Practitioner portal</title></svelte:head>
 
-<div class="pane-row"><div class="detail-pane"><div class="detail-head"><div><h1>{data.client.name}</h1></div></div>
+<div class="pane-row"><div class="detail-pane"><div class="detail-head"><div class="head-title"><span class="head-ico"><Icon name="user-card" size={16} /></span><h1>{data.client.name}</h1></div></div>
 	<p><strong>{data.client.name}</strong> — {data.client.email}</p>
 	<p class="hint">{data.client.country ?? 'Country not set'} · DOB {data.client.dob ?? 'not set'}</p>
 

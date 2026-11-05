@@ -316,7 +316,20 @@
 	// filename, falling back to the doc_type category for sources that
 	// never had one (pasted text, a scraped URL).
 	function fileIcon(s: any): string {
-		const ext = (s.filename ?? '').split('.').pop()?.toLowerCase();
+		// original_media_type (a real MIME type, set for anything actually
+		// uploaded) is a far more reliable signal than filename — found
+		// live: most sources' own `filename` is empty for anything ingested
+		// by paste/URL, and even uploaded files aren't guaranteed a
+		// recognizable extension, so this was falling back to the generic
+		// file icon far more often than it should have.
+		const mime = (s.original_media_type ?? '').toLowerCase();
+		if (mime.startsWith('image/')) return 'image';
+		if (mime.startsWith('video/')) return 'video';
+		if (mime.startsWith('audio/')) return 'audio';
+		if (mime.includes('presentation') || mime.includes('powerpoint')) return 'slide';
+		if (mime.includes('spreadsheet') || mime.includes('excel') || mime === 'text/csv') return 'table';
+		if (mime.includes('zip') || mime.includes('compressed') || mime.includes('archive')) return 'archive';
+		const ext = (s.filename ?? s.original_name ?? '').split('.').pop()?.toLowerCase();
 		if (ext && EXT_ICON[ext]) return EXT_ICON[ext];
 		if (s.doc_type === 'picture' || s.doc_type === 'chart') return 'image';
 		if (s.doc_type === 'presentation') return 'slide';

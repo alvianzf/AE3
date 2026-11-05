@@ -3,6 +3,7 @@
 	import { post } from '$lib/api';
 	import { toast } from '$lib/stores/toast';
 	import Chip from '$lib/components/Chip.svelte';
+	import Icon from '$lib/components/Icon.svelte';
 	import Button from '$lib/components/Button.svelte';
 
 	let { data } = $props();
@@ -73,7 +74,7 @@
 <svelte:head><title>Questionnaire — Client portal</title></svelte:head>
 
 <div class="pane-row"><div class="detail-pane">
-<div class="detail-head"><div><h1>{q?.title ?? 'Questionnaire'}</h1></div></div>
+<div class="detail-head"><div class="head-title"><span class="head-ico"><Icon name="clipboard" size={16} /></span><h1>{q?.title ?? 'Questionnaire'}</h1></div></div>
 	{#if !q}
 		<p class="hint">No questionnaire is active right now.</p>
 	{:else}

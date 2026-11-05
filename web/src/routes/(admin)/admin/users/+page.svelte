@@ -221,7 +221,7 @@
 
 <!-- specs/v4/03: Tier 2 on this screen — a datatable an admin revisits many
      times a day doesn't need the red band's attention-getting weight. -->
-<div class="pane-row"><div class="detail-pane"><div class="detail-head"><div><h1>Users</h1></div></div>
+<div class="pane-row"><div class="detail-pane"><div class="detail-head"><div class="head-title"><span class="head-ico"><Icon name="users" size={16} /></span><h1>Users</h1></div></div>
 	<Tabs bind:active tabs={[{ id: 'practitioners', label: 'Practitioners' }, { id: 'admins', label: 'Admins' }, { id: 'clients', label: 'Clients' }]} />
 
 	{#if active === 'practitioners'}

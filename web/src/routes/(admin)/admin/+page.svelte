@@ -21,13 +21,14 @@
 	]);
 
 	const recent = $derived((data.audit ?? []).slice(0, 6));
+	const latestDocs = $derived((data.latestDocs ?? []).slice(0, 6));
 </script>
 
 <svelte:head><title>Overview — Admin portal</title></svelte:head>
 
 <div class="pane-row">
 	<div class="detail-pane">
-		<div class="detail-head"><div><h1>Overview</h1><p>A quick read on the whole platform.</p></div></div>
+		<div class="detail-head"><div class="head-title"><span class="head-ico"><Icon name="home" size={16} /></span><div><h1>Overview</h1><p>A quick read on the whole platform.</p></div></div></div>
 
 		<div class="tile-grid">
 			{#each tiles as t (t.label)}
@@ -44,32 +45,54 @@
 			</div>
 		</section>
 
-		<section class="block">
-			<div class="block-head">
-				<h2>Recent activity</h2>
-				<a class="see-all" href="/admin/audit">See all →</a>
-			</div>
-			{#if recent.length}
-				<ul class="activity-list">
-					{#each recent as a, i (a.ts + i)}
-						<li>
-							<Chip tone="neutral">{a.action}</Chip>
-							<span class="who">{a.actor}</span>
-							{#if a.detail}<span class="hint">{a.detail}</span>{/if}
-							<span class="when">{(a.ts ?? '').slice(0, 16).replace('T', ' ')}</span>
-						</li>
-					{/each}
-				</ul>
-			{:else}
-				<p class="hint">Nothing logged yet.</p>
-			{/if}
-		</section>
+		<div class="cols-2">
+			<section class="block">
+				<div class="block-head">
+					<h2>Recent activity</h2>
+					<a class="see-all" href="/admin/audit">See all →</a>
+				</div>
+				{#if recent.length}
+					<ul class="activity-list">
+						{#each recent as a, i (a.ts + i)}
+							<li>
+								<Chip tone="neutral">{a.action}</Chip>
+								<span class="who">{a.actor}</span>
+								{#if a.detail}<span class="hint">{a.detail}</span>{/if}
+								<span class="when">{(a.ts ?? '').slice(0, 16).replace('T', ' ')}</span>
+							</li>
+						{/each}
+					</ul>
+				{:else}
+					<p class="hint">Nothing logged yet.</p>
+				{/if}
+			</section>
+
+			<section class="block">
+				<div class="block-head">
+					<h2>Latest uploads</h2>
+					<a class="see-all" href="/admin/library">See all →</a>
+				</div>
+				{#if latestDocs.length}
+					<ul class="activity-list">
+						{#each latestDocs as d (d.id)}
+							<li>
+								<a class="doc-link" href="/admin/{d.id}">{d.title}</a>
+								<span class="when">{(d.created_at ?? '').slice(0, 10)}</span>
+							</li>
+						{/each}
+					</ul>
+				{:else}
+					<p class="hint">Nothing uploaded yet.</p>
+				{/if}
+			</section>
+		</div>
 	</div>
 </div>
 
 <style>
-	.tile-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: var(--space-3); margin-bottom: var(--space-6); max-width: 52rem; }
-	.block { margin-bottom: var(--space-6); max-width: 40rem; }
+	.tile-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: var(--space-3); margin-bottom: var(--space-6); }
+	.cols-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); gap: var(--space-6); }
+	.block { margin-bottom: var(--space-6); }
 	.block-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
 	.block h2, .block-head h2 { font-size: var(--text-lg); margin-bottom: var(--space-3); }
 	.see-all { font-size: var(--text-sm); color: var(--accent-ink); text-decoration: none; }
@@ -81,4 +104,6 @@
 	}
 	.who { font-weight: var(--weight-medium); color: var(--ink-2); }
 	.when { margin-left: auto; color: var(--muted); font-size: var(--text-xs); }
+	.doc-link { color: var(--ink); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.doc-link:hover { color: var(--accent-ink); }
 </style>

@@ -27,7 +27,7 @@
 
 <svelte:head><title>Contacts — Practitioner portal</title></svelte:head>
 
-<div class="pane-row"><div class="detail-pane"><div class="detail-head"><div><h1>Contact submissions</h1></div></div>
+<div class="pane-row"><div class="detail-pane"><div class="detail-head"><div class="head-title"><span class="head-ico"><Icon name="mail" size={16} /></span><h1>Contact submissions</h1></div></div>
 	<DataTable
 		columns={[{ key: 'name', label: 'Name' }, { key: 'email', label: 'Email' }, { key: 'message', label: 'Message' }, { key: 'status', label: 'Status' }, { key: 'actions', label: '' }]}
 		rows={data.contacts}
