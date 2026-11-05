@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Icon from '$lib/components/Icon.svelte';
+	import PageHero from '$lib/components/PageHero.svelte';
 
 	let { data } = $props();
 
@@ -41,6 +42,13 @@
 	<div class="detail-pane">
 		<div class="detail-head"><div class="head-title"><span class="head-ico"><Icon name="home" size={16} /></span><div><h1>Your care</h1><p>What's next, at a glance.</p></div></div></div>
 
+		<PageHero
+			eyebrow="Client portal"
+			title={data.session?.name ? `Hello, ${data.session.name.split(' ')[0]}` : 'Hello'}
+			subtitle="Your questionnaire, health record and files, all in one private place."
+			stats={[{ label: 'Done', value: `${items.filter((i) => i.done).length}/${items.length}` }]}
+		/>
+
 		<div class="stream">
 			{#each items as it (it.href)}
 				<a class="row" class:done={it.done} href={it.href}>
@@ -67,7 +75,7 @@
 </div>
 
 <style>
-	.stream { display: grid; gap: var(--space-3); max-width: 44rem; }
+	.stream { display: grid; gap: var(--space-3); }
 	.row {
 		display: flex; align-items: center; gap: var(--space-4); text-decoration: none; color: inherit;
 		background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg);
