@@ -306,6 +306,7 @@
 		});
 	}
 	const EXT_ICON: Record<string, string> = {
+		pdf: 'pdf',
 		jpg: 'image', jpeg: 'image', png: 'image', gif: 'image', webp: 'image', svg: 'image', heic: 'image',
 		ppt: 'slide', pptx: 'slide', key: 'slide',
 		xls: 'table', xlsx: 'table', csv: 'table',
@@ -324,6 +325,7 @@
 		// recognizable extension, so this was falling back to the generic
 		// file icon far more often than it should have.
 		const mime = (s.original_media_type ?? '').toLowerCase();
+		if (mime === 'application/pdf') return 'pdf';
 		if (mime.startsWith('image/')) return 'image';
 		if (mime.startsWith('video/')) return 'video';
 		if (mime.startsWith('audio/')) return 'audio';
@@ -504,18 +506,52 @@
 	// is exactly why you'd search for it.
 	const searching = $derived(q.trim().length > 0);
 
+	// Typing a query also searches *inside* each document's own text, not
+	// just its metadata — GET /sources?search= already does a CONTAINS
+	// match against doc.body server-side (same query the backend's own
+	// admin search box used pre-rewrite), so a query that matches no
+	// title/tag but does appear in a document's body still surfaces it.
+	// Debounced, and only hit at all once there's something to search for.
+	let contentMatches = $state<any[] | null>(null);
+	let contentSearchLoading = $state(false);
+	let contentSearchTimer: ReturnType<typeof setTimeout>;
+	$effect(() => {
+		const needle = q.trim();
+		clearTimeout(contentSearchTimer);
+		if (!needle) {
+			contentMatches = null;
+			contentSearchLoading = false;
+			return;
+		}
+		contentSearchLoading = true;
+		contentSearchTimer = setTimeout(async () => {
+			try {
+				const res = await get(fetch, `/sources?search=${encodeURIComponent(needle)}&per_page=200`);
+				contentMatches = res?.sources ?? [];
+			} catch {
+				contentMatches = null;
+			} finally {
+				contentSearchLoading = false;
+			}
+		}, 300);
+	});
+
 	const filtered = $derived.by(() => {
 		const needle = q.trim().toLowerCase();
-		const matches = (data.sources ?? []).filter((s: any) => {
-			if (activeTopic && !(s.topics ?? []).includes(activeTopic)) return false;
-			if (searching) {
-				// Omni search: every field a document has, not just a fixed
-				// subset — folder path and tags included, so typing a folder
-				// name or a tag surfaces its documents the same as a title
-				// or summary match would.
+		if (searching) {
+			// Union of the instant client-side metadata match (title, tags,
+			// folder, etc. — zero latency) and the debounced server-side
+			// body-content match, deduped by id.
+			const clientMatches = (data.sources ?? []).filter((s: any) => {
 				const haystack = [s.title, s.summary, s.origin, s.author, s.filename, s.folder_path, s.kind, ...(s.topics ?? [])];
 				return haystack.some((v) => (v ?? '').toLowerCase().includes(needle));
-			}
+			});
+			const seen = new Set(clientMatches.map((s: any) => s.id));
+			const merged = [...clientMatches, ...(contentMatches ?? []).filter((s: any) => !seen.has(s.id))];
+			return sortDocs(merged);
+		}
+		const matches = (data.sources ?? []).filter((s: any) => {
+			if (activeTopic && !(s.topics ?? []).includes(activeTopic)) return false;
 			return (s.folder_path || '') === currentPath;
 		});
 		return sortDocs(matches);
@@ -1176,7 +1212,8 @@
 			</Menu>
 			<div class="tb-search">
 				<Icon name="search" size={13} />
-				<input type="search" placeholder="Search" bind:value={q} aria-label="Search the library" />
+				<input type="search" placeholder="Search — titles, tags, or document text" bind:value={q} aria-label="Search the library" />
+				{#if contentSearchLoading}<Spinner size={11} />{/if}
 				{#if q}<button class="search-clear" onclick={() => { q = ''; }} aria-label="Clear search">&times;</button>{/if}
 			</div>
 		{/if}
