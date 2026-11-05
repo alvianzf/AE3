@@ -514,6 +514,11 @@
 	// there — still surfaces it, in the order it's actually relevant.
 	// Debounced, and only hit at all once there's something to search for.
 	let contentMatches = $state<any[] | null>(null);
+	// document_id -> the endpoint's own highlighted excerpt (already
+	// HTML-escaped server-side with only <mark> tags inserted around the
+	// matched term) — shown in the Inspector so a content-only match
+	// doesn't just silently appear with no explanation of why.
+	let contentSnippets = $state<Record<string, string>>({});
 	let contentSearchLoading = $state(false);
 	let contentSearchTimer: ReturnType<typeof setTimeout>;
 	$effect(() => {
@@ -521,6 +526,7 @@
 		clearTimeout(contentSearchTimer);
 		if (!needle) {
 			contentMatches = null;
+			contentSnippets = {};
 			contentSearchLoading = false;
 			return;
 		}
@@ -529,14 +535,15 @@
 			try {
 				const res = await get(fetch, `/sources/search-content?q=${encodeURIComponent(needle)}&top_k=30`);
 				const byId = new Map((data.sources ?? []).map((s: any) => [s.id, s]));
+				const hits = res?.matches ?? [];
 				// Resolve each hit back to the full, already-loaded source
 				// record (doc_type/grade/folder_path/etc.) — the search
 				// endpoint only returns id/title/snippet, not a full card.
-				contentMatches = (res?.matches ?? [])
-					.map((m: any) => byId.get(m.document_id))
-					.filter((s: any) => s);
+				contentMatches = hits.map((m: any) => byId.get(m.document_id)).filter((s: any) => s);
+				contentSnippets = Object.fromEntries(hits.map((m: any) => [m.document_id, m.snippet]));
 			} catch {
 				contentMatches = null;
+				contentSnippets = {};
 			} finally {
 				contentSearchLoading = false;
 			}
@@ -1575,6 +1582,12 @@
 					<button class="icon-btn" onclick={closeInspector} title="Close" aria-label="Close inspector"><Icon name="x" size={15} /></button>
 				</div>
 				<p class="hint">{s.author ? `by ${s.author}` : 'No author on record'}{s.uploaded_by ? ` · uploaded by ${s.uploaded_by}` : ''}</p>
+				{#if searching && contentSnippets[s.id]}
+					<!-- Why this showed up under a content search — the
+					     endpoint's own highlighted excerpt (HTML-escaped
+					     server-side, only <mark> is real markup). -->
+					<p class="match-snippet">{@html contentSnippets[s.id]}</p>
+				{/if}
 				<div class="inspector-actions">
 					<a class="icon-btn" href="/admin/{s.id}" title="Open full detail" aria-label="Open full detail"><Icon name="external-link" size={16} /></a>
 					<Menu label="More actions for {s.title}">
@@ -2116,6 +2129,12 @@
 		backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
 	}
 	.inspector-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-2); margin-bottom: .2rem; }
+	.match-snippet {
+		font-size: var(--text-sm); color: var(--ink-2); background: var(--panel-2);
+		border: 1px solid var(--line); border-radius: var(--r); padding: var(--space-2) var(--space-3);
+		margin: var(--space-2) 0; line-height: 1.5;
+	}
+	.match-snippet :global(mark) { background: var(--accent-soft); color: var(--accent-ink); border-radius: 2px; }
 	.inspector-head h2 { font-size: var(--text-base); font-weight: var(--weight-bold); }
 	.inspector-actions { display: flex; justify-content: flex-end; gap: .4rem; margin: var(--space-3) 0; }
 	.icon-btn {

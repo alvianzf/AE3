@@ -8,6 +8,7 @@ accounts (app/auth.py) replace v1's single shared passphrase.
 from __future__ import annotations
 
 import asyncio
+import html
 import io
 import json
 import logging
@@ -1210,6 +1211,46 @@ def get_sources_query(
                        body.max_grade, body.sort, body.page, body.per_page, _admin)
 
 
+_SNIPPET_WINDOW_BEFORE = 60
+_SNIPPET_WINDOW_AFTER = 220
+
+
+def _build_snippet(text: str, query: str) -> str:
+    """Centers the snippet on the first matched query word instead of
+    always taking a chunk's first ~280 characters (which, for a vector-
+    only semantic hit, may not contain any of the query's actual words
+    at all, or for a full-text hit may cut off before the match even
+    appears) — and wraps every occurrence of a query word in <mark> so
+    the FE can bold it without needing to re-implement the matching
+    itself. Falls back to a plain leading excerpt when no query word is
+    found verbatim (the common case for a semantic-only match). The FE
+    renders this as HTML (for the <mark> tags), so the excerpt is
+    HTML-escaped *before* the tags are inserted — the document's own
+    text is untrusted input (whatever an admin uploaded/pasted/scraped),
+    and the <mark> wrapping here is the only markup that should survive.
+    """
+    text = text or ""
+    words = [w for w in re.split(r"\s+", query.strip()) if len(w) >= 2]
+    if not words:
+        return html.escape(text[:280])
+
+    pattern = re.compile(
+        "|".join(re.escape(w) for w in words), re.IGNORECASE)
+    first = pattern.search(text)
+    if first is None:
+        return html.escape(text[:280])
+
+    start = max(0, first.start() - _SNIPPET_WINDOW_BEFORE)
+    end = min(len(text), first.start() + _SNIPPET_WINDOW_AFTER)
+    excerpt = html.escape(text[start:end])
+    escaped_pattern = re.compile(
+        "|".join(re.escape(html.escape(w)) for w in words), re.IGNORECASE)
+    excerpt = escaped_pattern.sub(lambda m: f"<mark>{m.group(0)}</mark>", excerpt)
+    prefix = "…" if start > 0 else ""
+    suffix = "…" if end < len(text) else ""
+    return f"{prefix}{excerpt}{suffix}"
+
+
 @app.get("/api/sources/search-content")
 def search_source_content(
     q: str, top_k: int = 20, _admin: dict = Depends(auth.require_admin),
@@ -1249,7 +1290,7 @@ def search_source_content(
         {
             "document_id": doc_id,
             "title": best_chunk_per_doc[doc_id]["document_title"],
-            "snippet": (best_chunk_per_doc[doc_id]["text"] or "")[:280],
+            "snippet": _build_snippet(best_chunk_per_doc[doc_id]["text"], q),
             "is_private": best_chunk_per_doc[doc_id]["is_private"],
         }
         for doc_id in ordered_doc_ids[:top_k]
