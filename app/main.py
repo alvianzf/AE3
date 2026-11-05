@@ -2671,8 +2671,20 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
     if session_id and vault.get_session(practitioner_id, session_id) is None:
         raise HTTPException(404, "no such consultation")
     if not session_id:
-        session_id = vault.create_session(practitioner_id, body.client_id, body.question)["id"]
+        now_ts = vault._now()
+        history_data = vault.get_patient_history_up_to(practitioner_id, body.client_id, now_ts)
+        init_summary = reasoner.generate_consult_intake_summary(history_data, now_ts)
+        session_id = vault.create_session(
+            practitioner_id, body.client_id, body.question, initial_summary=init_summary, started_at=now_ts
+        )["id"]
+    else:
+        existing = vault.get_session(practitioner_id, session_id)
+        if existing and existing.get("title") == "Consultation Session":
+            vault.update_session_title(practitioner_id, session_id, body.question)
+
     history = vault.session_history(practitioner_id, session_id)[-6:]
+    session_rec = vault.get_session(practitioner_id, session_id)
+    initial_summary = session_rec.get("initial_summary") if session_rec else None
     # Applied throughout seed search and every traversal hop below — never
     # the shared admin grade — so a practitioner's own down/up-weight
     # actually affects only their own consultations (specs/v2/14 addendum #5).
@@ -2692,8 +2704,14 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
     history_block = "\n\n".join(
         f"Practitioner asked: {t['question']}\nYou answered: {t['answer']}" for t in history
     )
-    question = f"Earlier in this consultation:\n---\n{history_block}\n---\n\n{body.question}" \
-        if history_block else body.question
+    prior_parts = []
+    if initial_summary:
+        prior_parts.append(f"Consultation Opening AI Briefing:\n{initial_summary}")
+    if history_block:
+        prior_parts.append(f"Earlier in this consultation:\n{history_block}")
+    context_prefix = "\n\n".join(prior_parts)
+    question = f"Earlier in this consultation:\n---\n{context_prefix}\n---\n\n{body.question}" \
+        if context_prefix else body.question
 
     def _sse(event: dict) -> str:
         return f"data: {json.dumps(event)}\n\n"
@@ -2951,11 +2969,38 @@ def me_list_sessions(client_id: str,
     return vault.list_sessions(session["id"], client_id)
 
 
+@app.post("/api/me/clients/{client_id}/sessions/init")
+def me_init_session(client_id: str,
+                    session: dict = Depends(auth.require_pro_practitioner)) -> dict:
+    """Starts a new consultation session by generating an opening AI summary of the
+    patient and all recorded histories strictly up until this consultation point."""
+    practitioner_id = session["id"]
+    if vault.get_client(practitioner_id, client_id) is None:
+        raise HTTPException(404, "no such client")
+    now_ts = vault._now()
+    history_data = vault.get_patient_history_up_to(practitioner_id, client_id, now_ts)
+    summary = reasoner.generate_consult_intake_summary(history_data, now_ts)
+    session_row = vault.create_session(
+        practitioner_id,
+        client_id,
+        "Consultation Session",
+        initial_summary=summary,
+        started_at=now_ts,
+    )
+    return {**session_row, "turns": []}
+
+
 @app.get("/api/me/clients/{client_id}/sessions/{session_id}")
 def me_get_session(client_id: str, session_id: str,
                    session: dict = Depends(auth.require_pro_practitioner)) -> dict:
     practitioner_id = session["id"]
     s = _owned_session(practitioner_id, client_id, session_id)
+    if not s.get("initial_summary"):
+        consultation_point = s.get("started_at") or vault._now()
+        history_data = vault.get_patient_history_up_to(practitioner_id, client_id, consultation_point)
+        summary = reasoner.generate_consult_intake_summary(history_data, consultation_point)
+        vault.update_session_initial_summary(practitioner_id, session_id, summary)
+        s["initial_summary"] = summary
     return {
         **s,
         "documents": {

@@ -21,7 +21,7 @@ const CITE_GROUP = /\[([SK]\d+(?:\s*,\s*[SK]?\d+)*)\]/g;
 // accumulated-node index this is), not something worth showing inline.
 const TITLE_TRUNCATE = 12;
 
-export function renderAnswerHtml(text: string, sourceTitles: Map<string, string>): string {
+export function renderAnswerHtml(text: string, sourceTitles: Map<string, string> = new Map()): string {
 	const html = DOMPurify.sanitize(marked.parse(text, { async: false }) as string);
 	return html.replace(CITE_GROUP, (_match, group: string) => {
 		let lastPrefix = 'K';

@@ -2,7 +2,7 @@
 	import { onMount, onDestroy, tick } from 'svelte';
 	import { page } from '$app/state';
 	import { replaceState } from '$app/navigation';
-	import { get } from '$lib/api';
+	import { get, post } from '$lib/api';
 	import { streamConsult, type RetrievalMode } from '$lib/consultStream';
 	import { toast } from '$lib/stores/toast';
 	import TextField from '$lib/components/TextField.svelte';
@@ -31,6 +31,11 @@
 	let turns = $state<any[]>([]);
 	let loadingHistory = $state(false);
 
+	// Opening AI briefing of the patient and histories up to consultation point
+	let initialSummary = $state<string | null>(null);
+	let loadingSummary = $state(false);
+	let briefingOpen = $state(true);
+
 	// GPT/Claude-style history rail: every past consultation for the
 	// currently selected client, clickable to reload it into the thread.
 	let sessions = $state<any[]>([]);
@@ -43,16 +48,32 @@
 		loadingSessions = true;
 		try {
 			// A session is created as soon as a question is sent (app/main.py's
-			// /api/me/consult) but only gets a turn once the stream actually
-			// finishes — an aborted request or a mid-stream crash leaves a real
-			// 0-turn session row behind. Nothing to resume there, and it read
-			// as broken/duplicated entries in the history list (found live) —
-			// filtered out rather than shown.
-			sessions = (await get(fetch, `/me/clients/${id}/sessions`)).filter((s: any) => s.turns > 0);
+			// /api/me/consult) or when initialized with an AI briefing.
+			sessions = (await get(fetch, `/me/clients/${id}/sessions`)).filter((s: any) => s.turns > 0 || s.id === sessionId);
 		} catch {
 			sessions = [];
 		} finally {
 			loadingSessions = false;
+		}
+	}
+
+	async function initSession(id: string) {
+		if (!id || asking) return;
+		loadingSummary = true;
+		initialSummary = null;
+		sessionId = '';
+		turns = [];
+		try {
+			const res = await post(fetch, `/me/clients/${id}/sessions/init`, {});
+			sessionId = res.id;
+			initialSummary = res.initial_summary ?? null;
+			briefingOpen = true;
+			turns = [];
+			await loadSessions(id);
+		} catch (err: any) {
+			toast(err?.message || 'Could not start consultation session.', 'alert');
+		} finally {
+			loadingSummary = false;
 		}
 	}
 
@@ -62,6 +83,8 @@
 		try {
 			const s = await get(fetch, `/me/clients/${clientId}/sessions/${id}`);
 			sessionId = s.id;
+			initialSummary = s.initial_summary ?? null;
+			briefingOpen = true;
 			// Stored turns only have one timestamp (when the turn was written);
 			// live-asked turns below track ask vs. answer separately, but that
 			// distinction isn't in the database, so both map to the same value here.
@@ -73,11 +96,16 @@
 		}
 	}
 
-	function newChat() {
-		if (asking) return;
-		sessionId = '';
-		turns = [];
+	async function selectClient(id: string) {
+		if (asking || clientId === id) return;
+		clientId = id;
+		await initSession(id);
+	}
+
+	async function newChat() {
+		if (asking || !clientId) return;
 		question = '';
+		await initSession(clientId);
 	}
 
 	onMount(async () => {
@@ -90,7 +118,11 @@
 		// implicit). Only a real deep link (a URL that already names a
 		// client) restores a selection.
 		clientId = qClient ?? '';
-		if (qSession && qClient) await loadSession(qSession);
+		if (qSession && qClient) {
+			await loadSession(qSession);
+		} else if (qClient) {
+			await initSession(qClient);
+		}
 	});
 
 	// A client switch always starts a new conversation — carrying the old
@@ -103,9 +135,8 @@
 	let lastClientId = '';
 	$effect(() => {
 		const id = clientId;
-		if (lastClientId && id !== lastClientId) {
-			sessionId = '';
-			turns = [];
+		if (lastClientId && id !== lastClientId && id && !sessionId) {
+			initSession(id);
 		}
 		lastClientId = id;
 		loadSessions(id);
@@ -471,7 +502,7 @@
 			<ul class="clientlist">
 				{#each filteredClients as c (c.id)}
 					<li>
-						<button class:on={clientId === c.id} disabled={asking} onclick={() => (clientId = c.id)}>{c.name}</button>
+						<button class:on={clientId === c.id} disabled={asking} onclick={() => selectClient(c.id)}>{c.name}</button>
 					</li>
 				{:else}
 					<li class="hint">No clients match.</li>
@@ -482,7 +513,7 @@
 		<div class="sidebar-block history-block">
 			<div class="history-head">
 				<div class="block-head"><Icon name="history" size={15} /><strong>History</strong></div>
-				<button type="button" class="newchat" onclick={newChat} disabled={asking} title="New session">
+				<button type="button" class="newchat" onclick={newChat} disabled={asking || !clientId} title="New session">
 					<Icon name="new-chat" size={15} />
 					New session
 				</button>
@@ -538,56 +569,100 @@
 					<p>Pick a client to continue</p>
 					<p class="hint">Choose one from the list on the left to start or resume a consultation.</p>
 				</div>
-			{:else if !turns.length && !pendingQuestion}
-				<p class="hint empty">Ask a question about {selectedClient?.name} to get started.</p>
-			{/if}
-
-			{#each turns as t, i (t.session_id ? `${t.session_id}-${i}` : i)}
-				<div class="turn">
-					<div class="bubble bubble-q">
-						<p class="question">{t.question}</p>
-						<div class="meta">
-							{#if t.retrieval_mode}<span class="mode-tag">{MODE_LABELS[t.retrieval_mode] ?? t.retrieval_mode}</span>{/if}
-							{#if t.asked_at}<span class="ts">{timeLabel(t.asked_at)}</span>{/if}
+			{:else}
+				{#if loadingSummary}
+					<div class="briefing-loading" aria-live="polite">
+						<Spinner size={18} />
+						<div class="briefing-loading-text">
+							<strong>Generating Opening Clinical Briefing…</strong>
+							<span>Synthesizing patient profile and consultation history up to this consultation point.</span>
 						</div>
 					</div>
-					<div class="bubble bubble-a">
-						{@render turnView(t)}
-						{#if t.retrieval_mode}<div class="meta"><span class="mode-tag">{MODE_LABELS[t.retrieval_mode] ?? t.retrieval_mode}</span></div>{/if}
-					</div>
-				</div>
-			{/each}
-
-			{#if pendingQuestion}
-				<div class="turn">
-					<div class="bubble bubble-q">
-						<p class="question">{pendingQuestion}</p>
-					</div>
-					{#if steps.length}
-						{@const s = steps[steps.length - 1]}
-						<!-- One line, not a growing list — a finished step is
-						     replaced by whatever's running next rather than
-						     stacking underneath it (found live: the full
-						     history of steps read as clutter while waiting). -->
-						<div class="bubble bubble-a progress">
-							<div class="step" class:done={s.status === 'done'} class:error={s.status === 'error'}>
-								{#if s.status === 'running'}
-									<span class="spin" aria-hidden="true"></span>
-								{:else}
-									<span class="dot" aria-hidden="true"></span>
-								{/if}
-								{AGENT_LABELS[s.agent] ?? s.agent}
-								{#if s.status === 'done'}
-									<Chip tone="neutral">{s.input_tokens}→{s.output_tokens} tok · {s.duration_s}s</Chip>
-								{:else if s.status === 'error'}
-									<span class="hint">failed</span>
-								{:else}
-									<span class="hint">{s.progress ?? 'running…'}</span>
-								{/if}
+				{:else if initialSummary}
+					<div class="briefing-card" aria-label="AI Patient Summary & Clinical History">
+						<div class="briefing-head">
+							<div class="briefing-title-group">
+								<span class="briefing-badge-icon" aria-hidden="true"><Icon name="sparkles" size={16} /></span>
+								<div>
+									<h2 class="briefing-title">AI Patient Summary & Clinical History</h2>
+									<p class="briefing-subtitle">Opening briefing prepared strictly up until consultation point</p>
+								</div>
+							</div>
+							<div class="briefing-actions">
+								<Chip tone="accent">Consultation Start</Chip>
+								{#if selectedClient}<Chip tone="neutral">{selectedClient.name}</Chip>{/if}
+								<button
+									type="button"
+									class="briefing-toggle"
+									onclick={() => (briefingOpen = !briefingOpen)}
+									aria-expanded={briefingOpen}
+								>
+									<Icon name={briefingOpen ? 'chevron-up' : 'chevron-down'} size={13} />
+									{briefingOpen ? 'Collapse' : 'Expand'}
+								</button>
 							</div>
 						</div>
-					{/if}
-				</div>
+						{#if briefingOpen}
+							<div class="briefing-content answer">
+								{@html renderAnswerHtml(initialSummary)}
+							</div>
+						{/if}
+					</div>
+				{/if}
+
+				{#if !turns.length && !pendingQuestion && !loadingSummary}
+					<div class="start-prompt">
+						<p class="hint">Consultation session active. Ask a question about {selectedClient?.name} or explore clinical findings below.</p>
+					</div>
+				{/if}
+
+				{#each turns as t, i (t.session_id ? `${t.session_id}-${i}` : i)}
+					<div class="turn">
+						<div class="bubble bubble-q">
+							<p class="question">{t.question}</p>
+							<div class="meta">
+								{#if t.retrieval_mode}<span class="mode-tag">{MODE_LABELS[t.retrieval_mode] ?? t.retrieval_mode}</span>{/if}
+								{#if t.asked_at}<span class="ts">{timeLabel(t.asked_at)}</span>{/if}
+							</div>
+						</div>
+						<div class="bubble bubble-a">
+							{@render turnView(t)}
+							{#if t.retrieval_mode}<div class="meta"><span class="mode-tag">{MODE_LABELS[t.retrieval_mode] ?? t.retrieval_mode}</span></div>{/if}
+						</div>
+					</div>
+				{/each}
+
+				{#if pendingQuestion}
+					<div class="turn">
+						<div class="bubble bubble-q">
+							<p class="question">{pendingQuestion}</p>
+						</div>
+						{#if steps.length}
+							{@const s = steps[steps.length - 1]}
+							<!-- One line, not a growing list — a finished step is
+							     replaced by whatever's running next rather than
+							     stacking underneath it (found live: the full
+							     history of steps read as clutter while waiting). -->
+							<div class="bubble bubble-a progress">
+								<div class="step" class:done={s.status === 'done'} class:error={s.status === 'error'}>
+									{#if s.status === 'running'}
+										<span class="spin" aria-hidden="true"></span>
+									{:else}
+										<span class="dot" aria-hidden="true"></span>
+									{/if}
+									{AGENT_LABELS[s.agent] ?? s.agent}
+									{#if s.status === 'done'}
+										<Chip tone="neutral">{s.input_tokens}→{s.output_tokens} tok · {s.duration_s}s</Chip>
+									{:else if s.status === 'error'}
+										<span class="hint">failed</span>
+									{:else}
+										<span class="hint">{s.progress ?? 'running…'}</span>
+									{/if}
+								</div>
+							</div>
+						{/if}
+					</div>
+				{/if}
 			{/if}
 		</div>
 
@@ -716,6 +791,117 @@
 	}
 	.empty-state p { margin: 0; }
 	.empty-state p:first-of-type { color: var(--ink); font-weight: 650; font-size: var(--text-base); }
+
+	/* ── Consultation Opening AI Briefing Card ────────────────────────── */
+	.briefing-card {
+		background: linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%);
+		border: 1px solid var(--line);
+		border-left: 4px solid var(--accent);
+		border-radius: var(--r-lg);
+		padding: var(--space-4);
+		display: grid;
+		gap: var(--space-3);
+		box-shadow: 0 4px 16px rgba(0, 0, 0, .04);
+	}
+	.briefing-head {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: var(--space-3);
+		flex-wrap: wrap;
+	}
+	.briefing-title-group {
+		display: flex;
+		align-items: flex-start;
+		gap: .6rem;
+		min-width: 0;
+	}
+	.briefing-badge-icon {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 2rem;
+		height: 2rem;
+		border-radius: var(--r);
+		background: var(--accent-soft);
+		color: var(--accent-ink);
+		flex: none;
+		margin-top: .1rem;
+	}
+	.briefing-title {
+		margin: 0;
+		font-size: var(--text-base);
+		font-weight: 700;
+		color: var(--ink);
+		line-height: 1.3;
+	}
+	.briefing-subtitle {
+		margin: .15rem 0 0;
+		font-size: var(--text-xs);
+		color: var(--muted);
+	}
+	.briefing-actions {
+		display: flex;
+		align-items: center;
+		gap: .5rem;
+	}
+	.briefing-toggle {
+		display: inline-flex;
+		align-items: center;
+		gap: .3rem;
+		border: 1px solid var(--line-2);
+		background: var(--panel);
+		color: var(--muted);
+		padding: .25rem .55rem;
+		border-radius: var(--r);
+		font-size: var(--text-xs);
+		font-weight: 600;
+		cursor: pointer;
+		transition: background var(--dur), color var(--dur);
+	}
+	.briefing-toggle:hover {
+		background: var(--accent-soft);
+		color: var(--accent-ink);
+	}
+	.briefing-content {
+		border-top: 1px solid var(--line);
+		padding-top: var(--space-3);
+		font-size: var(--text-sm);
+	}
+	.briefing-loading {
+		display: flex;
+		align-items: center;
+		gap: var(--space-3);
+		padding: var(--space-4);
+		background: var(--panel);
+		border: 1px dashed var(--line);
+		border-radius: var(--r-lg);
+		color: var(--ink-2);
+	}
+	.briefing-loading-text {
+		display: flex;
+		flex-direction: column;
+		gap: .2rem;
+		font-size: var(--text-sm);
+	}
+	.briefing-loading-text strong {
+		color: var(--accent);
+		font-size: var(--text-sm);
+	}
+	.briefing-loading-text span {
+		color: var(--muted);
+		font-size: var(--text-xs);
+	}
+	.start-prompt {
+		text-align: center;
+		padding: var(--space-3);
+		background: var(--panel);
+		border-radius: var(--r);
+		border: 1px solid var(--line-2);
+	}
+	.start-prompt .hint {
+		margin: 0;
+	}
 
 	.turn { display: grid; gap: .4rem; }
 	.bubble { border-radius: var(--r-lg); padding: var(--space-3) var(--space-4); max-width: 85%; }
