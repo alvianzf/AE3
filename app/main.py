@@ -1210,6 +1210,52 @@ def get_sources_query(
                        body.max_grade, body.sort, body.page, body.per_page, _admin)
 
 
+@app.get("/api/sources/search-content")
+def search_source_content(
+    q: str, top_k: int = 20, _admin: dict = Depends(auth.require_admin),
+) -> dict:
+    """Real search inside document text, ranked by relevance — GET
+    /api/sources?search= only does a plain Neo4j CONTAINS match against
+    doc.body. This instead searches the same chunk_embedding vector index
+    and chunk_text_fulltext index Consult's own retrieval already builds
+    at ingest time (app/graph/store.py's seed_chunks_by_vector/
+    _by_fulltext), so a query finds a document even when the matching
+    words never appear verbatim, or ranks a genuinely relevant passage
+    above an incidental keyword hit.
+
+    Vector-similarity and Lucene full-text scores are on different,
+    non-comparable scales, so results aren't merged by raw score —
+    semantic matches are returned in their own ranked order first, with
+    any additional full-text-only matches (an exact phrase the embedding
+    model didn't rank highly) appended after, each document appearing
+    once (its best-scoring matched chunk).
+    """
+    q = q.strip()
+    if not q:
+        return {"matches": []}
+    embedding = get_llm_client(LLMRole.EMBEDDER).embed([q])[0]
+    vector_hits = store.seed_chunks_by_vector(embedding, top_k)
+    fulltext_hits = store.seed_chunks_by_fulltext(q, top_k)
+
+    best_chunk_per_doc: dict[str, dict] = {}
+    ordered_doc_ids: list[str] = []
+    for hit in vector_hits + fulltext_hits:
+        doc_id = hit["document_id"]
+        if doc_id not in best_chunk_per_doc:
+            best_chunk_per_doc[doc_id] = hit
+            ordered_doc_ids.append(doc_id)
+
+    return {"matches": [
+        {
+            "document_id": doc_id,
+            "title": best_chunk_per_doc[doc_id]["document_title"],
+            "snippet": (best_chunk_per_doc[doc_id]["text"] or "")[:280],
+            "is_private": best_chunk_per_doc[doc_id]["is_private"],
+        }
+        for doc_id in ordered_doc_ids[:top_k]
+    ]}
+
+
 @app.get("/api/facets")
 def get_facets(_admin: dict = Depends(auth.require_admin)) -> dict:
     return store.facets()

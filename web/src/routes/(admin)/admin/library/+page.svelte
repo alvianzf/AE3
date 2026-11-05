@@ -507,10 +507,11 @@
 	const searching = $derived(q.trim().length > 0);
 
 	// Typing a query also searches *inside* each document's own text, not
-	// just its metadata — GET /sources?search= already does a CONTAINS
-	// match against doc.body server-side (same query the backend's own
-	// admin search box used pre-rewrite), so a query that matches no
-	// title/tag but does appear in a document's body still surfaces it.
+	// just its metadata — GET /sources/search-content ranks by relevance
+	// (the same chunk vector + full-text indexes Consult's own retrieval
+	// uses), so a query that matches no title/tag but does appear in a
+	// document's text — or that's a paraphrase of what's actually in
+	// there — still surfaces it, in the order it's actually relevant.
 	// Debounced, and only hit at all once there's something to search for.
 	let contentMatches = $state<any[] | null>(null);
 	let contentSearchLoading = $state(false);
@@ -526,8 +527,14 @@
 		contentSearchLoading = true;
 		contentSearchTimer = setTimeout(async () => {
 			try {
-				const res = await get(fetch, `/sources?search=${encodeURIComponent(needle)}&per_page=200`);
-				contentMatches = res?.sources ?? [];
+				const res = await get(fetch, `/sources/search-content?q=${encodeURIComponent(needle)}&top_k=30`);
+				const byId = new Map((data.sources ?? []).map((s: any) => [s.id, s]));
+				// Resolve each hit back to the full, already-loaded source
+				// record (doc_type/grade/folder_path/etc.) — the search
+				// endpoint only returns id/title/snippet, not a full card.
+				contentMatches = (res?.matches ?? [])
+					.map((m: any) => byId.get(m.document_id))
+					.filter((s: any) => s);
 			} catch {
 				contentMatches = null;
 			} finally {
@@ -540,15 +547,16 @@
 		const needle = q.trim().toLowerCase();
 		if (searching) {
 			// Union of the instant client-side metadata match (title, tags,
-			// folder, etc. — zero latency) and the debounced server-side
-			// body-content match, deduped by id.
+			// folder, etc. — zero latency) and the debounced, relevance-
+			// ranked content match, deduped by id — content matches keep
+			// their own relevance order rather than being re-sorted.
 			const clientMatches = (data.sources ?? []).filter((s: any) => {
 				const haystack = [s.title, s.summary, s.origin, s.author, s.filename, s.folder_path, s.kind, ...(s.topics ?? [])];
 				return haystack.some((v) => (v ?? '').toLowerCase().includes(needle));
 			});
 			const seen = new Set(clientMatches.map((s: any) => s.id));
-			const merged = [...clientMatches, ...(contentMatches ?? []).filter((s: any) => !seen.has(s.id))];
-			return sortDocs(merged);
+			const contentOnly = (contentMatches ?? []).filter((s: any) => !seen.has(s.id));
+			return [...sortDocs(clientMatches), ...contentOnly];
 		}
 		const matches = (data.sources ?? []).filter((s: any) => {
 			if (activeTopic && !(s.topics ?? []).includes(activeTopic)) return false;
