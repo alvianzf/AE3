@@ -15,7 +15,27 @@
 		size?: number;
 		degree?: number;
 		mentions?: number;
+		documents?: number;
+		dataScore?: number;
 		[key: string]: any;
+	}
+
+	/**
+	 * Computes dynamic node radius based on the volume of data the concept holds.
+	 * Default node size is 2.4px (reduced by 60% from the previous default of 6.0px).
+	 * The more data it holds (mentions in text, relationships, documents), the larger it is;
+	 * vice versa, concepts holding less data scale smoothly down to the 2.4px default.
+	 */
+	export function calcNodeRadius(node: { size?: number; mentions?: number; degree?: number; documents?: number; dataScore?: number }): number {
+		if (typeof node.size === 'number' && !isNaN(node.size)) {
+			return node.size;
+		}
+		const mentions = Number(node.mentions ?? 0);
+		const degree = Number(node.degree ?? 0);
+		const documents = Number(node.documents ?? 0);
+		const score = Number(node.dataScore ?? (mentions + degree + documents));
+		// Default radius = 2.4px (60% smaller than 6.0px baseline)
+		return 2.4 + Math.min(28, Math.pow(Math.max(0, score - 1), 0.55) * 1.6);
 	}
 	export interface GraphEdge {
 		source: string;
@@ -258,7 +278,7 @@
 
 		for (const n of simNodes) {
 			if (n.x == null || n.y == null) continue;
-			const r = n.size ?? 6;
+			const r = n.size ?? 2.4;
 			const isSelf = activeNode?.id === n.id;
 			const isClosest = closestNodeIds.has(n.id);
 
@@ -269,7 +289,7 @@
 				ctx.globalAlpha = 1.0;
 			}
 
-			// Node circle
+			// Node circle (scaled dynamically by volume of data held)
 			ctx.beginPath();
 			ctx.arc(n.x, n.y, isSelf ? r + 3 : r, 0, Math.PI * 2);
 			ctx.fillStyle = colorFor(n.group);
@@ -277,18 +297,18 @@
 
 			// Highlight halo / stroke
 			if (isSelf) {
-				ctx.lineWidth = 3.5 / transform.k;
+				ctx.lineWidth = Math.max(1.8, Math.min(3.5, r * 0.7)) / transform.k;
 				ctx.strokeStyle = '#9c3f5a';
 				ctx.stroke();
 
 				// Outer pulse ring
 				ctx.beginPath();
-				ctx.arc(n.x, n.y, r + 7, 0, Math.PI * 2);
+				ctx.arc(n.x, n.y, r + 6, 0, Math.PI * 2);
 				ctx.lineWidth = 1.5 / transform.k;
 				ctx.strokeStyle = 'rgba(156, 63, 90, 0.5)';
 				ctx.stroke();
 			} else if (isClosest) {
-				ctx.lineWidth = 2.2 / transform.k;
+				ctx.lineWidth = Math.max(1.2, Math.min(2.4, r * 0.6)) / transform.k;
 				ctx.strokeStyle = '#9c3f5a';
 				ctx.stroke();
 			}
@@ -300,7 +320,7 @@
 				ctx.font = `${isSelf ? 'bold' : '500'} ${fontSize}px ui-sans-serif, system-ui, sans-serif`;
 				ctx.textAlign = 'center';
 
-				const textY = n.y - (isSelf ? r + 7 : r + 4);
+				const textY = n.y - (isSelf ? r + 6 : r + 3.5);
 
 				// Crisp white outline backdrop
 				ctx.lineWidth = (isSelf ? 3.5 : 2.8) / transform.k;
@@ -372,9 +392,10 @@
 			const ny = n.y * scale + offsetY;
 			const isHovered = activeNode?.id === n.id;
 			const isClosest = closestNodeIds.has(n.id);
+			const baseDotR = Math.max(1.2, Math.min(3.5, (n.size ?? 2.4) * 0.28));
 
 			ctx.beginPath();
-			ctx.arc(nx, ny, isHovered ? 4.5 : isClosest ? 3 : 2, 0, Math.PI * 2);
+			ctx.arc(nx, ny, isHovered ? Math.max(4.2, baseDotR + 2) : isClosest ? Math.max(2.6, baseDotR + 1) : baseDotR, 0, Math.PI * 2);
 			if (isHovered) {
 				ctx.fillStyle = '#9c3f5a';
 				ctx.fill();
@@ -430,7 +451,7 @@
 		let best: SimNode | null = null, bestDist = Infinity;
 		for (const n of simNodes) {
 			if (n.x == null || n.y == null) continue;
-			const r = Math.max((n.size ?? 6) + 12, 16 / transform.k);
+			const r = Math.max((n.size ?? 2.4) + 12, 16 / transform.k);
 			const d = Math.hypot(n.x - x, n.y - y);
 			if (d <= r && d < bestDist) { best = n; bestDist = d; }
 		}
@@ -579,7 +600,10 @@
 
 	// ── CONNECTED COMPONENT DISCOVERY & MULTI-GRAPH SEPARATION ──
 	$effect(() => {
-		simNodes = nodes.map((n) => ({ ...n }));
+		simNodes = nodes.map((n) => ({
+			...n,
+			size: calcNodeRadius(n)
+		}));
 		const byId = new Map(simNodes.map((n) => [n.id, n]));
 		simEdges = edges
 			.filter((e) => byId.has(e.source) && byId.has(e.target))
@@ -686,7 +710,7 @@
 		simulation = forceSimulation(simNodes as any)
 			.force('link', forceLink(simEdges).id((d: any) => d.id).distance(240).strength(0.35))
 			.force('charge', forceManyBody().strength(-680).distanceMax(1700))
-			.force('collide', forceCollide().radius((d: any) => (d.size ?? 6) + 36).strength(0.85))
+			.force('collide', forceCollide().radius((d: any) => (d.size ?? 2.4) + 36).strength(0.85))
 			.force('x', forceX((d: any) => d.targetX ?? width / 2).strength((d: any) => (d._isNeighbor ? 0.35 : 0.08)))
 			.force('y', forceY((d: any) => d.targetY ?? height / 2).strength((d: any) => (d._isNeighbor ? 0.35 : 0.08)))
 			.on('tick', scheduleDraw)
@@ -909,6 +933,8 @@
 						{#if activeNode.group}<span class="hud-badge group">{activeNode.group}</span>{/if}
 						<span class="hud-badge">{activeNeighborhood.neighbors.length} direct connection{activeNeighborhood.neighbors.length === 1 ? '' : 's'}</span>
 						{#if activeNode.mentions}<span class="hud-badge">{activeNode.mentions} mention{activeNode.mentions === 1 ? '' : 's'}</span>{/if}
+						{#if activeNode.documents}<span class="hud-badge">{activeNode.documents} doc{activeNode.documents === 1 ? '' : 's'}</span>{/if}
+						{#if activeNode.size}<span class="hud-badge sub" title="Node radius based on volume of data held">Size: {activeNode.size.toFixed(1)}px</span>{/if}
 						{#if clusterCount > 1}
 							<span class="hud-badge sub">Cluster #{((simNodes.find(n => n.id === activeNode.id)?.componentId ?? 0) + 1)}</span>
 						{/if}
