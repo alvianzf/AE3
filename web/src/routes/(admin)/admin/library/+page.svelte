@@ -1418,7 +1418,7 @@
 	}
 
 	function askBulkMove() {
-		if (!librarySelected.size) return;
+		if (totalSelectedCount === 0) return;
 		movingBulk = true;
 		movingSource = null;
 		movingPath = currentPath ?? '';
@@ -1472,7 +1472,7 @@
 	}
 
 	function askDeleteBulk() {
-		if (!librarySelected.size) return;
+		if (totalSelectedCount === 0) return;
 		deleting = null;
 		deletingBulk = true;
 		confirmingDelete = true;
@@ -1483,18 +1483,42 @@
 			toggleLibrarySelected(s.id);
 			selectedDocId = s.id;
 		} else {
-			if (librarySelected.size > 0 && !librarySelected.has(s.id)) {
-				librarySelected = new Set();
+			if (totalSelectedCount > 0 && !librarySelected.has(s.id)) {
+				clearAllSelections();
 			}
 			selectedDocId = s.id;
+		}
+	}
+
+	function onFolderClick(e: MouseEvent, node: TreeNode) {
+		if (e.shiftKey || e.metaKey || e.ctrlKey) {
+			toggleFolderSelected(node.path);
+			selectedFolderPath = node.path;
+		} else {
+			if (totalSelectedCount > 0 && !selectedFolderPaths.has(node.path)) {
+				clearAllSelections();
+			}
+			selectedFolderPath = node.path;
+		}
+	}
+
+	function onTagClick(e: MouseEvent, node: TreeNode) {
+		if (e.shiftKey || e.metaKey || e.ctrlKey) {
+			toggleTagSelected(node.path);
+			selectedTagPath = node.path;
+		} else {
+			if (totalSelectedCount > 0 && !selectedTagPaths.has(node.path)) {
+				clearAllSelections();
+			}
+			selectedTagPath = node.path;
 		}
 	}
 
 	// A real floating context menu at the cursor — the same actions the
 	// Inspector's own "More actions" menu already offers for a document,
 	// not a jump straight to one dialog (Move) the way this used to work.
-	let ctxMenu = $state<{ x: number; y: number; kind: 'doc' | 'folder' | 'tag' | 'empty' | 'staged' | 'bulk-doc'; target: any } | null>(null);
-	function openContextMenu(e: MouseEvent, kind: 'doc' | 'folder' | 'tag' | 'empty' | 'staged' | 'bulk-doc', target: any) {
+	let ctxMenu = $state<{ x: number; y: number; kind: 'doc' | 'folder' | 'tag' | 'empty' | 'staged' | 'bulk-doc' | 'bulk'; target: any } | null>(null);
+	function openContextMenu(e: MouseEvent, kind: 'doc' | 'folder' | 'tag' | 'empty' | 'staged' | 'bulk-doc' | 'bulk', target: any) {
 		e.preventDefault();
 		e.stopPropagation();
 		const x = Math.min(e.clientX, window.innerWidth - 220);
@@ -1502,10 +1526,11 @@
 		ctxMenu = { x, y, kind, target };
 	}
 	function onDocContextMenu(e: MouseEvent, s: any) {
-		if (librarySelected.has(s.id) && librarySelected.size > 1) {
-			openContextMenu(e, 'bulk-doc', { count: librarySelected.size });
+		if (librarySelected.has(s.id) && totalSelectedCount > 1) {
+			openContextMenu(e, 'bulk', { count: totalSelectedCount });
 		} else {
 			if (!librarySelected.has(s.id)) {
+				clearAllSelections();
 				librarySelected = new Set([s.id]);
 			}
 			openContextMenu(e, 'doc', s);
@@ -1515,16 +1540,33 @@
 		openContextMenu(e, 'staged', item);
 	}
 	function onFolderContextMenu(e: MouseEvent, node: TreeNode) {
-		openContextMenu(e, 'folder', node);
+		if (selectedFolderPaths.has(node.path) && totalSelectedCount > 1) {
+			openContextMenu(e, 'bulk', { count: totalSelectedCount });
+		} else {
+			if (!selectedFolderPaths.has(node.path)) {
+				clearAllSelections();
+				selectedFolderPaths = new Set([node.path]);
+			}
+			selectedFolderPath = node.path;
+			openContextMenu(e, 'folder', node);
+		}
 	}
 	function onTagContextMenu(e: MouseEvent, node: TreeNode) {
-		selectedTagPath = node.path;
-		openContextMenu(e, 'tag', node);
+		if (selectedTagPaths.has(node.path) && totalSelectedCount > 1) {
+			openContextMenu(e, 'bulk', { count: totalSelectedCount });
+		} else {
+			if (!selectedTagPaths.has(node.path)) {
+				clearAllSelections();
+				selectedTagPaths = new Set([node.path]);
+			}
+			selectedTagPath = node.path;
+			openContextMenu(e, 'tag', node);
+		}
 	}
 	function onEmptyContextMenu(e: MouseEvent) {
 		if (mainTab !== 'library' && mainTab !== 'tags') return;
-		if (librarySelected.size > 1) {
-			openContextMenu(e, 'bulk-doc', { count: librarySelected.size });
+		if (totalSelectedCount > 1) {
+			openContextMenu(e, 'bulk', { count: totalSelectedCount });
 		} else {
 			openContextMenu(e, 'empty', null);
 		}
@@ -1598,12 +1640,26 @@
 	async function confirmMove(e: Event) {
 		e.preventDefault();
 		if (movingBulk) {
-			const ids = [...librarySelected];
-			if (!ids.length) return;
+			const docIds = [...librarySelected];
+			const folderList = [...selectedFolderPaths];
+			if (!docIds.length && !folderList.length) return;
 			try {
-				await Promise.all(ids.map((id) => patch(fetch, `/sources/${id}/folder`, { folder_path: movingPath })));
-				toast(`Moved ${ids.length} item${ids.length === 1 ? '' : 's'} to "${movingPath || '(root)'}".`);
-				librarySelected = new Set();
+				if (docIds.length) {
+					await Promise.all(docIds.map((id) => patch(fetch, `/sources/${id}/folder`, { folder_path: movingPath })));
+				}
+				if (folderList.length) {
+					await Promise.all(folderList.map((f) => {
+						const folderName = f.split('/').pop() || f;
+						const newPath = movingPath ? `${movingPath}/${folderName}` : folderName;
+						if (newPath !== f) {
+							return post(fetch, '/library/folders/rename', { old_path: f, new_path: newPath });
+						}
+						return Promise.resolve();
+					}));
+				}
+				const totalMoved = docIds.length + folderList.length;
+				toast(`Moved ${totalMoved} item${totalMoved === 1 ? '' : 's'} to "${movingPath || '(root)'}".`);
+				clearAllSelections();
 				movingOpen = false;
 				movingBulk = false;
 				await invalidateAll();
@@ -1719,16 +1775,44 @@
 		}
 	}
 
-	// Private knowledge base (specs/v6.9/01) — a second, independent
-	// selection set over the already-ingested doc-grid, not a reuse of
-	// `selected` above (that one's scoped to the staged-upload queue).
+	// Multi-selection state across documents and folders (specs/v15/14, specs/v15/17)
 	let librarySelected = $state<Set<string>>(new Set());
+	let selectedFolderPaths = $state<Set<string>>(new Set());
+	let selectedTagPaths = $state<Set<string>>(new Set());
+
+	const totalSelectedCount = $derived(
+		librarySelected.size +
+		(mainTab === 'tags' ? selectedTagPaths.size : selectedFolderPaths.size)
+	);
 
 	function toggleLibrarySelected(id: string) {
 		const next = new Set(librarySelected);
 		if (next.has(id)) next.delete(id);
 		else next.add(id);
 		librarySelected = next;
+	}
+
+	function toggleFolderSelected(path: string) {
+		const next = new Set(selectedFolderPaths);
+		if (next.has(path)) next.delete(path);
+		else next.add(path);
+		selectedFolderPaths = next;
+	}
+
+	function toggleTagSelected(path: string) {
+		const next = new Set(selectedTagPaths);
+		if (next.has(path)) next.delete(path);
+		else next.add(path);
+		selectedTagPaths = next;
+	}
+
+	function clearAllSelections() {
+		librarySelected = new Set();
+		selectedFolderPaths = new Set();
+		selectedTagPaths = new Set();
+		selectedDocId = null;
+		selectedFolderPath = null;
+		selectedTagPath = null;
 	}
 
 	async function setPrivate(s: any, isPrivate: boolean) {
@@ -1742,12 +1826,19 @@
 	}
 
 	async function setPrivateBulk(isPrivate: boolean) {
-		const ids = [...librarySelected];
-		if (!ids.length) return;
+		const docIds = [...librarySelected];
+		const folderList = [...selectedFolderPaths];
+		if (!docIds.length && !folderList.length) return;
 		try {
-			await Promise.all(ids.map((id) => patch(fetch, `/sources/${id}/privacy`, { is_private: isPrivate })));
-			toast(`${ids.length} source${ids.length === 1 ? '' : 's'} set to ${isPrivate ? 'private' : 'public'}.`);
-			librarySelected = new Set();
+			if (docIds.length) {
+				await Promise.all(docIds.map((id) => patch(fetch, `/sources/${id}/privacy`, { is_private: isPrivate })));
+			}
+			if (folderList.length) {
+				await Promise.all(folderList.map((f) => post(fetch, '/library/folders/privacy', { folder_path: f, is_private: isPrivate })));
+			}
+			const total = docIds.length + folderList.length;
+			toast(`${total} item${total === 1 ? '' : 's'} set to ${isPrivate ? 'private' : 'public'}.`);
+			clearAllSelections();
 			await invalidateAll();
 		} catch (err: any) {
 			toast(err.message, 'alert');
@@ -1843,14 +1934,32 @@
 
 	async function confirmDelete() {
 		if (deletingBulk) {
-			const ids = [...librarySelected];
+			const docIds = [...librarySelected];
+			const folderList = [...selectedFolderPaths];
+			const tagList = [...selectedTagPaths];
 			confirmingDelete = false;
 			deletingBulk = false;
 			try {
-				await Promise.all(ids.map((id) => del(fetch, `/sources/${id}`)));
-				toast(`Removed ${ids.length} item${ids.length === 1 ? '' : 's'} from library.`);
-				librarySelected = new Set();
-				selectedDocId = null;
+				if (docIds.length) {
+					await Promise.all(docIds.map((id) => del(fetch, `/sources/${id}`)));
+				}
+				if (folderList.length) {
+					await Promise.all(folderList.map((f) => post(fetch, '/library/folders/delete', { folder_path: f })));
+				}
+				if (tagList.length) {
+					for (const tag of tagList) {
+						if (tag === '__untagged__') continue;
+						const docsToUpdate = (data.sources ?? []).filter((s: any) => (s.topics ?? []).includes(tag));
+						for (const doc of docsToUpdate) {
+							const updated = (doc.topics ?? []).filter((t: string) => t !== tag);
+							await patch(fetch, `/sources/${doc.id}/topics`, { topics: updated });
+						}
+						customTags = customTags.filter((t) => t !== tag);
+					}
+				}
+				const totalDeleted = docIds.length + folderList.length + tagList.length;
+				toast(`Removed ${totalDeleted} item${totalDeleted === 1 ? '' : 's'} from library.`);
+				clearAllSelections();
 				await invalidateAll();
 			} catch (err: any) {
 				toast(err.message, 'alert');
@@ -2177,7 +2286,9 @@
 	let marqueeActive = $state(false);
 	let marqueeStart = $state<{ x: number; y: number }>({ x: 0, y: 0 });
 	let marqueeCurrent = $state<{ x: number; y: number }>({ x: 0, y: 0 });
-	let marqueeInitialSelected = $state<Set<string>>(new Set());
+	let marqueeInitialDocs = $state<Set<string>>(new Set());
+	let marqueeInitialFolders = $state<Set<string>>(new Set());
+	let marqueeInitialTags = $state<Set<string>>(new Set());
 
 	function onContentMouseDown(e: MouseEvent) {
 		if (e.button !== 0) return;
@@ -2198,9 +2309,10 @@
 		marqueeActive = false;
 		marqueeStart = { x: e.clientX, y: e.clientY };
 		marqueeCurrent = { x: e.clientX, y: e.clientY };
-		marqueeInitialSelected = (e.shiftKey || e.metaKey || e.ctrlKey)
-			? new Set(librarySelected)
-			: new Set();
+		const isAdditive = e.shiftKey || e.metaKey || e.ctrlKey;
+		marqueeInitialDocs = isAdditive ? new Set(librarySelected) : new Set();
+		marqueeInitialFolders = isAdditive ? new Set(selectedFolderPaths) : new Set();
+		marqueeInitialTags = isAdditive ? new Set(selectedTagPaths) : new Set();
 	}
 
 	function onWindowMouseMove(e: MouseEvent) {
@@ -2220,12 +2332,15 @@
 			const boxRight = Math.max(marqueeStart.x, marqueeCurrent.x);
 			const boxBottom = Math.max(marqueeStart.y, marqueeCurrent.y);
 
-			const docElements = finderContentEl.querySelectorAll('[data-doc-id]');
-			const next = new Set<string>(marqueeInitialSelected);
+			const selectableItems = finderContentEl.querySelectorAll('[data-doc-id], [data-folder-path], [data-tag-path]');
+			const nextDocs = new Set<string>(marqueeInitialDocs);
+			const nextFolders = new Set<string>(marqueeInitialFolders);
+			const nextTags = new Set<string>(marqueeInitialTags);
 
-			docElements.forEach((el) => {
-				const id = el.getAttribute('data-doc-id');
-				if (!id) return;
+			selectableItems.forEach((el) => {
+				const docId = el.getAttribute('data-doc-id');
+				const folderPath = el.getAttribute('data-folder-path');
+				const tagPath = el.getAttribute('data-tag-path');
 				const rect = el.getBoundingClientRect();
 				const intersects = !(
 					rect.right < boxLeft ||
@@ -2233,14 +2348,22 @@
 					rect.bottom < boxTop ||
 					rect.top > boxBottom
 				);
-				if (intersects) {
-					next.add(id);
-				} else if (!marqueeInitialSelected.has(id)) {
-					next.delete(id);
+
+				if (docId) {
+					if (intersects) nextDocs.add(docId);
+					else if (!marqueeInitialDocs.has(docId)) nextDocs.delete(docId);
+				} else if (folderPath) {
+					if (intersects) nextFolders.add(folderPath);
+					else if (!marqueeInitialFolders.has(folderPath)) nextFolders.delete(folderPath);
+				} else if (tagPath) {
+					if (intersects) nextTags.add(tagPath);
+					else if (!marqueeInitialTags.has(tagPath)) nextTags.delete(tagPath);
 				}
 			});
 
-			librarySelected = next;
+			librarySelected = nextDocs;
+			selectedFolderPaths = nextFolders;
+			selectedTagPaths = nextTags;
 		}
 	}
 
@@ -2250,9 +2373,8 @@
 		if (!marqueeActive) {
 			if (!e.shiftKey && !e.metaKey && !e.ctrlKey) {
 				const target = e.target as HTMLElement | null;
-				if (target && !target.closest('button, a, input, select, textarea, label, [data-doc-id]')) {
-					librarySelected = new Set();
-					selectedDocId = null;
+				if (target && !target.closest('button, a, input, select, textarea, label, [data-doc-id], [data-folder-path], [data-tag-path]')) {
+					clearAllSelections();
 				}
 			}
 		}
@@ -2461,16 +2583,30 @@
 	{/if}
 
 	{#if mainTab === 'library' || mainTab === 'tags'}
-		{#if (data.staged?.length ?? 0) > 0 || (queueStats?.queued_count ?? 0) > 0 || (queueStats?.processing_count ?? 0) > 0 || librarySelected.size}
+		{#if (data.staged?.length ?? 0) > 0 || (queueStats?.queued_count ?? 0) > 0 || (queueStats?.processing_count ?? 0) > 0 || totalSelectedCount > 0}
 			<div class="status-row">
-				{#if librarySelected.size}
-					<span class="hint">{librarySelected.size} selected</span>
+				{#if totalSelectedCount > 0}
+					<span class="hint">
+						{#if selectedFolderPaths.size > 0 && librarySelected.size > 0}
+							{totalSelectedCount} selected ({selectedFolderPaths.size} folders, {librarySelected.size} docs)
+						{:else if selectedFolderPaths.size > 0}
+							{selectedFolderPaths.size} folder{selectedFolderPaths.size === 1 ? '' : 's'} selected
+						{:else if selectedTagPaths.size > 0}
+							{selectedTagPaths.size} categor{selectedTagPaths.size === 1 ? 'y' : 'ies'} selected
+						{:else}
+							{librarySelected.size} selected
+						{/if}
+					</span>
 					<button class="status-action" onclick={askBulkMove} title="Move to folder"><Icon name="folder" size={13} /></button>
-					<button class="status-action" onclick={askBulkTag} title="Assign category"><Icon name="tag" size={13} /></button>
-					<button class="status-action" onclick={() => setPrivateBulk(true)} title="Make private"><Icon name="lock" size={13} /></button>
-					<button class="status-action" onclick={() => setPrivateBulk(false)} title="Make public"><Icon name="unlock" size={13} /></button>
+					{#if librarySelected.size > 0}
+						<button class="status-action" onclick={askBulkTag} title="Assign category"><Icon name="tag" size={13} /></button>
+					{/if}
+					{#if mainTab !== 'tags'}
+						<button class="status-action" onclick={() => setPrivateBulk(true)} title="Make private"><Icon name="lock" size={13} /></button>
+						<button class="status-action" onclick={() => setPrivateBulk(false)} title="Make public"><Icon name="unlock" size={13} /></button>
+					{/if}
 					<button class="status-action danger" onclick={askDeleteBulk} title="Remove selected from library"><Icon name="trash" size={13} /></button>
-					<button class="status-action" onclick={() => (librarySelected = new Set())} title="Clear selection"><Icon name="x" size={13} /></button>
+					<button class="status-action" onclick={clearAllSelections} title="Clear selection"><Icon name="x" size={13} /></button>
 				{:else}
 					<span class="hint">
 						{(queueStats?.queued_count ?? 0) + (queueStats?.processing_count ?? 0)} in queue
@@ -2619,17 +2755,29 @@
 								<button
 									class="icon-tile folder-tile"
 									class:on={selectedFolderPath === node.path}
-									class:drag-target={dragOverPath === node.path}
+									class:selected={selectedFolderPaths.has(node.path)}
+									data-folder-path={node.path}
 									draggable="true"
 									ondragstart={() => (draggedFolderPath = node.path)}
 									ondragend={() => { draggedFolderPath = null; dragOverPath = null; }}
 									ondragover={(e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; dragOverPath = node.path; }}
 									ondragleave={() => (dragOverPath = null)}
 									ondrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDropOnFolder(node.path, e); }}
-									onclick={() => (selectedFolderPath = node.path)}
-									ondblclick={() => { currentPath = node.path; selectedFolderPath = null; }}
+									onclick={(e) => onFolderClick(e, node)}
+									ondblclick={() => { currentPath = node.path; clearAllSelections(); }}
 									oncontextmenu={(e) => onFolderContextMenu(e, node)}
 								>
+									<div class="tile-header-bar folder-header-bar">
+										<span class="file-ext-tag folder-tag">DIR</span>
+										<input
+											type="checkbox"
+											class="tile-select-check"
+											checked={selectedFolderPaths.has(node.path)}
+											onclick={(e) => e.stopPropagation()}
+											onchange={() => toggleFolderSelected(node.path)}
+											aria-label="Select folder {node.name}"
+										/>
+									</div>
 									<div class="tile-art folder-art">
 										<Icon name="folder" size={38} />
 									</div>
@@ -2642,15 +2790,27 @@
 								<button
 									class="icon-tile folder-tile tag-tile"
 									class:on={selectedTagPath === node.path}
-									class:drag-target={dragOverPath === node.path}
+									class:selected={selectedTagPaths.has(node.path)}
+									data-tag-path={node.path}
 									draggable="false"
 									ondragover={(e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; dragOverPath = node.path; }}
 									ondragleave={() => (dragOverPath = null)}
 									ondrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDropOnTag(node.path, e); }}
-									onclick={() => (selectedTagPath = node.path)}
-									ondblclick={() => { currentTag = node.path; selectedTagPath = null; }}
+									onclick={(e) => onTagClick(e, node)}
+									ondblclick={() => { currentTag = node.path; clearAllSelections(); }}
 									oncontextmenu={(e) => onTagContextMenu(e, node)}
 								>
+									<div class="tile-header-bar folder-header-bar">
+										<span class="file-ext-tag tag-ext-tag">TAG</span>
+										<input
+											type="checkbox"
+											class="tile-select-check"
+											checked={selectedTagPaths.has(node.path)}
+											onclick={(e) => e.stopPropagation()}
+											onchange={() => toggleTagSelected(node.path)}
+											aria-label="Select category {node.name}"
+										/>
+									</div>
 									<div class="tile-art folder-art tag-art">
 										<Icon name="tag" size={38} />
 									</div>
@@ -2765,19 +2925,28 @@
 									<tr
 										class="folder-tr"
 										class:on={selectedFolderPath === node.path}
-										class:drag-target={dragOverPath === node.path}
+										class:selected={selectedFolderPaths.has(node.path)}
+										data-folder-path={node.path}
 										draggable="true"
 										ondragstart={() => (draggedFolderPath = node.path)}
 										ondragend={() => { draggedFolderPath = null; dragOverPath = null; }}
 										ondragover={(e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; dragOverPath = node.path; }}
 										ondragleave={() => (dragOverPath = null)}
 										ondrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDropOnFolder(node.path, e); }}
-										onclick={() => (selectedFolderPath = node.path)}
-										ondblclick={() => { currentPath = node.path; selectedFolderPath = null; }}
+										onclick={(e) => onFolderClick(e, node)}
+										ondblclick={() => { currentPath = node.path; clearAllSelections(); }}
 										oncontextmenu={(e) => onFolderContextMenu(e, node)}
 									>
-										<td><Icon name="folder" size={16} /></td>
-										<td>{node.name}</td>
+										<td>
+											<input
+												type="checkbox"
+												checked={selectedFolderPaths.has(node.path)}
+												onclick={(e) => e.stopPropagation()}
+												onchange={() => toggleFolderSelected(node.path)}
+												aria-label="Select folder {node.name}"
+											/>
+										</td>
+										<td><Icon name="folder" size={16} /> {node.name}</td>
 										<td class="hint">Folder</td>
 										<td class="hint">—</td>
 										<td class="hint">{node.count} item{node.count === 1 ? '' : 's'}</td>
@@ -2788,16 +2957,25 @@
 									<tr
 										class="folder-tr tag-tr"
 										class:on={selectedTagPath === node.path}
-										class:drag-target={dragOverPath === node.path}
+										class:selected={selectedTagPaths.has(node.path)}
+										data-tag-path={node.path}
 										ondragover={(e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; dragOverPath = node.path; }}
 										ondragleave={() => (dragOverPath = null)}
 										ondrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDropOnTag(node.path, e); }}
-										onclick={() => (selectedTagPath = node.path)}
-										ondblclick={() => { currentTag = node.path; selectedTagPath = null; }}
+										onclick={(e) => onTagClick(e, node)}
+										ondblclick={() => { currentTag = node.path; clearAllSelections(); }}
 										oncontextmenu={(e) => onTagContextMenu(e, node)}
 									>
-										<td><Icon name="tag" size={16} /></td>
-										<td>{node.name}</td>
+										<td>
+											<input
+												type="checkbox"
+												checked={selectedTagPaths.has(node.path)}
+												onclick={(e) => e.stopPropagation()}
+												onchange={() => toggleTagSelected(node.path)}
+												aria-label="Select category {node.name}"
+											/>
+										</td>
+										<td><Icon name="tag" size={16} /> {node.name}</td>
 										<td class="hint">Category</td>
 										<td class="hint">—</td>
 										<td class="hint">{node.count} item{node.count === 1 ? '' : 's'}</td>
@@ -2908,11 +3086,20 @@
 									<button
 										class="col-row tag-col-row"
 										class:active={currentTag === node.path || currentTag.startsWith(`${node.path}/`)}
+										class:selected={selectedTagPaths.has(node.path)}
 										class:drag-target={dragOverPath === node.path}
+										data-tag-path={node.path}
 										ondragover={(e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; dragOverPath = node.path; }}
 										ondragleave={() => (dragOverPath = null)}
 										ondrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDropOnTag(node.path, e); }}
-										onclick={() => { currentTag = node.path; selectedTagPath = null; }}
+										onclick={(e) => {
+											if (e.shiftKey || e.metaKey || e.ctrlKey) {
+												onTagClick(e, node);
+											} else {
+												currentTag = node.path;
+												clearAllSelections();
+											}
+										}}
 										oncontextmenu={(e) => onTagContextMenu(e, node)}
 									>
 										<Icon name="tag" size={14} /> {node.name}
@@ -2948,16 +3135,25 @@
 							<div class="col-pane">
 								{#each col.nodes as node (node.path)}
 									<button
-										class="col-row"
+										class="col-row folder-col-row"
 										class:active={currentPath === node.path || currentPath.startsWith(`${node.path}/`)}
+										class:selected={selectedFolderPaths.has(node.path)}
 										class:drag-target={dragOverPath === node.path}
+										data-folder-path={node.path}
 										draggable="true"
 										ondragstart={() => (draggedFolderPath = node.path)}
 										ondragend={() => { draggedFolderPath = null; dragOverPath = null; }}
 										ondragover={(e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; dragOverPath = node.path; }}
 										ondragleave={() => (dragOverPath = null)}
 										ondrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDropOnFolder(node.path, e); }}
-										onclick={() => { currentPath = node.path; selectedFolderPath = null; }}
+										onclick={(e) => {
+											if (e.shiftKey || e.metaKey || e.ctrlKey) {
+												onFolderClick(e, node);
+											} else {
+												currentPath = node.path;
+												clearAllSelections();
+											}
+										}}
 										oncontextmenu={(e) => onFolderContextMenu(e, node)}
 									>
 										<Icon name="folder" size={14} /> {node.name}
@@ -3163,32 +3359,49 @@
 						<Icon name="trash" size={15} /> Remove file
 					</button>
 				{/if}
-			{:else if menu.kind === 'bulk-doc'}
+			{:else if menu.kind === 'bulk' || menu.kind === 'bulk-doc'}
 				<div class="ctx-header">
 					<Icon name="check" size={13} />
-					<span>{librarySelected.size} items selected</span>
+					<span>
+						{totalSelectedCount} item{totalSelectedCount === 1 ? '' : 's'} selected
+						{#if selectedFolderPaths.size > 0 || selectedTagPaths.size > 0}
+							<small class="ctx-sub">
+								({selectedFolderPaths.size > 0 ? `${selectedFolderPaths.size} folder${selectedFolderPaths.size > 1 ? 's' : ''}` : ''}
+								{selectedFolderPaths.size > 0 && librarySelected.size > 0 ? ', ' : ''}
+								{librarySelected.size > 0 ? `${librarySelected.size} file${librarySelected.size > 1 ? 's' : ''}` : ''}
+								{(selectedFolderPaths.size > 0 || librarySelected.size > 0) && selectedTagPaths.size > 0 ? ', ' : ''}
+								{selectedTagPaths.size > 0 ? `${selectedTagPaths.size} categor${selectedTagPaths.size > 1 ? 'ies' : 'y'}` : ''})
+							</small>
+						{/if}
+					</span>
 				</div>
-				<button onclick={() => { askBulkMove(); closeContextMenu(); }}>
-					<Icon name="folder" size={15} /> Move {librarySelected.size} items to folder…
-				</button>
-				<button onclick={() => { askBulkTag(); closeContextMenu(); }}>
-					<Icon name="tag" size={15} /> Assign category to {librarySelected.size} items…
-				</button>
-				{#if mainTab === 'tags' && currentTag && currentTag !== '__untagged__'}
+				{#if selectedFolderPaths.size > 0 || librarySelected.size > 0}
+					<button onclick={() => { askBulkMove(); closeContextMenu(); }}>
+						<Icon name="folder" size={15} /> Move {selectedFolderPaths.size + librarySelected.size} items to folder…
+					</button>
+				{/if}
+				{#if librarySelected.size > 0}
+					<button onclick={() => { askBulkTag(); closeContextMenu(); }}>
+						<Icon name="tag" size={15} /> Assign category to {librarySelected.size} items…
+					</button>
+				{/if}
+				{#if mainTab === 'tags' && currentTag && currentTag !== '__untagged__' && librarySelected.size > 0}
 					<button onclick={() => { bulkRemoveTag(currentTag); closeContextMenu(); }}>
 						<Icon name="tag" size={15} /> Remove from "{currentTag}"
 					</button>
 				{/if}
-				<button onclick={() => { setPrivateBulk(true); closeContextMenu(); }}>
-					<Icon name="lock" size={15} /> Make private ({librarySelected.size})
-				</button>
-				<button onclick={() => { setPrivateBulk(false); closeContextMenu(); }}>
-					<Icon name="unlock" size={15} /> Make public ({librarySelected.size})
-				</button>
+				{#if selectedFolderPaths.size > 0 || librarySelected.size > 0}
+					<button onclick={() => { setPrivateBulk(true); closeContextMenu(); }}>
+						<Icon name="lock" size={15} /> Make private ({selectedFolderPaths.size + librarySelected.size})
+					</button>
+					<button onclick={() => { setPrivateBulk(false); closeContextMenu(); }}>
+						<Icon name="unlock" size={15} /> Make public ({selectedFolderPaths.size + librarySelected.size})
+					</button>
+				{/if}
 				<button class="danger" onclick={() => { askDeleteBulk(); closeContextMenu(); }}>
-					<Icon name="trash" size={15} /> Remove {librarySelected.size} items from library
+					<Icon name="trash" size={15} /> Remove {totalSelectedCount} items
 				</button>
-				<button onclick={() => { librarySelected = new Set(); closeContextMenu(); }}>
+				<button onclick={() => { clearAllSelections(); closeContextMenu(); }}>
 					<Icon name="x" size={15} /> Clear selection
 				</button>
 			{:else}
@@ -3316,9 +3529,23 @@
 	</div>
 </Dialog>
 
-<Dialog bind:open={confirmingDelete} title={deletingBulk ? `Remove ${librarySelected.size} sources` : "Remove source"}>
+<Dialog bind:open={confirmingDelete} title={deletingBulk ? `Remove ${totalSelectedCount} items` : "Remove source"}>
 	{#if deletingBulk}
-		<p>Remove {librarySelected.size} selected source(s) and their passages? Answers will stop citing them. This cannot be undone.</p>
+		<p>
+			Remove
+			{#if selectedFolderPaths.size > 0}
+				<strong>{selectedFolderPaths.size} folder{selectedFolderPaths.size === 1 ? '' : 's'}</strong>
+				{librarySelected.size > 0 || selectedTagPaths.size > 0 ? 'and ' : ''}
+			{/if}
+			{#if librarySelected.size > 0}
+				<strong>{librarySelected.size} source{librarySelected.size === 1 ? '' : 's'}</strong>
+				{selectedTagPaths.size > 0 ? 'and ' : ''}
+			{/if}
+			{#if selectedTagPaths.size > 0}
+				<strong>{selectedTagPaths.size} categor{selectedTagPaths.size === 1 ? 'y' : 'ies'}</strong>
+			{/if}
+			? Answers will stop citing deleted documents. This cannot be undone.
+		</p>
 	{:else if deleting}
 		<p>Remove "{deleting.title}" and its {deleting.chunks ?? 0} passage(s)? Answers will stop citing it.</p>
 	{/if}
@@ -3390,7 +3617,12 @@
 <Dialog bind:open={movingOpen} title="Move to folder">
 	{#if movingBulk}
 		<form onsubmit={confirmMove} id="mv-bulk-form">
-			<p class="hint">Moving {librarySelected.size} selected documents.</p>
+			<p class="hint">
+				Moving {selectedFolderPaths.size + librarySelected.size} selected item{selectedFolderPaths.size + librarySelected.size === 1 ? '' : 's'}
+				{#if selectedFolderPaths.size > 0}
+					({selectedFolderPaths.size} folder{selectedFolderPaths.size === 1 ? '' : 's'}{librarySelected.size > 0 ? `, ${librarySelected.size} document${librarySelected.size === 1 ? '' : 's'}` : ''})
+				{/if}.
+			</p>
 			<TextField label="Folder path" bind:value={movingPath} placeholder="(root)" />
 			{#if folderPaths.length}
 				<p class="hint">Existing folders:</p>
@@ -3417,7 +3649,7 @@
 	{/if}
 	{#snippet footer()}
 		<Button variant="ghost" onclick={() => (movingOpen = false)}>Cancel</Button>
-		<Button onclick={confirmMove}>{movingBulk ? `Move ${librarySelected.size} items` : 'Move'}</Button>
+		<Button onclick={confirmMove}>{movingBulk ? `Move ${selectedFolderPaths.size + librarySelected.size} items` : 'Move'}</Button>
 	{/snippet}
 </Dialog>
 
@@ -4839,8 +5071,8 @@
 	.finder-table td:nth-child(2) { display: flex; align-items: center; gap: .6rem; font-weight: 550; }
 	.folder-tr, .doc-tr { cursor: pointer; transition: background .12s var(--ease); }
 	.folder-tr:hover, .doc-tr:hover { background: color-mix(in srgb, var(--panel-2) 90%, white); }
-	.folder-tr.on, .doc-tr.on, .doc-tr.selected { background: var(--accent-soft) !important; }
-	.col-row.doc.selected { background: color-mix(in srgb, var(--accent) 14%, var(--panel)) !important; color: var(--accent-ink); }
+	.folder-tr.on, .doc-tr.on, .doc-tr.selected, .folder-tr.selected { background: var(--accent-soft) !important; }
+	.col-row.selected { background: color-mix(in srgb, var(--accent) 14%, var(--panel)) !important; color: var(--accent-ink); }
 	.marquee-selection-box {
 		position: fixed;
 		z-index: 9999;
@@ -4856,8 +5088,8 @@
 	}
 	:global(.ctx-header) {
 		display: flex;
-		align-items: center;
-		gap: .4rem;
+		flex-direction: column;
+		gap: .2rem;
 		padding: .4rem .7rem;
 		font-size: .72rem;
 		font-weight: 700;
@@ -4865,6 +5097,12 @@
 		border-bottom: 1px solid var(--line);
 		margin-bottom: .25rem;
 		letter-spacing: .02em;
+	}
+	:global(.ctx-sub) {
+		font-size: .65rem;
+		font-weight: 500;
+		color: var(--muted);
+		display: block;
 	}
 	.job-progress { display: grid; gap: .25rem; width: 100%; }
 	.job-progress .track { height: 4px; background: var(--panel); overflow: hidden; border-radius: 99px; }
