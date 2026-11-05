@@ -73,6 +73,7 @@
 	// reload instead of dying with the tab that started it.
 	let jobsByStagedId = $state<Record<string, any>>({});
 	const pollTimers: Record<string, ReturnType<typeof setInterval>> = {};
+	const pendingTargetFolders: Record<string, string> = {};
 
 	// The just-ingested document, shown in the "Placed in library" dialog
 	// right after a job finishes — the Reader already chose a folder and
@@ -177,9 +178,16 @@
 					clearFiltersAfterIngest();
 					await invalidateAll();
 					const placed = (data.sources ?? []).find((x: any) => x.id === job.result_document_id);
+					const targetFolder = pendingTargetFolders[stagedId];
+					if (targetFolder !== undefined) {
+						delete pendingTargetFolders[stagedId];
+						if (placed && (placed.folder_path || '') !== targetFolder) {
+							await setFolder(placed, targetFolder);
+						}
+					}
 					toast(
 						placed
-							? `"${placed.title.slice(0, 40)}" ingested — filed in ${placed.folder_path || '(root)'}.`
+							? `"${placed.title.slice(0, 40)}" ingested — filed in ${targetFolder ?? (placed.folder_path || '(root)')}.`
 							: 'Ingested into the library.'
 					);
 					// A bell icon on the card, not an auto-opened dialog
@@ -664,8 +672,63 @@
 	// immediately, with no way to just select one.
 	let selectedFolderPath = $state<string | null>(null);
 
-	function handleDropOnFolder(targetPath: string) {
+	// External drag-and-drop file upload states
+	let contentExternalDragOver = $state(false);
+	let sidebarExternalDragOver = $state(false);
+	let contentDragDepth = 0;
+	let sidebarDragDepth = 0;
+
+	function hasExternalFiles(e: DragEvent): boolean {
+		if (draggedId || draggedFolderPath) return false;
+		const types = e.dataTransfer?.types;
+		return Boolean(types && (types.includes('Files') || types.includes('application/x-moz-file')));
+	}
+
+	async function uploadDirectFiles(files: FileList | File[], targetFolder: string = '') {
+		if (!files || files.length === 0) return;
+		const fileArray = Array.from(files).filter((f) => f && f.size > 0);
+		if (fileArray.length === 0) return;
+
+		toast(`Uploading ${fileArray.length} file${fileArray.length === 1 ? '' : 's'}…`);
+
+		for (const file of fileArray) {
+			staging = true;
+			stageProgress = null;
+			try {
+				const staged = await chunkedUpload('/sources', file, {}, (p) => (stageProgress = p), 'stage');
+				if (staged?.id) {
+					if (targetFolder) {
+						pendingTargetFolders[staged.id] = targetFolder;
+					}
+					await invalidateAll();
+					ingestOne(staged.id);
+					toast(`Queued "${file.name}" for ingestion.`);
+				}
+			} catch (err: any) {
+				toast(`Upload failed for "${file.name}": ${err.message}`, 'alert');
+			} finally {
+				staging = false;
+				stageProgress = null;
+			}
+		}
+		await invalidateAll();
+	}
+
+	function handleDropOnFolder(targetPath: string, e?: DragEvent) {
 		dragOverPath = null;
+		contentExternalDragOver = false;
+		sidebarExternalDragOver = false;
+		contentDragDepth = 0;
+		sidebarDragDepth = 0;
+
+		// External OS file drop directly onto this folder
+		if (e && hasExternalFiles(e) && e.dataTransfer?.files?.length) {
+			e.preventDefault();
+			e.stopPropagation();
+			uploadDirectFiles(e.dataTransfer.files, targetPath);
+			return;
+		}
+
 		if (draggedId) {
 			const s = (data.sources ?? []).find((x: any) => x.id === draggedId);
 			draggedId = null;
@@ -683,6 +746,70 @@
 			const dest = targetPath ? `${targetPath}/${name}` : name;
 			if (dest === source) return;
 			moveFolderTo(source, dest);
+		}
+	}
+
+	function onContentDragEnter(e: DragEvent) {
+		if (hasExternalFiles(e)) {
+			e.preventDefault();
+			contentDragDepth++;
+			contentExternalDragOver = true;
+		}
+	}
+	function onContentDragOver(e: DragEvent) {
+		if (hasExternalFiles(e)) {
+			e.preventDefault();
+			if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+			contentExternalDragOver = true;
+		}
+	}
+	function onContentDragLeave(e: DragEvent) {
+		if (hasExternalFiles(e)) {
+			contentDragDepth = Math.max(0, contentDragDepth - 1);
+			if (contentDragDepth === 0) {
+				contentExternalDragOver = false;
+			}
+		}
+	}
+	function onContentDrop(e: DragEvent) {
+		contentDragDepth = 0;
+		contentExternalDragOver = false;
+		if (hasExternalFiles(e) && e.dataTransfer?.files?.length) {
+			e.preventDefault();
+			e.stopPropagation();
+			uploadDirectFiles(e.dataTransfer.files, currentPath);
+		}
+	}
+
+	function onSidebarDragEnter(e: DragEvent) {
+		if (hasExternalFiles(e)) {
+			e.preventDefault();
+			sidebarDragDepth++;
+			sidebarExternalDragOver = true;
+		}
+	}
+	function onSidebarDragOver(e: DragEvent) {
+		if (hasExternalFiles(e)) {
+			e.preventDefault();
+			if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+			sidebarExternalDragOver = true;
+		}
+	}
+	function onSidebarDragLeave(e: DragEvent) {
+		if (hasExternalFiles(e)) {
+			sidebarDragDepth = Math.max(0, sidebarDragDepth - 1);
+			if (sidebarDragDepth === 0) {
+				sidebarExternalDragOver = false;
+			}
+		}
+	}
+	function onSidebarDrop(e: DragEvent) {
+		sidebarDragDepth = 0;
+		sidebarExternalDragOver = false;
+		if (hasExternalFiles(e) && e.dataTransfer?.files?.length) {
+			e.preventDefault();
+			e.stopPropagation();
+			uploadDirectFiles(e.dataTransfer.files, '');
 		}
 	}
 
@@ -1279,9 +1406,9 @@
 			<button
 				class="crumb" class:drag-target={dragOverPath === ''}
 				onclick={() => { currentPath = ''; selectedFolderPath = null; }}
-				ondragover={(e) => { e.preventDefault(); dragOverPath = ''; }}
+				ondragover={(e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; dragOverPath = ''; }}
 				ondragleave={() => (dragOverPath = null)}
-				ondrop={(e) => { e.preventDefault(); handleDropOnFolder(''); }}
+				ondrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDropOnFolder('', e); }}
 				disabled={!currentPath}
 			><Icon name="folder" size={12} />Library</button>
 			{#each breadcrumb as crumb, i (crumb.path)}
@@ -1289,9 +1416,9 @@
 				<button
 					class="crumb" class:drag-target={dragOverPath === crumb.path}
 					onclick={() => { currentPath = crumb.path; selectedFolderPath = null; }}
-					ondragover={(e) => { e.preventDefault(); dragOverPath = crumb.path; }}
+					ondragover={(e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; dragOverPath = crumb.path; }}
 					ondragleave={() => (dragOverPath = null)}
-					ondrop={(e) => { e.preventDefault(); handleDropOnFolder(crumb.path); }}
+					ondrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDropOnFolder(crumb.path, e); }}
 					disabled={i === breadcrumb.length - 1}
 				><Icon name="folder" size={12} />{crumb.name}</button>
 			{/each}
@@ -1331,13 +1458,22 @@
 					<Icon name="chevron" size={13} />
 				</button>
 			{:else}
-				<aside class="finder-sidebar">
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<aside
+					class="finder-sidebar"
+					class:external-dragover={sidebarExternalDragOver}
+					oncontextmenu={onEmptyContextMenu}
+					ondragenter={onSidebarDragEnter}
+					ondragover={onSidebarDragOver}
+					ondragleave={onSidebarDragLeave}
+					ondrop={onSidebarDrop}
+				>
 					<div class="sidebar-head">
 						<button
 							class="tree-root"
 							class:active={!currentPath}
-							ondragover={(e) => e.preventDefault()}
-							ondrop={(e) => { e.preventDefault(); handleDropOnFolder(''); }}
+							ondragover={(e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; }}
+							ondrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDropOnFolder('', e); }}
 							onclick={() => { currentPath = ''; selectedFolderPath = null; }}
 						>
 							<Icon name="folder" size={14} /> Library <span class="row-sub">{data.sources.length}</span>
@@ -1356,11 +1492,36 @@
 						onDelete={(path, count) => askDeleteFolder(path, count)}
 						onContextMenu={onFolderContextMenu}
 					/>
+					{#if sidebarExternalDragOver}
+						<div class="drop-overlay sidebar-overlay">
+							<div class="drop-pill">
+								<Icon name="upload" size={14} />
+								<span>Drop to upload to Library</span>
+							</div>
+						</div>
+					{/if}
 				</aside>
 			{/if}
 		{/if}
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div class="finder-content" class:grid-mode={mainTab === 'library' && viewMode === 'icons'} oncontextmenu={onEmptyContextMenu}>
+		<div
+			class="finder-content"
+			class:grid-mode={mainTab === 'library' && viewMode === 'icons'}
+			class:external-dragover={contentExternalDragOver}
+			oncontextmenu={onEmptyContextMenu}
+			ondragenter={onContentDragEnter}
+			ondragover={onContentDragOver}
+			ondragleave={onContentDragLeave}
+			ondrop={onContentDrop}
+		>
+			{#if contentExternalDragOver}
+				<div class="drop-overlay">
+					<div class="drop-pill">
+						<Icon name="upload" size={20} />
+						<span>Drop files to upload to {currentPath ? `"${currentPath}"` : 'Library'}</span>
+					</div>
+				</div>
+			{/if}
 			{#if mainTab === 'graph'}
 				<div class="graph-pane">
 					{#if data.graph}
@@ -1383,9 +1544,9 @@
 								draggable="true"
 								ondragstart={() => (draggedFolderPath = node.path)}
 								ondragend={() => { draggedFolderPath = null; dragOverPath = null; }}
-								ondragover={(e) => { e.preventDefault(); dragOverPath = node.path; }}
+								ondragover={(e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; dragOverPath = node.path; }}
 								ondragleave={() => (dragOverPath = null)}
-								ondrop={(e) => { e.preventDefault(); handleDropOnFolder(node.path); }}
+								ondrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDropOnFolder(node.path, e); }}
 								onclick={() => (selectedFolderPath = node.path)}
 								ondblclick={() => { currentPath = node.path; selectedFolderPath = null; }}
 								oncontextmenu={(e) => onFolderContextMenu(e, node)}
@@ -1463,9 +1624,9 @@
 									draggable="true"
 									ondragstart={() => (draggedFolderPath = node.path)}
 									ondragend={() => { draggedFolderPath = null; dragOverPath = null; }}
-									ondragover={(e) => { e.preventDefault(); dragOverPath = node.path; }}
+									ondragover={(e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; dragOverPath = node.path; }}
 									ondragleave={() => (dragOverPath = null)}
-									ondrop={(e) => { e.preventDefault(); handleDropOnFolder(node.path); }}
+									ondrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDropOnFolder(node.path, e); }}
 									onclick={() => (selectedFolderPath = node.path)}
 									ondblclick={() => { currentPath = node.path; selectedFolderPath = null; }}
 									oncontextmenu={(e) => onFolderContextMenu(e, node)}
@@ -1544,9 +1705,9 @@
 									draggable="true"
 									ondragstart={() => (draggedFolderPath = node.path)}
 									ondragend={() => { draggedFolderPath = null; dragOverPath = null; }}
-									ondragover={(e) => { e.preventDefault(); dragOverPath = node.path; }}
+									ondragover={(e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; dragOverPath = node.path; }}
 									ondragleave={() => (dragOverPath = null)}
-									ondrop={(e) => { e.preventDefault(); handleDropOnFolder(node.path); }}
+									ondrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDropOnFolder(node.path, e); }}
 									onclick={() => { currentPath = node.path; selectedFolderPath = null; }}
 									oncontextmenu={(e) => onFolderContextMenu(e, node)}
 								>
@@ -2018,10 +2179,52 @@
 	.retry-link { border: none; background: none; color: var(--accent-ink); cursor: pointer; font: inherit; padding: 0; text-decoration: underline; }
 
 	.finder-body { display: flex; flex: 1 1 auto; min-height: 0; gap: var(--space-3); padding: var(--space-3) var(--space-6) var(--space-5); }
-	.finder-content { flex: 1 1 auto; min-width: 0; overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); }
+	.finder-content { position: relative; flex: 1 1 auto; min-width: 0; overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); transition: border-color var(--duration-fast), box-shadow var(--duration-fast); }
 	.list-empty { grid-column: 1 / -1; padding: var(--space-6) var(--space-4); width: 100%; }
 	.graph-pane { padding: var(--space-3); height: 100%; display: flex; flex-direction: column; }
-	.finder-sidebar { width: 14rem; flex: 0 0 auto; border-right: 1px solid var(--glass-border); background: var(--panel); padding: var(--space-3); overflow-y: auto; backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); }
+	.finder-sidebar { position: relative; width: 14rem; flex: 0 0 auto; border-right: 1px solid var(--glass-border); background: var(--panel); padding: var(--space-3); overflow-y: auto; backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); transition: border-color var(--duration-fast), box-shadow var(--duration-fast); }
+	.finder-content.external-dragover,
+	.finder-sidebar.external-dragover {
+		border-color: var(--accent);
+		box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+	}
+	.drop-overlay {
+		position: absolute;
+		inset: 0;
+		z-index: 40;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: color-mix(in srgb, var(--panel) 82%, var(--accent));
+		border: 2px dashed var(--accent);
+		border-radius: 16px;
+		pointer-events: none;
+		backdrop-filter: blur(2px);
+		-webkit-backdrop-filter: blur(2px);
+	}
+	.drop-pill {
+		display: flex;
+		align-items: center;
+		gap: .6rem;
+		padding: .75rem 1.25rem;
+		background: var(--panel);
+		color: var(--accent-ink);
+		border: 1px solid var(--accent);
+		border-radius: 9999px;
+		font-weight: 600;
+		font-size: var(--text-sm);
+		box-shadow: var(--shadow-lg);
+		pointer-events: none;
+	}
+	.drop-overlay.sidebar-overlay {
+		border-radius: 16px;
+		padding: var(--space-2);
+	}
+	.drop-overlay.sidebar-overlay .drop-pill {
+		padding: .5rem .75rem;
+		font-size: var(--text-xs);
+		gap: .35rem;
+	}
 	.sidebar-head { display: flex; align-items: center; gap: .2rem; margin-bottom: .3rem; }
 	.tree-root { display: flex; align-items: center; gap: .4rem; border: none; background: none; cursor: pointer; font: inherit; color: var(--ink); padding: .4rem .5rem; flex: 1 1 auto; min-width: 0; text-align: left; border-radius: 8px; font-weight: 600; }
 	.tree-root:hover, .tree-root.active { color: var(--accent-ink); background: var(--accent-soft); }

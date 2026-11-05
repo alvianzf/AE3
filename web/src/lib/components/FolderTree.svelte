@@ -29,7 +29,7 @@
 		nodes: TreeNode[];
 		activePath: string | null;
 		onSelect: (path: string) => void;
-		onDrop: (path: string) => void;
+		onDrop: (path: string, e?: DragEvent) => void;
 		onRename: (path: string) => void;
 		onPrivatize: (path: string, isPrivate: boolean) => void;
 		onDelete: (path: string, count: number) => void;
@@ -69,10 +69,10 @@
 				class="node"
 				class:active={activePath === node.path}
 				class:dragover={dragOverPath === node.path}
-				ondragover={(e) => { e.preventDefault(); dragOverPath = node.path; }}
+				ondragover={(e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; dragOverPath = node.path; }}
 				ondragleave={() => (dragOverPath = null)}
-				ondrop={(e) => { e.preventDefault(); dragOverPath = null; onDrop(node.path); }}
-				oncontextmenu={(e) => { if (onContextMenu) { e.preventDefault(); onContextMenu(e, node); } }}
+				ondrop={(e) => { e.preventDefault(); e.stopPropagation(); dragOverPath = null; onDrop(node.path, e); }}
+				oncontextmenu={(e) => { if (onContextMenu) { e.preventDefault(); e.stopPropagation(); onContextMenu(e, node); } }}
 			>
 				{#if node.children.length || (showDocs && node.docs.length)}
 					<button class="chevron" onclick={(e) => toggle(node.path, e)} aria-label="Toggle {node.name}">
