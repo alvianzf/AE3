@@ -12,3 +12,4 @@
 - [10-library-tag-category-organization-window.md](10-library-tag-category-organization-window.md) — Dedicated Tags & Categories organization window for the library studio where folders represent tags/categories over the same document dataset.
 - [11-v15-system-drift-and-architecture-reconciliation.md](11-v15-system-drift-and-architecture-reconciliation.md) — System drift and architecture reconciliation: what v6–v14 specs assumed vs what the application actually runs in v15 across library, graph, ingestion, mobile shell, and clinical workflows.
 - [12-upload-placement-ai-tag-suggestions.md](12-upload-placement-ai-tag-suggestions.md) — Upload placement & organization confirmation with AI tag suggestions, interactive tag editor, and datalist suggestions.
+- [13-stop-ingestion-context-menu.md](13-stop-ingestion-context-menu.md) — Right-click context menu and action controls to halt in-flight document ingestion, evict from worker queue, and remove staged files.
