@@ -111,7 +111,7 @@
 	.btn.ghost {
 		display: inline-flex; align-items: center; justify-content: center;
 		border: 1px solid var(--line-2); color: var(--ink); padding: .55rem 1rem;
-		border-radius: 99px; text-decoration: none; font-size: var(--text-sm); font-weight: 650;
+		border-radius: var(--r); text-decoration: none; font-size: var(--text-sm); font-weight: 650;
 		min-height: var(--tap-min); width: fit-content;
 	}
 </style>

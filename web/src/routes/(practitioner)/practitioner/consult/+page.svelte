@@ -671,7 +671,7 @@
 	.history-head { display: flex; align-items: center; justify-content: space-between; }
 	.newchat {
 		display: inline-flex; align-items: center; gap: .3rem;
-		padding: .3rem .6rem; border-radius: 99px; border: 1px solid var(--line-2);
+		padding: .3rem .6rem; border-radius: var(--r); border: 1px solid var(--line-2);
 		background: var(--panel); color: var(--accent-ink); cursor: pointer; font-size: var(--text-xs); font-weight: 650;
 	}
 	.newchat:hover:not(:disabled) { background: var(--accent-soft); }
@@ -811,12 +811,12 @@
 	}
 
 	.mode-toggle {
-		display: inline-flex; border: 1px solid var(--line-2); border-radius: 99px; padding: .15rem;
+		display: inline-flex; border: 1px solid var(--line-2); border-radius: var(--r); padding: .15rem;
 		background: var(--panel); gap: .15rem;
 	}
 	.mode-toggle button {
 		display: inline-flex; align-items: center; gap: .35rem;
-		border: none; background: none; padding: .35rem .8rem; border-radius: 99px; cursor: pointer;
+		border: none; background: none; padding: .35rem .8rem; border-radius: var(--r); cursor: pointer;
 		font: inherit; font-size: var(--text-sm); font-weight: 600; color: var(--muted);
 	}
 	.mode-toggle button.on { background: var(--accent); color: #fff; }

@@ -49,5 +49,5 @@
 	.plan ul { list-style: none; margin: 0 0 var(--space-4); padding: 0; display: grid; gap: .6rem; }
 	.plan li { display: flex; align-items: flex-start; gap: .5rem; font-size: var(--text-sm); color: var(--ink-2); }
 	.plan li :global(svg) { color: var(--ok); flex: 0 0 auto; margin-top: .1rem; }
-	.btn.filled { display: inline-block; background: var(--accent); color: #fff; padding: .6rem 1.2rem; border-radius: 99px; text-decoration: none; font-size: var(--text-sm); font-weight: 700; }
+	.btn.filled { display: inline-block; background: var(--accent); color: #fff; padding: .6rem 1.2rem; border-radius: var(--r); text-decoration: none; font-size: var(--text-sm); font-weight: 700; }
 </style>

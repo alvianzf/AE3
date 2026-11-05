@@ -94,7 +94,7 @@
 	.cta { display: flex; align-items: center; gap: var(--space-4); min-height: 2.2rem; }
 	.ghostlink { color: var(--ink-2); text-decoration: none; font-size: var(--text-sm); font-weight: 650; }
 	.btn.filled {
-		background: var(--accent); color: #fff; padding: .5rem 1.1rem; border-radius: 99px;
+		background: var(--accent); color: #fff; padding: .5rem 1.1rem; border-radius: var(--r);
 		text-decoration: none; font-size: var(--text-sm); font-weight: 750;
 	}
 	.btn.filled:hover { background: var(--accent-ink); }

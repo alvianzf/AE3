@@ -160,7 +160,7 @@
 	}
 	.photo span { font-size: 1.6rem; font-weight: 700; color: var(--accent-ink); }
 	.upload-btn {
-		display: inline-flex; border: 1px solid var(--line-2); border-radius: 99px; padding: .45rem 1rem;
+		display: inline-flex; border: 1px solid var(--line-2); border-radius: var(--r); padding: .45rem 1rem;
 		font-size: var(--text-sm); font-weight: 650; cursor: pointer; background: var(--panel);
 	}
 	.upload-btn:hover { background: var(--panel-2); }
