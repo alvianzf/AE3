@@ -2993,5 +2993,10 @@
 	  .finder-body { flex-direction: column; }
 	  .finder-sidebar, .inspector { width: 100%; }
 	}
+	@media (max-width: 760px) {
+	  .finder-toolbar { padding: .75rem 1rem; gap: .6rem; }
+	  .tb-actions { margin-left: 0; width: 100%; justify-content: space-between; }
+	  .tb-search { min-width: 8rem; flex: 1 1 auto; }
+	}
 
 </style>
