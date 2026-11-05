@@ -33,16 +33,28 @@
 
 <style>
 	dialog {
-		border: 1px solid var(--glass-border); border-radius: var(--r-lg); padding: 0; width: min(32rem, 92vw);
-		box-shadow: var(--shadow-lg); background: var(--panel); background-image: var(--glass-sheen);
-		backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
-		animation: liftIn .2s var(--ease) both;
+		border: 1px solid var(--line); border-radius: 16px; padding: 0; width: min(32rem, 92vw);
+		box-shadow: 0 20px 60px rgba(0, 0, 0, .2), 0 4px 12px rgba(0, 0, 0, .08);
+		background: var(--panel);
+		color: var(--ink);
+		animation: liftIn .18s var(--ease) both;
 	}
-	dialog.wide { width: min(46rem, 94vw); }
-	dialog::backdrop { background: rgba(34, 31, 27, .45); backdrop-filter: blur(4px); }
-	.dh { display: flex; align-items: center; justify-content: space-between; padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--glass-border); }
-	.dh h3 { font-size: var(--text-lg); }
-	.x { border: none; background: none; font-size: 1.4rem; line-height: 1; cursor: pointer; color: var(--muted); }
-	.db { padding: var(--space-4) var(--space-5); display: grid; gap: var(--space-3); }
-	.df { padding: var(--space-3) var(--space-5) var(--space-4); display: flex; justify-content: flex-end; gap: var(--space-2); border-top: 1px solid var(--glass-border); }
+	dialog.wide { width: min(48rem, 94vw); }
+	dialog::backdrop { background: rgba(15, 23, 42, .55); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+	.dh {
+		display: flex; align-items: center; justify-content: space-between;
+		padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--line);
+	}
+	.dh h3 { font-size: 1.15rem; font-weight: 700; color: var(--ink); letter-spacing: -.01em; margin: 0; }
+	.x {
+		display: inline-flex; align-items: center; justify-content: center; width: 2rem; height: 2rem;
+		border: none; background: none; font-size: 1.25rem; line-height: 1; cursor: pointer; color: var(--muted);
+		border-radius: 8px; transition: background .12s var(--ease), color .12s var(--ease);
+	}
+	.x:hover { background: var(--panel-2); color: var(--ink); }
+	.db { padding: var(--space-5); display: grid; gap: var(--space-4); }
+	.df {
+		padding: var(--space-4) var(--space-5); display: flex; justify-content: flex-end; gap: var(--space-2);
+		border-top: 1px solid var(--line); background: var(--panel-2); border-bottom-left-radius: 16px; border-bottom-right-radius: 16px;
+	}
 </style>

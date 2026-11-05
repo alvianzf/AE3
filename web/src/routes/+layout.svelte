@@ -1,6 +1,5 @@
 <script lang="ts">
 	import '../app.css';
-	import '$lib/surface.css';
 	import favicon from '$lib/assets/favicon.svg';
 	import Toaster from '$lib/components/Toaster.svelte';
 	import NavProgress from '$lib/components/NavProgress.svelte';

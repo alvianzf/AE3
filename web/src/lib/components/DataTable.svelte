@@ -64,9 +64,10 @@
 </div>
 
 <style>
-	.data-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+	.data-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: var(--text-sm); background: var(--table-bg, none); }
+	.scroll-x:has(> .data-table) { border-radius: var(--table-r, 0); box-shadow: var(--table-ring, none); }
 	.data-table th {
-		text-align: left; padding: var(--space-3); border-bottom: 1px solid var(--line);
+		text-align: left; padding: var(--space-3); border-bottom: 1px solid var(--line); background: var(--table-head-bg, none);
 		color: var(--muted); font-weight: 650; font-size: var(--text-xs); letter-spacing: .04em;
 	}
 	.data-table :global(td) { padding: var(--space-3); border-bottom: 1px solid var(--line); vertical-align: middle; }

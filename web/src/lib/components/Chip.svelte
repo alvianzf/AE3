@@ -15,7 +15,7 @@
 		padding: .22rem .55rem; border-radius: 99px;
 	}
 	.dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-	.neutral { background: var(--panel-2); color: var(--muted); border: 1px solid var(--line); }
+	.neutral { background: var(--chip-neutral-bg, var(--panel-2)); color: var(--chip-neutral-ink, var(--muted)); border: 1px solid var(--chip-neutral-border, var(--line)); }
 	.accent { background: var(--accent-soft); color: var(--accent-ink); }
 	.ok { background: var(--ok-soft); color: var(--ok); }
 	.warn { background: var(--warn-soft); color: var(--warn); }

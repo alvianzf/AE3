@@ -32,12 +32,15 @@
 </div>
 
 <style>
-	.tabs { display: flex; gap: .25rem; border-bottom: 1px solid var(--line); }
+	.tabs {
+		display: var(--tabs-display, flex); gap: .25rem; border-bottom: var(--tabs-line, 1px solid var(--line));
+		background: var(--tabs-bg, none); padding: var(--tabs-pad, 0); border-radius: var(--tabs-r, 0);
+	}
 	button {
-		border: none; background: none; padding: .65rem 1rem; font-size: var(--text-sm); font-weight: 650;
+		border: none; background: none; padding: var(--tab-pad, .65rem 1rem); border-radius: var(--tab-r, 0); font-size: var(--text-sm); font-weight: 650;
 		color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px;
 		transition: color .15s var(--ease), border-color .15s var(--ease);
 	}
-	button.on { color: var(--accent-ink); border-color: var(--accent); }
+	button.on { color: var(--tab-on-ink, var(--accent-ink)); border-color: var(--tab-on-line, var(--accent)); background: var(--tab-on-bg, none); box-shadow: var(--tab-on-shadow, none); }
 	button:hover:not(.on) { color: var(--ink-2); }
 </style>

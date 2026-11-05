@@ -38,13 +38,15 @@
 	   bottom edge, no radius, no background box; the focus state thickens
 	   and recolors that single line rather than adding a ring. */
 	input, textarea {
-		border: none; border-bottom: 1px solid var(--line-2); border-radius: 0; background: none;
-		padding: var(--space-2) .1rem; font-size: var(--text-base); color: var(--ink);
+		border: var(--field-frame, none); border-bottom: var(--field-line, 1px solid var(--line-2));
+		border-radius: var(--field-r, 0); background: var(--field-bg, none); box-shadow: var(--field-shadow, none);
+		padding: var(--field-pad, var(--space-2) .1rem); font-size: var(--text-base); color: var(--ink);
 		min-height: var(--tap-min); resize: vertical;
 		transition: border-color .15s var(--ease), box-shadow .15s var(--ease);
 	}
 	input:focus, textarea:focus {
-		outline: none; border-bottom-color: var(--accent); box-shadow: 0 1px 0 0 var(--accent);
+		outline: none; border-color: var(--accent);
+		box-shadow: var(--field-focus, 0 1px 0 0 var(--accent));
 	}
 	input:disabled, textarea:disabled { color: var(--muted); }
 </style>
