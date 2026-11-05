@@ -534,14 +534,26 @@
 		try {
 			const res = await get(fetch, '/graph/concepts');
 			conceptGraph = {
-				nodes: (res.nodes ?? []).map((n: any) => ({
-					id: n.id,
-					label: n.name,
-					group: n.type,
-					degree: n.degree,
-					mentions: n.mentions,
-					size: 4 + Math.min(9, Math.sqrt(n.mentions ?? 1) * 1.4)
-				})),
+				nodes: (res.nodes ?? []).map((n: any) => {
+					const mentions = Number(n.mentions ?? 0);
+					const degree = Number(n.degree ?? 0);
+					const documents = Number(n.documents ?? 0);
+					const dataScore = mentions + degree + documents;
+					// Default node size reduced by 60% (from 6.0px to 2.4px).
+					// Dynamic sizing: The more data it holds (mentions, degree, documents),
+					// the larger the node is, and vice versa (scaling down to 2.4px).
+					const size = 2.4 + Math.min(28, Math.pow(Math.max(0, dataScore - 1), 0.55) * 1.6);
+					return {
+						id: n.id,
+						label: n.name,
+						group: n.type,
+						degree,
+						mentions,
+						documents,
+						dataScore,
+						size
+					};
+				}),
 				edges: (res.edges ?? []).map((e: any) => ({ source: e.source, target: e.target, label: e.rel_type }))
 			};
 		} catch (err: any) {
