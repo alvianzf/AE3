@@ -64,7 +64,12 @@
 		audio: 'M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM21 16a3 3 0 1 1-6 0 3 3 0 0 1 6 0z',
 		video: 'M3 6.5A1.5 1.5 0 0 1 4.5 5h11A1.5 1.5 0 0 1 17 6.5v11a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 17.5zM17 10l4-2.5v9L17 14',
 		archive: 'M4 4h16v16H4zM4 9h16M10 4v2M10 9v2M10 13v2M10 17v2',
-		columns: 'M4 4h5v16H4zM10.5 4h5v16h-5zM17 4h3v16h-3z'
+		columns: 'M4 4h5v16H4zM10.5 4h5v16h-5zM17 4h3v16h-3z',
+		// The plain file silhouette plus a small "PDF" wordmark baked into
+		// the glyph itself — the one file type common enough in a
+		// knowledge library to deserve its own unmistakable icon rather
+		// than just a color/shape variant of the generic document icon.
+		pdf: 'M6 3.5h8l4 4v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1zM14 3.5V8h4.5M7.5 17.5v-4h1a1.2 1.2 0 1 1 0 2.4h-1M11 17.5v-4h1.3a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H11zM15.3 17.5v-4h2M15.3 15.5h1.7'
 	};
 
 	let { name, size = 17 }: { name: string; size?: number } = $props();
