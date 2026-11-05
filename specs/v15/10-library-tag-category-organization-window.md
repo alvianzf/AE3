@@ -55,3 +55,4 @@ When in Tags & Categories mode:
 - `npm --prefix web run check`: 0 errors.
 - `npm --prefix web run build`: Successfully built static site.
 - `tests/`: 11 passed in pytest.
+

@@ -7,6 +7,7 @@ edited after the fact; a change becomes a new version.
 
 | Version | Status | Covers |
 |---|---|---|
+| [v15](v15/README.md) | **implemented** | Library studio Finder remodel, dual-mode Folders vs Tags/Categories organization windows with drag-and-drop categorization, multi-file uploads (form dialog + direct OS drop to tree/breadcrumbs), post-ingestion placement dialog with smart suggestions and notification bell, concept graph spatial multi-graph separation, 100% distance boost, click-to-separate blooming, data-volume-scaled node sizing, context minimap, mobile responsive shell with bottom navigation and burger drawer, and automated opening clinical history AI summary for practitioner consults |
 | [v14](v14/README.md) | **implemented** | Admin Settings agent model visibility, per-agent token tracking (prompt/completion/total/share), Table/Graph view toggle, and modern SVG chart overhaul (`UsageChart.svelte`) with interactive hover crosshairs and tooltips |
 | [v13](v13/README.md) | **implemented** | Private route redesign: tokens in `app.css` under `.portal` and `.portal-{role}`, per-role palettes (teal/indigo/rose), falling leaves on rail, `.portal-main` canvas isolation, unified `.detail-head`, compact right-click context menu and dialogs |
 | [v12](v12/README.md) | **implemented** | Private-route (dashboard) repaint: token-driven and scoped to `html[data-surface='app']` (solid surfaces, slate sidebar, white header, card-based home pages) |

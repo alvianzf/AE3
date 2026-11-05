@@ -1,5 +1,15 @@
 # Specs changelog
 
+## 2026-11-05 — v15, library studio & tags window, multi-file uploads, graph overhaul, responsive mobile shell & consult AI briefing
+
+See [v15/README.md](v15/README.md). Shipped comprehensive v15 feature suite and architectural reconciliation ([v15/11](v15/11-v15-system-drift-and-architecture-reconciliation.md)):
+- **Library Studio & Dual-Window Organization**: macOS Finder-inspired studio window chrome (`.finder-toolbar`, dynamic collapsible `.inspector`, `.pathbar`). Introduced dedicated **Tags & Categories** organization window (`mainTab = 'tags'`) alongside `Folders` and `Graph` on the exact same dataset, treating topics as hierarchical folder categories (`category/subcategory`) with drag-and-drop categorization, untagged document bucket, and full category creation/rename/delete lifecycle.
+- **Multi-File Uploads & Direct OS Ingestion**: Multi-file batch uploads supported across the "Add resources" modal dialog and native OS drag-and-drop directly onto sidebar trees, content areas, and breadcrumb crumbs.
+- **Smart Placement Dialog & Persistent Notification**: Added interactive post-ingestion placement dialog with smart context suggestions (suppressing raw text inputs by default unless creating a new folder) and persistent toolbar notification bell (`.tb-placement-notify`) for deferred confirmations.
+- **Concept Graph Physics & Visual Overhaul**: Spatial multi-graph separation prevents center clutter for disconnected components; 100% increased node spacing with click-to-separate radial blooming; data-volume-scaled node radiuses (60% reduced default base); interactive context minimap; glowing hover highlights for closest connected neighbors.
+- **Responsive Mobile Navigation**: Shell upgraded with an adaptive mobile bottom navigation bar for high-priority shortcuts and a slide-over burger side drawer for the complete portal menu.
+- **Practitioner Consult AI Opening Briefing**: Consultation sessions automatically synthesize and display an opening AI clinical briefing summarizing patient profile, intake responses, labs, and history strictly up to the consultation point in time.
+
 ## 2026-11-05 — v14, settings agent models, token analytics & chart overhaul
 
 See [v14/README.md](v14/README.md). Overhauled the usage charts and admin Settings page: replaced the crude 64px sparkline with a professional, interactive SVG chart component (`UsageChart.svelte`) featuring smooth Bézier curves, gradient area fills, formatted axes, and hover crosshair tooltips. Added comprehensive per-agent tracking across all 6 AI team roles (Reader, Graph Builder, Embedder, Answer Engine, Reasoner, Checker), surfacing assigned models, providers, and prompt/completion token spend in both Table and Graph views controlled by a toggle.
