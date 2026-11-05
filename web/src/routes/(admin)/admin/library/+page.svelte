@@ -1219,45 +1219,54 @@
      Inspector panel that only appears once something is selected
      instead of a permanently-reserved half-width pane. -->
 <div class="finder">
-	<div class="finder-toolbar">
-		<button class="tb-btn" onclick={goUp} disabled={!currentPath || mainTab !== 'library'} title="Back" aria-label="Up one level">
-			<Icon name="chevron" size={14} />
-		</button>
-		<span class="tb-title">{mainTab === 'graph' ? 'Concept graph' : currentFolderName}</span>
-		<div class="tb-spacer"></div>
-		{#if mainTab === 'library'}
-			<div class="tb-view-toggle" role="group" aria-label="View">
-				<button class:on={viewMode === 'icons'} onclick={() => (viewMode = 'icons')} title="Icon View"><Icon name="grid" size={15} /></button>
-				<button class:on={viewMode === 'list'} onclick={() => (viewMode = 'list')} title="List View"><Icon name="list" size={15} /></button>
-				<button class:on={viewMode === 'columns'} onclick={() => (viewMode = 'columns')} title="Column View"><Icon name="columns" size={15} /></button>
+	<div class="detail-head finder-toolbar">
+		<div class="head-title">
+			{#if currentPath && mainTab === 'library'}
+				<button class="back-nav-btn" onclick={goUp} title="Back" aria-label="Up one level">
+					<Icon name="chevron" size={15} />
+				</button>
+			{/if}
+			<span class="head-ico" aria-hidden="true"><Icon name={mainTab === 'graph' ? 'globe' : 'book'} size={18} /></span>
+			<div>
+				<h1>{mainTab === 'graph' ? 'Concept graph' : currentFolderName}</h1>
+				<p>{mainTab === 'graph' ? 'Explore entities, clusters, and knowledge connections' : currentPath ? `Folder · ${currentPath}` : 'Manage knowledge base resources and folders'}</p>
 			</div>
-			<Menu label="Sort" icon="sort">
+		</div>
+		<div class="tb-actions">
+			{#if mainTab === 'library'}
+				<div class="tb-view-toggle" role="group" aria-label="View">
+					<button class:on={viewMode === 'icons'} onclick={() => (viewMode = 'icons')} title="Icon View"><Icon name="grid" size={15} /></button>
+					<button class:on={viewMode === 'list'} onclick={() => (viewMode = 'list')} title="List View"><Icon name="list" size={15} /></button>
+					<button class:on={viewMode === 'columns'} onclick={() => (viewMode = 'columns')} title="Column View"><Icon name="columns" size={15} /></button>
+				</div>
+				<Menu label="Sort" icon="sort">
+					{#snippet items()}
+						<button onclick={() => (sortBy = 'title')} class="menu-choice" class:menu-active={sortBy === 'title'}>Name</button>
+						<button onclick={() => (sortBy = 'created_at')} class="menu-choice" class:menu-active={sortBy === 'created_at'}>Date ingested</button>
+						<button onclick={() => (sortDir = sortDir === 'asc' ? 'desc' : 'asc')}>
+							<Icon name="chevron" size={14} />{sortDir === 'asc' ? 'Ascending' : 'Descending'}
+						</button>
+					{/snippet}
+				</Menu>
+				<div class="tb-search">
+					<Icon name="search" size={13} />
+					<input type="search" placeholder="Search library..." bind:value={q} aria-label="Search the library" />
+					{#if contentSearchLoading}<Spinner size={11} />{/if}
+					{#if q}<button class="search-clear" onclick={() => { q = ''; }} aria-label="Clear search">&times;</button>{/if}
+				</div>
+			{/if}
+			<button class="tb-btn" class:on={mainTab === 'graph'} onclick={() => (mainTab = mainTab === 'graph' ? 'library' : 'graph')} title="Concept graph" aria-label="Toggle concept graph">
+				<Icon name="globe" size={15} />
+			</button>
+			<Button variant="filled" onclick={() => (ingestOpen = true)}><Icon name="plus" size={14} />Add resources</Button>
+			<Menu label="More">
 				{#snippet items()}
-					<button onclick={() => (sortBy = 'title')} class="menu-choice" class:menu-active={sortBy === 'title'}>Name</button>
-					<button onclick={() => (sortBy = 'created_at')} class="menu-choice" class:menu-active={sortBy === 'created_at'}>Date ingested</button>
-					<button onclick={() => (sortDir = sortDir === 'asc' ? 'desc' : 'asc')}>
-						<Icon name="chevron" size={14} />{sortDir === 'asc' ? 'Ascending' : 'Descending'}
-					</button>
+					{#if mainTab === 'library'}<button onclick={() => { newFolderName = ''; newFolderOpen = true; }}><Icon name="folder" size={14} />New folder</button>{/if}
+					<button onclick={() => { maintenanceKind = 'relink'; maintenanceOpen = true; }}><Icon name="refresh" size={14} />Relink unlinked</button>
+					<button onclick={() => { maintenanceKind = 'consolidate'; maintenanceOpen = true; }}><Icon name="check" size={14} />Consolidate entities</button>
 				{/snippet}
 			</Menu>
-			<div class="tb-search">
-				<Icon name="search" size={13} />
-				<input type="search" placeholder="Search — titles, tags, or document text" bind:value={q} aria-label="Search the library" />
-				{#if contentSearchLoading}<Spinner size={11} />{/if}
-				{#if q}<button class="search-clear" onclick={() => { q = ''; }} aria-label="Clear search">&times;</button>{/if}
-			</div>
-		{/if}
-		<button class="tb-btn" class:on={mainTab === 'graph'} onclick={() => (mainTab = mainTab === 'graph' ? 'library' : 'graph')} title="Concept graph" aria-label="Toggle concept graph">
-			<Icon name="globe" size={15} />
-		</button>
-		<Menu label="More">
-			{#snippet items()}
-				<button onclick={() => (ingestOpen = true)}><Icon name="plus" size={14} />Add resources</button>
-				{#if mainTab === 'library'}<button onclick={() => { newFolderName = ''; newFolderOpen = true; }}><Icon name="folder" size={14} />New folder</button>{/if}
-				<button onclick={() => { maintenanceKind = 'relink'; maintenanceOpen = true; }}><Icon name="refresh" size={14} />Relink unlinked</button>
-				<button onclick={() => { maintenanceKind = 'consolidate'; maintenanceOpen = true; }}><Icon name="check" size={14} />Consolidate entities</button>
-			{/snippet}
-		</Menu>
+		</div>
 	</div>
 
 	{#if mainTab === 'library' && !searching}
@@ -1922,12 +1931,7 @@
 <style>
 	.ingest { display: grid; gap: var(--space-3); }
 	.ingest-panel { margin-top: var(--space-4); display: grid; gap: var(--space-3); }
-	.dropzone {
-		display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .3rem;
-		min-height: 8rem; padding: var(--space-4); text-align: center; cursor: pointer;
-		border: 2px dashed var(--line-2); border-radius: var(--r-lg); background: var(--panel-2);
-		transition: border-color .15s var(--ease), background .15s var(--ease);
-	}
+	.dropzone { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .3rem; min-height: 8rem; padding: var(--space-4); text-align: center; cursor: pointer; border: 2px dashed var(--line-2); border-radius: 16px; background: var(--panel-2); transition: border-color .15s var(--ease), background .15s var(--ease); border-color: var(--line-2); }
 	.dropzone:hover, .dropzone:focus-visible { border-color: var(--accent); outline: none; }
 	.dropzone.dragover { border-color: var(--accent); background: var(--accent-soft); }
 	.dropzone.has-file { cursor: default; padding: var(--space-3); }
@@ -1959,35 +1963,33 @@
 	   here, a flex item's default basis is its own content size, not
 	   "fill what's left," which is why this only ever took up a
 	   fraction of the page regardless of viewport width. */
-	.finder {
-		flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; min-height: 100dvh; background: var(--panel);
-		backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
-	}
+	.finder { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; min-height: calc(100dvh - 2 * var(--sheet-inset)); background: var(--bg); }
 	.finder-toolbar {
-		display: flex; align-items: center; gap: .4rem; padding: .5rem var(--space-3);
-		border-bottom: 1px solid var(--glass-border); background: var(--panel-2); background-image: var(--glass-sheen);
+		display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap;
+		position: sticky; top: 0; z-index: 10; margin: 0;
+		padding: 1rem var(--space-6); min-height: 4.5rem;
+		background: color-mix(in srgb, var(--bg) 90%, transparent);
+		backdrop-filter: blur(16px) saturate(140%); -webkit-backdrop-filter: blur(16px) saturate(140%);
+		border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
 	}
-	.tb-btn {
-		display: flex; align-items: center; justify-content: center; width: 1.9rem; height: 1.9rem;
-		border: none; background: none; color: var(--ink-2); cursor: pointer; border-radius: var(--r);
+	.tb-actions { display: flex; align-items: center; gap: .55rem; flex-wrap: wrap; margin-left: auto; }
+	.back-nav-btn {
+		display: inline-flex; align-items: center; justify-content: center; width: 2.25rem; height: 2.25rem;
+		border-radius: 10px; border: 1px solid var(--line-2); background: var(--panel); color: var(--ink-2);
+		cursor: pointer; transition: background .15s var(--ease), border-color .15s var(--ease);
 	}
-	.tb-btn:hover:not(:disabled) { background: var(--panel); }
+	.back-nav-btn:hover { background: var(--panel-2); border-color: var(--accent); color: var(--accent-ink); }
+	.back-nav-btn :global(svg) { transform: rotate(90deg); }
+	.tb-btn { display: flex; align-items: center; justify-content: center; width: 1.9rem; height: 1.9rem; border: none; background: none; color: var(--ink-2); cursor: pointer; border-radius: 9px; }
+	.tb-btn:hover:not(:disabled) { background: var(--panel-2); }
 	.tb-btn:disabled { opacity: .35; cursor: not-allowed; }
 	.tb-btn :global(svg) { transform: rotate(90deg); }
 	.tb-btn.on { color: var(--accent-ink); background: var(--accent-soft); }
 	.tb-btn.on :global(svg) { transform: none; }
-	.tb-title { font-weight: var(--weight-bold); font-size: var(--text-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-	.tb-spacer { flex: 1 1 auto; }
-	.tb-view-toggle { display: flex; border: 1px solid var(--line-2); border-radius: var(--r); overflow: hidden; }
-	.tb-view-toggle button {
-		display: flex; align-items: center; justify-content: center; width: 1.9rem; height: 1.9rem;
-		border: none; background: var(--panel); color: var(--muted); cursor: pointer;
-	}
-	.tb-view-toggle button.on { color: var(--accent-ink); background: var(--accent-soft); }
-	.tb-search {
-		display: flex; align-items: center; gap: .3rem; border: 1px solid var(--line-2); border-radius: 99px;
-		background: var(--panel); color: var(--muted); padding: .25rem .6rem; min-width: 9rem;
-	}
+	.tb-view-toggle { display: flex; border: none; border-radius: 10px; overflow: hidden; background: #eceef3; padding: 2px; gap: 2px; }
+	.tb-view-toggle button { display: flex; align-items: center; justify-content: center; width: 1.8rem; height: 1.8rem; border: none; background: none; color: var(--muted); cursor: pointer; border-radius: 8px; }
+	.tb-view-toggle button.on { color: var(--accent-ink); background: var(--panel); box-shadow: var(--shadow); }
+	.tb-search { display: flex; align-items: center; gap: .3rem; border: 1px solid var(--line-2); border-radius: 99px; background: var(--panel-2); color: var(--muted); padding: .35rem .8rem; min-width: 15rem; border-color: var(--line); }
 	.tb-search input {
 		border: none; background: none; font: inherit; font-size: var(--text-sm); color: var(--ink);
 		min-width: 0; flex: 1 1 auto; outline: none;
@@ -1998,16 +2000,10 @@
 	   segment, chevrons pointing right between them — every segment is
 	   also a real drop target, so dragging a tile onto an ancestor
 	   folder works the way it does in a real Finder window. */
-	.pathbar {
-		display: flex; align-items: center; gap: .25rem; padding: .4rem var(--space-3); font-size: var(--text-xs);
-		flex-wrap: wrap; background: var(--panel-2); border-bottom: 1px solid var(--glass-border);
-	}
+	.pathbar { display: flex; align-items: center; gap: .25rem; padding: .8rem var(--space-6) .2rem; font-size: var(--text-sm); flex-wrap: wrap; background: none; border-bottom: 1px solid var(--glass-border); border: none; }
 	.pathbar :global(svg) { flex: 0 0 auto; color: var(--muted); }
-	.crumb {
-		display: flex; align-items: center; gap: .3rem; border: 1px solid transparent; background: none; cursor: pointer;
-		font: inherit; color: var(--accent-ink); padding: .2rem .5rem; border-radius: var(--r);
-	}
-	.crumb:hover:not(:disabled) { background: var(--panel-2); }
+	.crumb { display: flex; align-items: center; gap: .3rem; border: 1px solid transparent; background: none; cursor: pointer; font: inherit; color: var(--accent-ink); padding: .2rem .5rem; border-radius: 8px; font-weight: 500; }
+	.crumb:hover:not(:disabled) { background: var(--accent-soft); }
 	.crumb:disabled { color: var(--ink); cursor: default; font-weight: 650; }
 	/* Per Apple's own HIG: highlight exactly one drop destination at a
 	   time while dragging — a distinct ring, not just a hover tint, so
@@ -2016,26 +2012,19 @@
 		border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 2px var(--accent-soft);
 	}
 
-	.status-row { display: flex; align-items: center; gap: .4rem; padding: .35rem var(--space-3); border-bottom: 1px solid var(--line); background: var(--panel-2); }
+	.status-row { display: flex; align-items: center; gap: .4rem; padding: .35rem var(--space-3); border-bottom: 1px solid var(--line); background: var(--panel); margin: var(--space-2) var(--space-6) 0; border: 1px solid var(--line); border-radius: 12px; }
 	.status-action { border: none; background: none; cursor: pointer; color: var(--ink-2); padding: .2rem; border-radius: var(--r); }
 	.status-action:hover { background: var(--panel); }
 	.retry-link { border: none; background: none; color: var(--accent-ink); cursor: pointer; font: inherit; padding: 0; text-decoration: underline; }
 
-	.finder-body { display: flex; flex: 1 1 auto; min-height: 0; }
-	.finder-content { flex: 1 1 auto; min-width: 0; overflow-y: auto; }
+	.finder-body { display: flex; flex: 1 1 auto; min-height: 0; gap: var(--space-3); padding: var(--space-3) var(--space-6) var(--space-5); }
+	.finder-content { flex: 1 1 auto; min-width: 0; overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); }
 	.list-empty { grid-column: 1 / -1; padding: var(--space-6) var(--space-4); width: 100%; }
 	.graph-pane { padding: var(--space-3); height: 100%; display: flex; flex-direction: column; }
-	.finder-sidebar {
-		width: 14rem; flex: 0 0 auto; border-right: 1px solid var(--glass-border); background: var(--panel-2);
-		padding: var(--space-3); overflow-y: auto;
-		backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
-	}
+	.finder-sidebar { width: 14rem; flex: 0 0 auto; border-right: 1px solid var(--glass-border); background: var(--panel); padding: var(--space-3); overflow-y: auto; backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); }
 	.sidebar-head { display: flex; align-items: center; gap: .2rem; margin-bottom: .3rem; }
-	.tree-root {
-		display: flex; align-items: center; gap: .4rem; border: none; background: none; cursor: pointer;
-		font: inherit; color: var(--ink); padding: .3rem 0; flex: 1 1 auto; min-width: 0; text-align: left;
-	}
-	.tree-root:hover, .tree-root.active { color: var(--accent-ink); }
+	.tree-root { display: flex; align-items: center; gap: .4rem; border: none; background: none; cursor: pointer; font: inherit; color: var(--ink); padding: .4rem .5rem; flex: 1 1 auto; min-width: 0; text-align: left; border-radius: 8px; font-weight: 600; }
+	.tree-root:hover, .tree-root.active { color: var(--accent-ink); background: var(--accent-soft); }
 	.sidebar-collapse, .sidebar-expand {
 		display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
 		width: 1.6rem; height: 1.6rem; border: none; background: none; color: var(--muted); cursor: pointer; border-radius: var(--r);
@@ -2051,14 +2040,11 @@
 	   familiar Finder blue; files are a plain document icon; the label
 	   sits centered underneath — a real file browser's icon grid, not
 	   a card list restyled to look vaguely similar. ── */
-	.finder-content.grid-mode { padding: var(--space-3); }
-	.icon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(6rem, 1fr)); gap: var(--space-1); }
-	.icon-tile {
-		display: flex; flex-direction: column; align-items: center; gap: .3rem; padding: var(--space-2) .3rem;
-		border: 1px solid transparent; background: none; cursor: pointer; text-align: center; border-radius: var(--r);
-	}
-	.icon-tile:hover { background: var(--panel-2); }
-	.icon-tile.on { background: var(--accent-soft); border-color: var(--accent); }
+	.finder-content.grid-mode { padding: var(--space-4); }
+	.icon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr)); gap: var(--space-3); }
+	.icon-tile { display: flex; flex-direction: column; align-items: center; gap: .5rem; padding: var(--space-4) var(--space-2) var(--space-3); border: 1px solid var(--line); background: var(--panel-2); cursor: pointer; text-align: center; border-radius: 14px; transition: transform var(--duration-fast) var(--ease), box-shadow var(--duration-fast) var(--ease), border-color var(--duration-fast); }
+	.icon-tile:hover { background: var(--panel); border-color: var(--line-2); box-shadow: 0 6px 16px rgba(16, 24, 40, .08); transform: translateY(-1px); }
+	.icon-tile.on { background: var(--accent-soft); border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); }
 	.folder-tile :global(svg) { color: #4FA0E0; fill: #4FA0E0; fill-opacity: .2; }
 	.doc-tile :global(svg), .staged-tile :global(svg) { color: var(--muted); }
 	.tile-icon { position: relative; display: flex; }
@@ -2067,10 +2053,7 @@
 		background: var(--panel); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; color: var(--muted);
 	}
 	.tile-badge.bell { color: var(--accent); right: -1.1rem; }
-	.tile-label {
-		font-size: var(--text-xs); color: var(--ink); overflow: hidden; display: -webkit-box;
-		-webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; word-break: break-word; line-height: 1.25;
-	}
+	.tile-label { font-size: var(--text-sm); color: var(--ink); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; word-break: break-word; line-height: 1.25; font-weight: 500; }
 	.icon-tile.on .tile-label { color: var(--accent-ink); }
 	.tile-sub { font-size: .65rem; color: var(--danger); }
 	.staged-tile { opacity: .8; }
@@ -2080,12 +2063,8 @@
 	/* ── Finder's List View: a real table, not rows dressed up to look
 	   like one — Name/Type/Grade/Date columns, sortable, selectable. ── */
 	.finder-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
-	.finder-table th {
-		text-align: left; padding: .5rem var(--space-3); border-bottom: 1px solid var(--line);
-		color: var(--muted); font-weight: 650; font-size: var(--text-xs); letter-spacing: .04em;
-		position: sticky; top: 0; background: var(--panel);
-	}
-	.finder-table td { padding: .45rem var(--space-3); border-bottom: 1px solid var(--line); vertical-align: middle; }
+	.finder-table th { text-align: left; padding: .5rem var(--space-3); border-bottom: 1px solid var(--line); color: var(--muted); font-weight: 600; font-size: var(--text-xs); letter-spacing: .01em; position: sticky; top: 0; background: var(--panel-2); text-transform: none; }
+	.finder-table td { padding: .6rem var(--space-3); border-bottom: 1px solid var(--line); vertical-align: middle; }
 	.finder-table td:first-child { width: 1.6rem; }
 	.finder-table td:nth-child(2) { display: flex; align-items: center; gap: .4rem; }
 	.folder-tr, .doc-tr { cursor: pointer; }
@@ -2099,15 +2078,8 @@
 	/* ── Finder's Column View: a horizontally-scrolling row of columns,
 	   each its own vertically-scrolling list of siblings. ── */
 	.column-view { display: flex; height: 100%; overflow-x: auto; }
-	.col-pane {
-		width: 14rem; flex: 0 0 auto; border-right: 1px solid var(--line); overflow-y: auto;
-		padding: var(--space-2);
-	}
-	.col-row {
-		display: flex; align-items: center; gap: .4rem; width: 100%; text-align: left;
-		border: 1px solid transparent; background: none; cursor: pointer; font: inherit; font-size: var(--text-sm);
-		color: var(--ink); padding: .35rem .5rem; border-radius: var(--r);
-	}
+	.col-pane { width: 14rem; flex: 0 0 auto; border-right: 1px solid var(--line); overflow-y: auto; padding: var(--space-2); border-right-color: var(--line); }
+	.col-row { display: flex; align-items: center; gap: .4rem; width: 100%; text-align: left; border: 1px solid transparent; background: none; cursor: pointer; font: inherit; font-size: var(--text-sm); color: var(--ink); padding: .35rem .5rem; border-radius: 9px; }
 	.col-row:hover { background: var(--panel-2); }
 	.col-row.active { background: var(--accent-soft); color: var(--accent-ink); }
 	.col-row.drag-target { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
@@ -2119,15 +2091,11 @@
 	/* ── The Inspector: Finder's own Get Info panel — only appears
 	   once something is selected, dismissible, not a permanently-
 	   reserved half-width pane. ── */
-	.inspector {
-		/* A visibly different panel from .finder's own background, not
+	.inspector { /* A visibly different panel from .finder's own background, not
 		   just a more-transparent shade of the same white (--panel-2 is
 		   actually lighter than --panel, so it barely read as distinct) —
 		   a warm tinted, higher-opacity fill instead. */
-		width: 19rem; flex: 0 0 auto; border-left: 1px solid var(--glass-border); background: rgba(245, 242, 237, .85);
-		padding: var(--space-4); overflow-y: auto;
-		backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
-	}
+		width: 19rem; flex: 0 0 auto; border-left: 1px solid var(--glass-border); background: var(--panel); padding: var(--space-4); overflow-y: auto; backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow-lg); width: 20rem; }
 	.inspector-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-2); margin-bottom: .2rem; }
 	.match-snippet {
 		font-size: var(--text-sm); color: var(--ink-2); background: var(--panel-2);
@@ -2195,4 +2163,18 @@
 	}
 	.upload-progress .bar { flex: 1 1 auto; height: 6px; background: var(--accent); transition: width .2s var(--ease); }
 	.upload-progress .hint { flex: 0 0 auto; padding-right: .5rem; white-space: nowrap; }
+
+	/* v13: new rules (not previously defined above) */
+	.tb-search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); background: var(--panel); }
+	.inspector .field select, .inspector .field input[type='text'], .inspector .field input[type='number'] { border: 1px solid var(--line-2); border-radius: var(--r); background: var(--panel); padding: .45rem .65rem; }
+	.inspector .field select:focus, .inspector .field input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+	.view, .fchip, .icon-btn { border-radius: 9px; }
+	.dropzone:hover, .dropzone.dragover { border-color: var(--accent); background: var(--accent-soft); }
+	.tb-ico { display: flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 2.75rem; height: 2.75rem; border-radius: 14px; color: #fff; background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent-ink) 85%, #000)); box-shadow: 0 6px 14px color-mix(in srgb, var(--accent) 35%, transparent); }
+	.folder-tile :global(svg) { color: var(--accent); fill: var(--accent); fill-opacity: .16; }
+	@media (max-width: 960px) {
+	  .finder-body { flex-direction: column; }
+	  .finder-sidebar, .inspector { width: 100%; }
+	}
+
 </style>

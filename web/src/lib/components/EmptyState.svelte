@@ -39,7 +39,7 @@
 	.empty-icon {
 		display: inline-flex; align-items: center; justify-content: center;
 		width: 3.25rem; height: 3.25rem; border-radius: 50%;
-		background: var(--panel-2); border: 1px solid var(--line); color: var(--muted);
+		background: var(--empty-ico-bg, var(--panel-2)); border: 1px solid var(--empty-ico-border, var(--line)); color: var(--empty-ico-ink, var(--muted));
 	}
 	.empty-state h3 { font-size: var(--text-base); color: var(--ink-2); font-weight: var(--weight-medium); }
 	.empty-body { max-width: 26rem; font-size: var(--text-sm); }

@@ -1,12 +1,10 @@
 <script lang="ts">
-	import { useAppSurface } from '$lib/surface.svelte';
 	import Rail from '$lib/components/Rail.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import Tour from '$lib/components/Tour.svelte';
 	import { get } from '$lib/api';
 
 	let { data, children } = $props();
-	useAppSurface('admin');
 
 	let tourActive = $state(!data.session?.tour_completed);
 	const tourSteps = [
@@ -86,7 +84,7 @@
 <CommandPalette items={paletteItems} bind:open={paletteOpen} />
 <Tour steps={tourSteps} bind:active={tourActive} />
 
-<div class="app-shell">
+<div class="app-shell portal portal-admin">
 	<Rail
 		{items}
 		onCommandPalette={openPalette}
@@ -94,6 +92,8 @@
 		showSwitcher={!!data.session?.has_practitioner_view}
 		switcherTo="practitioner"
 	/>
-	{@render children()}
+	<main class="portal-main">
+		{@render children()}
+	</main>
 </div>
 
