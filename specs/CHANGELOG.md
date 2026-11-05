@@ -1,5 +1,25 @@
 # Specs changelog
 
+## 2026-11-05 — v11, landing page + public nav redesign
+
+See [v11/README.md](v11/README.md). Direct instruction: redesign the
+landing page, with copy about professional practitioners who, helped
+by AI tuned only to a knowledge base, can help more — client-facing
+copy first, practitioners second. The old hero and trust-pillars
+section were written in the practitioner's voice; rewritten client-
+first, with a new dedicated "For practitioners" section near the end
+carrying the "help more" pitch directly to practitioners instead of
+interleaving it earlier. Added three new SVG illustrations (a
+knowledge-graph motif, a grounded/verified-book motif, a practitioner-
+plus-AI motif) in a new `web/src/lib/components/art/` folder, drawn in
+the same stroke-and-soft-fill style the existing icon set already
+uses. Redesigned the navbar: an underline-wipe link hover, and —
+direct instruction — the logo mark no longer sits in a background box
+(it was in a red one). Also relabeled the client-signup CTA from a
+generic "Get started" to "Sign up as a client," after a live report
+that the client path through the site, while real, wasn't named
+anywhere a visitor could see it.
+
 ## 2026-11-05 — v10, production drift against v9's codebase-only picture
 
 See [v10/README.md](v10/README.md). Implementing v9's candidates A
