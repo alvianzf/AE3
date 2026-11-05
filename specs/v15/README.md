@@ -1,3 +1,4 @@
-# Specs v15 — Library External Drag-and-Drop Upload and Tree Context Menu
+# Specs v15 — Library External Drag-and-Drop, Tree Context Menu & Graph View Refinements
 
 - [01-library-direct-upload-and-context-menu.md](01-library-direct-upload-and-context-menu.md) — Unified empty area context menu across Tree View and Library window, plus direct OS drag-and-drop file upload to both views.
+- [02-concept-graph-refinements.md](02-concept-graph-refinements.md) — Concept graph refinement: connected component separation (preventing clutter between graphs), interactive context map (minimap), closest connected node highlighting, and interactive context HUD inspector.
