@@ -1695,7 +1695,12 @@
 	.move-suggestions { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .3rem; }
 
 	/* ══ Finder window chrome ══════════════════════════════════════ */
-	.finder { display: flex; flex-direction: column; min-height: 100%; background: var(--panel); border: 1px solid var(--line); }
+	/* .app-shell (app.css) is the flex row that lays the Rail and this
+	   page's own root element side by side — without flex: 1 1 auto
+	   here, a flex item's default basis is its own content size, not
+	   "fill what's left," which is why this only ever took up a
+	   fraction of the page regardless of viewport width. */
+	.finder { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; min-height: 100dvh; background: var(--panel); }
 	.finder-toolbar {
 		display: flex; align-items: center; gap: .4rem; padding: .5rem var(--space-3);
 		border-bottom: 1px solid var(--line); background: var(--panel-2);
