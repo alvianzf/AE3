@@ -8,6 +8,7 @@
 
 	let tourActive = $state(!data.session?.tour_completed);
 	const tourSteps = [
+		{ selector: '.search-trigger', title: 'Search everything', body: 'Press ⌘K (or Ctrl+K) anytime to jump straight to a document, practitioner, client, folder, or questionnaire.' },
 		{ selector: 'a[href="/admin/library"]', title: 'Library', body: 'Upload, organize, and browse the knowledge base — folders, tags, and a live graph view of how it all connects.' },
 		{ selector: 'a[href="/admin/users"]', title: 'Users', body: 'Review practitioner applications, and manage admin and client accounts.' }
 	];
