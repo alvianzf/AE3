@@ -193,7 +193,13 @@ class LLMClient:
             parsed, response = _attempt()
         if parsed is None:
             raise ValueError(f"{self.model} ({self.role.value}) returned no usable JSON (twice)")
-        return parsed, self._usage(response)
+        usage = self._usage(response)
+        try:
+            from app.token_tracker import record_tokens
+            record_tokens(self.role, usage.get("input_tokens", 0), usage.get("output_tokens", 0), self.model)
+        except Exception:
+            pass
+        return parsed, usage
 
     def chat_text(self, system: str, prompt: str, max_tokens: int = 100_000,
                  extra_body: dict | None = None) -> tuple[str, dict]:
@@ -220,12 +226,24 @@ class LLMClient:
             extra_body=extra_body,
         )
         text = (response.choices[0].message.content or "").strip()
-        return text, self._usage(response)
+        usage = self._usage(response)
+        try:
+            from app.token_tracker import record_tokens
+            record_tokens(self.role, usage.get("input_tokens", 0), usage.get("output_tokens", 0), self.model)
+        except Exception:
+            pass
+        return text, usage
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
         response = self._client.embeddings.create(model=self.model, input=texts)
+        try:
+            from app.token_tracker import record_tokens
+            est_tokens = sum(max(1, len(t.split()) * 2) for t in texts)
+            record_tokens(self.role, est_tokens, 0, self.model)
+        except Exception:
+            pass
         return [d.embedding for d in response.data]
 
     def ping(self) -> None:

@@ -1,5 +1,9 @@
 # Specs changelog
 
+## 2026-11-05 — v14, settings agent models, token analytics & chart overhaul
+
+See [v14/README.md](v14/README.md). Overhauled the usage charts and admin Settings page: replaced the crude 64px sparkline with a professional, interactive SVG chart component (`UsageChart.svelte`) featuring smooth Bézier curves, gradient area fills, formatted axes, and hover crosshair tooltips. Added comprehensive per-agent tracking across all 6 AI team roles (Reader, Graph Builder, Embedder, Answer Engine, Reasoner, Checker), surfacing assigned models, providers, and prompt/completion token spend in both Table and Graph views controlled by a toggle.
+
 ## 2026-11-05 — v13, private-route redesign
 
 See [v13/README.md](v13/README.md). Redesign the admin/practitioner/client portals following app CSS conventions: tokens in `app.css` under `.portal` and `.portal-{role}` (no `surface.css` override file), per-role palettes (Nordic teal for practitioner, midnight indigo for admin, berry rose for client), falling leaves on the rail, floating rounded-canvas shell (`.portal-main`), unified `.detail-head` header across all pages including Library, modern compact right-click context menu, and polished modal dialogs.
