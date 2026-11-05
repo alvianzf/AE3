@@ -4,6 +4,7 @@
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import Tour from '$lib/components/Tour.svelte';
 	import DisclaimerBar from '$lib/components/DisclaimerBar.svelte';
+	import { get } from '$lib/api';
 
 	let { data, children } = $props();
 	// specs/v8 §8.5 — surfaced specifically on Consult, the page a
@@ -26,13 +27,31 @@
 		{ href: '/practitioner/questionnaires', label: 'Questionnaires', icon: 'clipboard', locked: !isPro },
 		{ href: '/practitioner/profile', label: 'Profile', icon: 'settings' }
 	]);
-	const paletteItems = $derived(items.map((i) => ({ ...i, group: i.locked ? 'Pro' : 'Practitioner' })));
+	// Omni-search: Cmd/Ctrl+K also reaches a practitioner's own clients,
+	// not just the nav — fetched once, lazily, on first open.
+	let searchExtra = $state<{ label: string; href: string; icon?: string; group?: string }[]>([]);
+	let omniLoaded = false;
+	async function loadOmniIndex() {
+		if (omniLoaded || !isPro) return;
+		omniLoaded = true;
+		const clients = await get(fetch, '/me/clients').catch(() => []);
+		searchExtra = (clients ?? []).map((c: any) => ({
+			label: c.name, href: `/practitioner/clients/${c.id}`, icon: 'users', group: 'Clients'
+		}));
+	}
+
+	const paletteItems = $derived([...items.map((i) => ({ ...i, group: i.locked ? 'Pro' : 'Practitioner' })), ...searchExtra]);
 	let paletteOpen = $state(false);
+
+	function openPalette() {
+		paletteOpen = true;
+		loadOmniIndex();
+	}
 
 	function onWindowKeydown(e: KeyboardEvent) {
 		if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
 			e.preventDefault();
-			paletteOpen = true;
+			openPalette();
 		}
 	}
 </script>
@@ -43,7 +62,7 @@
 <Tour steps={tourSteps} bind:active={tourActive} />
 
 <div class="app-shell">
-	<Rail {items} onCommandPalette={() => (paletteOpen = true)} userLabel={data.profile?.name} />
+	<Rail {items} onCommandPalette={openPalette} userLabel={data.profile?.name} />
 	{@render children()}
 </div>
 {#if showDisclaimer}<DisclaimerBar />{/if}

@@ -66,7 +66,7 @@
 				<Icon name="switch" size={17} /><span class="lbl">{switcherTo === 'admin' ? 'Admin view' : 'Practitioner view'}</span>
 			</a>
 		{/if}
-		{#if userLabel}<div class="who-row" title={userLabel}>{userLabel}</div>{/if}
+		{#if userLabel}<div class="who-row" title={userLabel}>Hi, {userLabel}</div>{/if}
 		<form method="post" action="/api/auth/logout" onsubmit={logout}>
 			<button type="submit" class="icon-item signout">
 				<Icon name="power" size={17} /><span class="lbl">Sign out</span>
