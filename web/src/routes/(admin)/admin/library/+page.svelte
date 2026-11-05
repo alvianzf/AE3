@@ -427,7 +427,12 @@
 			const res = await get(fetch, '/graph/concepts');
 			conceptGraph = {
 				nodes: (res.nodes ?? []).map((n: any) => ({
-					id: n.id, label: n.name, group: n.type, size: 3 + Math.min(7, Math.sqrt(n.mentions ?? 1))
+					id: n.id,
+					label: n.name,
+					group: n.type,
+					degree: n.degree,
+					mentions: n.mentions,
+					size: 4 + Math.min(9, Math.sqrt(n.mentions ?? 1) * 1.4)
 				})),
 				edges: (res.edges ?? []).map((e: any) => ({ source: e.source, target: e.target, label: e.rel_type }))
 			};
