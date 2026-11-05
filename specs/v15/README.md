@@ -14,3 +14,4 @@
 - [12-upload-placement-ai-tag-suggestions.md](12-upload-placement-ai-tag-suggestions.md) — Upload placement & organization confirmation with AI tag suggestions, interactive tag editor, and datalist suggestions.
 - [13-stop-ingestion-context-menu.md](13-stop-ingestion-context-menu.md) — Right-click context menu and action controls to halt in-flight document ingestion, evict from worker queue, and remove staged files.
 - [14-library-mouse-block-multiselect.md](14-library-mouse-block-multiselect.md) — Mouse block (hold left click and drag) marquee multi-selection across Library and Categories views, with dedicated batch context menu and actions.
+- [15-domain-mindful-tag-and-concept-extraction.md](15-domain-mindful-tag-and-concept-extraction.md) — Domain-mindful tag generation and concept extraction: preventing marketing and administrative sources from misclassifying into clinical specialty tags or polluting the clinical knowledge graph.
