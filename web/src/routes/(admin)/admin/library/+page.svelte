@@ -80,25 +80,100 @@
 	// tags at ingest time (app/ingestion/pipeline.py's suggested_folder /
 	// topics), but nothing surfaced that choice to the admin before this;
 	// the toast alone named the action, not the result.
+	// specs/v15/05 — Multi-file placement confirmation upon finishing ingestion
+	interface PendingPlacement {
+		documentId: string;
+		source: any;
+		title: string;
+		filename: string;
+		currentFolder: string;
+		suggestedFolder: string;
+		selectedFolder: string;
+		isCreatingNewFolder: boolean;
+		newFolderName: string;
+		docType?: string;
+	}
+
+	let pendingPlacements = $state<PendingPlacement[]>([]);
+	let placementDialogOpen = $state(false);
+
 	let placementPreview = $state<any | null>(null);
-	// Document ids whose ingest just finished and haven't had their
-	// Reader-suggested folder/tags/type reviewed yet — shown as a bell
-	// icon on the card (specs/v6.12), dismissed by opening (or
-	// explicitly skipping) the placement dialog. Per-browser only, not
-	// persisted — a one-time nudge, not queue state (which is fully
-	// server-side via ingestion_jobs/staged_sources already).
 	let needsFinalization = $state<Set<string>>(new Set());
 	function dismissFinalization(id: string) {
 		needsFinalization = new Set([...needsFinalization].filter((x) => x !== id));
+		pendingPlacements = pendingPlacements.filter((p) => p.documentId !== id);
 	}
-	// setFolder/addTag/removeTag write through `data.sources` (invalidateAll),
-	// not through placementPreview's own object reference — without this,
-	// clicking a folder-suggestion chip or adding a tag moves/tags the
-	// document but the open dialog keeps showing its stale pre-edit state.
+
+	function openPlacementForDoc(s: any) {
+		const existing = pendingPlacements.find((p) => p.documentId === s.id);
+		if (!existing) {
+			const suggested = s.suggested_folder || s.folder_path || '';
+			pendingPlacements = [
+				...pendingPlacements,
+				{
+					documentId: s.id,
+					source: s,
+					title: s.title,
+					filename: s.original_filename || s.title,
+					currentFolder: s.folder_path || '',
+					suggestedFolder: suggested,
+					selectedFolder: suggested,
+					isCreatingNewFolder: false,
+					newFolderName: '',
+					docType: s.doc_type || ''
+				}
+			];
+		}
+		placementDialogOpen = true;
+	}
+
+	async function confirmSinglePlacement(item: PendingPlacement) {
+		const target = item.isCreatingNewFolder ? item.newFolderName.trim() : item.selectedFolder;
+		pendingPlacements = pendingPlacements.filter((p) => p.documentId !== item.documentId);
+		needsFinalization = new Set([...needsFinalization].filter((id) => id !== item.documentId));
+		if (pendingPlacements.length === 0) {
+			placementDialogOpen = false;
+		}
+		try {
+			await setFolder(item.source, target);
+		} catch (err: any) {
+			toast(`Failed to place "${item.title}": ${err.message}`, 'alert');
+		}
+	}
+
+	async function confirmAllPlacements() {
+		if (!pendingPlacements.length) return;
+		const toProcess = [...pendingPlacements];
+		pendingPlacements = [];
+		placementDialogOpen = false;
+		let successCount = 0;
+		for (const item of toProcess) {
+			needsFinalization = new Set([...needsFinalization].filter((id) => id !== item.documentId));
+			const target = item.isCreatingNewFolder ? item.newFolderName.trim() : item.selectedFolder;
+			try {
+				await setFolder(item.source, target);
+				successCount++;
+			} catch (err: any) {
+				toast(`Failed to place "${item.title}": ${err.message}`, 'alert');
+			}
+		}
+		if (successCount > 0) {
+			toast(`Confirmed destination for ${successCount} file${successCount === 1 ? '' : 's'}.`);
+		}
+	}
+
 	$effect(() => {
 		if (!placementPreview) return;
 		const fresh = (data.sources ?? []).find((x: any) => x.id === placementPreview.id);
 		if (fresh && fresh !== placementPreview) placementPreview = fresh;
+	});
+
+	$effect(() => {
+		if (!pendingPlacements.length) return;
+		for (const p of pendingPlacements) {
+			const fresh = (data.sources ?? []).find((x: any) => x.id === p.documentId);
+			if (fresh) p.source = fresh;
+		}
 	});
 
 	// A job occupies a staged item whether it's actually running or still
@@ -177,26 +252,59 @@
 					delete pollTimers[stagedId];
 					clearFiltersAfterIngest();
 					await invalidateAll();
-					const placed = (data.sources ?? []).find((x: any) => x.id === job.result_document_id);
+					let placed = (data.sources ?? []).find((x: any) => x.id === job.result_document_id);
+					if (!placed && job.result_document_id) {
+						try { placed = await get(fetch, `/sources/${job.result_document_id}`); } catch {}
+					}
 					const targetFolder = pendingTargetFolders[stagedId];
 					if (targetFolder !== undefined) {
 						delete pendingTargetFolders[stagedId];
-						if (placed && (placed.folder_path || '') !== targetFolder) {
-							await setFolder(placed, targetFolder);
+					}
+
+					// Smart destination suggestion: intake target folder > Reader suggested_folder > folder_path > keyword match
+					let suggested = targetFolder ?? (placed?.suggested_folder || placed?.folder_path || '');
+					if (!suggested && placed?.title) {
+						const titleLower = placed.title.toLowerCase();
+						for (const p of folderPaths) {
+							const seg = p.split('/').pop()?.toLowerCase();
+							if (seg && seg.length > 3 && titleLower.includes(seg)) {
+								suggested = p;
+								break;
+							}
 						}
 					}
+
+					if (placed) {
+						const docId = placed.id;
+						const existingIdx = pendingPlacements.findIndex((p) => p.documentId === docId);
+						const itemData: PendingPlacement = {
+							documentId: docId,
+							source: placed,
+							title: placed.title,
+							filename: placed.original_filename || placed.title,
+							currentFolder: placed.folder_path || '',
+							suggestedFolder: suggested,
+							selectedFolder: suggested,
+							isCreatingNewFolder: false,
+							newFolderName: '',
+							docType: placed.doc_type || ''
+						};
+						if (existingIdx >= 0) {
+							pendingPlacements[existingIdx] = itemData;
+						} else {
+							// Appends to list: if dialog is already open, reactive update adds it in real time
+							pendingPlacements = [...pendingPlacements, itemData];
+						}
+						// Open or keep open placement dialog
+						placementDialogOpen = true;
+						needsFinalization = new Set([...needsFinalization, placed.id]);
+					}
+
 					toast(
 						placed
-							? `"${placed.title.slice(0, 40)}" ingested — filed in ${targetFolder ?? (placed.folder_path || '(root)')}.`
+							? `"${placed.title.slice(0, 40)}" finished ingestion — please confirm destination folder.`
 							: 'Ingested into the library.'
 					);
-					// A bell icon on the card, not an auto-opened dialog
-					// (specs/v6.12) — with auto-ingest-on-upload, a finished
-					// job isn't necessarily something the admin is watching
-					// for any more; popping a dialog over whatever else
-					// they're doing is the wrong interruption now that
-					// uploads queue up unattended.
-					if (placed) needsFinalization = new Set([...needsFinalization, placed.id]);
 				} else if (job.status === 'error') {
 					clearInterval(pollTimers[stagedId]);
 					delete pollTimers[stagedId];
@@ -1433,6 +1541,23 @@
 			<button class="tb-btn" class:on={mainTab === 'graph'} onclick={() => (mainTab = mainTab === 'graph' ? 'library' : 'graph')} title="Concept graph" aria-label="Toggle concept graph">
 				<Icon name="globe" size={15} />
 			</button>
+			{#if pendingPlacements.length > 0}
+				<button
+					type="button"
+					class="tb-placement-notify"
+					class:active={placementDialogOpen}
+					onclick={() => (placementDialogOpen = true)}
+					title="{pendingPlacements.length} file{pendingPlacements.length === 1 ? '' : 's'} waiting for folder placement"
+					aria-label="{pendingPlacements.length} file{pendingPlacements.length === 1 ? '' : 's'} waiting for folder placement"
+				>
+					<span class="notify-icon-wrap">
+						<Icon name="bell" size={14} />
+						<span class="notify-ping"></span>
+					</span>
+					<span class="notify-label">Placement needed</span>
+					<span class="notify-count">{pendingPlacements.length}</span>
+				</button>
+			{/if}
 			<Button variant="filled" onclick={() => (ingestOpen = true)}><Icon name="plus" size={14} />Add resources</Button>
 			<Menu label="More">
 				{#snippet items()}
@@ -1819,7 +1944,7 @@
 				</div>
 
 				{#if needsFinalization.has(s.id)}
-					<button class="finalize-notice" onclick={() => (placementPreview = s)}>
+					<button class="finalize-notice" onclick={() => openPlacementForDoc(s)}>
 						<Icon name="bell" size={14} /> This was just filed automatically — review where it landed
 					</button>
 				{/if}
@@ -2098,56 +2223,152 @@
 	{/snippet}
 </Dialog>
 
-<!-- Shown once per completed ingest (watchJob's 'done' branch) — the
-     Reader's suggested folder/tags are already applied by the time this
-     opens, so this is "here's where it landed, adjust if you want" rather
-     than a pre-commit approval gate. Reuses the same setFolder/addTag/
-     removeTag writes the library's own doc-cards already use. -->
-<Dialog bind:open={() => !!placementPreview, (v) => { if (!v) { if (placementPreview) dismissFinalization(placementPreview.id); placementPreview = null; } }} title="Placed in library">
-	{#if placementPreview}
-		<p class="hint">"{placementPreview.title.slice(0, 80)}" was ingested and filed as shown below — the Reader suggested these, adjust them if needed.</p>
-		<select
-			class="doc-type-select"
-			value={placementPreview.doc_type ?? ''}
-			onchange={(e) => setDocType(placementPreview, (e.target as HTMLSelectElement).value)}
-			aria-label="Content type"
-		>
-			<option value="">(type unset)</option>
-			{#each DOC_TYPES as t (t)}<option value={t}>{t}</option>{/each}
-		</select>
-		<label class="folder-label">
-			<Icon name="folder" size={13} />
-			<input
-				class="folder-input"
-				type="text" placeholder="(root)" value={placementPreview.folder_path ?? ''}
-				onblur={(e) => setFolder(placementPreview, (e.target as HTMLInputElement).value)}
-			/>
-		</label>
-		{#if folderPaths.length}
-			<div class="move-suggestions">
-				{#each folderPaths as p (p)}
-					<button type="button" class="fchip" onclick={() => setFolder(placementPreview, p)}>{p}</button>
-				{/each}
-			</div>
-		{/if}
-		<div class="tags placement-tags">
-			{#each placementPreview.topics ?? [] as tag (tag)}
-				<button class="tag" onclick={() => removeTag(placementPreview, tag)} title="Remove tag">
-					{tag} <span aria-hidden="true">&times;</span>
-				</button>
+<!-- Multi-file placement confirmation dialog (specs/v15/05) -->
+<Dialog bind:open={placementDialogOpen} title="Confirm File Placements" wide>
+	{#if pendingPlacements.length === 0}
+		<div class="empty-placements">
+			<Icon name="check" size={24} />
+			<p>All ingested files have been placed in their destination folders.</p>
+		</div>
+	{:else}
+		<div class="placements-header-hint">
+			<p>
+				<strong>{pendingPlacements.length} file{pendingPlacements.length === 1 ? '' : 's'}</strong>
+				finished ingestion. Choose destination folders below:
+			</p>
+		</div>
+
+		<div class="placement-list">
+			{#each pendingPlacements as item (item.documentId)}
+				<div class="placement-card">
+					<div class="placement-card-header">
+						<span class="placement-file-icon"><Icon name="file" size={16} /></span>
+						<div class="placement-file-title-wrap">
+							<span class="placement-file-title" title={item.title}>{item.title}</span>
+							<div class="placement-meta-row">
+								{#if item.docType}<span class="placement-chip type">{item.docType}</span>{/if}
+								{#if item.suggestedFolder}
+									<span class="placement-chip suggested" title="Suggested based on intake context">
+										<Icon name="folder" size={11} />
+										Suggested: <strong>/{item.suggestedFolder}</strong>
+									</span>
+								{:else}
+									<span class="placement-chip suggested root" title="Suggested root destination">
+										<Icon name="folder" size={11} />
+										Suggested: <strong>Library root (/)</strong>
+									</span>
+								{/if}
+							</div>
+						</div>
+					</div>
+
+					<div class="placement-card-body">
+						{#if !item.isCreatingNewFolder}
+							<!-- No text input: dropdown with existing folders and option to create new -->
+							<div class="placement-folder-row">
+								<label class="placement-field-label" for="placement-folder-{item.documentId}">
+									Destination:
+								</label>
+								<div class="placement-select-group">
+									<select
+										id="placement-folder-{item.documentId}"
+										class="placement-dropdown"
+										bind:value={item.selectedFolder}
+										onchange={(e) => {
+											if ((e.target as HTMLSelectElement).value === '__NEW__') {
+												item.isCreatingNewFolder = true;
+												item.newFolderName = '';
+											}
+										}}
+									>
+										<option value="">/ (Library root) {!item.suggestedFolder ? '★ Suggested' : ''}</option>
+										{#if item.suggestedFolder && !folderPaths.includes(item.suggestedFolder)}
+											<option value={item.suggestedFolder}>/{item.suggestedFolder} ★ Suggested</option>
+										{/if}
+										{#each folderPaths as path (path)}
+											<option value={path}>
+												/{path} {path === item.suggestedFolder ? '★ Suggested' : ''}
+											</option>
+										{/each}
+										<option disabled>───────────────</option>
+										<option value="__NEW__">+ Create new folder…</option>
+									</select>
+									<button
+										type="button"
+										class="btn-new-folder-action"
+										onclick={() => { item.isCreatingNewFolder = true; item.newFolderName = ''; }}
+										title="Add new folder"
+									>
+										+ New folder
+									</button>
+								</div>
+							</div>
+						{:else}
+							<!-- Text input ONLY shown when admin explicitly wants to add a new folder -->
+							<div class="placement-folder-row">
+								<label class="placement-field-label" for="new-folder-input-{item.documentId}">
+									New folder:
+								</label>
+								<div class="new-folder-box">
+									<Icon name="folder" size={14} />
+									<input
+										id="new-folder-input-{item.documentId}"
+										type="text"
+										class="new-folder-input"
+										placeholder="e.g. Research/Cardio"
+										bind:value={item.newFolderName}
+										onkeydown={(e) => {
+											if (e.key === 'Enter') {
+												e.preventDefault();
+												confirmSinglePlacement(item);
+											} else if (e.key === 'Escape') {
+												item.isCreatingNewFolder = false;
+												item.selectedFolder = item.suggestedFolder;
+											}
+										}}
+									/>
+									<button
+										type="button"
+										class="btn-folder-cancel"
+										onclick={() => {
+											item.isCreatingNewFolder = false;
+											item.selectedFolder = item.suggestedFolder;
+										}}
+									>
+										Cancel
+									</button>
+								</div>
+							</div>
+						{/if}
+					</div>
+
+					<div class="placement-card-actions">
+						<button
+							type="button"
+							class="btn-confirm-single"
+							onclick={() => confirmSinglePlacement(item)}
+							title="Confirm placement for this file"
+						>
+							<Icon name="check" size={13} />
+							<span>Confirm</span>
+						</button>
+					</div>
+				</div>
 			{/each}
-			<input
-				class="tag-input"
-				type="text" placeholder="+ tag"
-				value={newTagText[placementPreview.id] ?? ''}
-				oninput={(e) => (newTagText = { ...newTagText, [placementPreview.id]: (e.target as HTMLInputElement).value })}
-				onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag(placementPreview); } }}
-				onblur={() => addTag(placementPreview)}
-			/>
 		</div>
 	{/if}
+
 	{#snippet footer()}
-		<Button onclick={() => { if (placementPreview) dismissFinalization(placementPreview.id); placementPreview = null; }}>Got it</Button>
+		<div class="placement-dialog-footer">
+			<Button variant="ghost" onclick={() => (placementDialogOpen = false)}>
+				Decide later ({pendingPlacements.length})
+			</Button>
+			{#if pendingPlacements.length > 0}
+				<Button variant="filled" onclick={confirmAllPlacements}>
+					Confirm all ({pendingPlacements.length})
+				</Button>
+			{/if}
+		</div>
 	{/snippet}
 </Dialog>
 
@@ -2231,6 +2452,273 @@
 	.access-list { max-height: 50vh; overflow-y: auto; display: grid; gap: .4rem; list-style: none; padding: 0; }
 	.access-list label { display: flex; align-items: center; gap: .5rem; }
 	.move-suggestions { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .3rem; }
+
+	/* --- Notification button in toolbar for pending placements (specs/v15/05) --- */
+	.tb-placement-notify {
+		display: inline-flex;
+		align-items: center;
+		gap: .45rem;
+		padding: .4rem .75rem;
+		border-radius: 10px;
+		border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+		background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+		color: var(--accent-ink);
+		font-size: var(--text-xs);
+		font-weight: 650;
+		cursor: pointer;
+		transition: all .18s var(--ease);
+		position: relative;
+	}
+	.tb-placement-notify:hover {
+		background: color-mix(in srgb, var(--accent) 22%, var(--panel));
+		border-color: var(--accent);
+		transform: translateY(-1px);
+	}
+	.tb-placement-notify.active {
+		background: var(--accent);
+		color: #ffffff;
+		border-color: var(--accent);
+	}
+	.notify-icon-wrap {
+		position: relative;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.notify-ping {
+		position: absolute;
+		top: -2px;
+		right: -2px;
+		width: 7px;
+		height: 7px;
+		border-radius: 9999px;
+		background: #ef4444;
+		box-shadow: 0 0 0 2px var(--panel);
+		animation: pulse-ping 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+	}
+	@keyframes pulse-ping {
+		0%, 100% { opacity: 1; transform: scale(1); }
+		50% { opacity: .7; transform: scale(1.15); }
+	}
+	.notify-count {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 1.25rem;
+		height: 1.25rem;
+		padding: 0 .35rem;
+		border-radius: 9999px;
+		background: var(--accent);
+		color: #ffffff;
+		font-size: .68rem;
+		font-weight: 700;
+	}
+	.tb-placement-notify.active .notify-count {
+		background: #ffffff;
+		color: var(--accent);
+	}
+
+	/* --- Placement dialog layout & item cards (specs/v15/05) --- */
+	.placements-header-hint { margin: 0 0 .85rem; font-size: var(--text-sm); color: var(--ink-2); }
+	.empty-placements { text-align: center; padding: 2rem 1rem; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: .5rem; }
+	.placement-list {
+		display: flex;
+		flex-direction: column;
+		gap: .75rem;
+		max-height: 25rem;
+		overflow-y: auto;
+		padding-right: .25rem;
+		margin: .35rem 0;
+	}
+	.placement-card {
+		background: var(--panel-2);
+		border: 1px solid var(--line);
+		border-radius: var(--r);
+		padding: .75rem 1rem;
+		display: flex;
+		flex-direction: column;
+		gap: .65rem;
+		transition: border-color .15s var(--ease);
+	}
+	.placement-card:hover {
+		border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+	}
+	.placement-card-header {
+		display: flex;
+		align-items: flex-start;
+		gap: .65rem;
+	}
+	.placement-file-icon {
+		color: var(--accent);
+		display: inline-flex;
+		align-items: center;
+		padding-top: .15rem;
+		flex-shrink: 0;
+	}
+	.placement-file-title-wrap {
+		display: flex;
+		flex-direction: column;
+		gap: .25rem;
+		flex: 1 1 auto;
+		min-width: 0;
+	}
+	.placement-file-title {
+		font-size: var(--text-sm);
+		font-weight: 650;
+		color: var(--ink);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.placement-meta-row {
+		display: flex;
+		align-items: center;
+		gap: .4rem;
+		flex-wrap: wrap;
+	}
+	.placement-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: .25rem;
+		padding: .15rem .45rem;
+		border-radius: 9999px;
+		font-size: .68rem;
+		font-weight: 600;
+	}
+	.placement-chip.type {
+		background: color-mix(in srgb, var(--line) 60%, transparent);
+		color: var(--ink-2);
+	}
+	.placement-chip.suggested {
+		background: color-mix(in srgb, var(--accent) 14%, var(--panel));
+		color: var(--accent-ink);
+		border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+	}
+	.placement-chip.suggested.root {
+		background: color-mix(in srgb, var(--line) 40%, var(--panel));
+		color: var(--ink-2);
+		border-color: var(--line);
+	}
+	.placement-card-body {
+		background: var(--panel);
+		border: 1px solid var(--line);
+		border-radius: 8px;
+		padding: .5rem .75rem;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: .65rem;
+		flex-wrap: wrap;
+	}
+	.placement-folder-row {
+		display: flex;
+		align-items: center;
+		gap: .55rem;
+		flex: 1 1 auto;
+		flex-wrap: wrap;
+	}
+	.placement-field-label {
+		font-size: var(--text-xs);
+		font-weight: 600;
+		color: var(--muted);
+		min-width: 5.5rem;
+		flex-shrink: 0;
+	}
+	.placement-select-group {
+		display: flex;
+		align-items: center;
+		gap: .4rem;
+		flex: 1 1 auto;
+		min-width: 14rem;
+	}
+	.placement-dropdown {
+		flex: 1 1 auto;
+		padding: .35rem .65rem;
+		border: 1px solid var(--line);
+		border-radius: 6px;
+		background: var(--panel-2);
+		color: var(--ink);
+		font-size: var(--text-xs);
+		font-weight: 500;
+		cursor: pointer;
+	}
+	.btn-new-folder-action {
+		display: inline-flex;
+		align-items: center;
+		gap: .25rem;
+		padding: .35rem .6rem;
+		border: 1px dashed var(--line-2);
+		border-radius: 6px;
+		background: transparent;
+		color: var(--ink-2);
+		font-size: var(--text-xs);
+		font-weight: 600;
+		cursor: pointer;
+		white-space: nowrap;
+		transition: all .15s var(--ease);
+	}
+	.btn-new-folder-action:hover {
+		background: var(--panel-2);
+		border-color: var(--accent);
+		color: var(--accent-ink);
+	}
+	.new-folder-box {
+		display: flex;
+		align-items: center;
+		gap: .4rem;
+		flex: 1 1 auto;
+	}
+	.new-folder-input {
+		flex: 1 1 auto;
+		padding: .35rem .65rem;
+		border: 1px solid var(--accent);
+		border-radius: 6px;
+		background: var(--panel);
+		color: var(--ink);
+		font-size: var(--text-xs);
+		font-weight: 500;
+	}
+	.btn-folder-cancel {
+		padding: .3rem .55rem;
+		border: 1px solid var(--line);
+		border-radius: 6px;
+		background: var(--panel-2);
+		color: var(--muted);
+		font-size: var(--text-xs);
+		cursor: pointer;
+	}
+	.btn-folder-cancel:hover {
+		color: var(--ink);
+	}
+	.placement-card-actions {
+		display: flex;
+		align-items: center;
+		justify-content: flex-end;
+	}
+	.btn-confirm-single {
+		display: inline-flex;
+		align-items: center;
+		gap: .3rem;
+		padding: .35rem .75rem;
+		border-radius: 6px;
+		background: color-mix(in srgb, var(--accent) 15%, var(--panel));
+		border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line));
+		color: var(--accent-ink);
+		font-size: var(--text-xs);
+		font-weight: 600;
+		cursor: pointer;
+		transition: all .15s var(--ease);
+	}
+	.btn-confirm-single:hover {
+		background: var(--accent);
+		color: #ffffff;
+	}
+	.placement-dialog-footer {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		width: 100%;
+	}
 
 	/* ══ Finder window chrome ══════════════════════════════════════ */
 	/* .app-shell (app.css) is the flex row that lays the Rail and this
