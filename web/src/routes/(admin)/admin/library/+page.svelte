@@ -245,11 +245,6 @@
 	}, 5000);
 	onDestroy(() => clearInterval(statsInterval));
 
-	function stagedFileUrl(item: any) {
-		// #toolbar=0&navpanes=0: no PDF-viewer chrome/sidebar on this preview either.
-		return `${PUBLIC_API_BASE}/api/staged/${item.id}/file#toolbar=0&navpanes=0&scrollbar=0`;
-	}
-
 	// Library browser: categories = topics (from /api/coverage, with counts),
 	// a kind filter alongside them, and a search box over both. Filtered
 	// client-side since the PoC library tops out around a few dozen sources
@@ -426,6 +421,14 @@
 			return { name, path: acc };
 		});
 	});
+	// Finder toolbar's own current-folder title + up-one-level button.
+	const currentFolderName = $derived(currentPath ? currentPath.split('/').pop()! : 'Library');
+	function goUp() {
+		const parent = currentPath.includes('/') ? currentPath.slice(0, currentPath.lastIndexOf('/')) : '';
+		currentPath = parent;
+		selectedFolderPath = null;
+		page = 1;
+	}
 
 	// A non-empty search box switches to a flat, library-wide result list
 	// (every matching document regardless of which folder it's in) — the
@@ -526,8 +529,21 @@
 	// the drop target, i.e. nesting it there.
 	let draggedId = $state<string | null>(null);
 	let draggedFolderPath = $state<string | null>(null);
+	// Real Finder behavior researched before this rebuild (Apple's own
+	// HIG): highlight exactly one drop destination at a time while
+	// dragging, not every possible target — a single `$state` the
+	// currently-hovered folder sets/clears, not a per-element hover
+	// style that'd light up several folders if the pointer passed near
+	// more than one.
+	let dragOverPath = $state<string | null>(null);
+	// Finder's own select-vs-open split: a single click selects (shows
+	// the inspector / highlights the tile); a folder only navigates on
+	// double-click. Previously every click on a folder navigated
+	// immediately, with no way to just select one.
+	let selectedFolderPath = $state<string | null>(null);
 
 	function handleDropOnFolder(targetPath: string) {
+		dragOverPath = null;
 		if (draggedId) {
 			const s = (data.sources ?? []).find((x: any) => x.id === draggedId);
 			draggedId = null;
@@ -1051,120 +1067,136 @@
 
 <svelte:head><title>Library — Admin portal</title></svelte:head>
 
-<!-- Full rebuild: a mail-client-style master list + detail, replacing
-     the card grid entirely. The list pane is always a flat, dense
-     column of rows — no Icons/Table view modes any more, one shape.
-     Selecting a row shows its full editable detail in the pane beside
-     it, so every field (tags/grade/type/folder/privacy) is always
-     visible there instead of hidden behind a per-card "Edit" toggle. -->
-<div class="pane-row lib">
-	<aside class="list-pane">
-		<div class="list-pane-head">
-			<div class="lp-top">
-				<h1>Library</h1>
-				<Menu label="More">
-					{#snippet items()}
-						<button onclick={() => (ingestOpen = true)}><Icon name="plus" size={14} />Add resources</button>
-						<button onclick={() => { maintenanceKind = 'relink'; maintenanceOpen = true; }}><Icon name="refresh" size={14} />Relink unlinked</button>
-						<button onclick={() => { maintenanceKind = 'consolidate'; maintenanceOpen = true; }}><Icon name="check" size={14} />Consolidate entities</button>
-					{/snippet}
-				</Menu>
+<!-- Complete rework, grounded in Apple's own Finder/HIG patterns (not
+     iterated from the prior list+detail version): a real toolbar
+     (back button, folder title, Icon/List view toggle, search), a
+     Finder path bar, an Icon View grid with native drag-and-drop and
+     a single highlighted drop target at a time (per HIG — "highlight
+     one destination, not every possible one"), select-vs-open
+     (single click selects, double-click opens a folder), and an
+     Inspector panel that only appears once something is selected
+     instead of a permanently-reserved half-width pane. -->
+<div class="finder">
+	<div class="finder-toolbar">
+		<button class="tb-btn" onclick={goUp} disabled={!currentPath || mainTab !== 'library'} title="Back" aria-label="Up one level">
+			<Icon name="chevron" size={14} />
+		</button>
+		<span class="tb-title">{mainTab === 'graph' ? 'Concept graph' : currentFolderName}</span>
+		<div class="tb-spacer"></div>
+		{#if mainTab === 'library'}
+			<div class="tb-view-toggle" role="group" aria-label="View">
+				<button class:on={viewMode === 'icons'} onclick={() => (viewMode = 'icons')} title="Icon View"><Icon name="grid" size={15} /></button>
+				<button class:on={viewMode === 'list'} onclick={() => (viewMode = 'list')} title="List View"><Icon name="list" size={15} /></button>
 			</div>
-			<div class="lp-modes" role="group" aria-label="Library view">
-				<!-- Finder's own two primary view modes — icon grid
-				     (its default) and list — not a separate "Folders"
-				     mode; folders are just items inside whichever view
-				     you're in, the way a real file browser works. -->
-				<button class:on={mainTab === 'library' && viewMode === 'icons'} onclick={() => { mainTab = 'library'; viewMode = 'icons'; }} title="Icons"><Icon name="grid" size={15} /></button>
-				<button class:on={mainTab === 'library' && viewMode === 'list'} onclick={() => { mainTab = 'library'; viewMode = 'list'; }} title="List"><Icon name="list" size={15} /></button>
-				<span class="lp-modes-sep"></span>
-				<button class:on={mainTab === 'graph'} onclick={() => (mainTab = 'graph')}>Graph</button>
+			<Menu label="Sort">
+				{#snippet items()}
+					<button onclick={() => (sortBy = 'title')} class="menu-choice" class:menu-active={sortBy === 'title'}>Name</button>
+					<button onclick={() => (sortBy = 'created_at')} class="menu-choice" class:menu-active={sortBy === 'created_at'}>Date ingested</button>
+					<button onclick={() => (sortDir = sortDir === 'asc' ? 'desc' : 'asc')}>
+						<Icon name="chevron" size={14} />{sortDir === 'asc' ? 'Ascending' : 'Descending'}
+					</button>
+				{/snippet}
+			</Menu>
+			<div class="tb-search">
+				<Icon name="search" size={13} />
+				<input type="search" placeholder="Search" bind:value={q} oninput={() => (page = 1)} aria-label="Search the library" />
+				{#if q}<button class="search-clear" onclick={() => { q = ''; page = 1; }} aria-label="Clear search">&times;</button>{/if}
 			</div>
+		{/if}
+		<button class="tb-btn" class:on={mainTab === 'graph'} onclick={() => (mainTab = mainTab === 'graph' ? 'library' : 'graph')} title="Concept graph" aria-label="Toggle concept graph">
+			<Icon name="globe" size={15} />
+		</button>
+		<Menu label="More">
+			{#snippet items()}
+				<button onclick={() => (ingestOpen = true)}><Icon name="plus" size={14} />Add resources</button>
+				{#if mainTab === 'library'}<button onclick={() => { newFolderName = ''; newFolderOpen = true; }}><Icon name="folder" size={14} />New folder</button>{/if}
+				<button onclick={() => { maintenanceKind = 'relink'; maintenanceOpen = true; }}><Icon name="refresh" size={14} />Relink unlinked</button>
+				<button onclick={() => { maintenanceKind = 'consolidate'; maintenanceOpen = true; }}><Icon name="check" size={14} />Consolidate entities</button>
+			{/snippet}
+		</Menu>
+	</div>
 
-			{#if mainTab === 'library'}
-				<div class="search-input-wrap">
-					<input
-						class="search"
-						type="search"
-						placeholder="Search…"
-						bind:value={q}
-						oninput={() => (page = 1)}
-						aria-label="Search the library"
-					/>
-					{#if q}
-						<button class="search-clear" onclick={() => { q = ''; page = 1; }} aria-label="Clear search">&times;</button>
-					{/if}
-				</div>
-				<div class="lp-controls">
-					<select class="topic-select" bind:value={activeTopic} onchange={() => (page = 1)} aria-label="Filter by topic">
-						<option value="">All topics ({data.sources.length})</option>
-						{#each data.coverage as c (c.topic)}<option value={c.topic}>{c.topic} ({c.sources})</option>{/each}
-					</select>
-					<Menu label="Sort">
-						{#snippet items()}
-							<button onclick={() => (sortBy = 'title')} class="menu-choice" class:menu-active={sortBy === 'title'}>Name</button>
-							<button onclick={() => (sortBy = 'created_at')} class="menu-choice" class:menu-active={sortBy === 'created_at'}>Date ingested</button>
-							<button onclick={() => (sortDir = sortDir === 'asc' ? 'desc' : 'asc')}>
-								<Icon name="chevron" size={14} />{sortDir === 'asc' ? 'Ascending' : 'Descending'}
-							</button>
-						{/snippet}
-					</Menu>
-				</div>
-				{#if !searching}
-					<!-- Finder's own path bar: small folder icon per
-					     segment, a chevron separator, a pill-shaped bar —
-					     not a plain breadcrumb sentence. -->
-					<nav class="pathbar" aria-label="Folder path">
-						<button class="crumb" onclick={() => { currentPath = ''; page = 1; }} disabled={!currentPath}>
-							<Icon name="folder" size={12} />Library
-						</button>
-						{#each breadcrumb as crumb, i (crumb.path)}
-							<Icon name="chevron" size={10} />
-							<button class="crumb" onclick={() => { currentPath = crumb.path; page = 1; }} disabled={i === breadcrumb.length - 1}>
-								<Icon name="folder" size={12} />{crumb.name}
-							</button>
-						{/each}
-						<button class="new-folder" onclick={() => { newFolderName = ''; newFolderOpen = true; }} title="New folder" aria-label="New folder"><Icon name="plus" size={12} /></button>
-					</nav>
-				{/if}
-				{#if (data.staged?.length ?? 0) > 0 || (queueStats?.queued_count ?? 0) > 0 || (queueStats?.processing_count ?? 0) > 0}
-					<p class="queue-status hint">
+	{#if mainTab === 'library' && !searching}
+		<!-- Finder's path bar: a pill-shaped bar, a folder icon per
+		     segment, chevrons pointing right between them — also itself
+		     a drop target per segment, so dragging a tile onto an
+		     ancestor folder works the way it does in a real Finder
+		     window. -->
+		<nav class="pathbar" aria-label="Folder path">
+			<button
+				class="crumb" class:drag-target={dragOverPath === ''}
+				onclick={() => { currentPath = ''; selectedFolderPath = null; page = 1; }}
+				ondragover={(e) => { e.preventDefault(); dragOverPath = ''; }}
+				ondragleave={() => (dragOverPath = null)}
+				ondrop={(e) => { e.preventDefault(); handleDropOnFolder(''); }}
+				disabled={!currentPath}
+			><Icon name="folder" size={12} />Library</button>
+			{#each breadcrumb as crumb, i (crumb.path)}
+				<Icon name="chevron" size={10} />
+				<button
+					class="crumb" class:drag-target={dragOverPath === crumb.path}
+					onclick={() => { currentPath = crumb.path; selectedFolderPath = null; page = 1; }}
+					ondragover={(e) => { e.preventDefault(); dragOverPath = crumb.path; }}
+					ondragleave={() => (dragOverPath = null)}
+					ondrop={(e) => { e.preventDefault(); handleDropOnFolder(crumb.path); }}
+					disabled={i === breadcrumb.length - 1}
+				><Icon name="folder" size={12} />{crumb.name}</button>
+			{/each}
+		</nav>
+	{/if}
+
+	{#if mainTab === 'library'}
+		{#if (data.staged?.length ?? 0) > 0 || (queueStats?.queued_count ?? 0) > 0 || (queueStats?.processing_count ?? 0) > 0 || librarySelected.size}
+			<div class="status-row">
+				{#if librarySelected.size}
+					<span class="hint">{librarySelected.size} selected</span>
+					<button class="status-action" onclick={() => setPrivateBulk(true)} title="Make private"><Icon name="lock" size={13} /></button>
+					<button class="status-action" onclick={() => setPrivateBulk(false)} title="Make public"><Icon name="unlock" size={13} /></button>
+					<button class="status-action" onclick={() => (librarySelected = new Set())} title="Clear selection"><Icon name="x" size={13} /></button>
+				{:else}
+					<span class="hint">
 						{(queueStats?.queued_count ?? 0) + (queueStats?.processing_count ?? 0)} in queue
 						{#if queueStats?.processing_count}({queueStats.processing_count} processing){/if}
 						{#if erroredStagedIds.length}
 							· <button class="retry-link" onclick={retryAll} disabled={retryingAll}>retry {erroredStagedIds.length} failed</button>
 						{/if}
-					</p>
+					</span>
 				{/if}
-				{#if librarySelected.size}
-					<div class="bulk-bar">
-						<span class="hint">{librarySelected.size} selected</span>
-						<button onclick={() => setPrivateBulk(true)} title="Make private"><Icon name="lock" size={14} /></button>
-						<button onclick={() => setPrivateBulk(false)} title="Make public"><Icon name="unlock" size={14} /></button>
-						<button onclick={() => (librarySelected = new Set())} title="Clear selection"><Icon name="x" size={14} /></button>
-					</div>
-				{/if}
-			{/if}
-		</div>
+			</div>
+		{/if}
+	{/if}
 
-		<div class="list-pane-body" class:grid-mode={mainTab === 'library' && viewMode === 'icons'}>
-			{#if mainTab === 'library' && viewMode === 'icons'}
-				<!-- Finder's Icon View: a grid of tiles, folders tinted the
-				     familiar Finder blue, files a plain document icon,
-				     label centered underneath. -->
+	<div class="finder-body">
+		<div class="finder-content" class:grid-mode={mainTab === 'library' && viewMode === 'icons'}>
+			{#if mainTab === 'graph'}
+				<div class="graph-pane">
+					{#if data.graph}
+						<p class="hint graph-stats">{data.graph.entities ?? 0} concepts · {data.graph.mentions ?? 0} links · {(data.graph.unlinked ?? []).length} unlinked</p>
+					{/if}
+					{#if conceptGraphLoading}
+						<p class="hint">Loading the concept graph…</p>
+					{:else}
+						<GraphView nodes={conceptGraph?.nodes ?? []} edges={conceptGraph?.edges ?? []} />
+					{/if}
+				</div>
+			{:else if viewMode === 'icons'}
 				<div class="icon-grid">
 					{#if !searching}
 						{#each visibleSubfolders as node (node.path)}
 							<button
 								class="icon-tile folder-tile"
+								class:on={selectedFolderPath === node.path}
+								class:drag-target={dragOverPath === node.path}
 								draggable="true"
 								ondragstart={() => (draggedFolderPath = node.path)}
-								ondragend={() => (draggedFolderPath = null)}
-								ondragover={(e) => e.preventDefault()}
+								ondragend={() => { draggedFolderPath = null; dragOverPath = null; }}
+								ondragover={(e) => { e.preventDefault(); dragOverPath = node.path; }}
+								ondragleave={() => (dragOverPath = null)}
 								ondrop={(e) => { e.preventDefault(); handleDropOnFolder(node.path); }}
-								onclick={() => { currentPath = node.path; page = 1; }}
+								onclick={() => (selectedFolderPath = node.path)}
+								ondblclick={() => { currentPath = node.path; selectedFolderPath = null; page = 1; }}
 							>
-								<Icon name="folder" size={36} />
+								<Icon name="folder" size={40} />
 								<span class="tile-label">{node.name}</span>
 							</button>
 						{/each}
@@ -1172,7 +1204,7 @@
 					{#if !searching && !currentPath}
 						{#each data.staged ?? [] as item (item.id)}
 							<div class="icon-tile staged-tile">
-								<Icon name="file" size={36} />
+								<Icon name="file" size={40} />
 								<span class="tile-label">{item.filename ?? item.source_url ?? 'Pasted text'}</span>
 								{#if jobsByStagedId[item.id]?.status === 'error'}
 									<span class="tile-sub job-error">Failed</span>
@@ -1193,9 +1225,10 @@
 							ondragstart={() => (draggedId = s.id)}
 							ondragend={() => (draggedId = null)}
 							onclick={() => (selectedDocId = s.id)}
+							ondblclick={() => window.open(`/admin/${s.id}`, '_blank')}
 						>
 							<span class="tile-icon">
-								<Icon name="file" size={36} />
+								<Icon name="file" size={40} />
 								{#if s.is_private}<span class="tile-badge"><Icon name="lock" size={10} /></span>{/if}
 								{#if needsFinalization.has(s.id)}<span class="tile-badge bell"><Icon name="bell" size={10} /></span>{/if}
 							</span>
@@ -1219,125 +1252,110 @@
 						</div>
 					{/each}
 				</div>
-				{#if totalPages > 1}
-					<div class="pager">
-						<button onclick={() => (page = shownPage - 1)} disabled={shownPage <= 1}>←</button>
-						<span class="hint">{shownPage} / {totalPages}</span>
-						<button onclick={() => (page = shownPage + 1)} disabled={shownPage >= totalPages}>→</button>
-					</div>
-				{/if}
-			{:else if mainTab === 'library'}
-				{#if !searching}
-					{#each visibleSubfolders as node (node.path)}
-						<button
-							class="list-row folder-row"
-							draggable="true"
-							ondragstart={() => (draggedFolderPath = node.path)}
-							ondragend={() => (draggedFolderPath = null)}
-							ondragover={(e) => e.preventDefault()}
-							ondrop={(e) => { e.preventDefault(); handleDropOnFolder(node.path); }}
-							onclick={() => { currentPath = node.path; page = 1; }}
-						>
-							<Icon name="folder" size={15} />
-							<span class="row-title">{node.name}</span>
-							<span class="row-sub">{node.count}</span>
-						</button>
-					{/each}
-				{/if}
-				{#if !searching && !currentPath}
-					{#each data.staged ?? [] as item (item.id)}
-						<div class="list-row staged-row">
-							<div class="row-title">{item.filename ?? item.source_url ?? 'Pasted text'}</div>
-							{#if jobsByStagedId[item.id]?.status === 'error'}
-								<p class="hint job-error">{jobLabel(jobsByStagedId[item.id])}</p>
-								<div class="row-actions">
-									<button onclick={() => ingestOne(item.id)} disabled={promotingId === item.id}>Retry</button>
-									<button class="danger" onclick={() => discardStaged(item.id)}>Discard</button>
-								</div>
-							{:else}
-								<div class="job-progress">
-									<div class="track"><div class="fill" style="width: {jobProgressPercent(jobsByStagedId[item.id] ?? { step: 'queued' })}%"></div></div>
-									<span class="hint">{jobLabel(jobsByStagedId[item.id] ?? { status: 'queued', step: 'queued' })}</span>
-								</div>
-								<div class="row-actions">
-									<button class="danger" onclick={() => discardStaged(item.id)} disabled={jobActive(jobsByStagedId[item.id])}>Discard</button>
-								</div>
-							{/if}
-						</div>
-					{/each}
-				{/if}
-				{#each pageItems as s (s.id)}
-					<div
-						class="list-row doc-row"
-						class:on={selectedDocId === s.id}
-						oncontextmenu={(e) => onDocContextMenu(e, s)}
-						draggable="true"
-						ondragstart={() => (draggedId = s.id)}
-						ondragend={() => (draggedId = null)}
-					>
-						<input
-							type="checkbox"
-							checked={librarySelected.has(s.id)}
-							onclick={(e) => e.stopPropagation()}
-							onchange={() => toggleLibrarySelected(s.id)}
-							aria-label="Select {s.title}"
-						/>
-						<button class="row-main" onclick={() => (selectedDocId = s.id)}>
-							<span class="row-title">
-								{s.title}
-								{#if needsFinalization.has(s.id)}<Icon name="bell" size={12} />{/if}
-								{#if s.is_private}<Icon name="lock" size={12} />{/if}
-							</span>
-							<span class="row-sub">{s.doc_type || 'untyped'} · Grade {s.grade} · {(s.created_at ?? '').slice(0, 10)}</span>
-						</button>
-					</div>
-				{:else}
-					<div class="list-empty">
-						{#if !data.sources.length}
-							<EmptyState icon="book" title="Your library is empty" body='Upload a document, paste text, or scrape a URL to start teaching Functional Health Collab.'>
-								{#snippet action()}<Button onclick={() => (ingestOpen = true)}>+ Add resources</Button>{/snippet}
-							</EmptyState>
-						{:else if searching}
-							<EmptyState icon="search" title="Nothing matches that search" body="Try a different term, or clear the search.">
-								{#snippet action()}<Button variant="ghost" onclick={() => { q = ''; page = 1; }}>Clear search</Button>{/snippet}
-							</EmptyState>
-						{:else}
-							<EmptyState icon="folder" title="This folder is empty" body="Upload a document here, or browse to another folder.">
-								{#snippet action()}<Button onclick={() => (ingestOpen = true)}>+ Add resources</Button>{/snippet}
-							</EmptyState>
+			{:else}
+				<!-- Finder's List View: a real table — Name, Date, Type,
+				     Grade columns, not a card. -->
+				<table class="finder-table">
+					<thead>
+						<tr><th></th><th>Name</th><th>Type</th><th>Grade</th><th>Date</th></tr>
+					</thead>
+					<tbody>
+						{#if !searching}
+							{#each visibleSubfolders as node (node.path)}
+								<tr
+									class="folder-tr"
+									class:on={selectedFolderPath === node.path}
+									class:drag-target={dragOverPath === node.path}
+									draggable="true"
+									ondragstart={() => (draggedFolderPath = node.path)}
+									ondragend={() => { draggedFolderPath = null; dragOverPath = null; }}
+									ondragover={(e) => { e.preventDefault(); dragOverPath = node.path; }}
+									ondragleave={() => (dragOverPath = null)}
+									ondrop={(e) => { e.preventDefault(); handleDropOnFolder(node.path); }}
+									onclick={() => (selectedFolderPath = node.path)}
+									ondblclick={() => { currentPath = node.path; selectedFolderPath = null; page = 1; }}
+								>
+									<td><Icon name="folder" size={16} /></td>
+									<td>{node.name}</td>
+									<td class="hint">Folder</td>
+									<td class="hint">—</td>
+									<td class="hint">{node.count} item{node.count === 1 ? '' : 's'}</td>
+								</tr>
+							{/each}
 						{/if}
-					</div>
-				{/each}
-				{#if totalPages > 1}
-					<div class="pager">
-						<button onclick={() => (page = shownPage - 1)} disabled={shownPage <= 1}>←</button>
-						<span class="hint">{shownPage} / {totalPages}</span>
-						<button onclick={() => (page = shownPage + 1)} disabled={shownPage >= totalPages}>→</button>
-					</div>
-				{/if}
-			{:else if mainTab === 'graph'}
-				{#if data.graph}
-					<p class="hint graph-stats">{data.graph.entities ?? 0} concepts · {data.graph.mentions ?? 0} links · {(data.graph.unlinked ?? []).length} unlinked</p>
-				{/if}
+						{#each pageItems as s (s.id)}
+							<tr
+								class="doc-tr"
+								class:on={selectedDocId === s.id}
+								oncontextmenu={(e) => onDocContextMenu(e, s)}
+								draggable="true"
+								ondragstart={() => (draggedId = s.id)}
+								ondragend={() => (draggedId = null)}
+								onclick={() => (selectedDocId = s.id)}
+								ondblclick={() => window.open(`/admin/${s.id}`, '_blank')}
+							>
+								<td>
+									<input
+										type="checkbox"
+										checked={librarySelected.has(s.id)}
+										onclick={(e) => e.stopPropagation()}
+										onchange={() => toggleLibrarySelected(s.id)}
+										aria-label="Select {s.title}"
+									/>
+								</td>
+								<td>
+									<Icon name="file" size={14} />
+									{s.title}
+									{#if needsFinalization.has(s.id)}<Icon name="bell" size={11} />{/if}
+									{#if s.is_private}<Icon name="lock" size={11} />{/if}
+								</td>
+								<td class="hint">{s.doc_type || '—'}</td>
+								<td class="hint">{s.grade}</td>
+								<td class="hint">{(s.created_at ?? '').slice(0, 10)}</td>
+							</tr>
+						{:else}
+							<tr><td colspan="5">
+								<div class="list-empty">
+									{#if !data.sources.length}
+										<EmptyState icon="book" title="Your library is empty" body='Upload a document, paste text, or scrape a URL to start teaching Functional Health Collab.'>
+											{#snippet action()}<Button onclick={() => (ingestOpen = true)}>+ Add resources</Button>{/snippet}
+										</EmptyState>
+									{:else if searching}
+										<EmptyState icon="search" title="Nothing matches that search" body="Try a different term, or clear the search.">
+											{#snippet action()}<Button variant="ghost" onclick={() => { q = ''; page = 1; }}>Clear search</Button>{/snippet}
+										</EmptyState>
+									{:else}
+										<EmptyState icon="folder" title="This folder is empty" body="Upload a document here, or browse to another folder.">
+											{#snippet action()}<Button onclick={() => (ingestOpen = true)}>+ Add resources</Button>{/snippet}
+										</EmptyState>
+									{/if}
+								</div>
+							</td></tr>
+						{/each}
+					</tbody>
+				</table>
+			{/if}
+			{#if mainTab === 'library' && totalPages > 1}
+				<div class="pager">
+					<button onclick={() => (page = shownPage - 1)} disabled={shownPage <= 1}>←</button>
+					<span class="hint">{shownPage} / {totalPages}</span>
+					<button onclick={() => (page = shownPage + 1)} disabled={shownPage >= totalPages}>→</button>
+				</div>
 			{/if}
 		</div>
-	</aside>
 
-	<div class="detail-pane">
-		{#if mainTab === 'graph'}
-			{#if conceptGraphLoading}
-				<p class="hint">Loading the concept graph…</p>
-			{:else}
-				<GraphView nodes={conceptGraph?.nodes ?? []} edges={conceptGraph?.edges ?? []} />
-			{/if}
-		{:else if selectedDoc}
+		{#if selectedDoc}
+			<!-- The Inspector: Finder's Get Info panel, not a permanently-
+			     reserved half-width pane — it only takes space once
+			     something is actually selected, and can be dismissed. -->
 			{@const s = selectedDoc}
-			<div class="detail-head">
-				<div>
-					<h1>{s.title}</h1>
-					<p>{s.author ? `by ${s.author}` : 'No author on record'}{s.uploaded_by ? ` · uploaded by ${s.uploaded_by}` : ''}</p>
+			<aside class="inspector">
+				<div class="inspector-head">
+					<h2>{s.title}</h2>
+					<button class="icon-btn" onclick={() => (selectedDocId = null)} title="Close" aria-label="Close inspector"><Icon name="x" size={15} /></button>
 				</div>
-				<div class="detail-actions">
+				<p class="hint">{s.author ? `by ${s.author}` : 'No author on record'}{s.uploaded_by ? ` · uploaded by ${s.uploaded_by}` : ''}</p>
+				<div class="inspector-actions">
 					<a class="icon-btn" href="/admin/{s.id}" title="Open full detail" aria-label="Open full detail"><Icon name="external-link" size={16} /></a>
 					<Menu label="More actions for {s.title}">
 						{#snippet items()}
@@ -1348,56 +1366,54 @@
 						{/snippet}
 					</Menu>
 				</div>
-			</div>
 
-			{#if needsFinalization.has(s.id)}
-				<button class="finalize-notice" onclick={() => (placementPreview = s)}>
-					<Icon name="bell" size={14} /> This was just filed automatically — review where it landed
-				</button>
-			{/if}
-
-			<div class="detail-fields">
-				<label class="field">
-					<span>Type</span>
-					<select value={s.doc_type ?? ''} onchange={(e) => setDocType(s, (e.target as HTMLSelectElement).value)}>
-						<option value="">(unset)</option>
-						{#each DOC_TYPES as t (t)}<option value={t}>{t}</option>{/each}
-					</select>
-				</label>
-				<label class="field">
-					<span>Grade</span>
-					<input type="number" min="1" max="10" value={s.grade} onchange={(e) => regrade(s, Number((e.target as HTMLInputElement).value))} />
-				</label>
-				<label class="field">
-					<span>Folder</span>
-					<input type="text" placeholder="(root)" value={s.folder_path ?? ''} onblur={(e) => setFolder(s, (e.target as HTMLInputElement).value)} />
-				</label>
-				<label class="field">
-					<span>Visibility</span>
-					<button class="visibility-toggle" onclick={() => setPrivate(s, !s.is_private)}>
-						<Icon name={s.is_private ? 'lock' : 'unlock'} size={14} /> {s.is_private ? 'Private' : 'Public'}
+				{#if needsFinalization.has(s.id)}
+					<button class="finalize-notice" onclick={() => (placementPreview = s)}>
+						<Icon name="bell" size={14} /> This was just filed automatically — review where it landed
 					</button>
-				</label>
-			</div>
+				{/if}
 
-			<div class="field">
-				<span>Tags</span>
-				<div class="tags">
-					{#each s.topics ?? [] as tag (tag)}
-						<button class="tag" onclick={() => removeTag(s, tag)} title="Remove tag">{tag} <span aria-hidden="true">&times;</span></button>
-					{/each}
-					<input
-						class="tag-input"
-						type="text" placeholder="+ tag"
-						value={newTagText[s.id] ?? ''}
-						oninput={(e) => (newTagText = { ...newTagText, [s.id]: (e.target as HTMLInputElement).value })}
-						onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag(s); } }}
-						onblur={() => addTag(s)}
-					/>
+				<div class="detail-fields">
+					<label class="field">
+						<span>Type</span>
+						<select value={s.doc_type ?? ''} onchange={(e) => setDocType(s, (e.target as HTMLSelectElement).value)}>
+							<option value="">(unset)</option>
+							{#each DOC_TYPES as t (t)}<option value={t}>{t}</option>{/each}
+						</select>
+					</label>
+					<label class="field">
+						<span>Grade</span>
+						<input type="number" min="1" max="10" value={s.grade} onchange={(e) => regrade(s, Number((e.target as HTMLInputElement).value))} />
+					</label>
+					<label class="field">
+						<span>Folder</span>
+						<input type="text" placeholder="(root)" value={s.folder_path ?? ''} onblur={(e) => setFolder(s, (e.target as HTMLInputElement).value)} />
+					</label>
+					<label class="field">
+						<span>Visibility</span>
+						<button class="visibility-toggle" onclick={() => setPrivate(s, !s.is_private)}>
+							<Icon name={s.is_private ? 'lock' : 'unlock'} size={14} /> {s.is_private ? 'Private' : 'Public'}
+						</button>
+					</label>
 				</div>
-			</div>
-		{:else}
-			<p class="hint">Select a document from the list to see its details.</p>
+
+				<div class="field">
+					<span>Tags</span>
+					<div class="tags">
+						{#each s.topics ?? [] as tag (tag)}
+							<button class="tag" onclick={() => removeTag(s, tag)} title="Remove tag">{tag} <span aria-hidden="true">&times;</span></button>
+						{/each}
+						<input
+							class="tag-input"
+							type="text" placeholder="+ tag"
+							value={newTagText[s.id] ?? ''}
+							oninput={(e) => (newTagText = { ...newTagText, [s.id]: (e.target as HTMLInputElement).value })}
+							onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag(s); } }}
+							onblur={() => addTag(s)}
+						/>
+					</div>
+				</div>
+			</aside>
 		{/if}
 	</div>
 </div>
@@ -1678,89 +1694,87 @@
 	.access-list label { display: flex; align-items: center; gap: .5rem; }
 	.move-suggestions { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .3rem; }
 
-	/* ── List pane: search, topic/sort controls, breadcrumb, then the
-	   flat row list itself (folders, staged jobs, documents). ── */
-	.lp-top { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-2); }
-	.lp-modes { display: flex; align-items: center; gap: .1rem; margin-bottom: var(--space-3); }
-	.lp-modes button {
-		display: flex; align-items: center; justify-content: center; gap: .3rem;
-		border: 1px solid var(--line); background: var(--panel); color: var(--muted);
-		font: inherit; font-size: var(--text-xs); font-weight: 650; padding: .4rem .6rem; cursor: pointer;
+	/* ══ Finder window chrome ══════════════════════════════════════ */
+	.finder { display: flex; flex-direction: column; min-height: 100%; background: var(--panel); border: 1px solid var(--line); }
+	.finder-toolbar {
+		display: flex; align-items: center; gap: .4rem; padding: .5rem var(--space-3);
+		border-bottom: 1px solid var(--line); background: var(--panel-2);
 	}
-	.lp-modes button.on { color: var(--accent-ink); background: var(--accent-soft); border-color: var(--accent); }
-	.lp-modes-sep { flex: 1 1 auto; }
-	.search-input-wrap { position: relative; margin-bottom: var(--space-2); }
-	.search {
-		width: 100%; font-size: var(--text-sm); padding: .5rem .5rem .5rem var(--space-3);
-		border: 1px solid var(--line-2); background: var(--panel); color: var(--ink);
+	.tb-btn {
+		display: flex; align-items: center; justify-content: center; width: 1.9rem; height: 1.9rem;
+		border: none; background: none; color: var(--ink-2); cursor: pointer; border-radius: var(--r);
 	}
-	.search:focus { outline: none; border-color: var(--accent); }
-	.search-clear {
-		position: absolute; right: .4rem; top: 50%; transform: translateY(-50%);
-		border: none; background: none; cursor: pointer; font-size: 1.1rem; line-height: 1; color: var(--muted);
+	.tb-btn:hover:not(:disabled) { background: var(--panel); }
+	.tb-btn:disabled { opacity: .35; cursor: not-allowed; }
+	.tb-btn :global(svg) { transform: rotate(90deg); }
+	.tb-btn.on { color: var(--accent-ink); background: var(--accent-soft); }
+	.tb-btn.on :global(svg) { transform: none; }
+	.tb-title { font-weight: var(--weight-bold); font-size: var(--text-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+	.tb-spacer { flex: 1 1 auto; }
+	.tb-view-toggle { display: flex; border: 1px solid var(--line-2); border-radius: var(--r); overflow: hidden; }
+	.tb-view-toggle button {
+		display: flex; align-items: center; justify-content: center; width: 1.9rem; height: 1.9rem;
+		border: none; background: var(--panel); color: var(--muted); cursor: pointer;
 	}
-	.lp-controls { display: flex; align-items: center; gap: .3rem; margin-bottom: var(--space-2); }
-	.topic-select {
-		flex: 1 1 auto; min-width: 0; border: 1px solid var(--line-2); background: var(--panel);
-		color: var(--ink); font-size: var(--text-xs); padding: .3rem .4rem; cursor: pointer;
+	.tb-view-toggle button.on { color: var(--accent-ink); background: var(--accent-soft); }
+	.tb-search {
+		display: flex; align-items: center; gap: .3rem; border: 1px solid var(--line-2); border-radius: 99px;
+		background: var(--panel); color: var(--muted); padding: .25rem .6rem; min-width: 9rem;
 	}
+	.tb-search input {
+		border: none; background: none; font: inherit; font-size: var(--text-sm); color: var(--ink);
+		min-width: 0; flex: 1 1 auto; outline: none;
+	}
+	.search-clear { border: none; background: none; cursor: pointer; font-size: 1rem; line-height: 1; color: var(--muted); padding: 0; }
+
 	/* Finder's path bar: a pill-shaped bar, a small folder icon per
-	   segment, chevrons pointing right between them. */
+	   segment, chevrons pointing right between them — every segment is
+	   also a real drop target, so dragging a tile onto an ancestor
+	   folder works the way it does in a real Finder window. */
 	.pathbar {
-		display: flex; align-items: center; gap: .25rem; margin-bottom: var(--space-2); font-size: var(--text-xs);
-		flex-wrap: wrap; background: var(--panel-2); border: 1px solid var(--line); border-radius: 99px; padding: .25rem .4rem;
+		display: flex; align-items: center; gap: .25rem; padding: .4rem var(--space-3); font-size: var(--text-xs);
+		flex-wrap: wrap; background: var(--panel); border-bottom: 1px solid var(--line);
 	}
-	.pathbar :global(svg) { flex: 0 0 auto; }
-	.pathbar > :global(svg) { color: var(--muted); }
+	.pathbar :global(svg) { flex: 0 0 auto; color: var(--muted); }
 	.crumb {
-		display: flex; align-items: center; gap: .3rem; border: none; background: none; cursor: pointer;
-		font: inherit; color: var(--accent-ink); padding: .2rem .4rem; border-radius: 99px;
+		display: flex; align-items: center; gap: .3rem; border: 1px solid transparent; background: none; cursor: pointer;
+		font: inherit; color: var(--accent-ink); padding: .2rem .5rem; border-radius: 99px;
 	}
-	.crumb:hover:not(:disabled) { background: var(--panel); }
+	.crumb:hover:not(:disabled) { background: var(--panel-2); }
 	.crumb:disabled { color: var(--ink); cursor: default; font-weight: 650; }
-	.new-folder { margin-left: auto; color: var(--muted); border: none; background: none; cursor: pointer; padding: .2rem .4rem; }
-	.queue-status { margin: 0 0 var(--space-2); }
-	.retry-link { border: none; background: none; color: var(--accent-ink); cursor: pointer; font: inherit; padding: 0; text-decoration: underline; }
-	.bulk-bar { display: flex; align-items: center; gap: .4rem; margin-bottom: var(--space-2); }
-	.bulk-bar button { border: 1px solid var(--line); background: var(--panel); cursor: pointer; padding: .3rem .4rem; color: var(--ink-2); }
-
-	.folder-row, .staged-row, .doc-row {
-		display: flex; align-items: flex-start; gap: .5rem; padding: var(--space-3) var(--space-4);
-		border-bottom: 1px solid var(--line); width: 100%; text-align: left;
+	/* Per Apple's own HIG: highlight exactly one drop destination at a
+	   time while dragging — a distinct ring, not just a hover tint, so
+	   it reads as "drop here" rather than ordinary :hover. */
+	.crumb.drag-target, .icon-tile.drag-target, .folder-tr.drag-target {
+		border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 2px var(--accent-soft);
 	}
-	.folder-row { border: none; background: none; cursor: pointer; color: var(--ink); align-items: center; }
-	.folder-row:hover { background: var(--panel-2); }
-	.doc-row { cursor: pointer; }
-	.doc-row:hover { background: var(--panel-2); }
-	.doc-row.on { background: var(--accent-soft); }
-	.doc-row input[type="checkbox"] { margin-top: .2rem; flex: 0 0 auto; }
-	.row-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: .15rem; border: none; background: none; text-align: left; font: inherit; cursor: pointer; padding: 0; }
-	.row-title { display: flex; align-items: center; gap: .3rem; font-weight: var(--weight-medium); color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-	.row-sub { font-size: var(--text-xs); color: var(--muted); }
-	.staged-row { flex-direction: column; background: var(--panel-2); gap: .3rem; }
-	.row-actions { display: flex; gap: .4rem; }
-	.row-actions button { border: 1px solid var(--line); background: var(--panel); cursor: pointer; padding: .2rem .5rem; font-size: var(--text-xs); }
-	.row-actions button.danger { color: var(--danger); }
-	.job-progress { display: grid; gap: .25rem; width: 100%; }
-	.job-progress .track { height: 4px; background: var(--panel); overflow: hidden; }
-	.job-progress .fill { height: 100%; background: var(--accent); transition: width .3s var(--ease); }
-	.job-error { color: var(--danger); margin: 0; }
-	.list-empty { padding: var(--space-4); }
-	.pager { display: flex; align-items: center; justify-content: center; gap: var(--space-3); padding: var(--space-3); }
 
-	/* ── Finder's Icon View: a grid of tiles instead of rows. Folders
-	   are tinted the familiar Finder blue; files are a plain document
-	   icon; the label sits centered underneath, same as a real file
-	   browser's icon grid. ── */
-	.list-pane-body.grid-mode { padding: var(--space-3); }
-	.icon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr)); gap: var(--space-2); }
+	.status-row { display: flex; align-items: center; gap: .4rem; padding: .35rem var(--space-3); border-bottom: 1px solid var(--line); background: var(--panel-2); }
+	.status-action { border: none; background: none; cursor: pointer; color: var(--ink-2); padding: .2rem; border-radius: var(--r); }
+	.status-action:hover { background: var(--panel); }
+	.retry-link { border: none; background: none; color: var(--accent-ink); cursor: pointer; font: inherit; padding: 0; text-decoration: underline; }
+
+	.finder-body { display: flex; flex: 1 1 auto; min-height: 0; }
+	.finder-content { flex: 1 1 auto; min-width: 0; overflow-y: auto; }
+	.pager { display: flex; align-items: center; justify-content: center; gap: var(--space-3); padding: var(--space-3); }
+	.pager button { border: 1px solid var(--line); background: var(--panel); cursor: pointer; padding: .2rem .6rem; }
+	.pager button:disabled { opacity: .4; cursor: not-allowed; }
+	.list-empty { padding: var(--space-4); }
+	.graph-pane { padding: var(--space-3); height: 100%; display: flex; flex-direction: column; }
+
+	/* ── Finder's Icon View: a grid of tiles. Folders are tinted the
+	   familiar Finder blue; files are a plain document icon; the label
+	   sits centered underneath — a real file browser's icon grid, not
+	   a card list restyled to look vaguely similar. ── */
+	.finder-content.grid-mode { padding: var(--space-3); }
+	.icon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(6rem, 1fr)); gap: var(--space-1); }
 	.icon-tile {
 		display: flex; flex-direction: column; align-items: center; gap: .3rem; padding: var(--space-2) .3rem;
 		border: 1px solid transparent; background: none; cursor: pointer; text-align: center; border-radius: var(--r);
 	}
 	.icon-tile:hover { background: var(--panel-2); }
 	.icon-tile.on { background: var(--accent-soft); border-color: var(--accent); }
-	.folder-tile :global(svg) { color: #4FA0E0; fill: #4FA0E0; fill-opacity: .18; }
+	.folder-tile :global(svg) { color: #4FA0E0; fill: #4FA0E0; fill-opacity: .2; }
 	.doc-tile :global(svg), .staged-tile :global(svg) { color: var(--muted); }
 	.tile-icon { position: relative; display: flex; }
 	.tile-badge {
@@ -1777,14 +1791,33 @@
 	.staged-tile { opacity: .8; }
 	.job-progress.tiny { width: 100%; margin-top: -.1rem; }
 	.job-progress.tiny .track { height: 3px; }
-	.pager button { border: 1px solid var(--line); background: var(--panel); cursor: pointer; padding: .2rem .6rem; }
-	.pager button:disabled { opacity: .4; cursor: not-allowed; }
 
+	/* ── Finder's List View: a real table, not rows dressed up to look
+	   like one — Name/Type/Grade/Date columns, sortable, selectable. ── */
+	.finder-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+	.finder-table th {
+		text-align: left; padding: .5rem var(--space-3); border-bottom: 1px solid var(--line);
+		color: var(--muted); font-weight: 650; font-size: var(--text-xs); text-transform: uppercase; letter-spacing: .04em;
+		position: sticky; top: 0; background: var(--panel);
+	}
+	.finder-table td { padding: .45rem var(--space-3); border-bottom: 1px solid var(--line); vertical-align: middle; }
+	.finder-table td:first-child { width: 1.6rem; }
+	.finder-table td:nth-child(2) { display: flex; align-items: center; gap: .4rem; }
+	.folder-tr, .doc-tr { cursor: pointer; }
+	.folder-tr:hover, .doc-tr:hover { background: var(--panel-2); }
+	.folder-tr.on, .doc-tr.on { background: var(--accent-soft); }
+	.job-progress { display: grid; gap: .25rem; width: 100%; }
+	.job-progress .track { height: 4px; background: var(--panel); overflow: hidden; }
+	.job-progress .fill { height: 100%; background: var(--accent); transition: width .3s var(--ease); }
+	.job-error { color: var(--danger); margin: 0; }
 
-	/* ── Detail pane: one document's full, always-visible editable
-	   fields — no per-field "edit" toggle, there's only one open at a
-	   time now. ── */
-	.detail-actions { display: flex; gap: .4rem; }
+	/* ── The Inspector: Finder's own Get Info panel — only appears
+	   once something is selected, dismissible, not a permanently-
+	   reserved half-width pane. ── */
+	.inspector { width: 19rem; flex: 0 0 auto; border-left: 1px solid var(--line); background: var(--panel-2); padding: var(--space-4); overflow-y: auto; }
+	.inspector-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-2); margin-bottom: .2rem; }
+	.inspector-head h2 { font-size: var(--text-base); font-weight: var(--weight-bold); }
+	.inspector-actions { display: flex; gap: .4rem; margin: var(--space-3) 0; }
 	.icon-btn {
 		display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
 		border: 1px solid var(--line); background: var(--panel); color: var(--ink-2);
