@@ -24,5 +24,5 @@
 <style>
 	.wrap { padding: var(--space-7) var(--space-5); max-width: 30rem; }
 	.center { display: flex; flex-direction: column; align-items: center; gap: var(--space-3); text-align: center; }
-	.btn.filled { background: var(--accent); color: #fff; padding: .6rem 1.2rem; border-radius: 99px; text-decoration: none; font-weight: 700; margin-top: var(--space-2); }
+	.btn.filled { background: var(--accent); color: #fff; padding: .6rem 1.2rem; border-radius: var(--r); text-decoration: none; font-weight: 700; margin-top: var(--space-2); }
 </style>

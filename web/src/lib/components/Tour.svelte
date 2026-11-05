@@ -120,6 +120,6 @@
 	}
 	.tour-next {
 		border: none; background: var(--accent); color: #fff; cursor: pointer; font-size: var(--text-sm);
-		font-weight: 650; padding: .45rem 1rem; border-radius: 99px;
+		font-weight: 650; padding: .45rem 1rem; border-radius: var(--r);
 	}
 </style>

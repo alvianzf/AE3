@@ -2005,7 +2005,7 @@
 	.pathbar :global(svg) { flex: 0 0 auto; color: var(--muted); }
 	.crumb {
 		display: flex; align-items: center; gap: .3rem; border: 1px solid transparent; background: none; cursor: pointer;
-		font: inherit; color: var(--accent-ink); padding: .2rem .5rem; border-radius: 99px;
+		font: inherit; color: var(--accent-ink); padding: .2rem .5rem; border-radius: var(--r);
 	}
 	.crumb:hover:not(:disabled) { background: var(--panel-2); }
 	.crumb:disabled { color: var(--ink); cursor: default; font-weight: 650; }
