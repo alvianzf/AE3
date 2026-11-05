@@ -941,11 +941,13 @@ def concept_graph(limit: int = 80) -> dict:
             MATCH (e:Entity)
             OPTIONAL MATCH (e)-[r]-(:Entity) WHERE type(r) <> 'MENTIONS'
             WITH e, count(r) AS degree
-            OPTIONAL MATCH (:Chunk)-[:MENTIONS]->(e)
-            WITH e, degree, count(*) AS mentions
+            OPTIONAL MATCH (c:Chunk)-[:MENTIONS]->(e)
+            WITH e, degree, count(c) AS mentions
+            OPTIONAL MATCH (d:Document)-[:HAS_CHUNK]->(c2:Chunk)-[:MENTIONS]->(e)
+            WITH e, degree, mentions, count(DISTINCT d) AS documents
             ORDER BY degree DESC, mentions DESC
             LIMIT $limit
-            RETURN e.id AS id, e.name AS name, e.type AS type, degree, mentions
+            RETURN e.id AS id, e.name AS name, e.type AS type, degree, mentions, documents
             """,
             limit=limit,
         )]

@@ -5,3 +5,4 @@
 - [03-library-multi-file-uploads.md](03-library-multi-file-uploads.md) — Multi-file upload support across both the "Add resources" modal dialog and direct external drag-and-drop file upload.
 - [04-graph-node-separation-and-distance.md](04-graph-node-separation-and-distance.md) — 100% increased node distance and click-to-separate radial blooming for adjacent concept nodes.
 - [05-ingested-files-placement-dialog.md](05-ingested-files-placement-dialog.md) — Multi-file placement confirmation dialog upon finishing ingestion, real-time queue appends, smart folder suggestions without text input by default, and persistent toolbar notification button.
+- [06-concept-graph-data-driven-node-sizing.md](06-concept-graph-data-driven-node-sizing.md) — Data-driven concept node sizing (more data holds -> larger node, vice versa) and 60% reduction of default node size.
