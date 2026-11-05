@@ -3,6 +3,7 @@
 	import Button from '$lib/components/Button.svelte';
 	import Chip from '$lib/components/Chip.svelte';
 	import Icon from '$lib/components/Icon.svelte';
+	import PageHero from '$lib/components/PageHero.svelte';
 
 	let { data } = $props();
 	const s = $derived(data.stats ?? {});
@@ -30,20 +31,24 @@
 	<div class="detail-pane">
 		<div class="detail-head"><div class="head-title"><span class="head-ico"><Icon name="home" size={16} /></span><div><h1>Overview</h1><p>A quick read on the whole platform.</p></div></div></div>
 
+		<PageHero
+			eyebrow="Admin portal"
+			title="Platform overview"
+			subtitle={(s.pending_practitioners ?? 0) > 0 ? `${s.pending_practitioners} practitioner application${s.pending_practitioners === 1 ? '' : 's'} waiting for review.` : 'Nothing is waiting for review.'}
+			stats={[{ label: 'Pending', value: s.pending_practitioners ?? 0 }, { label: 'Approved', value: s.approved_practitioners ?? 0 }]}
+		>
+			{#snippet actions()}
+				<Button variant="outlined" href="/admin/library"><Icon name="plus" size={15} />Add resources</Button>
+				<Button variant="ghost" href="/admin/users?tab=practitioners"><Icon name="check" size={15} />Review practitioners</Button>
+				<Button variant="ghost" href="/admin/questionnaires"><Icon name="clipboard" size={15} />Edit questionnaires</Button>
+			{/snippet}
+		</PageHero>
+
 		<div class="tile-grid">
 			{#each tiles as t (t.label)}
 				<StatTile label={t.label} value={t.value} icon={t.icon} href={t.href} tone={t.warn ? 'warn' : undefined} />
 			{/each}
 		</div>
-
-		<section class="block">
-			<h2>Quick actions</h2>
-			<div class="action-row">
-				<Button variant="outlined" href="/admin/library"><Icon name="plus" size={15} />Add resources</Button>
-				<Button variant="outlined" href="/admin/users?tab=practitioners"><Icon name="check" size={15} />Review practitioners</Button>
-				<Button variant="outlined" href="/admin/questionnaires"><Icon name="clipboard" size={15} />Edit questionnaires</Button>
-			</div>
-		</section>
 
 		<div class="cols-2">
 			<section class="block">

@@ -1,5 +1,9 @@
 # Specs changelog
 
+## 2026-11-05 — v13, private-route redesign
+
+See [v13/README.md](v13/README.md). Direct instruction: the v12 repaint was too timid — redesign the admin/practitioner/client portals, keep the falling leaves on the app rail, and keep every Library function. Floating rounded-canvas shell over a full-height rail (leaves restored), gradient page-header tile, new `PageHero` banners on the three home pages, segmented tabs, rounded tables, and a restyled Library (floating toolbar, card tiles, raised inspector) with its script and behavior untouched.
+
 ## 2026-11-05 — v12, private-route (dashboard) repaint
 
 See [v12/README.md](v12/README.md). Direct instruction: the admin, practitioner and client portals looked stale; repaint to a modern, professional look. Token-driven and scoped to `html[data-surface='app']` so public routes are unchanged: solid surfaces (no glass), new slate sidebar with user card, white page header, card-based home pages, boxed inputs with focus ring, per-portal accents (rose / teal / indigo).

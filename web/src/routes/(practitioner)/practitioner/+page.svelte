@@ -2,6 +2,7 @@
 	import StatTile from '$lib/components/StatTile.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import Icon from '$lib/components/Icon.svelte';
+	import PageHero from '$lib/components/PageHero.svelte';
 
 	let { data } = $props();
 	const isPro = $derived(data.profile?.plan === 'pro');
@@ -23,6 +24,7 @@
 		];
 	});
 
+	const firstName = $derived((data.profile?.name ?? data.session?.name ?? '').replace(/^Dr\.?\s+/i, '').split(/\s+/)[0]);
 	const recentConsults = $derived((data.recentSessions ?? []).slice(0, 5));
 </script>
 
@@ -31,6 +33,23 @@
 <div class="pane-row">
 	<div class="detail-pane">
 		<div class="detail-head"><div class="head-title"><span class="head-ico"><Icon name="home" size={16} /></span><div><h1>Overview</h1><p>Welcome back.</p></div></div></div>
+
+		<PageHero
+			eyebrow="Practitioner portal"
+			title={firstName ? `Welcome back, ${firstName}` : 'Welcome back'}
+			subtitle={isPro ? 'Ask grounded, cited questions and keep every client record in one place.' : 'Complete your profile to get started.'}
+			stats={isPro ? [{ label: 'Clients', value: data.clients?.length ?? 0 }, { label: 'Consults', value: data.recentSessions?.length ?? 0 }] : []}
+		>
+			{#snippet actions()}
+				{#if isPro}
+					<Button variant="outlined" href="/practitioner/consult"><Icon name="message" size={15} />Start a consult</Button>
+					<Button variant="ghost" href="/practitioner/clients"><Icon name="plus" size={15} />Add a client</Button>
+					<Button variant="ghost" href="/practitioner/questionnaires"><Icon name="clipboard" size={15} />Edit questionnaires</Button>
+				{:else}
+					<Button variant="outlined" href="/practitioner/profile"><Icon name="settings" size={15} />Open profile</Button>
+				{/if}
+			{/snippet}
+		</PageHero>
 
 		{#if showChecklist}
 			<div class="checklist">
@@ -50,15 +69,6 @@
 		</div>
 
 		{#if isPro}
-			<section class="block">
-				<h2>Quick actions</h2>
-				<div class="action-row">
-					<Button variant="outlined" href="/practitioner/consult"><Icon name="message" size={15} />Start a consult</Button>
-					<Button variant="outlined" href="/practitioner/clients"><Icon name="plus" size={15} />Add a client</Button>
-					<Button variant="outlined" href="/practitioner/questionnaires"><Icon name="clipboard" size={15} />Edit questionnaires</Button>
-				</div>
-			</section>
-
 			<section class="block">
 				<div class="block-head">
 					<h2>Recent consults</h2>
