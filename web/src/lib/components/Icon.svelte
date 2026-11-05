@@ -50,7 +50,12 @@
 		// A branching outline — root node, two indented children off one
 		// vertical spine — standing in for a folder tree / hierarchy view.
 		tree: 'M4 5h4M4 5v12M4 12h4M4 17h4M8 4h3v3H8zM8 10h3v3H8zM8 15h3v3H8z',
-		power: 'M12 3v8M6.3 6.3a8 8 0 1 0 11.4 0'
+		power: 'M12 3v8M6.3 6.3a8 8 0 1 0 11.4 0',
+		// Up/down arrow pair — a dedicated glyph for "Sort" triggers, so
+		// they read differently from the generic "⋮" more-actions menu
+		// trigger (found confusing live: two "⋮" buttons side by side in
+		// the Library toolbar, Sort and More, were indistinguishable).
+		sort: 'M7 20V4M7 20l-4-4M7 20l4-4M17 4v16M17 4l-4 4M17 4l4 4'
 	};
 
 	let { name, size = 17 }: { name: string; size?: number } = $props();
