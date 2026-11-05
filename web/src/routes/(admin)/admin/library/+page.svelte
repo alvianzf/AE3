@@ -1916,7 +1916,10 @@
 	.field { display: flex; flex-direction: column; gap: .3rem; margin-bottom: var(--space-4); }
 	.field > span:first-child { font-size: var(--text-xs); font-weight: 650; letter-spacing: .04em; color: var(--muted); }
 	.field select, .field input[type="text"], .field input[type="number"] {
-		border: 1px solid var(--line-2); background: var(--panel); color: var(--ink); padding: .5rem .6rem;
+		border: none; border-bottom: 1px solid var(--line-2); background: none; color: var(--ink); padding: .5rem .1rem;
+	}
+	.field select:focus, .field input[type="text"]:focus, .field input[type="number"]:focus {
+		outline: none; border-bottom-color: var(--accent);
 	}
 	.visibility-toggle {
 		display: inline-flex; align-items: center; gap: .4rem; border: 1px solid var(--line-2);

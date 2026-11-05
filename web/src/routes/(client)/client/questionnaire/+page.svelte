@@ -160,12 +160,12 @@
 	}
 
 	textarea, input[type='number'], input[type='date'] {
-		border: 1px solid var(--line-2); border-radius: var(--r); background: var(--panel);
-		padding: var(--space-3); font: inherit; color: var(--ink); min-height: var(--tap-min);
+		border: none; border-bottom: 1px solid var(--line-2); border-radius: 0; background: none;
+		padding: var(--space-2) .1rem; font: inherit; color: var(--ink); min-height: var(--tap-min);
 		transition: border-color .15s var(--ease), box-shadow .15s var(--ease);
 	}
 	textarea:focus, input:focus {
-		outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft);
+		outline: none; border-bottom-color: var(--accent); box-shadow: 0 1px 0 0 var(--accent);
 	}
 
 	.pills { display: flex; flex-wrap: wrap; gap: .5rem; }

@@ -242,7 +242,8 @@
 	.question-fields { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
 	.field { display: flex; flex-direction: column; gap: .35rem; }
 	select {
-		border: 1px solid var(--line-2); border-radius: var(--r); background: var(--panel);
-		padding: var(--space-3); font-size: var(--text-base); color: var(--ink); min-height: var(--tap-min);
+		border: none; border-bottom: 1px solid var(--line-2); border-radius: 0; background: none;
+		padding: var(--space-2) .1rem; font-size: var(--text-base); color: var(--ink); min-height: var(--tap-min);
 	}
+	select:focus { outline: none; border-bottom-color: var(--accent); box-shadow: 0 1px 0 0 var(--accent); }
 </style>

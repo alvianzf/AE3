@@ -3,6 +3,8 @@
 	import { post } from '$lib/api';
 	import { toast } from '$lib/stores/toast';
 	import Toggle from '$lib/components/Toggle.svelte';
+	import Chip from '$lib/components/Chip.svelte';
+	import Icon from '$lib/components/Icon.svelte';
 
 	let { data } = $props();
 	// Mirrors the backend's own guard (POST /api/superadmin/llm-provider
@@ -48,46 +50,62 @@
 <div class="pane-row">
 <div class="detail-pane">
 <div class="detail-head"><div><h1>Settings</h1></div></div>
+
 	<section class="block">
-		<h2>System health</h2>
-		<p class:ok={health?.status === 'ok'} class="overall">{health?.status ?? 'unknown'}</p>
-		<ul class="checks">
+		<div class="block-head">
+			<span class="block-ico"><Icon name="bolt" size={16} /></span>
+			<h2>System health</h2>
+			<Chip tone={health?.status === 'ok' ? 'ok' : 'danger'}>{health?.status ?? 'unknown'}</Chip>
+		</div>
+		<div class="check-grid">
 			{#each checks as c (c.label)}
-				<li><span class="dot" class:ok={c.ok}></span>{c.label} — {c.ok ? `${c.ping}ms` : 'down'}</li>
+				<div class="check-tile">
+					<span class="check-label">{c.label}</span>
+					<Chip tone={c.ok ? 'ok' : 'danger'}>{c.ok ? `${c.ping}ms` : 'down'}</Chip>
+				</div>
 			{/each}
-		</ul>
+		</div>
 	</section>
 
 	{#if isSuperadmin}
 		<section class="block">
-			<h2>AI model provider</h2>
+			<div class="block-head">
+				<span class="block-ico"><Icon name="settings" size={16} /></span>
+				<h2>AI model provider</h2>
+				<Chip tone="accent">{llmProvider === 'anthropic' ? 'Anthropic' : 'Nebius'}</Chip>
+			</div>
 			<p class="hint">
 				Switches Reader, Graph-builder, Answer-engine, Reasoner and Checker-LLM between
 				Nebius and Anthropic (Opus 5 / Sonnet 5 / Haiku 4.5). Embedder always stays on
 				Nebius — Anthropic has no embeddings endpoint.
 			</p>
-			<div class="check-row">
-				<Toggle
-					checked={llmProvider === 'anthropic'}
-					onchange={setProvider}
-					disabled={switchingProvider}
-					label="Use Anthropic for the AI team's chat roles"
-				/>
-				<span class="hint">{llmProvider === 'anthropic' ? 'Anthropic' : 'Nebius'}</span>
-			</div>
+			<Toggle
+				checked={llmProvider === 'anthropic'}
+				onchange={setProvider}
+				disabled={switchingProvider}
+				label="Use Anthropic for the AI team's chat roles"
+			/>
 		</section>
 	{/if}
 </div>
 </div>
 
 <style>
-	.block { margin-bottom: var(--space-6); }
-	.block h2 { font-size: var(--text-lg); margin-bottom: var(--space-2); }
-	.overall { font-weight: 650; color: var(--danger); margin-bottom: var(--space-3); }
-	.overall.ok { color: var(--ok); }
-	.checks { list-style: none; margin: 0; padding: 0; display: grid; gap: .4rem; font-size: var(--text-sm); color: var(--ink-2); }
-	.checks li { display: flex; align-items: center; gap: .5rem; }
-	.dot { width: .5rem; height: .5rem; border-radius: 50%; background: var(--danger); }
-	.dot.ok { background: var(--ok); }
-	.check-row { display: flex; align-items: center; gap: .5rem; margin-top: var(--space-2); }
+	.block {
+		margin-bottom: var(--space-5); padding: var(--space-4) var(--space-5);
+		border: 1px solid var(--glass-border); border-radius: var(--r-lg); background: var(--panel-2);
+		max-width: 40rem;
+	}
+	.block-head { display: flex; align-items: center; gap: .5rem; margin-bottom: var(--space-3); }
+	.block-ico {
+		display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
+		width: 1.8rem; height: 1.8rem; border-radius: 50%; background: var(--accent-soft); color: var(--accent-ink);
+	}
+	.block-head h2 { font-size: var(--text-base); font-weight: var(--weight-bold); flex: 1 1 auto; }
+	.check-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr)); gap: .5rem; }
+	.check-tile {
+		display: flex; align-items: center; justify-content: space-between; gap: .5rem;
+		padding: .5rem .7rem; border: 1px solid var(--line); border-radius: var(--r); background: var(--panel);
+	}
+	.check-label { font-size: var(--text-sm); color: var(--ink-2); text-transform: capitalize; }
 </style>

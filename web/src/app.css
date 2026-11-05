@@ -18,7 +18,11 @@
      surfaces — the rail, dialogs, the menu popover — want a different
      tint/opacity than the page panels while sharing the same blur. */
   --glass-blur: blur(20px) saturate(160%);
-  --glass-border: rgba(255, 255, 255, .5);
+  /* Found live: a near-white translucent border reads as "no border at
+     all" against the light glass panels it's actually used on (menus,
+     dialogs, list panes) — a dark hairline at low opacity is the one
+     that's visible on a light, blurred surface. */
+  --glass-border: rgba(34, 31, 27, .14);
   --glass-sheen: linear-gradient(165deg, rgba(255, 255, 255, .55), rgba(255, 255, 255, 0) 45%);
   --ink: #221f1b;
   --ink-2: #4a453e;
