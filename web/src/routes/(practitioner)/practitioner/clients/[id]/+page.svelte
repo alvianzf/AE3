@@ -178,7 +178,7 @@
 
 <style>
 	.rail-section { margin-bottom: var(--space-5); }
-	.rail-section h2 { font-size: var(--text-sm); font-weight: 650; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-bottom: var(--space-2); }
+	.rail-section h2 { font-size: var(--text-sm); font-weight: 650; letter-spacing: .04em; color: var(--muted); margin-bottom: var(--space-2); }
 	.list { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
 	.session { display: grid; gap: .35rem; }
 	.sr { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }

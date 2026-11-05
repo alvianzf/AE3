@@ -42,15 +42,19 @@
 	}
 	.btn:active:not(:disabled) { transform: scale(.98); }
 	.btn:disabled, .btn.is-disabled { opacity: .5; cursor: not-allowed; }
-	.filled { background: var(--accent); color: #fff; }
-	.filled:hover:not(:disabled) { background: var(--accent-ink); }
+	/* The glossy finish: a soft highlight across the top of each filled
+	   button, on top of its flat color — not a full glass/blur treatment
+	   (buttons aren't translucent, there's nothing behind them worth
+	   blurring), just the same sheen language as the glass panels. */
+	.filled { background: var(--accent); background-image: linear-gradient(165deg, rgba(255, 255, 255, .28), transparent 55%); color: #fff; box-shadow: var(--shadow); }
+	.filled:hover:not(:disabled) { background: var(--accent-ink); background-image: linear-gradient(165deg, rgba(255, 255, 255, .28), transparent 55%); }
 	.outlined { background: transparent; color: var(--accent-ink); border-color: var(--accent); }
 	.outlined:hover:not(:disabled) { background: var(--accent-soft); }
 	.text { background: transparent; color: var(--accent-ink); padding-inline: .5rem; }
 	.text:hover:not(:disabled) { background: var(--accent-soft); }
-	.ghost { background: var(--panel-2); color: var(--ink-2); border-color: var(--line); }
+	.ghost { background: var(--panel-2); color: var(--ink-2); border-color: var(--glass-border); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); }
 	.ghost:hover:not(:disabled) { background: var(--panel); border-color: var(--line-2); }
-	.danger { background: var(--danger); color: #fff; }
+	.danger { background: var(--danger); background-image: linear-gradient(165deg, rgba(255, 255, 255, .28), transparent 55%); color: #fff; box-shadow: var(--shadow); }
 	.danger:hover:not(:disabled) { filter: brightness(.92); }
 	.spin {
 		width: .9em; height: .9em; border-radius: 50%; border: 2px solid currentColor;

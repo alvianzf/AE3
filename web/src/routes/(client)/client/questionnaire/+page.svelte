@@ -148,7 +148,7 @@
 	form { display: grid; gap: var(--space-6); }
 	.section { display: grid; gap: var(--space-4); }
 	.theme {
-		font-size: var(--text-sm); font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+		font-size: var(--text-sm); font-weight: 700; letter-spacing: .04em;
 		color: var(--muted); border-bottom: 1px solid var(--line); padding-bottom: .4rem;
 	}
 	.question { display: grid; gap: .6rem; }

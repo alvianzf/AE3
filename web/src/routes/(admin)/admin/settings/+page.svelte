@@ -83,7 +83,7 @@
 <style>
 	.block { margin-bottom: var(--space-6); }
 	.block h2 { font-size: var(--text-lg); margin-bottom: var(--space-2); }
-	.overall { font-weight: 650; text-transform: uppercase; color: var(--danger); margin-bottom: var(--space-3); }
+	.overall { font-weight: 650; color: var(--danger); margin-bottom: var(--space-3); }
 	.overall.ok { color: var(--ok); }
 	.checks { list-style: none; margin: 0; padding: 0; display: grid; gap: .4rem; font-size: var(--text-sm); color: var(--ink-2); }
 	.checks li { display: flex; align-items: center; gap: .5rem; }

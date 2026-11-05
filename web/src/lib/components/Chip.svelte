@@ -11,7 +11,7 @@
 <style>
 	.chip {
 		display: inline-flex; align-items: center; gap: .35rem;
-		font-size: var(--text-xs); font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+		font-size: var(--text-xs); font-weight: 700; letter-spacing: .06em;
 		padding: .22rem .55rem; border-radius: 99px;
 	}
 	.dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }

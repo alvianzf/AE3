@@ -29,5 +29,5 @@
 	a.tile:hover { border-color: var(--accent); transform: translateY(-2px); }
 	.ico { display: inline-flex; color: var(--accent-ink); flex: 0 0 auto; }
 	.val { font-size: var(--text-xl); font-weight: 700; letter-spacing: -.02em; }
-	.lbl { font-size: var(--text-xs); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+	.lbl { font-size: var(--text-xs); color: var(--muted); letter-spacing: .04em; }
 </style>

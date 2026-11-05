@@ -67,10 +67,10 @@
 	.data-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
 	.data-table th {
 		text-align: left; padding: var(--space-3); border-bottom: 1px solid var(--line);
-		color: var(--muted); font-weight: 650; font-size: var(--text-xs); text-transform: uppercase; letter-spacing: .04em;
+		color: var(--muted); font-weight: 650; font-size: var(--text-xs); letter-spacing: .04em;
 	}
 	.data-table :global(td) { padding: var(--space-3); border-bottom: 1px solid var(--line); vertical-align: middle; }
 	.data-table tbody tr:hover { background: var(--panel-2); }
-	.sort { border: none; background: none; font: inherit; color: inherit; font-weight: 650; text-transform: uppercase; letter-spacing: .04em; font-size: var(--text-xs); cursor: pointer; display: inline-flex; gap: .3rem; }
+	.sort { border: none; background: none; font: inherit; color: inherit; font-weight: 650; letter-spacing: .04em; font-size: var(--text-xs); cursor: pointer; display: inline-flex; gap: .3rem; }
 	.empty { text-align: center; color: var(--muted); padding: var(--space-6); }
 </style>

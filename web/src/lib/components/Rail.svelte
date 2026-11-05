@@ -79,7 +79,9 @@
 	.rail {
 		width: var(--rail-w); flex: 0 0 auto; position: sticky; top: 0; height: 100dvh;
 		display: flex; flex-direction: column; align-items: center; gap: var(--space-3);
-		padding: var(--space-3) 0; background: var(--rail-bg); color: var(--rail-ink); z-index: 40;
+		padding: var(--space-3) 0; background: rgba(28, 26, 24, .82); color: var(--rail-ink); z-index: 40;
+		backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+		border-right: 1px solid rgba(255, 255, 255, .08);
 	}
 	.mark { color: var(--rail-ink); display: flex; padding: .4rem var(--space-4); }
 	.search-trigger {
@@ -98,7 +100,7 @@
 	li a:hover { opacity: 1; background: rgba(255, 255, 255, .06); }
 	li a.on { opacity: 1; border-left-color: var(--rail-indicator); background: rgba(255, 255, 255, .04); }
 	.lbl { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-sm); }
-	.pro { font-size: .6rem; font-weight: 700; text-transform: uppercase; opacity: .7; }
+	.pro { font-size: .6rem; font-weight: 700; opacity: .7; }
 	.badge {
 		flex: 0 0 auto; min-width: 1rem; height: 1rem; padding: 0 .2rem; border-radius: 99px;
 		background: var(--danger); color: #fff; font-size: .58rem; font-weight: 700; line-height: 1rem; text-align: center;
@@ -115,7 +117,7 @@
 	   plainly visible, not tucked behind a "⋮" dropdown. */
 	.who-row {
 		padding: .5rem .7rem; font-size: var(--text-xs); color: var(--rail-ink); opacity: .55;
-		text-transform: uppercase; letter-spacing: .04em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+		letter-spacing: .04em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 	}
 	@media (max-width: 760px) {
 		.rail {

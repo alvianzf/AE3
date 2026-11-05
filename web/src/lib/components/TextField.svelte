@@ -33,14 +33,18 @@
 <style>
 	.field { display: flex; flex-direction: column; gap: .35rem; }
 	.req { color: var(--accent); margin-left: .2rem; }
+	label { font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--ink-2); }
+	/* A sleek underline field, not a boxed one — border only on the
+	   bottom edge, no radius, no background box; the focus state thickens
+	   and recolors that single line rather than adding a ring. */
 	input, textarea {
-		border: 1px solid var(--line-2); border-radius: var(--r); background: var(--panel);
-		padding: var(--space-3); font-size: var(--text-base); color: var(--ink);
+		border: none; border-bottom: 1px solid var(--line-2); border-radius: 0; background: none;
+		padding: var(--space-2) .1rem; font-size: var(--text-base); color: var(--ink);
 		min-height: var(--tap-min); resize: vertical;
 		transition: border-color .15s var(--ease), box-shadow .15s var(--ease);
 	}
 	input:focus, textarea:focus {
-		outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft);
+		outline: none; border-bottom-color: var(--accent); box-shadow: 0 1px 0 0 var(--accent);
 	}
-	input:disabled, textarea:disabled { background: var(--panel-2); color: var(--muted); }
+	input:disabled, textarea:disabled { color: var(--muted); }
 </style>

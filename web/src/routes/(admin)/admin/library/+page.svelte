@@ -1735,10 +1735,13 @@
 	   here, a flex item's default basis is its own content size, not
 	   "fill what's left," which is why this only ever took up a
 	   fraction of the page regardless of viewport width. */
-	.finder { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; min-height: 100dvh; background: var(--panel); }
+	.finder {
+		flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; min-height: 100dvh; background: var(--panel);
+		backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+	}
 	.finder-toolbar {
 		display: flex; align-items: center; gap: .4rem; padding: .5rem var(--space-3);
-		border-bottom: 1px solid var(--line); background: var(--panel-2);
+		border-bottom: 1px solid var(--glass-border); background: var(--panel-2); background-image: var(--glass-sheen);
 	}
 	.tb-btn {
 		display: flex; align-items: center; justify-content: center; width: 1.9rem; height: 1.9rem;
@@ -1773,7 +1776,7 @@
 	   folder works the way it does in a real Finder window. */
 	.pathbar {
 		display: flex; align-items: center; gap: .25rem; padding: .4rem var(--space-3); font-size: var(--text-xs);
-		flex-wrap: wrap; background: var(--panel); border-bottom: 1px solid var(--line);
+		flex-wrap: wrap; background: var(--panel-2); border-bottom: 1px solid var(--glass-border);
 	}
 	.pathbar :global(svg) { flex: 0 0 auto; color: var(--muted); }
 	.crumb {
@@ -1843,7 +1846,7 @@
 	.finder-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
 	.finder-table th {
 		text-align: left; padding: .5rem var(--space-3); border-bottom: 1px solid var(--line);
-		color: var(--muted); font-weight: 650; font-size: var(--text-xs); text-transform: uppercase; letter-spacing: .04em;
+		color: var(--muted); font-weight: 650; font-size: var(--text-xs); letter-spacing: .04em;
 		position: sticky; top: 0; background: var(--panel);
 	}
 	.finder-table td { padding: .45rem var(--space-3); border-bottom: 1px solid var(--line); vertical-align: middle; }
@@ -1860,7 +1863,11 @@
 	/* ── The Inspector: Finder's own Get Info panel — only appears
 	   once something is selected, dismissible, not a permanently-
 	   reserved half-width pane. ── */
-	.inspector { width: 19rem; flex: 0 0 auto; border-left: 1px solid var(--line); background: var(--panel-2); padding: var(--space-4); overflow-y: auto; }
+	.inspector {
+		width: 19rem; flex: 0 0 auto; border-left: 1px solid var(--glass-border); background: var(--panel-2);
+		padding: var(--space-4); overflow-y: auto;
+		backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+	}
 	.inspector-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-2); margin-bottom: .2rem; }
 	.inspector-head h2 { font-size: var(--text-base); font-weight: var(--weight-bold); }
 	.inspector-actions { display: flex; gap: .4rem; margin: var(--space-3) 0; }
@@ -1877,7 +1884,7 @@
 	}
 	.detail-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: var(--space-3); margin-bottom: var(--space-4); }
 	.field { display: flex; flex-direction: column; gap: .3rem; margin-bottom: var(--space-4); }
-	.field > span:first-child { font-size: var(--text-xs); font-weight: 650; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+	.field > span:first-child { font-size: var(--text-xs); font-weight: 650; letter-spacing: .04em; color: var(--muted); }
 	.field select, .field input[type="text"], .field input[type="number"] {
 		border: 1px solid var(--line-2); background: var(--panel); color: var(--ink); padding: .5rem .6rem;
 	}

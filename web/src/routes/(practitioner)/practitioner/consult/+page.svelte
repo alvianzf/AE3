@@ -694,7 +694,7 @@
 	}
 	.cal-day { font-size: 1.3rem; font-weight: 800; line-height: 1; color: var(--accent); }
 	.cal-month {
-		font-size: .6rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+		font-size: .6rem; font-weight: 700; letter-spacing: .04em;
 		color: var(--muted); margin-top: .1rem;
 	}
 	.hinfo { min-width: 0; display: flex; flex-direction: column; gap: .1rem; }
@@ -729,7 +729,7 @@
 	.bubble-q .meta { color: rgba(255, 255, 255, .75); }
 	.bubble-a > .meta { margin-top: var(--space-3); padding-top: var(--space-2); border-top: 1px solid var(--line); }
 	.mode-tag {
-		font-size: var(--text-xs); font-weight: 650; text-transform: uppercase; letter-spacing: .03em;
+		font-size: var(--text-xs); font-weight: 650; letter-spacing: .03em;
 		color: var(--muted);
 	}
 	.bubble-q .mode-tag { color: rgba(255, 255, 255, .85); }
@@ -739,7 +739,7 @@
 	.answer :global(p) { margin: 0 0 .6em; }
 	.answer :global(p:last-child) { margin-bottom: 0; }
 	.answer :global(ul), .answer :global(ol) { margin: 0 0 .6em; padding-left: 1.2rem; }
-	.answer :global(h2) { font-size: var(--text-sm); text-transform: uppercase; letter-spacing: .03em; color: var(--muted); margin: 1em 0 .4em; }
+	.answer :global(h2) { font-size: var(--text-sm); letter-spacing: .03em; color: var(--muted); margin: 1em 0 .4em; }
 	.answer :global(h2:first-child) { margin-top: 0; }
 	.answer :global(code) { background: var(--panel-2); padding: .1em .3em; border-radius: 4px; font-size: .9em; }
 	/* Superscript, not inline-sized — an academic-paper-style citation
