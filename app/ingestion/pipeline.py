@@ -11,6 +11,7 @@ relationships in the graph, idempotent on content_hash.
 from __future__ import annotations
 
 import logging
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 from ..clients.llm_client import NO_THINKING, Role, get_client
@@ -381,13 +382,33 @@ def ingest(*, text: str, filename: str, kind: str, origin: str,
         raise ValueError(f"Already ingested as '{existing['title']}' ({existing['id']})")
 
     facets = store.facets()
-    card = read_source(text, filename, kind, origin,
-                       known_topics=facets["topics"], known_folders=facets["folders"])
-    passages = store.chunk_pages(pages or [(None, text)])
-    if not passages:
-        raise ValueError("Source produced no passages after chunking.")
+    # specs/v9/01 (candidate B): read_source()'s result (`card`) is only
+    # consumed in store.ingest_document() below, not in between — nothing
+    # stops it from running concurrently with chunking+embedding. These
+    # used to run strictly in series (reader, then chunk, then embed) for
+    # no reason visible in the code; this saves the full wall-clock cost
+    # of whichever side finishes first. Same calls, same results, same
+    # final store.ingest_document() call — only the order changes.
+    t0 = time.monotonic()
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        card_future = pool.submit(
+            read_source, text, filename, kind, origin,
+            known_topics=facets["topics"], known_folders=facets["folders"])
 
-    embeddings = get_client(Role.EMBEDDER).embed([p["text"] for p in passages])
+        passages = store.chunk_pages(pages or [(None, text)])
+        if not passages:
+            raise ValueError("Source produced no passages after chunking.")
+        embeddings = get_client(Role.EMBEDDER).embed([p["text"] for p in passages])
+        chunk_embed_elapsed = time.monotonic() - t0
+
+        card = card_future.result()
+    reader_chunk_embed_elapsed = time.monotonic() - t0
+    logging.info(
+        "ingest stage timing for %s: reader+chunk+embed (parallel) took "
+        "%.2fs wall-clock (chunk+embed side alone: %.2fs) — before/after "
+        "comparison for specs/v9/01's 30%% target",
+        filename, reader_chunk_embed_elapsed, chunk_embed_elapsed)
+
     for i, p in enumerate(passages):
         p["embedding"] = embeddings[i] if i < len(embeddings) else None
 
