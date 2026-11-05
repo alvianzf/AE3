@@ -33,7 +33,7 @@
 <header class="topbar">
 	<div class="inner container">
 		<a href="/" class="brand">
-			<span class="mark"><Sprig size={18} /></span>
+			<span class="mark"><Sprig size={22} /></span>
 			<span class="wordmark">Functional Health Collab</span>
 		</a>
 		<nav class="links" aria-label="Main">
@@ -47,7 +47,7 @@
 					<a href={LANDING[session.role] ?? '/account'} class="btn filled">Dashboard</a>
 				{:else}
 					<a href="/login" class="ghostlink">Log in</a>
-					<a href="/signup" class="btn filled">Get started</a>
+					<a href="/signup" class="btn filled">Sign up as a client</a>
 				{/if}
 			{/if}
 		</div>
@@ -68,7 +68,7 @@
 					<a href={LANDING[session.role] ?? '/account'} class="sheet-cta">Dashboard</a>
 				{:else}
 					<a href="/login" onclick={() => (mobileOpen = false)}>Log in</a>
-					<a href="/signup" class="sheet-cta" onclick={() => (mobileOpen = false)}>Get started</a>
+					<a href="/signup" class="sheet-cta" onclick={() => (mobileOpen = false)}>Sign up as a client</a>
 				{/if}
 			{/if}
 		</nav>
@@ -82,14 +82,21 @@
 		backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
 	}
 	.inner { display: flex; align-items: center; gap: var(--space-6); padding: var(--space-3) var(--space-5); min-height: 3.75rem; }
-	.brand { display: flex; align-items: center; gap: .6rem; color: var(--ink); text-decoration: none; font-weight: 750; font-size: var(--text-base); }
-	.mark {
-		display: flex; align-items: center; justify-content: center; width: 2rem; height: 2rem;
-		border-radius: var(--r); color: #fff;
-		background: linear-gradient(135deg, var(--rail-top), var(--rail-bottom));
+	.brand { display: flex; align-items: center; gap: .55rem; color: var(--ink); text-decoration: none; font-weight: 750; font-size: var(--text-base); }
+	/* Direct feedback: never put the mark in a colored box — it's the
+	   bare SVG, tinted by currentColor, same as everywhere else the
+	   brand mark appears (Rail, the footer). */
+	.mark { display: flex; align-items: center; justify-content: center; color: var(--accent-ink); }
+	.links { display: flex; gap: var(--space-5); margin-right: auto; }
+	.links a {
+		position: relative; color: var(--ink-2); text-decoration: none; font-size: var(--text-sm);
+		font-weight: 650; padding: .4rem .1rem;
 	}
-	.links { display: flex; gap: var(--space-4); margin-right: auto; }
-	.links a { color: var(--ink-2); text-decoration: none; font-size: var(--text-sm); font-weight: 650; padding: .4rem .2rem; }
+	.links a::after {
+		content: ''; position: absolute; left: 0; right: 100%; bottom: -1px; height: 2px;
+		background: var(--accent); transition: right var(--duration-base) var(--ease);
+	}
+	.links a.on::after, .links a:hover::after { right: 0; }
 	.links a.on, .links a:hover { color: var(--accent-ink); }
 	.cta { display: flex; align-items: center; gap: var(--space-4); min-height: 2.2rem; }
 	.ghostlink { color: var(--ink-2); text-decoration: none; font-size: var(--text-sm); font-weight: 650; }
