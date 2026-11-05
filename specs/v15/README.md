@@ -7,3 +7,4 @@
 - [05-ingested-files-placement-dialog.md](05-ingested-files-placement-dialog.md) — Multi-file placement confirmation dialog upon finishing ingestion, real-time queue appends, smart folder suggestions without text input by default, and persistent toolbar notification button.
 - [06-concept-graph-data-driven-node-sizing.md](06-concept-graph-data-driven-node-sizing.md) — Data-driven concept node sizing (more data holds -> larger node, vice versa) and 60% reduction of default node size.
 - [07-mobile-navigation-bottom-menu-and-burger-drawer.md](07-mobile-navigation-bottom-menu-and-burger-drawer.md) — Mobile responsive navigation with bottom bar showing important menus and burger side drawer for the full menu.
+- [08-private-routes-container-layout-and-library-ui-rework.md](08-private-routes-container-layout-and-library-ui-rework.md) — Radical redesign of the private routes container layout and Library studio UI while preserving all functionalities.
