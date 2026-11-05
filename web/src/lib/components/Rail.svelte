@@ -79,17 +79,20 @@
 	/* A patterned gradient tinted by each portal's own --rail-indicator
 	   (set per layout: violet for admin, teal for practitioner, the
 	   default pink for client) — so the rail reads as a different role
-	   at a glance, not just a different highlighted nav item. A faint
-	   diagonal hairline repeat gives it the "patterned" texture on top
-	   of the gradient wash, subtle enough not to compete with the icons. */
+	   at a glance, not just a different highlighted nav item. The
+	   "pattern" is a tiled repeat of the exact leaf silhouette
+	   LeafField.svelte animates elsewhere — one of the three things kept
+	   from every prior redesign — not a generic texture. */
 	.rail {
 		width: var(--rail-w); flex: 0 0 auto; position: sticky; top: 0; height: 100dvh;
 		display: flex; flex-direction: column; align-items: center; gap: var(--space-3);
 		padding: var(--space-3) 0; color: var(--rail-ink); z-index: 40;
 		background:
-			repeating-linear-gradient(135deg, rgba(255, 255, 255, .035) 0 2px, transparent 2px 10px),
+			url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='44' height='44' viewBox='0 0 24 24'%3E%3Cpath d='M12 3c4 2 7 5.5 7 10a7 7 0 0 1-14 0c0-4.5 3-8 7-10z' fill='white' fill-opacity='.05'/%3E%3C/svg%3E"),
 			linear-gradient(165deg, color-mix(in srgb, var(--rail-indicator) 30%, transparent), transparent 60%),
 			rgba(28, 26, 24, .82);
+		background-repeat: repeat, no-repeat, no-repeat;
+		background-size: 44px 44px, auto, auto;
 		backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
 		border-right: 1px solid rgba(255, 255, 255, .08);
 	}

@@ -431,11 +431,12 @@
 	.toolbar { display: flex; justify-content: flex-end; align-items: center; gap: var(--space-3); margin: var(--space-3) 0; }
 	.actions { display: flex; align-items: center; gap: .6rem; }
 	.toggle-row { display: inline-flex; align-items: center; gap: .5rem; }
-	select { border: 1px solid var(--line-2); border-radius: var(--r); padding: .3rem .5rem; }
+	select { border: none; border-bottom: 1px solid var(--line-2); border-radius: 0; padding: .3rem .1rem; background: none; }
+	select:focus { outline: none; border-bottom-color: var(--accent); box-shadow: 0 1px 0 0 var(--accent); }
 	.field { display: flex; flex-direction: column; gap: .35rem; }
 	.search {
-		flex: 1 1 auto; max-width: 20rem; font-size: var(--text-sm); padding: .5rem .8rem;
-		border: 1px solid var(--line-2); border-radius: var(--r); background: var(--panel); color: var(--ink);
+		flex: 1 1 auto; max-width: 20rem; font-size: var(--text-sm); padding: .5rem .2rem;
+		border: none; border-bottom: 1px solid var(--line-2); background: none; color: var(--ink);
 	}
-	.search:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+	.search:focus { outline: none; border-bottom-color: var(--accent); box-shadow: 0 1px 0 0 var(--accent); }
 </style>

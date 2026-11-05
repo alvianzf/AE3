@@ -169,10 +169,10 @@
 	.tag-row { display: flex; flex-wrap: wrap; gap: .4rem; min-height: 1.5rem; }
 	.chip-x { background: none; border: none; cursor: pointer; font: inherit; color: inherit; margin-left: .2rem; padding: 0; }
 	.field input[type="text"] {
-		border: 1px solid var(--line-2); border-radius: var(--r); background: var(--panel);
-		padding: var(--space-3); font-size: var(--text-base); color: var(--ink); min-height: var(--tap-min);
+		border: none; border-bottom: 1px solid var(--line-2); border-radius: 0; background: none;
+		padding: var(--space-2) .1rem; font-size: var(--text-base); color: var(--ink); min-height: var(--tap-min);
 	}
-	.field input[type="text"]:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+	.field input[type="text"]:focus { outline: none; border-bottom-color: var(--accent); box-shadow: 0 1px 0 0 var(--accent); }
 	.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); }
 	.accepting-row { flex-direction: row; align-items: flex-start; justify-content: space-between; gap: var(--space-4); }
 	@media (max-width: 480px) { .two-col { grid-template-columns: 1fr; } }

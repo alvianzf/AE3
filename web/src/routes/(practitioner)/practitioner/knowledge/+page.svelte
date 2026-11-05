@@ -558,7 +558,8 @@
 </Dialog>
 
 <style>
-	input[type='number'] { width: 4rem; border: 1px solid var(--line-2); border-radius: var(--r); padding: .3rem .5rem; }
+	input[type='number'] { width: 4rem; border: none; border-bottom: 1px solid var(--line-2); border-radius: 0; padding: .3rem .1rem; background: none; }
+	input[type='number']:focus { outline: none; border-bottom-color: var(--accent); }
 	.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3); }
 	.search {
 		border: 1px solid var(--line-2); border-radius: 99px; padding: .5rem 1rem;
