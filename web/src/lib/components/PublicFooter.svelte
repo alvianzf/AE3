@@ -53,7 +53,7 @@
 	.site-footer { border-top: 1px solid var(--line); margin-top: var(--space-7); background: var(--panel-2); }
 	.inner { display: flex; flex-wrap: wrap; gap: var(--space-6); padding: var(--space-6) var(--space-5); }
 	.brand { display: flex; align-items: center; gap: .5rem; font-weight: 700; color: var(--ink); flex: 1 1 10rem; }
-	nav h3 { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: .6rem; }
+	nav h3 { font-size: var(--text-xs); letter-spacing: .06em; color: var(--muted); margin-bottom: .6rem; }
 	nav ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .45rem; }
 	nav a { color: var(--ink-2); text-decoration: none; font-size: var(--text-sm); }
 	nav a:hover { color: var(--accent-ink); }

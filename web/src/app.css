@@ -8,10 +8,18 @@
    detail pane), not a grid of boxed cards. */
 :root {
   --bg: #f7f5f2;
-  --panel: #fff;
-  --panel-2: #fbfaf8;
+  --panel: rgba(255, 255, 255, .72);
+  --panel-2: rgba(255, 255, 255, .5);
   --line: #e6e2dc;
   --line-2: #d9d4cc;
+  /* Glassmorphism finish, direct instruction — frosted translucent
+     panels over a soft backdrop wash, not solid flat fills. Kept as its
+     own tokens (rather than baking blur into --panel) because a few
+     surfaces — the rail, dialogs, the menu popover — want a different
+     tint/opacity than the page panels while sharing the same blur. */
+  --glass-blur: blur(20px) saturate(160%);
+  --glass-border: rgba(255, 255, 255, .5);
+  --glass-sheen: linear-gradient(165deg, rgba(255, 255, 255, .55), rgba(255, 255, 255, 0) 45%);
   --ink: #221f1b;
   --ink-2: #4a453e;
   --muted: #7d766c;
@@ -30,10 +38,10 @@
      inputs, chips) — panels/lists/rows are square-cornered dividers, no
      radius, no shadow. The rounded-card-with-soft-shadow language is
      retired outright, not resized. */
-  --r: 4px;
-  --r-lg: 6px;
-  --shadow: none;
-  --shadow-lg: 0 12px 32px rgba(20, 18, 16, .16);
+  --r: 10px;
+  --r-lg: 14px;
+  --shadow: inset 0 1px 0 rgba(255, 255, 255, .5), 0 1px 3px rgba(20, 18, 16, .06);
+  --shadow-lg: inset 0 1px 0 rgba(255, 255, 255, .6), 0 12px 32px rgba(20, 18, 16, .16);
   --ease: cubic-bezier(.22, .68, 0, 1);
 
   /* The rail is no longer a gradient-painted panel — it's flat, dark
@@ -105,7 +113,15 @@
 html, body { height: 100%; }
 html { max-width: 100%; overflow-x: hidden; }
 body {
-  margin: 0; background: var(--bg); color: var(--ink);
+  margin: 0; color: var(--ink);
+  /* A soft, static color wash — not an animated gradient — so the
+     frosted panels above have something with depth to blur, instead of
+     reading as plain semi-transparent flat fills over a solid color. */
+  background:
+    radial-gradient(circle at 10% 0%, rgba(156, 63, 90, .12), transparent 45%),
+    radial-gradient(circle at 90% 100%, rgba(47, 122, 79, .08), transparent 40%),
+    var(--bg);
+  background-attachment: fixed;
   font: var(--text-base)/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   accent-color: var(--accent);
   -webkit-font-smoothing: antialiased;
@@ -142,8 +158,9 @@ svg { flex: 0 0 auto; }
 .pane-row { display: flex; flex: 1 1 auto; min-width: 0; min-height: 100dvh; }
 
 .list-pane {
-  width: var(--list-w); flex: 0 0 auto; border-right: 1px solid var(--line);
+  width: var(--list-w); flex: 0 0 auto; border-right: 1px solid var(--glass-border);
   display: flex; flex-direction: column; min-height: 100dvh; background: var(--panel);
+  backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
 }
 .list-pane-head { padding: var(--space-4) var(--space-4) var(--space-3); border-bottom: 1px solid var(--line); }
 .list-pane-head h1 { font-size: var(--text-lg); font-weight: var(--weight-bold); }
@@ -159,20 +176,28 @@ svg { flex: 0 0 auto; }
 .list-row .row-title { font-weight: var(--weight-medium); color: var(--ink); }
 .list-row .row-sub { font-size: var(--text-xs); color: var(--muted); }
 
-.detail-pane { flex: 1 1 auto; min-width: 0; padding: var(--space-5) var(--space-6); overflow-y: auto; background: var(--panel); }
+.detail-pane {
+  flex: 1 1 auto; min-width: 0; padding: var(--space-5) var(--space-6); overflow-y: auto; background: var(--panel);
+  backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+}
 /* A sticky topbar, not an inline heading that scrolls away — the same
    "chrome stays, content scrolls" split the Library's .finder-toolbar
    already gets, applied to every other page's existing h1 instead of
    adding a second, duplicate title bar. */
 .detail-head {
-  display: flex; align-items: flex-start; justify-content: space-between;
+  display: flex; align-items: center; justify-content: space-between;
   gap: var(--space-4); flex-wrap: wrap;
   position: sticky; top: calc(-1 * var(--space-5)); z-index: 5;
   margin: calc(-1 * var(--space-5)) calc(-1 * var(--space-6)) var(--space-5);
-  padding: var(--space-4) var(--space-6); background: var(--panel); border-bottom: 1px solid var(--line);
+  padding: .6rem var(--space-6); background: var(--panel-2); border-bottom: 1px solid var(--glass-border);
+  background-image: var(--glass-sheen);
+  backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
 }
-.detail-head h1 { font-size: var(--text-2xl); font-weight: var(--weight-bold); }
-.detail-head p { color: var(--muted); margin-top: .3rem; }
+/* Sized to match the Library's own .tb-title, not a big imposing page
+   headline — this bar is chrome (the same role as a Finder toolbar),
+   not a hero heading. */
+.detail-head h1 { font-size: var(--text-base); font-weight: var(--weight-bold); }
+.detail-head p { color: var(--muted); font-size: var(--text-xs); margin-top: .1rem; }
 @media (max-width: 960px) {
   .pane-row { flex-direction: column; }
   .list-pane { width: 100%; border-right: none; border-bottom: 1px solid var(--line); min-height: auto; max-height: 40vh; }

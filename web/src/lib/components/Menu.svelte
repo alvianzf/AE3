@@ -108,8 +108,10 @@
 	.menu-trigger:hover { background: var(--panel-2); color: var(--ink); }
 	.menu-pop {
 		position: fixed;
-		padding: .3rem; border: 1px solid var(--line); border-radius: var(--r-lg);
-		background: var(--panel); box-shadow: var(--shadow-lg); min-width: 11rem;
+		padding: .3rem; border: 1px solid var(--glass-border); border-radius: var(--r-lg);
+		background: var(--panel); background-image: var(--glass-sheen);
+		backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+		box-shadow: var(--shadow-lg); min-width: 11rem;
 		display: grid; gap: .1rem; z-index: 50;
 	}
 	/* Each item is whatever the caller renders (a <button> or <a>, danger

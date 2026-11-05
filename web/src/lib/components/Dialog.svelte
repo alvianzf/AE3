@@ -33,15 +33,16 @@
 
 <style>
 	dialog {
-		border: none; border-radius: var(--r-lg); padding: 0; width: min(32rem, 92vw);
-		box-shadow: var(--shadow-lg); background: var(--panel);
+		border: 1px solid var(--glass-border); border-radius: var(--r-lg); padding: 0; width: min(32rem, 92vw);
+		box-shadow: var(--shadow-lg); background: var(--panel); background-image: var(--glass-sheen);
+		backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
 		animation: liftIn .2s var(--ease) both;
 	}
 	dialog.wide { width: min(46rem, 94vw); }
-	dialog::backdrop { background: rgba(34, 31, 27, .45); backdrop-filter: blur(2px); }
-	.dh { display: flex; align-items: center; justify-content: space-between; padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--line); }
+	dialog::backdrop { background: rgba(34, 31, 27, .45); backdrop-filter: blur(4px); }
+	.dh { display: flex; align-items: center; justify-content: space-between; padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--glass-border); }
 	.dh h3 { font-size: var(--text-lg); }
 	.x { border: none; background: none; font-size: 1.4rem; line-height: 1; cursor: pointer; color: var(--muted); }
 	.db { padding: var(--space-4) var(--space-5); display: grid; gap: var(--space-3); }
-	.df { padding: var(--space-3) var(--space-5) var(--space-4); display: flex; justify-content: flex-end; gap: var(--space-2); border-top: 1px solid var(--line); }
+	.df { padding: var(--space-3) var(--space-5) var(--space-4); display: flex; justify-content: flex-end; gap: var(--space-2); border-top: 1px solid var(--glass-border); }
 </style>

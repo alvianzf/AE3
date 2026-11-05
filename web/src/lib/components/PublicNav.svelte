@@ -76,7 +76,11 @@
 </header>
 
 <style>
-	.topbar { position: sticky; top: 0; z-index: 40; background: var(--panel); border-bottom: 1px solid var(--line); }
+	.topbar {
+		position: sticky; top: 0; z-index: 40; background: var(--panel); background-image: var(--glass-sheen);
+		border-bottom: 1px solid var(--glass-border);
+		backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+	}
 	.inner { display: flex; align-items: center; gap: var(--space-6); padding: var(--space-3) var(--space-5); min-height: 3.75rem; }
 	.brand { display: flex; align-items: center; gap: .6rem; color: var(--ink); text-decoration: none; font-weight: 750; font-size: var(--text-base); }
 	.mark {
