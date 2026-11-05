@@ -46,7 +46,11 @@
 		// a fat round line-cap at a point does read as one.
 		'more-vertical': 'M12 5.5h.01M12 12h.01M12 18.5h.01',
 		switch: 'M7 4l-4 4 4 4M3 8h13M17 20l4-4-4-4M21 16H8',
-		menu: 'M4 6h16M4 12h16M4 18h16'
+		menu: 'M4 6h16M4 12h16M4 18h16',
+		// A branching outline — root node, two indented children off one
+		// vertical spine — standing in for a folder tree / hierarchy view.
+		tree: 'M4 5h4M4 5v12M4 12h4M4 17h4M8 4h3v3H8zM8 10h3v3H8zM8 15h3v3H8z',
+		power: 'M12 3v8M6.3 6.3a8 8 0 1 0 11.4 0'
 	};
 
 	let { name, size = 17 }: { name: string; size?: number } = $props();
