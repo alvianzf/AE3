@@ -4,6 +4,7 @@
 	import { post } from '$lib/api';
 	import Sprig from './Sprig.svelte';
 	import Icon from './Icon.svelte';
+	import LeafField from './LeafField.svelte';
 
 	// specs/v12 — solid deep-slate sidebar: brand header, search field,
 	// pill-style nav, and a user card at the bottom. No animation.
@@ -38,6 +39,8 @@
 </script>
 
 <nav class="rail" aria-label="Main navigation">
+	<!-- specs/v13 — the falling-leaves motif is a requirement of the rail. -->
+	<div class="rail-leaves"><LeafField count={12} /></div>
 	<a href="/" class="mark" aria-label="Functional Health Collab home">
 		<span class="logo"><Sprig size={18} /></span><span class="brand">Functional Health</span>
 	</a>
@@ -82,8 +85,14 @@
 		width: var(--rail-w); flex: 0 0 auto; position: sticky; top: 0; height: 100dvh;
 		display: flex; flex-direction: column; gap: var(--space-2);
 		padding: var(--space-4) var(--space-3); color: var(--rail-ink); z-index: 40;
-		background: var(--rail-bg); border-right: 1px solid rgba(255, 255, 255, .06);
+		background:
+			radial-gradient(120% 60% at 0% 0%, color-mix(in srgb, var(--rail-indicator) 22%, transparent), transparent 60%),
+			var(--rail-bg);
+		isolation: isolate; overflow: hidden;
 	}
+	.rail-leaves { position: absolute; inset: 0; z-index: 0; --leaf-color: var(--rail-indicator); filter: brightness(1.7) saturate(1.2); }
+	.rail > :not(.rail-leaves) { position: relative; z-index: 1; }
+	@media (prefers-reduced-motion: reduce) { .rail-leaves { display: none; } }
 	.mark { display: flex; align-items: center; gap: .65rem; padding: .25rem .5rem var(--space-3); color: #fff; text-decoration: none; }
 	.logo {
 		display: inline-flex; align-items: center; justify-content: center; width: 2rem; height: 2rem; border-radius: 9px;
@@ -109,9 +118,12 @@
 		transition: background var(--duration-fast), color var(--duration-fast);
 	}
 	li a:hover { background: rgba(255, 255, 255, .06); color: #fff; }
-	li a.on { background: rgba(255, 255, 255, .1); color: #fff; }
+	li a.on {
+		background: linear-gradient(90deg, color-mix(in srgb, var(--rail-indicator) 24%, transparent), rgba(255, 255, 255, .06));
+		color: #fff; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08);
+	}
 	li a.on::before {
-		content: ''; position: absolute; left: -.75rem; top: .45rem; bottom: .45rem; width: 3px;
+		content: ''; position: absolute; left: -.5rem; top: .45rem; bottom: .45rem; width: 3px;
 		border-radius: 0 3px 3px 0; background: var(--rail-indicator);
 	}
 	li a.on :global(svg) { color: var(--rail-indicator); }
@@ -151,6 +163,7 @@
 			position: fixed; bottom: 0; top: auto; left: 0; right: 0; width: 100%; height: auto;
 			flex-direction: row; align-items: center; padding: 0; gap: 0; border-right: none; border-top: 1px solid rgba(255, 255, 255, .08);
 		}
+		.rail-leaves { display: none; }
 		.mark, .search-trigger .lbl, .search-trigger kbd, .who-row, .avatar, .icon-item .lbl, li a .pro { display: none; }
 		.search-trigger { width: 2.8rem; height: 2.8rem; margin: 0; padding: 0; justify-content: center; border: none; background: none; flex: 0 0 auto; }
 		ul { flex-direction: row; justify-content: space-around; }
