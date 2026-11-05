@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { page as appPage } from '$app/state';
 	import { invalidateAll } from '$app/navigation';
 	import { PUBLIC_API_BASE } from '$env/static/public';
@@ -20,28 +20,213 @@
 
 	let { data } = $props();
 
-	// Graph maintenance: POST /api/relink and /api/consolidate existed with
-	// no UI trigger anywhere — curl-only. Maintenance ops, not everyday
-	// actions, so a confirm dialog first rather than a bare button.
+	// Graph maintenance: POST /api/relink and /api/consolidate with live SSE progress tracking.
+	// Both the top progress banner and the confirm dialog show real-time percentage and detail.
+	interface MaintenanceProgress {
+		active: boolean;
+		kind: 'relink' | 'consolidate';
+		status: 'running' | 'done' | 'error' | 'cancelled';
+		percentage: number;
+		current: number;
+		total: number;
+		step: string;
+		detail: string;
+		result?: any;
+		error?: string;
+	}
+
 	let maintenanceKind = $state<'relink' | 'consolidate' | null>(null);
 	let maintenanceOpen = $state(false);
 	let maintenanceRunning = $state(false);
+	let maintenanceStopping = $state(false);
+	let maintenanceProgress = $state<MaintenanceProgress | null>(null);
+	let maintenanceDismissTimer: any = null;
+	let maintenancePollTimer: any = null;
+
+	async function pollMaintenanceStatus() {
+		if (maintenancePollTimer) clearTimeout(maintenancePollTimer);
+		try {
+			const st = await get(fetch, '/maintenance/status');
+			if (st && st.active) {
+				maintenanceRunning = true;
+				maintenanceKind = st.kind;
+				maintenanceProgress = {
+					active: true,
+					kind: st.kind,
+					status: 'running',
+					percentage: Math.max(0, Math.min(100, Math.round(st.percentage ?? 0))),
+					current: st.current ?? 0,
+					total: st.total ?? 1,
+					step: st.step || 'running',
+					detail: st.detail || ''
+				};
+				maintenancePollTimer = setTimeout(pollMaintenanceStatus, 1500);
+			} else if (st && st.status === 'done') {
+				maintenanceRunning = false;
+				maintenanceProgress = {
+					active: false,
+					kind: st.kind,
+					status: 'done',
+					percentage: 100,
+					current: st.total ?? 1,
+					total: st.total ?? 1,
+					step: 'done',
+					detail: st.detail || 'Finished.'
+				};
+				await invalidateAll();
+				if (maintenanceDismissTimer) clearTimeout(maintenanceDismissTimer);
+				maintenanceDismissTimer = setTimeout(() => {
+					if (maintenanceProgress && maintenanceProgress.status === 'done') {
+						maintenanceProgress = null;
+					}
+				}, 5000);
+			} else {
+				maintenanceRunning = false;
+				if (maintenanceProgress?.status === 'running') {
+					maintenanceProgress = null;
+				}
+			}
+		} catch {
+			maintenanceRunning = false;
+		}
+	}
+
+	onMount(async () => {
+		try {
+			const st = await get(fetch, '/maintenance/status');
+			if (st && st.active) {
+				maintenanceRunning = true;
+				maintenanceKind = st.kind;
+				maintenanceProgress = {
+					active: true,
+					kind: st.kind,
+					status: 'running',
+					percentage: Math.max(0, Math.min(100, Math.round(st.percentage ?? 0))),
+					current: st.current ?? 0,
+					total: st.total ?? 1,
+					step: st.step || 'running',
+					detail: st.detail || ''
+				};
+				pollMaintenanceStatus();
+			}
+		} catch {}
+	});
+
+	onDestroy(() => {
+		if (maintenancePollTimer) clearTimeout(maintenancePollTimer);
+		if (maintenanceDismissTimer) clearTimeout(maintenanceDismissTimer);
+	});
+
+	async function stopMaintenanceTask() {
+		maintenanceStopping = true;
+		try {
+			await post(fetch, '/maintenance/stop', {});
+			toast('Stopping maintenance task…');
+			if (maintenanceProgress) {
+				maintenanceProgress.status = 'cancelled';
+				maintenanceProgress.active = false;
+				maintenanceProgress.detail = 'Stopped by user.';
+			}
+			maintenanceRunning = false;
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		} finally {
+			maintenanceStopping = false;
+		}
+	}
 
 	async function runMaintenance() {
 		if (!maintenanceKind) return;
 		const kind = maintenanceKind;
-		maintenanceOpen = false;
 		maintenanceRunning = true;
+		maintenanceProgress = {
+			active: true,
+			kind,
+			status: 'running',
+			percentage: 0,
+			current: 0,
+			total: 1,
+			step: 'start',
+			detail: kind === 'relink' ? 'Searching for unlinked documents…' : 'Preparing entity consolidation…'
+		};
+
 		try {
-			const res = await post(fetch, `/${kind}`, {});
-			toast(
-				kind === 'relink'
-					? `Linked ${res.linked?.length ?? 0} source(s), ${res.failed?.length ?? 0} failed.`
-					: `Merged ${res.entity?.absorbed ?? 0} entit${res.entity?.absorbed === 1 ? 'y' : 'ies'}.`
-			);
-			await invalidateAll();
+			const res = await fetch(`${PUBLIC_API_BASE}/api/${kind}?stream=true`, {
+				method: 'POST',
+				credentials: 'include',
+				headers: { Accept: 'text/event-stream' }
+			});
+
+			if (!res.ok || !res.body) {
+				const body = await res.json().catch(() => ({}));
+				throw new Error(body?.detail?.message || body?.detail || res.statusText);
+			}
+
+			const reader = res.body.getReader();
+			const decoder = new TextDecoder();
+			let buf = '';
+
+			for (;;) {
+				const { value, done } = await reader.read();
+				if (done) break;
+				buf += decoder.decode(value, { stream: true });
+				let idx: number;
+				while ((idx = buf.indexOf('\n\n')) !== -1) {
+					const frame = buf.slice(0, idx);
+					buf = buf.slice(idx + 2);
+					const line = frame.split('\n').find((l) => l.startsWith('data: '));
+					if (!line) continue;
+					try {
+						const ev = JSON.parse(line.slice(6));
+						if (ev.event === 'error') {
+							throw new Error(ev.message || 'Maintenance failed.');
+						}
+						const pct = Math.max(0, Math.min(100, Math.round(ev.percentage ?? 0)));
+						maintenanceProgress = {
+							active: ev.event !== 'done',
+							kind,
+							status: ev.event === 'done' ? 'done' : 'running',
+							percentage: pct,
+							current: ev.current ?? 0,
+							total: ev.total ?? 1,
+							step: ev.step || (ev.event === 'done' ? 'done' : 'running'),
+							detail: ev.detail || '',
+							result: ev.result
+						};
+
+						if (ev.event === 'done') {
+							maintenanceRunning = false;
+							const finalRes = ev.result || {};
+							toast(
+								kind === 'relink'
+									? `Linked ${finalRes.linked?.length ?? 0} source(s), ${finalRes.failed?.length ?? 0} failed.`
+									: `Merged ${finalRes.entity?.absorbed ?? 0} entit${finalRes.entity?.absorbed === 1 ? 'y' : 'ies'}.`
+							);
+							await invalidateAll();
+							if (maintenanceDismissTimer) clearTimeout(maintenanceDismissTimer);
+							maintenanceDismissTimer = setTimeout(() => {
+								if (maintenanceProgress && maintenanceProgress.status === 'done') {
+									maintenanceProgress = null;
+								}
+							}, 5000);
+						}
+					} catch (e: any) {
+						if (e.message && e.message !== 'Unexpected end of JSON input') {
+							throw e;
+						}
+					}
+				}
+			}
 		} catch (err: any) {
 			toast(err.message, 'alert');
+			if (maintenanceProgress) {
+				maintenanceProgress = {
+					...maintenanceProgress,
+					active: false,
+					status: 'error',
+					detail: err.message || 'Error running maintenance.'
+				};
+			}
 		} finally {
 			maintenanceRunning = false;
 		}
@@ -2190,6 +2375,40 @@
 		</div>
 	</div>
 
+	{#if maintenanceProgress && (maintenanceProgress.status === 'running' || maintenanceProgress.status === 'done' || maintenanceProgress.status === 'error')}
+		<div class="maintenance-bar" class:done={maintenanceProgress.status === 'done'} class:error={maintenanceProgress.status === 'error'}>
+			<div class="maintenance-bar-left">
+				<span class="m-icon" class:spin={maintenanceProgress.status === 'running'}>
+					<Icon name={maintenanceProgress.status === 'done' ? 'check' : maintenanceProgress.kind === 'relink' ? 'refresh' : 'sparkles'} size={15} />
+				</span>
+				<div class="m-info">
+					<div class="m-title-row">
+						<span class="m-kind-badge">{maintenanceProgress.kind === 'relink' ? 'Relinking Graph' : 'Consolidating Entities'}</span>
+						<span class="m-step-text">{maintenanceProgress.detail || 'Working…'}</span>
+					</div>
+					<div class="m-track" role="progressbar" aria-valuenow={maintenanceProgress.percentage} aria-valuemin={0} aria-valuemax={100}>
+						<div class="m-fill" style="width: {maintenanceProgress.percentage}%"></div>
+					</div>
+				</div>
+			</div>
+			<div class="m-actions">
+				<span class="m-percentage">{maintenanceProgress.percentage}%</span>
+				{#if maintenanceProgress.status === 'running'}
+					<button type="button" class="m-btn-details" onclick={() => { maintenanceKind = maintenanceProgress!.kind; maintenanceOpen = true; }}>
+						Details
+					</button>
+					<button type="button" class="m-btn-stop" onclick={stopMaintenanceTask} title="Stop maintenance task">
+						Stop
+					</button>
+				{:else}
+					<button type="button" class="m-btn-dismiss" onclick={() => { maintenanceProgress = null; }} aria-label="Dismiss">
+						&times;
+					</button>
+				{/if}
+			</div>
+		</div>
+	{/if}
+
 	{#if mainTab === 'library' && !searching}
 		<!-- Finder's path bar: a pill-shaped bar, a folder icon per
 		     segment, chevrons pointing right between them — also itself
@@ -2855,14 +3074,45 @@
 </div>
 
 <Dialog bind:open={maintenanceOpen} title={maintenanceKind === 'relink' ? 'Relink unlinked sources' : 'Consolidate entities'}>
-	<p>
-		{maintenanceKind === 'relink'
-			? 'Build the knowledge graph for any ingested sources that have none yet. This can take a while for a large backlog.'
-			: 'Let the model suggest entity merges, then rewrite the graph to match. Requires Neo4j APOC.'}
-	</p>
+	{#if maintenanceRunning && maintenanceProgress}
+		<div class="dialog-maintenance-running">
+			<div class="dialog-m-header">
+				<span class="m-icon spin">
+					<Icon name={maintenanceProgress.kind === 'relink' ? 'refresh' : 'sparkles'} size={18} />
+				</span>
+				<div class="dialog-m-titles">
+					<strong>{maintenanceProgress.kind === 'relink' ? 'Building knowledge connections…' : 'Merging duplicate entities…'}</strong>
+					<p class="dialog-m-detail">{maintenanceProgress.detail || 'Processing…'}</p>
+				</div>
+			</div>
+			<div class="dialog-m-progress">
+				<div class="m-track large" role="progressbar" aria-valuenow={maintenanceProgress.percentage} aria-valuemin={0} aria-valuemax={100}>
+					<div class="m-fill" style="width: {maintenanceProgress.percentage}%"></div>
+				</div>
+				<div class="dialog-m-pct-row">
+					<span>{maintenanceProgress.percentage}% complete</span>
+					{#if maintenanceProgress.total > 1}
+						<span>{Math.min(maintenanceProgress.total, Math.floor(maintenanceProgress.current))} of {maintenanceProgress.total}</span>
+					{/if}
+				</div>
+			</div>
+			<p class="dialog-m-hint">You can close this window at any time — progress will remain active in the top bar.</p>
+		</div>
+	{:else}
+		<p>
+			{maintenanceKind === 'relink'
+				? 'Build the knowledge graph for any ingested sources that have none yet. This can take a while for a large backlog.'
+				: 'Let the model suggest entity merges, then rewrite the graph to match. Requires Neo4j APOC.'}
+		</p>
+	{/if}
 	{#snippet footer()}
-		<Button variant="ghost" onclick={() => (maintenanceOpen = false)}>Cancel</Button>
-		<Button onclick={runMaintenance} loading={maintenanceRunning}>Run</Button>
+		{#if maintenanceRunning}
+			<Button variant="ghost" onclick={stopMaintenanceTask} loading={maintenanceStopping}>Stop</Button>
+			<Button onclick={() => (maintenanceOpen = false)}>Run in background</Button>
+		{:else}
+			<Button variant="ghost" onclick={() => (maintenanceOpen = false)}>Cancel</Button>
+			<Button onclick={runMaintenance} loading={maintenanceRunning}>Run</Button>
+		{/if}
 	{/snippet}
 </Dialog>
 
@@ -4899,6 +5149,225 @@
 		flex: 0 0 auto;
 		padding-right: .5rem;
 		white-space: nowrap;
+	}
+
+	/* --- Maintenance Progress Bar (specs/v15/16) --- */
+	.maintenance-bar {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-4);
+		padding: .6rem 1.25rem;
+		background: color-mix(in srgb, var(--accent) 8%, var(--panel));
+		border-bottom: 1px solid color-mix(in srgb, var(--accent) 25%, var(--line));
+		font-size: var(--text-sm);
+		transition: all .2s ease;
+		animation: m-slide-down .2s ease-out;
+	}
+	@keyframes m-slide-down {
+		from { opacity: 0; transform: translateY(-8px); }
+		to { opacity: 1; transform: translateY(0); }
+	}
+	.maintenance-bar.done {
+		background: color-mix(in srgb, #10b981 10%, var(--panel));
+		border-color: color-mix(in srgb, #10b981 30%, var(--line));
+	}
+	.maintenance-bar.error {
+		background: color-mix(in srgb, #ef4444 10%, var(--panel));
+		border-color: color-mix(in srgb, #ef4444 30%, var(--line));
+	}
+	.maintenance-bar-left {
+		display: flex;
+		align-items: center;
+		gap: .75rem;
+		flex: 1;
+		min-width: 0;
+	}
+	.m-icon {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 28px;
+		height: 28px;
+		border-radius: 50%;
+		background: var(--accent-soft);
+		color: var(--accent-ink);
+		flex-shrink: 0;
+	}
+	.maintenance-bar.done .m-icon {
+		background: color-mix(in srgb, #10b981 18%, transparent);
+		color: #059669;
+	}
+	.m-icon.spin {
+		animation: m-spin 1.4s linear infinite;
+	}
+	@keyframes m-spin {
+		from { transform: rotate(0deg); }
+		to { transform: rotate(360deg); }
+	}
+	.m-info {
+		display: flex;
+		flex-direction: column;
+		gap: .3rem;
+		flex: 1;
+		min-width: 0;
+	}
+	.m-title-row {
+		display: flex;
+		align-items: center;
+		gap: .5rem;
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+	}
+	.m-kind-badge {
+		font-size: .68rem;
+		font-weight: 650;
+		text-transform: uppercase;
+		letter-spacing: .04em;
+		padding: .1rem .4rem;
+		border-radius: 4px;
+		background: var(--accent-soft);
+		color: var(--accent-ink);
+		flex-shrink: 0;
+	}
+	.maintenance-bar.done .m-kind-badge {
+		background: color-mix(in srgb, #10b981 20%, transparent);
+		color: #059669;
+	}
+	.m-step-text {
+		font-size: var(--text-xs);
+		color: var(--ink-2);
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.m-track {
+		height: 6px;
+		border-radius: 9999px;
+		background: color-mix(in srgb, var(--ink) 10%, transparent);
+		overflow: hidden;
+		position: relative;
+		width: 100%;
+		max-width: 480px;
+	}
+	.m-track.large {
+		height: 9px;
+		max-width: 100%;
+	}
+	.m-fill {
+		height: 100%;
+		border-radius: 9999px;
+		background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 70%, #3b82f6));
+		transition: width .3s ease;
+		position: relative;
+		overflow: hidden;
+	}
+	.maintenance-bar.done .m-fill {
+		background: #10b981;
+	}
+	.m-fill::after {
+		content: '';
+		position: absolute;
+		top: 0; left: 0; right: 0; bottom: 0;
+		background: linear-gradient(
+			90deg,
+			transparent,
+			rgba(255, 255, 255, 0.4),
+			transparent
+		);
+		animation: m-shimmer 2s infinite;
+	}
+	@keyframes m-shimmer {
+		0% { transform: translateX(-100%); }
+		100% { transform: translateX(100%); }
+	}
+	.m-actions {
+		display: flex;
+		align-items: center;
+		gap: .6rem;
+		flex-shrink: 0;
+	}
+	.m-percentage {
+		font-size: var(--text-xs);
+		font-weight: 650;
+		color: var(--ink-2);
+		min-width: 2.4rem;
+		text-align: right;
+		font-variant-numeric: tabular-nums;
+	}
+	.m-btn-details, .m-btn-stop {
+		border: 1px solid var(--line);
+		background: var(--panel);
+		color: var(--ink-2);
+		font-size: var(--text-xs);
+		font-weight: 550;
+		padding: .25rem .55rem;
+		border-radius: var(--radius-sm);
+		cursor: pointer;
+		transition: all .15s ease;
+	}
+	.m-btn-details:hover {
+		background: var(--accent-soft);
+		color: var(--accent-ink);
+		border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+	}
+	.m-btn-stop:hover {
+		background: color-mix(in srgb, #ef4444 12%, var(--panel));
+		color: #dc2626;
+		border-color: color-mix(in srgb, #ef4444 40%, var(--line));
+	}
+	.m-btn-dismiss {
+		background: none;
+		border: none;
+		font-size: 1.1rem;
+		color: var(--muted);
+		cursor: pointer;
+		padding: 0 .2rem;
+		line-height: 1;
+	}
+	.m-btn-dismiss:hover {
+		color: var(--ink);
+	}
+
+	/* In-dialog maintenance styles */
+	.dialog-maintenance-running {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+		padding: .4rem 0;
+	}
+	.dialog-m-header {
+		display: flex;
+		align-items: center;
+		gap: .75rem;
+	}
+	.dialog-m-titles strong {
+		display: block;
+		font-size: var(--text-sm);
+		color: var(--ink);
+	}
+	.dialog-m-detail {
+		margin: .15rem 0 0;
+		font-size: var(--text-xs);
+		color: var(--muted);
+	}
+	.dialog-m-progress {
+		display: flex;
+		flex-direction: column;
+		gap: .4rem;
+	}
+	.dialog-m-pct-row {
+		display: flex;
+		justify-content: space-between;
+		font-size: var(--text-xs);
+		color: var(--muted);
+		font-variant-numeric: tabular-nums;
+	}
+	.dialog-m-hint {
+		margin: 0;
+		font-size: var(--text-xs);
+		color: var(--muted);
+		font-style: italic;
 	}
 
 	@media (max-width: 960px) {
