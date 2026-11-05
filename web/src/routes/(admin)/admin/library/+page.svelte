@@ -1133,52 +1133,95 @@
 		}
 	}
 
-	// --- Upload tab: drag-and-drop with a preview (native <embed> for a
-	// PDF — same "browsers already render this, no PDF.js dependency
-	// needed" approach specs/v3/18 used for the pre-rewrite dropzone) ---
+	// --- Upload tab: drag-and-drop with multi-file support and PDF preview ---
 	let dragOver = $state(false);
-	let selectedFile = $state<File | null>(null);
-	let previewUrl = $state<string | null>(null);
+	let selectedFiles = $state<File[]>([]);
+	let previewUrls: Record<string, string> = {};
+	let multiUploadProgress = $state<{ current: number; total: number; filename: string } | null>(null);
 
-	function pickFile(file: File | null) {
-		if (previewUrl) URL.revokeObjectURL(previewUrl);
-		selectedFile = file;
-		previewUrl = file ? URL.createObjectURL(file) : null;
+	function addFiles(files: FileList | File[] | null) {
+		if (!files) return;
+		const incoming = Array.from(files).filter((f) => f && f.size > 0);
+		if (!incoming.length) return;
+		const existingKeys = new Set(selectedFiles.map((f) => `${f.name}:${f.size}`));
+		const toAdd = incoming.filter((f) => !existingKeys.has(`${f.name}:${f.size}`));
+		selectedFiles = [...selectedFiles, ...toAdd];
+		for (const f of toAdd) {
+			if (f.type === 'application/pdf' && !previewUrls[f.name]) {
+				previewUrls[f.name] = URL.createObjectURL(f);
+			}
+		}
+	}
+
+	function removeFile(index: number) {
+		const removed = selectedFiles[index];
+		if (removed && previewUrls[removed.name]) {
+			URL.revokeObjectURL(previewUrls[removed.name]);
+			delete previewUrls[removed.name];
+		}
+		selectedFiles = selectedFiles.filter((_, i) => i !== index);
+	}
+
+	function clearSelectedFiles() {
+		for (const url of Object.values(previewUrls)) {
+			URL.revokeObjectURL(url);
+		}
+		previewUrls = {};
+		selectedFiles = [];
+		if (fileInput) fileInput.value = '';
 	}
 
 	function onDrop(e: DragEvent) {
 		e.preventDefault();
 		dragOver = false;
-		pickFile(e.dataTransfer?.files?.[0] ?? null);
+		if (e.dataTransfer?.files?.length) {
+			addFiles(e.dataTransfer.files);
+		}
 	}
 
 	function onFileInputChange(e: Event) {
-		pickFile((e.target as HTMLInputElement).files?.[0] ?? null);
+		const files = (e.target as HTMLInputElement).files;
+		if (files?.length) {
+			addFiles(files);
+		}
 	}
 
-	async function stageFile() {
-		if (!selectedFile) return;
+	async function stageFiles() {
+		if (!selectedFiles.length) return;
 		staging = true;
 		stageProgress = null;
+		const totalCount = selectedFiles.length;
+		const targetFolder = currentPath;
+
+		toast(`Uploading ${totalCount} file${totalCount === 1 ? '' : 's'}…`);
+
 		try {
-			// Chunked regardless of size: one code path, always shows
-			// progress, and never risks a single >200MB-capable request
-			// hitting nginx's body-size limit (app/uploads.py, web/src/lib/
-			// chunkedUpload.ts). 'stage' (reads/stores the file, no Reader
-			// call yet) then ingestOne() right below auto-queues it —
-			// specs/v6.12: no separate staged-review step any more, the
-			// card shows up with a progress bar immediately.
-			const staged = await chunkedUpload('/sources', selectedFile, {}, (p) => (stageProgress = p), 'stage');
-			pickFile(null);
-			if (fileInput) fileInput.value = '';
+			for (let i = 0; i < totalCount; i++) {
+				const file = selectedFiles[i];
+				multiUploadProgress = { current: i + 1, total: totalCount, filename: file.name };
+				try {
+					const staged = await chunkedUpload('/sources', file, {}, (p) => (stageProgress = p), 'stage');
+					if (staged?.id) {
+						if (targetFolder) {
+							pendingTargetFolders[staged.id] = targetFolder;
+						}
+						await invalidateAll();
+						ingestOne(staged.id);
+					}
+				} catch (err: any) {
+					toast(`Upload failed for "${file.name}": ${err.message}`, 'alert');
+				}
+			}
+			clearSelectedFiles();
 			ingestOpen = false;
 			await invalidateAll();
-			if (staged?.id) ingestOne(staged.id);
+			toast(`Successfully queued ${totalCount} file${totalCount === 1 ? '' : 's'} for ingestion.`);
 		} catch (err: any) {
 			toast(err.message, 'alert');
 		} finally {
 			staging = false;
 			stageProgress = null;
+			multiUploadProgress = null;
 		}
 	}
 
@@ -1869,11 +1912,12 @@
 
 	<div class="ingest-panel">
 		{#if ingestTab === 'upload'}
-			<input id="file" type="file" bind:this={fileInput} onchange={onFileInputChange} hidden />
+			<input id="file" type="file" bind:this={fileInput} onchange={onFileInputChange} multiple hidden />
+			<!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
 			<div
 				class="dropzone"
 				class:dragover={dragOver}
-				class:has-file={!!selectedFile}
+				class:has-file={selectedFiles.length > 0}
 				role="button"
 				tabindex="0"
 				ondragover={(e) => { e.preventDefault(); dragOver = true; }}
@@ -1882,26 +1926,74 @@
 				onclick={() => fileInput?.click()}
 				onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput?.click(); } }}
 			>
-				{#if !selectedFile}
-					<p class="dz-title">Drag a file here, or click to browse</p>
-					<p class="hint">Up to 200 MB.</p>
-				{:else if previewUrl && selectedFile.type === 'application/pdf'}
-					<embed src="{previewUrl}#toolbar=0&navpanes=0&scrollbar=0" type="application/pdf" class="pdf-preview" aria-label="{selectedFile.name} preview" />
-					<p class="dz-filename">{selectedFile.name}</p>
+				{#if selectedFiles.length === 0}
+					<Icon name="upload" size={30} />
+					<p class="dz-title">Drag files here, or click to browse</p>
+					<p class="hint">Select multiple documents at once (PDF, TXT, MD, DOCX, CSV). Up to 200 MB each.</p>
+				{:else if selectedFiles.length === 1}
+					{@const file = selectedFiles[0]}
+					{#if previewUrls[file.name] && file.type === 'application/pdf'}
+						<embed src="{previewUrls[file.name]}#toolbar=0&navpanes=0&scrollbar=0" type="application/pdf" class="pdf-preview" aria-label="{file.name} preview" />
+						<p class="dz-filename">{file.name}</p>
+					{:else}
+						<Icon name="file" size={32} />
+						<p class="dz-title">{file.name}</p>
+						<p class="hint">{Math.round(file.size / 1024)} KB</p>
+					{/if}
 				{:else}
-					<p class="dz-title">{selectedFile.name}</p>
-					<p class="hint">{Math.round(selectedFile.size / 1024)} KB</p>
+					<div class="multi-file-summary">
+						<Icon name="folder" size={22} />
+						<span class="multi-count">{selectedFiles.length} files selected</span>
+						<span class="multi-size">({(selectedFiles.reduce((acc, f) => acc + f.size, 0) / (1024 * 1024)).toFixed(1)} MB total)</span>
+					</div>
+					<!-- svelte-ignore a11y_click_events_have_key_events -->
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<div class="multi-file-list" onclick={(e) => e.stopPropagation()}>
+						{#each selectedFiles as file, idx (file.name + idx)}
+							<div class="multi-file-item">
+								<Icon name="file" size={13} />
+								<span class="multi-name" title={file.name}>{file.name}</span>
+								<span class="multi-kb">{Math.round(file.size / 1024)} KB</span>
+								<button type="button" class="multi-del" onclick={() => removeFile(idx)} aria-label="Remove {file.name}">×</button>
+							</div>
+						{/each}
+					</div>
+					<p class="multi-add-more">+ Click or drop to add more files</p>
 				{/if}
 			</div>
-			{#if stageProgress}
+			{#if currentPath}
+				<div class="target-folder-notice">
+					<Icon name="folder" size={13} />
+					<span>Destination folder: <strong>{currentPath}</strong></span>
+				</div>
+			{/if}
+			{#if multiUploadProgress}
+				<div class="multi-progress">
+					<div class="multi-progress-head">
+						<span>Uploading {multiUploadProgress.current} of {multiUploadProgress.total}</span>
+						<span class="multi-curr-file">{multiUploadProgress.filename}</span>
+					</div>
+					<div class="bar-track">
+						<div class="bar-fill" style="width: {(multiUploadProgress.current / multiUploadProgress.total) * 100}%"></div>
+					</div>
+				</div>
+			{:else if stageProgress}
 				<div class="upload-progress">
 					<div class="bar" style="width: {Math.round((stageProgress.sent / stageProgress.total) * 100)}%"></div>
 					<span class="hint">{Math.round(stageProgress.sent / 1024 / 1024)} / {Math.round(stageProgress.total / 1024 / 1024)} MB</span>
 				</div>
 			{/if}
 			<div class="dz-actions">
-				{#if selectedFile}<Button variant="ghost" onclick={() => pickFile(null)}>Clear</Button>{/if}
-				<Button onclick={stageFile} loading={staging} disabled={!selectedFile}>Upload and queue for ingestion</Button>
+				{#if selectedFiles.length > 0}
+					<Button variant="ghost" onclick={clearSelectedFiles}>Clear all ({selectedFiles.length})</Button>
+				{/if}
+				<Button onclick={stageFiles} loading={staging} disabled={selectedFiles.length === 0}>
+					{#if selectedFiles.length > 1}
+						Upload {selectedFiles.length} files and queue for ingestion
+					{:else}
+						Upload and queue for ingestion
+					{/if}
+				</Button>
 			</div>
 		{:else if ingestTab === 'text'}
 			<form onsubmit={stageText} class="ingest">
@@ -2104,6 +2196,23 @@
 	.dz-title { font-weight: 650; }
 	.dz-filename { font-weight: 650; font-size: var(--text-sm); margin-top: .3rem; }
 	.dz-actions { display: flex; justify-content: flex-end; gap: var(--space-2); }
+	.multi-file-summary { display: flex; align-items: center; gap: .5rem; font-weight: 600; color: var(--ink); }
+	.multi-count { color: var(--accent-ink); }
+	.multi-size { font-size: var(--text-xs); color: var(--muted); font-weight: 400; }
+	.multi-file-list { display: flex; flex-direction: column; gap: .25rem; width: 100%; max-height: 10.5rem; overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: .35rem; margin: .35rem 0; }
+	.multi-file-item { display: flex; align-items: center; gap: .4rem; padding: .25rem .45rem; background: var(--panel-2); border-radius: 6px; font-size: var(--text-xs); color: var(--ink); }
+	.multi-name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+	.multi-kb { color: var(--muted); font-size: .65rem; flex: 0 0 auto; }
+	.multi-del { border: none; background: none; cursor: pointer; color: var(--muted); font-size: 1rem; line-height: 1; padding: 0 .15rem; }
+	.multi-del:hover { color: var(--danger); }
+	.multi-add-more { margin: 0; font-size: var(--text-xs); color: var(--accent); font-weight: 500; }
+	.target-folder-notice { display: flex; align-items: center; gap: .4rem; padding: .35rem .65rem; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r); font-size: var(--text-xs); color: var(--ink-2); margin-top: .4rem; }
+	.target-folder-notice strong { color: var(--accent-ink); }
+	.multi-progress { display: flex; flex-direction: column; gap: .25rem; margin-top: .4rem; }
+	.multi-progress-head { display: flex; align-items: center; justify-content: space-between; font-size: var(--text-xs); color: var(--ink-2); }
+	.multi-curr-file { color: var(--muted); font-size: .68rem; max-width: 14rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.bar-track { height: 6px; background: var(--line); border-radius: 9999px; overflow: hidden; }
+	.bar-fill { height: 100%; background: var(--accent); transition: width .2s var(--ease); }
 	.pdf-preview { width: 100%; height: 20rem; border: none; border-radius: var(--r); }
 	.scrape-progress { height: 4px; border-radius: 99px; background: var(--panel-2); overflow: hidden; }
 	.scrape-progress .bar {
