@@ -23,25 +23,49 @@ page content sits on it as a large rounded sheet with a small inset margin
 (Arc / Linear style) instead of a hard vertical split. Mobile: no inset, bottom
 bar as before.
 
-**Rail.** 15rem, deep slate with an accent-tinted glow at the top, animated
-leaves, brand lockup, ⌘K search, nav items with an accent pill + soft glow on the
-active item, user card with avatar + sign-out at the bottom.
+**Rail.** 15rem, deep slate with an accent-tinted radial glow at the top-left,
+animated leaves (12, brightened so they read on the dark background), brand
+lockup, ⌘K search, nav items where the active one gets an accent-tinted gradient
+fill, a 1px inner ring and a small accent bar on the left edge, and a user card
+(avatar initials + name + sign-out icon) at the bottom. Leaves are hidden under
+`prefers-reduced-motion` and in the mobile bottom bar.
 
-**Page header.** A large gradient icon tile (portal accent), 1.5rem title,
-subtitle, hairline-free; sticky with a frosted sheet background.
+**Page header.** A 2.75rem gradient icon tile (portal accent) with a soft
+shadow, 1.5rem title, subtitle; sticky, with a frosted sheet background
+(`backdrop-filter: blur(14px)`) and a faint bottom hairline.
 
-**Home pages.** A new `PageHero` banner (accent gradient, sprig watermark,
-personal greeting, key numbers, primary actions) above stat cards and
-two-column content cards. Client home gets the same hero above its care stream.
+**Home pages.** A new `PageHero` component (accent gradient, sprig watermark,
+eyebrow, greeting, subtitle, optional key-number chips, action buttons).
+- Practitioner: "Welcome back, {first name}", Clients/Consults chips, actions
+  Start a consult / Add a client / Edit questionnaires (Pro) or Open profile
+  (non-Pro). These replace the former "Quick actions" block; no link was lost.
+- Admin: "Platform overview", Pending/Approved chips, actions Add resources /
+  Review practitioners / Edit questionnaires (also replacing "Quick actions").
+- Client: "Hello, {first name}", a Done n/m chip, above the existing care stream.
+Below the hero: stat cards (practitioner/admin) and card-style content blocks.
 
 **Components.** Stat tiles with large figures and tinted icon wells; pill chips;
-segmented tabs; rounded tables with zebra-free hover rows; floating dialogs;
-boxed inputs with accent focus ring; flat buttons with gradient primary.
+segmented tabs (grey track, raised active segment); rounded tables with hover
+rows; dialogs; boxed inputs with an accent focus ring — including bare
+text/search/select/textarea controls inside `.detail-pane`, not only
+`TextField`; solid buttons with a gradient primary.
 
 **Library.** Toolbar becomes a floating bar (segmented view switch, pill search,
 icon actions); folders render as tinted cards with a label, files as clean doc
 tiles; list view gets rounded rows; the inspector becomes a raised side panel
-with rounded corners and sectioned fields; sidebar tree becomes soft nav items.
+with rounded corners and boxed fields; sidebar tree becomes soft nav items.
+Folders use the portal accent (not the old Finder blue). Below 960px the
+sidebar/inspector stack full-width.
+
+## Implementation notes
+
+- Styles live in `web/src/lib/surface.css` (scoped to `html[data-surface='app']`),
+  `Rail.svelte`, and the new `PageHero.svelte`; the three home pages were edited.
+- The shell inset uses `overflow: clip` (not `hidden`) so sticky headers work.
+- Page roots are forced to `flex: 1` inside the shell (Consult previously did not
+  fill the width once the rail color showed through).
+- Library overrides are plain global selectors with higher specificity than the
+  page's scoped CSS; its `<script>` and markup are unchanged.
 
 ## Non-goals
 
@@ -55,3 +79,11 @@ dependencies.
   `prefers-reduced-motion`).
 - Public routes render identically.
 - Library: all view modes render and the same controls remain present.
+
+## Verification status
+
+Checked with a mocked API (screenshots): the three home pages, Library icon view
+with inspector, Users, Questionnaires, Consult, mobile bottom bar. **Not yet
+verified:** the real backend; Library drag-and-drop, list/column views and the
+ingest flow (styled only, logic untouched); Knowledge, Settings, Audit,
+Profile, Clients detail and the other client pages.
