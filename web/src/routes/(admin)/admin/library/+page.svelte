@@ -49,7 +49,16 @@
 
 	let ingestOpen = $state(false);
 	let ingestTab = $state('upload');
-	let mainTab = $state('library');
+	let mainTab = $state<'library' | 'tags' | 'graph'>((appPage.url.searchParams.get('mode') as any) || (appPage.url.searchParams.get('tab') as any) || 'library');
+	let currentTag = $state(appPage.url.searchParams.get('tag') ?? '');
+	let selectedTagPath = $state<string | null>(null);
+	let draggedTagPath = $state<string | null>(null);
+	let customTags = $state<string[]>([]);
+	let newCategoryOpen = $state(false);
+	let newCategoryName = $state('');
+	let renameTagOpen = $state(false);
+	let renameTagOld = $state('');
+	let renameTagNew = $state('');
 	let text = $state('');
 	let fileInput = $state<HTMLInputElement>();
 	let staging = $state(false);
@@ -74,6 +83,7 @@
 	let jobsByStagedId = $state<Record<string, any>>({});
 	const pollTimers: Record<string, ReturnType<typeof setInterval>> = {};
 	const pendingTargetFolders: Record<string, string> = {};
+	const pendingTargetTags: Record<string, string> = {};
 
 	// The just-ingested document, shown in the "Placed in library" dialog
 	// right after a job finishes — the Reader already chose a folder and
@@ -259,6 +269,18 @@
 					const targetFolder = pendingTargetFolders[stagedId];
 					if (targetFolder !== undefined) {
 						delete pendingTargetFolders[stagedId];
+					}
+					const targetTag = pendingTargetTags[stagedId];
+					if (targetTag !== undefined) {
+						delete pendingTargetTags[stagedId];
+						if (job.result_document_id) {
+							try {
+								const currentTopics = placed?.topics ?? [];
+								if (!currentTopics.includes(targetTag)) {
+									await patch(fetch, `/sources/${job.result_document_id}/topics`, { topics: [...currentTopics, targetTag] });
+								}
+							} catch {}
+						}
 					}
 
 					// Smart destination suggestion: intake target folder > Reader suggested_folder > folder_path > keyword match
@@ -623,12 +645,122 @@
 			return { name, path: acc };
 		});
 	});
+
+	// Tags & Categorizations tree — same document dataset, organized by topics/tags as folders
+	const tagTree = $derived.by(() => {
+		const index = new Map<string, TreeNode>();
+		const roots: TreeNode[] = [];
+		function ensure(acc: string, seg: string): TreeNode {
+			let node = index.get(acc);
+			if (!node) {
+				node = { name: seg, path: acc, count: 0, children: [], docs: [] };
+				index.set(acc, node);
+				(acc.includes('/') ? ensure(acc.slice(0, acc.lastIndexOf('/')), '').children : roots).push(node);
+			}
+			return node;
+		}
+
+		let untaggedCount = 0;
+		const untaggedDocs: any[] = [];
+		for (const s of data.sources ?? []) {
+			const topics = (s.topics ?? []).map((t: string) => t.trim().toLowerCase()).filter(Boolean);
+			if (!topics.length) {
+				untaggedCount++;
+				untaggedDocs.push(s);
+				continue;
+			}
+			for (const t of topics) {
+				let acc = '';
+				for (const seg of t.split('/')) {
+					acc = acc ? `${acc}/${seg}` : seg;
+					ensure(acc, seg).count++;
+				}
+				index.get(t)?.docs.push(s);
+			}
+		}
+
+		for (const t of customTags) {
+			let acc = '';
+			for (const seg of t.split('/')) {
+				acc = acc ? `${acc}/${seg}` : seg;
+				ensure(acc, seg);
+			}
+		}
+
+		if (untaggedCount > 0) {
+			const untaggedNode: TreeNode = {
+				name: '(Untagged)',
+				path: '__untagged__',
+				count: untaggedCount,
+				children: [],
+				docs: untaggedDocs
+			};
+			roots.push(untaggedNode);
+		}
+
+		function sortTree(nodes: TreeNode[]) {
+			nodes.sort((a, b) => {
+				if (a.path === '__untagged__') return 1;
+				if (b.path === '__untagged__') return -1;
+				return a.name.localeCompare(b.name);
+			});
+			for (const n of nodes) {
+				n.docs = sortDocs(n.docs);
+				sortTree(n.children);
+			}
+		}
+		sortTree(roots);
+		return roots;
+	});
+
+	const visibleSubtags = $derived.by(() => {
+		if (!currentTag) return tagTree;
+		return findNode(tagTree, currentTag)?.children ?? [];
+	});
+
+	const tagColumns = $derived.by(() => {
+		const segments = currentTag && currentTag !== '__untagged__' ? currentTag.split('/') : [];
+		const cols: { path: string; nodes: TreeNode[] }[] = [{ path: '', nodes: tagTree }];
+		let acc = '';
+		let levelNodes = tagTree;
+		for (const seg of segments) {
+			acc = acc ? `${acc}/${seg}` : seg;
+			levelNodes = levelNodes.find((n) => n.path === acc)?.children ?? [];
+			cols.push({ path: acc, nodes: levelNodes });
+		}
+		return cols;
+	});
+
+	const tagBreadcrumb = $derived.by(() => {
+		if (!currentTag) return [];
+		if (currentTag === '__untagged__') return [{ name: '(Untagged)', path: '__untagged__' }];
+		const segments = currentTag.split('/');
+		let acc = '';
+		return segments.map((name) => {
+			acc = acc ? `${acc}/${name}` : name;
+			return { name, path: acc };
+		});
+	});
+
 	// Finder toolbar's own current-folder title + up-one-level button.
 	const currentFolderName = $derived(currentPath ? currentPath.split('/').pop()! : 'Library');
+	const currentTagName = $derived(
+		currentTag ? (currentTag === '__untagged__' ? 'Untagged' : currentTag.split('/').pop()!) : 'All Categories'
+	);
 	function goUp() {
-		const parent = currentPath.includes('/') ? currentPath.slice(0, currentPath.lastIndexOf('/')) : '';
-		currentPath = parent;
-		selectedFolderPath = null;
+		if (mainTab === 'library') {
+			const parent = currentPath.includes('/') ? currentPath.slice(0, currentPath.lastIndexOf('/')) : '';
+			currentPath = parent;
+			selectedFolderPath = null;
+		} else if (mainTab === 'tags') {
+			if (currentTag === '__untagged__') {
+				currentTag = '';
+			} else {
+				const parent = currentTag.includes('/') ? currentTag.slice(0, currentTag.lastIndexOf('/')) : '';
+				currentTag = parent;
+			}
+			selectedTagPath = null;
+		}
 	}
 
 	// A non-empty search box switches to a flat, library-wide result list
@@ -698,6 +830,21 @@
 			const contentOnly = (contentMatches ?? []).filter((s: any) => !seen.has(s.id));
 			return [...sortDocs(clientMatches), ...contentOnly];
 		}
+		if (mainTab === 'tags') {
+			if (!currentTag) {
+				const untagged = (data.sources ?? []).filter((s: any) => !(s.topics?.length));
+				return sortDocs(untagged);
+			}
+			if (currentTag === '__untagged__') {
+				const untagged = (data.sources ?? []).filter((s: any) => !(s.topics?.length));
+				return sortDocs(untagged);
+			}
+			const matches = (data.sources ?? []).filter((s: any) => {
+				const topics = (s.topics ?? []).map((t: string) => t.trim().toLowerCase());
+				return topics.some((t: string) => t === currentTag || t.startsWith(currentTag + '/'));
+			});
+			return sortDocs(matches);
+		}
 		const matches = (data.sources ?? []).filter((s: any) => {
 			if (activeTopic && !(s.topics ?? []).includes(activeTopic)) return false;
 			return (s.folder_path || '') === currentPath;
@@ -732,7 +879,7 @@
 	// clears it, so landing somewhere new still shows the first result.
 	let inspectorDismissed = $state(false);
 	$effect(() => {
-		currentPath; q; mainTab; viewMode;
+		currentPath; currentTag; q; mainTab; viewMode;
 		inspectorDismissed = false;
 	});
 	const selectedDoc = $derived(filtered.find((d: any) => d.id === selectedDocId) ?? null);
@@ -809,7 +956,7 @@
 		return Boolean(types && (types.includes('Files') || types.includes('application/x-moz-file')));
 	}
 
-	async function uploadDirectFiles(files: FileList | File[], targetFolder: string = '') {
+	async function uploadDirectFiles(files: FileList | File[], targetFolder: string = '', targetTag: string = '') {
 		if (!files || files.length === 0) return;
 		const fileArray = Array.from(files).filter((f) => f && f.size > 0);
 		if (fileArray.length === 0) return;
@@ -824,6 +971,9 @@
 				if (staged?.id) {
 					if (targetFolder) {
 						pendingTargetFolders[staged.id] = targetFolder;
+					}
+					if (targetTag) {
+						pendingTargetTags[staged.id] = targetTag;
 					}
 					await invalidateAll();
 					ingestOne(staged.id);
@@ -874,6 +1024,38 @@
 		}
 	}
 
+	async function handleDropOnTag(targetTag: string, e?: DragEvent) {
+		dragOverPath = null;
+		contentExternalDragOver = false;
+		sidebarExternalDragOver = false;
+		contentDragDepth = 0;
+		sidebarDragDepth = 0;
+
+		// External OS file drop directly onto this tag
+		if (e && hasExternalFiles(e) && e.dataTransfer?.files?.length) {
+			e.preventDefault();
+			e.stopPropagation();
+			uploadDirectFiles(e.dataTransfer.files, '', targetTag === '__untagged__' ? '' : targetTag);
+			return;
+		}
+
+		if (targetTag === '__untagged__') return;
+
+		// Internal document drop onto a tag/category folder
+		if (draggedId) {
+			const s = (data.sources ?? []).find((x: any) => x.id === draggedId);
+			draggedId = null;
+			if (s) {
+				const currentTopics = (s.topics ?? []).map((t: string) => t.trim().toLowerCase());
+				const cleaned = targetTag.trim().toLowerCase();
+				if (!currentTopics.includes(cleaned)) {
+					await setTopics(s, [...(s.topics ?? []), cleaned]);
+					toast(`Added category "${cleaned}" to "${s.title.slice(0, 30)}".`);
+				}
+			}
+		}
+	}
+
 	function onContentDragEnter(e: DragEvent) {
 		if (hasExternalFiles(e)) {
 			e.preventDefault();
@@ -902,7 +1084,11 @@
 		if (hasExternalFiles(e) && e.dataTransfer?.files?.length) {
 			e.preventDefault();
 			e.stopPropagation();
-			uploadDirectFiles(e.dataTransfer.files, currentPath);
+			if (mainTab === 'tags') {
+				uploadDirectFiles(e.dataTransfer.files, '', currentTag === '__untagged__' ? '' : currentTag);
+			} else {
+				uploadDirectFiles(e.dataTransfer.files, currentPath);
+			}
 		}
 	}
 
@@ -988,8 +1174,8 @@
 	// A real floating context menu at the cursor — the same actions the
 	// Inspector's own "More actions" menu already offers for a document,
 	// not a jump straight to one dialog (Move) the way this used to work.
-	let ctxMenu = $state<{ x: number; y: number; kind: 'doc' | 'folder' | 'empty'; target: any } | null>(null);
-	function openContextMenu(e: MouseEvent, kind: 'doc' | 'folder' | 'empty', target: any) {
+	let ctxMenu = $state<{ x: number; y: number; kind: 'doc' | 'folder' | 'tag' | 'empty'; target: any } | null>(null);
+	function openContextMenu(e: MouseEvent, kind: 'doc' | 'folder' | 'tag' | 'empty', target: any) {
 		e.preventDefault();
 		e.stopPropagation();
 		const x = Math.min(e.clientX, window.innerWidth - 220);
@@ -1002,12 +1188,78 @@
 	function onFolderContextMenu(e: MouseEvent, node: TreeNode) {
 		openContextMenu(e, 'folder', node);
 	}
+	function onTagContextMenu(e: MouseEvent, node: TreeNode) {
+		selectedTagPath = node.path;
+		openContextMenu(e, 'tag', node);
+	}
 	function onEmptyContextMenu(e: MouseEvent) {
-		if (mainTab !== 'library') return;
+		if (mainTab !== 'library' && mainTab !== 'tags') return;
 		openContextMenu(e, 'empty', null);
 	}
 	function closeContextMenu() {
 		ctxMenu = null;
+	}
+
+	function createCategory(name: string) {
+		const cleaned = name.trim().toLowerCase();
+		if (!cleaned) return;
+		const fullPath = currentTag && currentTag !== '__untagged__' ? `${currentTag}/${cleaned}` : cleaned;
+		if (!customTags.includes(fullPath)) {
+			customTags = [...customTags, fullPath];
+			toast(`Created category "${fullPath}".`);
+		}
+		newCategoryOpen = false;
+		newCategoryName = '';
+	}
+
+	function askRenameTag(tag: string) {
+		if (tag === '__untagged__') return;
+		renameTagOld = tag;
+		renameTagNew = tag;
+		renameTagOpen = true;
+	}
+
+	async function confirmRenameTag() {
+		const oldTag = renameTagOld;
+		const newTag = renameTagNew.trim().toLowerCase();
+		if (!newTag || newTag === oldTag) {
+			renameTagOpen = false;
+			return;
+		}
+		try {
+			const docsToUpdate = (data.sources ?? []).filter((s: any) => (s.topics ?? []).includes(oldTag));
+			for (const doc of docsToUpdate) {
+				const updated = (doc.topics ?? []).map((t: string) => (t === oldTag ? newTag : t));
+				await patch(fetch, `/sources/${doc.id}/topics`, { topics: updated });
+			}
+			customTags = customTags.map((t) => (t === oldTag ? newTag : t));
+			toast(`Renamed category "${oldTag}" to "${newTag}" (${docsToUpdate.length} item${docsToUpdate.length === 1 ? '' : 's'}).`);
+			if (currentTag === oldTag) currentTag = newTag;
+			await invalidateAll();
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		} finally {
+			renameTagOpen = false;
+		}
+	}
+
+	async function askDeleteTag(tag: string, count: number) {
+		if (tag === '__untagged__') return;
+		const confirmed = window.confirm(`Remove category "${tag}" from ${count} document(s)?`);
+		if (!confirmed) return;
+		try {
+			const docsToUpdate = (data.sources ?? []).filter((s: any) => (s.topics ?? []).includes(tag));
+			for (const doc of docsToUpdate) {
+				const updated = (doc.topics ?? []).filter((t: string) => t !== tag);
+				await patch(fetch, `/sources/${doc.id}/topics`, { topics: updated });
+			}
+			customTags = customTags.filter((t) => t !== tag);
+			toast(`Removed category "${tag}".`);
+			if (currentTag === tag) currentTag = '';
+			await invalidateAll();
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		}
 	}
 
 	async function confirmMove(e: Event) {
@@ -1516,19 +1768,54 @@
 <div class="finder">
 	<div class="detail-head finder-toolbar">
 		<div class="head-title">
-			{#if currentPath && mainTab === 'library'}
+			{#if (currentPath && mainTab === 'library') || (currentTag && mainTab === 'tags')}
 				<button class="back-nav-btn" onclick={goUp} title="Back" aria-label="Up one level">
 					<Icon name="chevron" size={15} />
 				</button>
 			{/if}
-			<span class="head-ico" aria-hidden="true"><Icon name={mainTab === 'graph' ? 'globe' : 'book'} size={18} /></span>
+			<span class="head-ico" aria-hidden="true"><Icon name={mainTab === 'graph' ? 'globe' : mainTab === 'tags' ? 'tag' : 'book'} size={18} /></span>
 			<div>
-				<h1>{mainTab === 'graph' ? 'Concept graph' : currentFolderName}</h1>
-				<p>{mainTab === 'graph' ? 'Explore entities, clusters, and knowledge connections' : currentPath ? `Folder · ${currentPath}` : 'Manage knowledge base resources and folders'}</p>
+				<h1>{mainTab === 'graph' ? 'Concept graph' : mainTab === 'tags' ? currentTagName : currentFolderName}</h1>
+				<p>{mainTab === 'graph' ? 'Explore entities, clusters, and knowledge connections' : mainTab === 'tags' ? (currentTag ? `Category · ${currentTag === '__untagged__' ? 'Untagged' : currentTag}` : 'Organize documents by tags and categories') : currentPath ? `Folder · ${currentPath}` : 'Manage knowledge base resources and folders'}</p>
 			</div>
 		</div>
 		<div class="tb-actions">
-			{#if mainTab === 'library'}
+			<div class="window-switcher" role="tablist" aria-label="Library organization view">
+				<button
+					class="ws-btn"
+					class:active={mainTab === 'library'}
+					onclick={() => { mainTab = 'library'; }}
+					role="tab"
+					aria-selected={mainTab === 'library'}
+					title="Folders view"
+				>
+					<Icon name="folder" size={13} />
+					<span>Folders</span>
+				</button>
+				<button
+					class="ws-btn"
+					class:active={mainTab === 'tags'}
+					onclick={() => { mainTab = 'tags'; }}
+					role="tab"
+					aria-selected={mainTab === 'tags'}
+					title="Tags & Categories view"
+				>
+					<Icon name="tag" size={13} />
+					<span>Tags & Categories</span>
+				</button>
+				<button
+					class="ws-btn"
+					class:active={mainTab === 'graph'}
+					onclick={() => { mainTab = 'graph'; }}
+					role="tab"
+					aria-selected={mainTab === 'graph'}
+					title="Concept graph"
+				>
+					<Icon name="globe" size={13} />
+					<span>Graph</span>
+				</button>
+			</div>
+			{#if mainTab === 'library' || mainTab === 'tags'}
 				<div class="tb-view-toggle" role="group" aria-label="View">
 					<button class:on={viewMode === 'icons'} onclick={() => (viewMode = 'icons')} title="Icon View"><Icon name="grid" size={15} /></button>
 					<button class:on={viewMode === 'list'} onclick={() => (viewMode = 'list')} title="List View"><Icon name="list" size={15} /></button>
@@ -1545,14 +1832,11 @@
 				</Menu>
 				<div class="tb-search">
 					<Icon name="search" size={13} />
-					<input type="search" placeholder="Search library..." bind:value={q} aria-label="Search the library" />
+					<input type="search" placeholder={mainTab === 'tags' ? "Search categories & docs..." : "Search library..."} bind:value={q} aria-label="Search the library" />
 					{#if contentSearchLoading}<Spinner size={11} />{/if}
 					{#if q}<button class="search-clear" onclick={() => { q = ''; }} aria-label="Clear search">&times;</button>{/if}
 				</div>
 			{/if}
-			<button class="tb-btn" class:on={mainTab === 'graph'} onclick={() => (mainTab = mainTab === 'graph' ? 'library' : 'graph')} title="Concept graph" aria-label="Toggle concept graph">
-				<Icon name="globe" size={15} />
-			</button>
 			{#if pendingPlacements.length > 0}
 				<button
 					type="button"
@@ -1574,6 +1858,7 @@
 			<Menu label="More">
 				{#snippet items()}
 					{#if mainTab === 'library'}<button onclick={() => { newFolderName = ''; newFolderOpen = true; }}><Icon name="folder" size={14} />New folder</button>{/if}
+					{#if mainTab === 'tags'}<button onclick={() => { newCategoryName = ''; newCategoryOpen = true; }}><Icon name="tag" size={14} />New category</button>{/if}
 					<button onclick={() => { maintenanceKind = 'relink'; maintenanceOpen = true; }}><Icon name="refresh" size={14} />Relink unlinked</button>
 					<button onclick={() => { maintenanceKind = 'consolidate'; maintenanceOpen = true; }}><Icon name="check" size={14} />Consolidate entities</button>
 				{/snippet}
@@ -1608,9 +1893,31 @@
 				><Icon name="folder" size={12} />{crumb.name}</button>
 			{/each}
 		</nav>
+	{:else if mainTab === 'tags' && !searching}
+		<nav class="pathbar" aria-label="Category path">
+			<button
+				class="crumb" class:drag-target={dragOverPath === ''}
+				onclick={() => { currentTag = ''; selectedTagPath = null; }}
+				ondragover={(e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; dragOverPath = ''; }}
+				ondragleave={() => (dragOverPath = null)}
+				ondrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDropOnTag('', e); }}
+				disabled={!currentTag}
+			><Icon name="tag" size={12} />Categories</button>
+			{#each tagBreadcrumb as crumb, i (crumb.path)}
+				<Icon name="chevron" size={10} />
+				<button
+					class="crumb" class:drag-target={dragOverPath === crumb.path}
+					onclick={() => { currentTag = crumb.path; selectedTagPath = null; }}
+					ondragover={(e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; dragOverPath = crumb.path; }}
+					ondragleave={() => (dragOverPath = null)}
+					ondrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDropOnTag(crumb.path, e); }}
+					disabled={i === tagBreadcrumb.length - 1}
+				><Icon name="tag" size={12} />{crumb.name}</button>
+			{/each}
+		</nav>
 	{/if}
 
-	{#if mainTab === 'library'}
+	{#if mainTab === 'library' || mainTab === 'tags'}
 		{#if (data.staged?.length ?? 0) > 0 || (queueStats?.queued_count ?? 0) > 0 || (queueStats?.processing_count ?? 0) > 0 || librarySelected.size}
 			<div class="status-row">
 				{#if librarySelected.size}
@@ -1632,7 +1939,7 @@
 	{/if}
 
 	<div class="finder-body">
-		{#if mainTab === 'library' && !searching}
+		{#if (mainTab === 'library' || mainTab === 'tags') && !searching}
 			<!-- Finder's left sidebar: a permanent quick-access tree
 			     (favorites/locations in a real Finder window) — present
 			     in Icon or List view alike (only the Concept graph has no
@@ -1653,35 +1960,62 @@
 					ondragleave={onSidebarDragLeave}
 					ondrop={onSidebarDrop}
 				>
-					<div class="sidebar-head">
-						<button
-							class="tree-root"
-							class:active={!currentPath}
-							ondragover={(e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; }}
-							ondrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDropOnFolder('', e); }}
-							onclick={() => { currentPath = ''; selectedFolderPath = null; }}
-						>
-							<Icon name="folder" size={14} /> Library <span class="row-sub">{data.sources.length}</span>
-						</button>
-						<button class="sidebar-collapse" onclick={() => (sidebarCollapsed = true)} title="Hide sidebar" aria-label="Hide sidebar">
-							<Icon name="chevron" size={13} />
-						</button>
-					</div>
-					<FolderTree
-						nodes={folderTree}
-						activePath={currentPath}
-						onSelect={(path) => { currentPath = path; selectedFolderPath = null; }}
-						onDrop={handleDropOnFolder}
-						onRename={askRenameFolder}
-						onPrivatize={setFolderPrivate}
-						onDelete={(path, count) => askDeleteFolder(path, count)}
-						onContextMenu={onFolderContextMenu}
-					/>
+					{#if mainTab === 'library'}
+						<div class="sidebar-head">
+							<button
+								class="tree-root"
+								class:active={!currentPath}
+								ondragover={(e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; }}
+								ondrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDropOnFolder('', e); }}
+								onclick={() => { currentPath = ''; selectedFolderPath = null; }}
+							>
+								<Icon name="folder" size={14} /> Library <span class="row-sub">{data.sources.length}</span>
+							</button>
+							<button class="sidebar-collapse" onclick={() => (sidebarCollapsed = true)} title="Hide sidebar" aria-label="Hide sidebar">
+								<Icon name="chevron" size={13} />
+							</button>
+						</div>
+						<FolderTree
+							nodes={folderTree}
+							activePath={currentPath}
+							onSelect={(path) => { currentPath = path; selectedFolderPath = null; }}
+							onDrop={handleDropOnFolder}
+							onRename={askRenameFolder}
+							onPrivatize={setFolderPrivate}
+							onDelete={(path, count) => askDeleteFolder(path, count)}
+							onContextMenu={onFolderContextMenu}
+						/>
+					{:else}
+						<div class="sidebar-head">
+							<button
+								class="tree-root"
+								class:active={!currentTag}
+								ondragover={(e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; }}
+								ondrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDropOnTag('', e); }}
+								onclick={() => { currentTag = ''; selectedTagPath = null; }}
+							>
+								<Icon name="tag" size={14} /> Categories <span class="row-sub">{data.sources.length}</span>
+							</button>
+							<button class="sidebar-collapse" onclick={() => (sidebarCollapsed = true)} title="Hide sidebar" aria-label="Hide sidebar">
+								<Icon name="chevron" size={13} />
+							</button>
+						</div>
+						<FolderTree
+							nodes={tagTree}
+							activePath={currentTag}
+							icon="tag"
+							onSelect={(path) => { currentTag = path; selectedTagPath = null; }}
+							onDrop={handleDropOnTag}
+							onRename={askRenameTag}
+							onDelete={(path, count) => askDeleteTag(path, count)}
+							onContextMenu={onTagContextMenu}
+						/>
+					{/if}
 					{#if sidebarExternalDragOver}
 						<div class="drop-overlay sidebar-overlay">
 							<div class="drop-pill">
 								<Icon name="upload" size={14} />
-								<span>Drop to upload to Library</span>
+								<span>Drop to upload to {mainTab === 'tags' ? 'Categories' : 'Library'}</span>
 							</div>
 						</div>
 					{/if}
@@ -1691,7 +2025,7 @@
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
 			class="finder-content"
-			class:grid-mode={mainTab === 'library' && viewMode === 'icons'}
+			class:grid-mode={(mainTab === 'library' || mainTab === 'tags') && viewMode === 'icons'}
 			class:external-dragover={contentExternalDragOver}
 			oncontextmenu={onEmptyContextMenu}
 			ondragenter={onContentDragEnter}
@@ -1703,7 +2037,7 @@
 				<div class="drop-overlay">
 					<div class="drop-pill">
 						<Icon name="upload" size={20} />
-						<span>Drop files to upload to {currentPath ? `"${currentPath}"` : 'Library'}</span>
+						<span>Drop files to upload to {mainTab === 'tags' ? (currentTag ? `category "${currentTag === '__untagged__' ? 'Untagged' : currentTag}"` : 'Categories') : currentPath ? `"${currentPath}"` : 'Library'}</span>
 					</div>
 				</div>
 			{/if}
@@ -1721,30 +2055,53 @@
 			{:else if viewMode === 'icons'}
 				<div class="icon-grid">
 					{#if !searching}
-						{#each visibleSubfolders as node (node.path)}
-							<button
-								class="icon-tile folder-tile"
-								class:on={selectedFolderPath === node.path}
-								class:drag-target={dragOverPath === node.path}
-								draggable="true"
-								ondragstart={() => (draggedFolderPath = node.path)}
-								ondragend={() => { draggedFolderPath = null; dragOverPath = null; }}
-								ondragover={(e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; dragOverPath = node.path; }}
-								ondragleave={() => (dragOverPath = null)}
-								ondrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDropOnFolder(node.path, e); }}
-								onclick={() => (selectedFolderPath = node.path)}
-								ondblclick={() => { currentPath = node.path; selectedFolderPath = null; }}
-								oncontextmenu={(e) => onFolderContextMenu(e, node)}
-							>
-								<div class="tile-art folder-art">
-									<Icon name="folder" size={38} />
-								</div>
-								<span class="tile-label">{node.name}</span>
-								<span class="tile-meta-pill">{node.count} {node.count === 1 ? 'item' : 'items'}</span>
-							</button>
-						{/each}
+						{#if mainTab === 'library'}
+							{#each visibleSubfolders as node (node.path)}
+								<button
+									class="icon-tile folder-tile"
+									class:on={selectedFolderPath === node.path}
+									class:drag-target={dragOverPath === node.path}
+									draggable="true"
+									ondragstart={() => (draggedFolderPath = node.path)}
+									ondragend={() => { draggedFolderPath = null; dragOverPath = null; }}
+									ondragover={(e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; dragOverPath = node.path; }}
+									ondragleave={() => (dragOverPath = null)}
+									ondrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDropOnFolder(node.path, e); }}
+									onclick={() => (selectedFolderPath = node.path)}
+									ondblclick={() => { currentPath = node.path; selectedFolderPath = null; }}
+									oncontextmenu={(e) => onFolderContextMenu(e, node)}
+								>
+									<div class="tile-art folder-art">
+										<Icon name="folder" size={38} />
+									</div>
+									<span class="tile-label">{node.name}</span>
+									<span class="tile-meta-pill">{node.count} {node.count === 1 ? 'item' : 'items'}</span>
+								</button>
+							{/each}
+						{:else}
+							{#each visibleSubtags as node (node.path)}
+								<button
+									class="icon-tile folder-tile tag-tile"
+									class:on={selectedTagPath === node.path}
+									class:drag-target={dragOverPath === node.path}
+									draggable="false"
+									ondragover={(e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; dragOverPath = node.path; }}
+									ondragleave={() => (dragOverPath = null)}
+									ondrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDropOnTag(node.path, e); }}
+									onclick={() => (selectedTagPath = node.path)}
+									ondblclick={() => { currentTag = node.path; selectedTagPath = null; }}
+									oncontextmenu={(e) => onTagContextMenu(e, node)}
+								>
+									<div class="tile-art folder-art tag-art">
+										<Icon name="tag" size={38} />
+									</div>
+									<span class="tile-label">{node.name}</span>
+									<span class="tile-meta-pill">{node.count} {node.count === 1 ? 'item' : 'items'}</span>
+								</button>
+							{/each}
+						{/if}
 					{/if}
-					{#if !searching && !currentPath}
+					{#if !searching && !currentPath && mainTab === 'library'}
 						{#each data.staged ?? [] as item (item.id)}
 							<div class="icon-tile staged-tile" class:error={jobsByStagedId[item.id]?.status === 'error'}>
 								<div class="tile-header-bar">
@@ -1801,8 +2158,8 @@
 								<EmptyState icon="search" title="Nothing matches that search" body="Try a different term, or clear the search.">
 									{#snippet action()}<Button variant="ghost" onclick={() => { q = ''; }}>Clear search</Button>{/snippet}
 								</EmptyState>
-							{:else if !visibleSubfolders.length}
-								<EmptyState icon="folder" title="This folder is empty" body="Upload a document here, or browse to another folder.">
+							{:else if (mainTab === 'tags' ? !visibleSubtags.length : !visibleSubfolders.length)}
+								<EmptyState icon={mainTab === 'tags' ? 'tag' : 'folder'} title={mainTab === 'tags' ? 'This category is empty' : 'This folder is empty'} body={mainTab === 'tags' ? 'Drag documents here to tag them, or browse to another category.' : 'Upload a document here, or browse to another folder.'}>
 									{#snippet action()}<Button onclick={() => (ingestOpen = true)}>+ Add resources</Button>{/snippet}
 								</EmptyState>
 							{/if}
@@ -1818,28 +2175,50 @@
 					</thead>
 					<tbody>
 						{#if !searching}
-							{#each visibleSubfolders as node (node.path)}
-								<tr
-									class="folder-tr"
-									class:on={selectedFolderPath === node.path}
-									class:drag-target={dragOverPath === node.path}
-									draggable="true"
-									ondragstart={() => (draggedFolderPath = node.path)}
-									ondragend={() => { draggedFolderPath = null; dragOverPath = null; }}
-									ondragover={(e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; dragOverPath = node.path; }}
-									ondragleave={() => (dragOverPath = null)}
-									ondrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDropOnFolder(node.path, e); }}
-									onclick={() => (selectedFolderPath = node.path)}
-									ondblclick={() => { currentPath = node.path; selectedFolderPath = null; }}
-									oncontextmenu={(e) => onFolderContextMenu(e, node)}
-								>
-									<td><Icon name="folder" size={16} /></td>
-									<td>{node.name}</td>
-									<td class="hint">Folder</td>
-									<td class="hint">—</td>
-									<td class="hint">{node.count} item{node.count === 1 ? '' : 's'}</td>
-								</tr>
-							{/each}
+							{#if mainTab === 'library'}
+								{#each visibleSubfolders as node (node.path)}
+									<tr
+										class="folder-tr"
+										class:on={selectedFolderPath === node.path}
+										class:drag-target={dragOverPath === node.path}
+										draggable="true"
+										ondragstart={() => (draggedFolderPath = node.path)}
+										ondragend={() => { draggedFolderPath = null; dragOverPath = null; }}
+										ondragover={(e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; dragOverPath = node.path; }}
+										ondragleave={() => (dragOverPath = null)}
+										ondrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDropOnFolder(node.path, e); }}
+										onclick={() => (selectedFolderPath = node.path)}
+										ondblclick={() => { currentPath = node.path; selectedFolderPath = null; }}
+										oncontextmenu={(e) => onFolderContextMenu(e, node)}
+									>
+										<td><Icon name="folder" size={16} /></td>
+										<td>{node.name}</td>
+										<td class="hint">Folder</td>
+										<td class="hint">—</td>
+										<td class="hint">{node.count} item{node.count === 1 ? '' : 's'}</td>
+									</tr>
+								{/each}
+							{:else}
+								{#each visibleSubtags as node (node.path)}
+									<tr
+										class="folder-tr tag-tr"
+										class:on={selectedTagPath === node.path}
+										class:drag-target={dragOverPath === node.path}
+										ondragover={(e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; dragOverPath = node.path; }}
+										ondragleave={() => (dragOverPath = null)}
+										ondrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDropOnTag(node.path, e); }}
+										onclick={() => (selectedTagPath = node.path)}
+										ondblclick={() => { currentTag = node.path; selectedTagPath = null; }}
+										oncontextmenu={(e) => onTagContextMenu(e, node)}
+									>
+										<td><Icon name="tag" size={16} /></td>
+										<td>{node.name}</td>
+										<td class="hint">Category</td>
+										<td class="hint">—</td>
+										<td class="hint">{node.count} item{node.count === 1 ? '' : 's'}</td>
+									</tr>
+								{/each}
+							{/if}
 						{/if}
 						{#each filtered as s (s.id)}
 							<tr
@@ -1882,8 +2261,8 @@
 										<EmptyState icon="search" title="Nothing matches that search" body="Try a different term, or clear the search.">
 											{#snippet action()}<Button variant="ghost" onclick={() => { q = ''; }}>Clear search</Button>{/snippet}
 										</EmptyState>
-									{:else if !visibleSubfolders.length}
-										<EmptyState icon="folder" title="This folder is empty" body="Upload a document here, or browse to another folder.">
+									{:else if (mainTab === 'tags' ? !visibleSubtags.length : !visibleSubfolders.length)}
+										<EmptyState icon={mainTab === 'tags' ? 'tag' : 'folder'} title={mainTab === 'tags' ? 'This category is empty' : 'This folder is empty'} body={mainTab === 'tags' ? 'Drag documents here to tag them, or browse to another category.' : 'Upload a document here, or browse to another folder.'}>
 											{#snippet action()}<Button onclick={() => (ingestOpen = true)}>+ Add resources</Button>{/snippet}
 										</EmptyState>
 									{/if}
@@ -1897,48 +2276,90 @@
 				     each showing its own siblings so a different branch is
 				     always one click away without losing where you are. -->
 				<div class="column-view">
-					{#each folderColumns as col, i (col.path)}
-						<div class="col-pane">
-							{#each col.nodes as node (node.path)}
-								<button
-									class="col-row"
-									class:active={currentPath === node.path || currentPath.startsWith(`${node.path}/`)}
-									class:drag-target={dragOverPath === node.path}
-									draggable="true"
-									ondragstart={() => (draggedFolderPath = node.path)}
-									ondragend={() => { draggedFolderPath = null; dragOverPath = null; }}
-									ondragover={(e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; dragOverPath = node.path; }}
-									ondragleave={() => (dragOverPath = null)}
-									ondrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDropOnFolder(node.path, e); }}
-									onclick={() => { currentPath = node.path; selectedFolderPath = null; }}
-									oncontextmenu={(e) => onFolderContextMenu(e, node)}
-								>
-									<Icon name="folder" size={14} /> {node.name}
-									<span class="row-sub">{node.count}</span>
-									{#if node.children.length}<Icon name="chevron" size={11} />{/if}
-								</button>
-							{/each}
-							{#if i === folderColumns.length - 1}
-								{#each filtered as s (s.id)}
+					{#if mainTab === 'tags'}
+						{#each tagColumns as col, i (col.path)}
+							<div class="col-pane">
+								{#each col.nodes as node (node.path)}
 									<button
-										class="col-row doc"
-										class:active={selectedDocId === s.id}
-										oncontextmenu={(e) => onDocContextMenu(e, s)}
-										draggable="true"
-										ondragstart={() => (draggedId = s.id)}
-										ondragend={() => (draggedId = null)}
-										onclick={() => (selectedDocId = s.id)}
-										ondblclick={() => window.open(`/admin/${s.id}`, '_blank')}
+										class="col-row tag-col-row"
+										class:active={currentTag === node.path || currentTag.startsWith(`${node.path}/`)}
+										class:drag-target={dragOverPath === node.path}
+										ondragover={(e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; dragOverPath = node.path; }}
+										ondragleave={() => (dragOverPath = null)}
+										ondrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDropOnTag(node.path, e); }}
+										onclick={() => { currentTag = node.path; selectedTagPath = null; }}
+										oncontextmenu={(e) => onTagContextMenu(e, node)}
 									>
-										<Icon name={fileIcon(s)} size={14} /> {s.title}
+										<Icon name="tag" size={14} /> {node.name}
+										<span class="row-sub">{node.count}</span>
+										{#if node.children.length}<Icon name="chevron" size={11} />{/if}
 									</button>
 								{/each}
-								{#if !col.nodes.length && !filtered.length}
-									<p class="hint col-empty">Empty.</p>
+								{#if i === tagColumns.length - 1}
+									{#each filtered as s (s.id)}
+										<button
+											class="col-row doc"
+											class:active={selectedDocId === s.id}
+											oncontextmenu={(e) => onDocContextMenu(e, s)}
+											draggable="true"
+											ondragstart={() => (draggedId = s.id)}
+											ondragend={() => (draggedId = null)}
+											onclick={() => (selectedDocId = s.id)}
+											ondblclick={() => window.open(`/admin/${s.id}`, '_blank')}
+										>
+											<Icon name={fileIcon(s)} size={14} /> {s.title}
+										</button>
+									{/each}
+									{#if !col.nodes.length && !filtered.length}
+										<p class="hint col-empty">Empty.</p>
+									{/if}
 								{/if}
-							{/if}
-						</div>
-					{/each}
+							</div>
+						{/each}
+					{:else}
+						{#each folderColumns as col, i (col.path)}
+							<div class="col-pane">
+								{#each col.nodes as node (node.path)}
+									<button
+										class="col-row"
+										class:active={currentPath === node.path || currentPath.startsWith(`${node.path}/`)}
+										class:drag-target={dragOverPath === node.path}
+										draggable="true"
+										ondragstart={() => (draggedFolderPath = node.path)}
+										ondragend={() => { draggedFolderPath = null; dragOverPath = null; }}
+										ondragover={(e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; dragOverPath = node.path; }}
+										ondragleave={() => (dragOverPath = null)}
+										ondrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDropOnFolder(node.path, e); }}
+										onclick={() => { currentPath = node.path; selectedFolderPath = null; }}
+										oncontextmenu={(e) => onFolderContextMenu(e, node)}
+									>
+										<Icon name="folder" size={14} /> {node.name}
+										<span class="row-sub">{node.count}</span>
+										{#if node.children.length}<Icon name="chevron" size={11} />{/if}
+									</button>
+								{/each}
+								{#if i === folderColumns.length - 1}
+									{#each filtered as s (s.id)}
+										<button
+											class="col-row doc"
+											class:active={selectedDocId === s.id}
+											oncontextmenu={(e) => onDocContextMenu(e, s)}
+											draggable="true"
+											ondragstart={() => (draggedId = s.id)}
+											ondragend={() => (draggedId = null)}
+											onclick={() => (selectedDocId = s.id)}
+											ondblclick={() => window.open(`/admin/${s.id}`, '_blank')}
+										>
+											<Icon name={fileIcon(s)} size={14} /> {s.title}
+										</button>
+									{/each}
+									{#if !col.nodes.length && !filtered.length}
+										<p class="hint col-empty">Empty.</p>
+									{/if}
+								{/if}
+							</div>
+						{/each}
+					{/if}
 				</div>
 			{/if}
 		</div>
@@ -2042,6 +2463,9 @@
 			{#if menu.kind === 'doc'}
 				{@const s = menu.target}
 				<button onclick={() => { selectedDocId = s.id; closeContextMenu(); }}><Icon name="eye" size={15} /> Open</button>
+				{#if mainTab === 'tags' && currentTag && currentTag !== '__untagged__'}
+					<button onclick={() => { removeTag(s, currentTag); closeContextMenu(); }}><Icon name="tag" size={15} /> Remove from "{currentTag}"</button>
+				{/if}
 				<button onclick={() => askMove(s)}><Icon name="folder" size={15} /> Move to folder…</button>
 				{#if s.is_private}<button onclick={() => askAccess(s)}><Icon name="users" size={15} /> Edit access…</button>{/if}
 				<button onclick={() => askAssignUploader(s)}><Icon name="user-card" size={15} /> {s.uploaded_by ? 'Reassign uploader…' : 'Assign uploader…'}</button>
@@ -2053,9 +2477,20 @@
 				<button onclick={() => setFolderPrivate(node.path, true)}><Icon name="lock" size={15} /> Privatize</button>
 				<button onclick={() => setFolderPrivate(node.path, false)}><Icon name="unlock" size={15} /> Make public</button>
 				<button class="danger" onclick={() => askDeleteFolder(node.path, node.count)}><Icon name="trash" size={15} /> Delete folder</button>
+			{:else if menu.kind === 'tag'}
+				{@const node = menu.target}
+				<button onclick={() => { currentTag = node.path; selectedTagPath = null; closeContextMenu(); }}><Icon name="tag" size={15} /> Open category</button>
+				{#if node.path !== '__untagged__'}
+					<button onclick={() => { askRenameTag(node.path); closeContextMenu(); }}><Icon name="edit" size={15} /> Rename category…</button>
+					<button class="danger" onclick={() => { askDeleteTag(node.path, node.count); closeContextMenu(); }}><Icon name="trash" size={15} /> Remove category</button>
+				{/if}
 			{:else}
 				<button onclick={() => (ingestOpen = true)}><Icon name="plus" size={15} /> Add resources</button>
-				<button onclick={() => { newFolderName = ''; newFolderOpen = true; }}><Icon name="folder" size={15} /> New folder</button>
+				{#if mainTab === 'tags'}
+					<button onclick={() => { newCategoryName = ''; newCategoryOpen = true; closeContextMenu(); }}><Icon name="tag" size={15} /> New category</button>
+				{:else}
+					<button onclick={() => { newFolderName = ''; newFolderOpen = true; closeContextMenu(); }}><Icon name="folder" size={15} /> New folder</button>
+				{/if}
 			{/if}
 		{/snippet}
 	</ContextMenu>
@@ -2197,6 +2632,28 @@
 	{#snippet footer()}
 		<Button variant="ghost" onclick={() => (newFolderOpen = false)}>Cancel</Button>
 		<Button onclick={createFolder} loading={newFolderSubmitting}>Create</Button>
+	{/snippet}
+</Dialog>
+
+<Dialog bind:open={newCategoryOpen} title="New category">
+	<form onsubmit={(e) => { e.preventDefault(); createCategory(newCategoryName); }} id="nc-form">
+		<p class="hint">Inside "{currentTag && currentTag !== '__untagged__' ? currentTag : 'Root categories'}".</p>
+		<TextField label="Category name" bind:value={newCategoryName} placeholder="e.g. cardiology" />
+	</form>
+	{#snippet footer()}
+		<Button variant="ghost" onclick={() => (newCategoryOpen = false)}>Cancel</Button>
+		<Button onclick={() => createCategory(newCategoryName)}>Create</Button>
+	{/snippet}
+</Dialog>
+
+<Dialog bind:open={renameTagOpen} title="Rename category">
+	<form onsubmit={(e) => { e.preventDefault(); confirmRenameTag(); }} id="rt-form">
+		<TextField label="Current name" bind:value={renameTagOld} disabled />
+		<TextField label="New category name" bind:value={renameTagNew} placeholder="e.g. endocrinology" />
+	</form>
+	{#snippet footer()}
+		<Button variant="ghost" onclick={() => (renameTagOpen = false)}>Cancel</Button>
+		<Button onclick={confirmRenameTag}>Rename</Button>
 	{/snippet}
 </Dialog>
 
@@ -2804,35 +3261,39 @@
 		transform: scale(1.05);
 	}
 	.back-nav-btn :global(svg) { transform: rotate(90deg); }
-	.tb-btn {
-		display: flex;
+	.window-switcher {
+		display: inline-flex;
 		align-items: center;
-		justify-content: center;
-		width: 2.35rem;
-		height: 2.35rem;
+		background: color-mix(in srgb, var(--line) 40%, var(--panel-2));
 		border: 1px solid var(--line-2);
-		background: var(--panel);
-		color: var(--ink-2);
-		cursor: pointer;
 		border-radius: 12px;
-		transition: all .18s var(--ease);
-		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+		padding: 3px;
+		gap: 3px;
+		box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.03);
 	}
-	.tb-btn:hover:not(:disabled) {
-		background: var(--panel-2);
-		border-color: var(--accent);
+	.ws-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: .4rem;
+		padding: .4rem .75rem;
+		border: none;
+		background: none;
+		color: var(--muted);
+		font-size: var(--text-xs);
+		font-weight: 600;
+		border-radius: 9px;
+		cursor: pointer;
+		transition: all .15s ease;
+		white-space: nowrap;
+	}
+	.ws-btn:hover {
+		color: var(--ink);
+	}
+	.ws-btn.active {
 		color: var(--accent-ink);
-		transform: translateY(-1px);
+		background: var(--panel);
+		box-shadow: 0 2px 6px rgba(16, 24, 40, 0.08);
 	}
-	.tb-btn:disabled { opacity: .35; cursor: not-allowed; }
-	.tb-btn :global(svg) { transform: rotate(90deg); }
-	.tb-btn.on {
-		color: #ffffff;
-		background: linear-gradient(135deg, var(--accent), var(--accent-ink));
-		border-color: var(--accent);
-		box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 40%, transparent);
-	}
-	.tb-btn.on :global(svg) { transform: none; }
 	.tb-view-toggle {
 		display: flex;
 		border: 1px solid var(--line-2);
@@ -3225,6 +3686,11 @@
 		background: color-mix(in srgb, #38bdf8 14%, var(--panel-2));
 		color: #0284c7;
 		box-shadow: 0 4px 14px rgba(2, 132, 199, 0.12);
+	}
+	.tag-art {
+		background: color-mix(in srgb, #8b5cf6 14%, var(--panel-2));
+		color: #7c3aed;
+		box-shadow: 0 4px 14px rgba(124, 58, 237, 0.12);
 	}
 	.doc-art {
 		background: color-mix(in srgb, var(--accent) 12%, var(--panel-2));

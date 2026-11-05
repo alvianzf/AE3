@@ -48,3 +48,4 @@ Every consultation session in the Practitioner portal (`/practitioner/consult`) 
   - Fully formatted Markdown via `renderAnswerHtml`.
 - Subsequent questions and AI turns stack seamlessly underneath the briefing.
 - Loading historical sessions from the History rail displays that session's exact opening briefing recorded up to its historical point in time.
+

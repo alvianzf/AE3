@@ -24,14 +24,15 @@
 		onContextMenu,
 		docs = [],
 		showDocs = false,
-		depth = 0
+		depth = 0,
+		icon = 'folder'
 	}: {
 		nodes: TreeNode[];
 		activePath: string | null;
 		onSelect: (path: string) => void;
 		onDrop: (path: string, e?: DragEvent) => void;
 		onRename: (path: string) => void;
-		onPrivatize: (path: string, isPrivate: boolean) => void;
+		onPrivatize?: (path: string, isPrivate: boolean) => void;
 		onDelete: (path: string, count: number) => void;
 		// Right-click on a node — opt-in, so this component works as
 		// before for any caller that doesn't pass it.
@@ -45,6 +46,7 @@
 		docs?: any[];
 		showDocs?: boolean;
 		depth?: number;
+		icon?: string;
 	} = $props();
 
 	// Tree shows 3 levels deep by default (root + 2 more), with a chevron
@@ -82,15 +84,17 @@
 					<span class="chevron-spacer"></span>
 				{/if}
 				<button class="name" onclick={() => onSelect(node.path)}>
-					<Icon name="folder" size={13} />
+					<Icon name={icon} size={13} />
 					<span class="label">{node.name}</span>
 					<span class="count">{node.count}</span>
 				</button>
 				<span class="node-actions">
-					<button onclick={() => onRename(node.path)} title="Rename folder" aria-label="Rename {node.name}"><Icon name="edit" size={11} /></button>
-					<button onclick={() => onPrivatize(node.path, true)} title="Privatize folder" aria-label="Privatize {node.name}"><Icon name="lock" size={11} /></button>
-					<button onclick={() => onPrivatize(node.path, false)} title="Make folder public" aria-label="Make {node.name} public"><Icon name="unlock" size={11} /></button>
-					<button onclick={() => onDelete(node.path, node.count)} title="Delete folder" aria-label="Delete {node.name}"><Icon name="trash" size={11} /></button>
+					<button onclick={() => onRename(node.path)} title="Rename" aria-label="Rename {node.name}"><Icon name="edit" size={11} /></button>
+					{#if onPrivatize}
+						<button onclick={() => onPrivatize(node.path, true)} title="Privatize folder" aria-label="Privatize {node.name}"><Icon name="lock" size={11} /></button>
+						<button onclick={() => onPrivatize(node.path, false)} title="Make folder public" aria-label="Make {node.name} public"><Icon name="unlock" size={11} /></button>
+					{/if}
+					<button onclick={() => onDelete(node.path, node.count)} title="Delete" aria-label="Delete {node.name}"><Icon name="trash" size={11} /></button>
 				</span>
 			</div>
 			{#if expanded.has(node.path)}
@@ -107,7 +111,7 @@
 					</ul>
 				{/if}
 				{#if node.children.length}
-					<FolderTree nodes={node.children} {activePath} {onSelect} {onDrop} {onRename} {onPrivatize} {onDelete} {onContextMenu} {showDocs} depth={depth + 1} />
+					<FolderTree nodes={node.children} {activePath} {onSelect} {onDrop} {onRename} {onPrivatize} {onDelete} {onContextMenu} {showDocs} depth={depth + 1} {icon} />
 				{/if}
 			{/if}
 		</li>
