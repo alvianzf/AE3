@@ -102,6 +102,9 @@
 		isCreatingNewFolder: boolean;
 		newFolderName: string;
 		docType?: string;
+		suggestedTags: string[];
+		selectedTags: string[];
+		newTagInput: string;
 	}
 
 	let pendingPlacements = $state<PendingPlacement[]>([]);
@@ -114,10 +117,32 @@
 		pendingPlacements = pendingPlacements.filter((p) => p.documentId !== id);
 	}
 
+	function addTagToPlacement(item: PendingPlacement, rawTag: string) {
+		const cleaned = rawTag.trim().toLowerCase();
+		if (!cleaned) return;
+		if (!item.selectedTags.includes(cleaned)) {
+			item.selectedTags = [...item.selectedTags, cleaned];
+		}
+		item.newTagInput = '';
+	}
+
+	function removeTagFromPlacement(item: PendingPlacement, tagToRemove: string) {
+		item.selectedTags = item.selectedTags.filter((t) => t !== tagToRemove);
+	}
+
+	function toggleAiTagSuggestion(item: PendingPlacement, tag: string) {
+		if (item.selectedTags.includes(tag)) {
+			item.selectedTags = item.selectedTags.filter((t) => t !== tag);
+		} else {
+			item.selectedTags = [...item.selectedTags, tag];
+		}
+	}
+
 	function openPlacementForDoc(s: any) {
 		const existing = pendingPlacements.find((p) => p.documentId === s.id);
 		if (!existing) {
 			const suggested = s.suggested_folder || s.folder_path || '';
+			const aiTopics = (s.topics ?? []).map((t: string) => t.trim().toLowerCase()).filter(Boolean);
 			pendingPlacements = [
 				...pendingPlacements,
 				{
@@ -130,7 +155,10 @@
 					selectedFolder: suggested,
 					isCreatingNewFolder: false,
 					newFolderName: '',
-					docType: s.doc_type || ''
+					docType: s.doc_type || '',
+					suggestedTags: aiTopics,
+					selectedTags: [...aiTopics],
+					newTagInput: ''
 				}
 			];
 		}
@@ -138,16 +166,19 @@
 	}
 
 	async function confirmSinglePlacement(item: PendingPlacement) {
-		const target = item.isCreatingNewFolder ? item.newFolderName.trim() : item.selectedFolder;
+		const targetFolder = item.isCreatingNewFolder ? item.newFolderName.trim() : item.selectedFolder;
+		const targetTags = item.selectedTags.map((t) => t.trim().toLowerCase()).filter(Boolean);
 		pendingPlacements = pendingPlacements.filter((p) => p.documentId !== item.documentId);
 		needsFinalization = new Set([...needsFinalization].filter((id) => id !== item.documentId));
 		if (pendingPlacements.length === 0) {
 			placementDialogOpen = false;
 		}
 		try {
-			await setFolder(item.source, target);
+			await setFolder(item.source, targetFolder);
+			await setTopics(item.source, targetTags);
+			toast(`Confirmed "${item.title.slice(0, 30)}" → ${targetFolder || '(root)'} with ${targetTags.length} tag${targetTags.length === 1 ? '' : 's'}.`);
 		} catch (err: any) {
-			toast(`Failed to place "${item.title}": ${err.message}`, 'alert');
+			toast(`Failed to update "${item.title}": ${err.message}`, 'alert');
 		}
 	}
 
@@ -159,16 +190,18 @@
 		let successCount = 0;
 		for (const item of toProcess) {
 			needsFinalization = new Set([...needsFinalization].filter((id) => id !== item.documentId));
-			const target = item.isCreatingNewFolder ? item.newFolderName.trim() : item.selectedFolder;
+			const targetFolder = item.isCreatingNewFolder ? item.newFolderName.trim() : item.selectedFolder;
+			const targetTags = item.selectedTags.map((t) => t.trim().toLowerCase()).filter(Boolean);
 			try {
-				await setFolder(item.source, target);
+				await setFolder(item.source, targetFolder);
+				await setTopics(item.source, targetTags);
 				successCount++;
 			} catch (err: any) {
-				toast(`Failed to place "${item.title}": ${err.message}`, 'alert');
+				toast(`Failed to update "${item.title}": ${err.message}`, 'alert');
 			}
 		}
 		if (successCount > 0) {
-			toast(`Confirmed destination for ${successCount} file${successCount === 1 ? '' : 's'}.`);
+			toast(`Confirmed destination & tags for ${successCount} file${successCount === 1 ? '' : 's'}.`);
 		}
 	}
 
@@ -299,6 +332,12 @@
 					if (placed) {
 						const docId = placed.id;
 						const existingIdx = pendingPlacements.findIndex((p) => p.documentId === docId);
+						const aiTopics = (placed.topics ?? []).map((t: string) => t.trim().toLowerCase()).filter(Boolean);
+						const initialTags = Array.from(new Set([
+							...aiTopics,
+							...(targetTag ? [targetTag.trim().toLowerCase()] : [])
+						])).filter(Boolean);
+
 						const itemData: PendingPlacement = {
 							documentId: docId,
 							source: placed,
@@ -309,7 +348,10 @@
 							selectedFolder: suggested,
 							isCreatingNewFolder: false,
 							newFolderName: '',
-							docType: placed.doc_type || ''
+							docType: placed.doc_type || '',
+							suggestedTags: aiTopics,
+							selectedTags: initialTags,
+							newTagInput: ''
 						};
 						if (existingIdx >= 0) {
 							pendingPlacements[existingIdx] = itemData;
@@ -324,7 +366,7 @@
 
 					toast(
 						placed
-							? `"${placed.title.slice(0, 40)}" finished ingestion — please confirm destination folder.`
+							? `"${placed.title.slice(0, 40)}" finished ingestion — please confirm destination folder and tags.`
 							: 'Ingested into the library.'
 					);
 				} else if (job.status === 'error') {
@@ -740,6 +782,20 @@
 			acc = acc ? `${acc}/${name}` : name;
 			return { name, path: acc };
 		});
+	});
+
+	const allKnownTags = $derived.by(() => {
+		const set = new Set<string>();
+		for (const s of data.sources ?? []) {
+			for (const t of s.topics ?? []) {
+				const c = t.trim().toLowerCase();
+				if (c) set.add(c);
+			}
+		}
+		for (const t of customTags) {
+			set.add(t);
+		}
+		return Array.from(set).sort();
 	});
 
 	// Finder toolbar's own current-folder title + up-one-level button.
@@ -1564,6 +1620,7 @@
 		stageProgress = null;
 		const totalCount = selectedFiles.length;
 		const targetFolder = currentPath;
+		const targetTag = mainTab === 'tags' && currentTag && currentTag !== '__untagged__' ? currentTag : '';
 
 		toast(`Uploading ${totalCount} file${totalCount === 1 ? '' : 's'}…`);
 
@@ -1576,6 +1633,9 @@
 					if (staged?.id) {
 						if (targetFolder) {
 							pendingTargetFolders[staged.id] = targetFolder;
+						}
+						if (targetTag) {
+							pendingTargetTags[staged.id] = targetTag;
 						}
 						await invalidateAll();
 						ingestOne(staged.id);
@@ -2556,6 +2616,12 @@
 					<span>Destination folder: <strong>{currentPath}</strong></span>
 				</div>
 			{/if}
+			{#if mainTab === 'tags' && currentTag && currentTag !== '__untagged__'}
+				<div class="target-folder-notice">
+					<Icon name="tag" size={13} />
+					<span>Destination category: <strong>{currentTag}</strong></span>
+				</div>
+			{/if}
 			{#if multiUploadProgress}
 				<div class="multi-progress">
 					<div class="multi-progress-head">
@@ -2709,18 +2775,18 @@
 	{/snippet}
 </Dialog>
 
-<!-- Multi-file placement confirmation dialog (specs/v15/05) -->
-<Dialog bind:open={placementDialogOpen} title="Confirm File Placements" wide>
+<!-- Multi-file placement confirmation dialog (specs/v15/05, v15/12) -->
+<Dialog bind:open={placementDialogOpen} title="Confirm File Placements & Tags" wide>
 	{#if pendingPlacements.length === 0}
 		<div class="empty-placements">
 			<Icon name="check" size={24} />
-			<p>All ingested files have been placed in their destination folders.</p>
+			<p>All ingested files have been placed in their destination folders and tagged.</p>
 		</div>
 	{:else}
 		<div class="placements-header-hint">
 			<p>
 				<strong>{pendingPlacements.length} file{pendingPlacements.length === 1 ? '' : 's'}</strong>
-				finished ingestion. Choose destination folders below:
+				finished ingestion. Review destination folder and tags (AI suggested):
 			</p>
 		</div>
 
@@ -2742,6 +2808,12 @@
 									<span class="placement-chip suggested root" title="Suggested root destination">
 										<Icon name="folder" size={11} />
 										Suggested: <strong>Library root (/)</strong>
+									</span>
+								{/if}
+								{#if item.suggestedTags && item.suggestedTags.length > 0}
+									<span class="placement-chip ai-tags-badge" title="{item.suggestedTags.length} AI suggested tag{item.suggestedTags.length === 1 ? '' : 's'}">
+										<Icon name="sparkles" size={11} />
+										{item.suggestedTags.length} AI tag{item.suggestedTags.length === 1 ? '' : 's'}
 									</span>
 								{/if}
 							</div>
@@ -2826,6 +2898,89 @@
 								</div>
 							</div>
 						{/if}
+
+						<!-- Tags & Category Assignment with AI Suggestions -->
+						<div class="placement-tags-row">
+							<span class="placement-field-label">
+								Tags:
+							</span>
+							<div class="placement-tags-content">
+								<!-- Selected tags pills & input -->
+								<div class="placement-tags-editor">
+									{#each item.selectedTags as tag (tag)}
+										<span class="placement-tag-chip">
+											<Icon name="tag" size={11} />
+											<span>{tag}</span>
+											<button
+												type="button"
+												class="tag-del-btn"
+												onclick={() => removeTagFromPlacement(item, tag)}
+												aria-label="Remove tag {tag}"
+											>×</button>
+										</span>
+									{/each}
+									<div class="placement-tag-input-wrap">
+										<input
+											type="text"
+											class="placement-tag-input"
+											placeholder="+ add tag..."
+											list="known-tags-{item.documentId}"
+											bind:value={item.newTagInput}
+											onkeydown={(e) => {
+												if (e.key === 'Enter') {
+													e.preventDefault();
+													addTagToPlacement(item, item.newTagInput);
+												}
+											}}
+										/>
+										{#if item.newTagInput.trim()}
+											<button
+												type="button"
+												class="btn-add-tag-inline"
+												onclick={() => addTagToPlacement(item, item.newTagInput)}
+												aria-label="Add tag"
+											>
+												<Icon name="plus" size={11} />
+											</button>
+										{/if}
+										<datalist id="known-tags-{item.documentId}">
+											{#each allKnownTags as t (t)}
+												<option value={t}></option>
+											{/each}
+										</datalist>
+									</div>
+								</div>
+
+								<!-- AI Suggestions -->
+								{#if item.suggestedTags && item.suggestedTags.length > 0}
+									<div class="placement-ai-suggestions">
+										<span class="ai-badge">
+											<Icon name="sparkles" size={12} />
+											AI suggested:
+										</span>
+										<div class="ai-suggestion-chips">
+											{#each item.suggestedTags as tag (tag)}
+												{@const isSelected = item.selectedTags.includes(tag)}
+												<button
+													type="button"
+													class="ai-suggest-chip"
+													class:selected={isSelected}
+													onclick={() => toggleAiTagSuggestion(item, tag)}
+													title={isSelected ? 'Click to remove AI suggested tag' : 'Click to add AI suggested tag'}
+												>
+													{#if isSelected}
+														<Icon name="check" size={10} />
+													{:else}
+														<Icon name="plus" size={10} />
+													{/if}
+													<span>{tag}</span>
+												</button>
+											{/each}
+										</div>
+									</div>
+								{/if}
+							</div>
+						</div>
 					</div>
 
 					<div class="placement-card-actions">
@@ -2833,7 +2988,7 @@
 							type="button"
 							class="btn-confirm-single"
 							onclick={() => confirmSinglePlacement(item)}
-							title="Confirm placement for this file"
+							title="Confirm destination and tags for this file"
 						>
 							<Icon name="check" size={13} />
 							<span>Confirm</span>
@@ -3085,6 +3240,11 @@
 		color: var(--ink-2);
 		border-color: var(--line);
 	}
+	.placement-chip.ai-tags-badge {
+		background: color-mix(in srgb, #8b5cf6 15%, var(--panel));
+		color: #7c3aed;
+		border: 1px solid color-mix(in srgb, #8b5cf6 35%, transparent);
+	}
 	.placement-card-body {
 		background: var(--panel);
 		border: 1px solid var(--line);
@@ -3175,6 +3335,136 @@
 	}
 	.btn-folder-cancel:hover {
 		color: var(--ink);
+	}
+	.placement-tags-row {
+		display: flex;
+		align-items: flex-start;
+		gap: .55rem;
+		flex: 1 1 auto;
+		width: 100%;
+		padding-top: .4rem;
+		border-top: 1px dashed color-mix(in srgb, var(--line) 70%, transparent);
+	}
+	.placement-tags-content {
+		display: flex;
+		flex-direction: column;
+		gap: .45rem;
+		flex: 1 1 auto;
+		min-width: 0;
+	}
+	.placement-tags-editor {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: .35rem;
+	}
+	.placement-tag-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: .3rem;
+		padding: .2rem .55rem;
+		background: color-mix(in srgb, var(--panel-2) 90%, white);
+		border: 1px solid var(--line-2);
+		border-radius: 9999px;
+		font-size: .72rem;
+		font-weight: 550;
+		color: var(--ink);
+	}
+	.tag-del-btn {
+		border: none;
+		background: none;
+		cursor: pointer;
+		font-size: .9rem;
+		line-height: 1;
+		color: var(--muted);
+		padding: 0;
+		margin-left: 2px;
+	}
+	.tag-del-btn:hover {
+		color: var(--danger);
+	}
+	.placement-tag-input-wrap {
+		display: inline-flex;
+		align-items: center;
+		gap: .25rem;
+	}
+	.placement-tag-input {
+		padding: .2rem .5rem;
+		border: 1px dashed var(--line-2);
+		border-radius: 9999px;
+		background: var(--panel);
+		color: var(--ink);
+		font-size: .72rem;
+		width: 7.5rem;
+		transition: all .15s ease;
+	}
+	.placement-tag-input:focus {
+		outline: none;
+		border-color: var(--accent);
+		width: 9.5rem;
+		border-style: solid;
+	}
+	.btn-add-tag-inline {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 1.35rem;
+		height: 1.35rem;
+		border-radius: 50%;
+		border: 1px solid var(--accent);
+		background: var(--accent-soft);
+		color: var(--accent-ink);
+		cursor: pointer;
+		padding: 0;
+	}
+	.placement-ai-suggestions {
+		display: flex;
+		align-items: center;
+		gap: .45rem;
+		flex-wrap: wrap;
+	}
+	.ai-badge {
+		display: inline-flex;
+		align-items: center;
+		gap: .25rem;
+		font-size: .68rem;
+		font-weight: 650;
+		color: #7c3aed;
+		background: color-mix(in srgb, #8b5cf6 10%, transparent);
+		padding: .15rem .45rem;
+		border-radius: 6px;
+	}
+	.ai-suggestion-chips {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: .3rem;
+	}
+	.ai-suggest-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: .25rem;
+		padding: .15rem .5rem;
+		border-radius: 9999px;
+		border: 1px dashed color-mix(in srgb, #8b5cf6 40%, var(--line));
+		background: color-mix(in srgb, #8b5cf6 6%, var(--panel));
+		color: var(--ink-2);
+		font-size: .68rem;
+		font-weight: 550;
+		cursor: pointer;
+		transition: all .15s ease;
+	}
+	.ai-suggest-chip:hover {
+		border-color: #7c3aed;
+		color: #7c3aed;
+		background: color-mix(in srgb, #8b5cf6 14%, var(--panel));
+	}
+	.ai-suggest-chip.selected {
+		border-style: solid;
+		border-color: #7c3aed;
+		background: color-mix(in srgb, #8b5cf6 18%, var(--panel));
+		color: #6d28d9;
+		font-weight: 650;
 	}
 	.placement-card-actions {
 		display: flex;
