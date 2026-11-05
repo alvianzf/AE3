@@ -437,7 +437,7 @@ _CARD = """
 # and what the Reader can reliably classify into.
 DOC_TYPES = [
     "article", "book", "presentation", "education material",
-    "lecture notes", "protocol", "picture", "chart", "other",
+    "lecture notes", "protocol", "picture", "chart", "marketing", "administrative", "other",
 ]
 
 

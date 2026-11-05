@@ -24,28 +24,31 @@ READER_SCHEMA = {
         "summary": {"type": "string",
                     "description": "2-3 sentences on what this source covers."},
         "topics": {"type": "array", "items": {"type": "string"},
-                   "description": "1-4 topics, taken from the library's topic "
-                                  "list wherever one fits."},
+                   "description": "1-4 topics reflecting the primary subject matter. "
+                                  "Reuse an existing library topic ONLY if it genuinely fits. "
+                                  "For marketing, commercial, promotional, or administrative materials, "
+                                  "assign functional domain topics (e.g. 'marketing', 'operations', 'branding') "
+                                  "and NEVER apply clinical specialty or condition tags."},
         "suggested_grade": {"type": "integer",
                             "description": "Reliability 1-10. Peer-reviewed "
                                            "guidelines and clinical protocols score "
-                                           "high; podcasts, blogs and anecdote score "
-                                           "low."},
+                                           "high (7-10); general clinical articles score medium (4-6); "
+                                           "marketing, brochures, commercial promotions score low (1-3)."},
         "author": {"type": "string", "description": "Empty string if not stated."},
         "published": {"type": "string", "description": "Empty string if not stated."},
         "reference": {"type": "string", "description": "Empty string if none."},
         "suggested_folder": {
             "type": "string",
-            "description": "A suggested folder path (e.g. 'Hormones/Menopause'), "
+            "description": "A suggested folder path (e.g. 'Hormones/Menopause' or 'Marketing'), "
                            "taken from the library's existing folder list wherever "
-                           "one fits. Empty string if none fits well — never "
+                           "one genuinely fits. Empty string if none fits well — never "
                            "invent a folder name close to but different from an "
                            "existing one.",
         },
         "doc_type": {
             "type": "string",
             "enum": list(store.DOC_TYPES),
-            "description": "What kind of source this is.",
+            "description": "What kind of source this is (e.g. 'article', 'book', 'protocol', 'marketing', 'administrative', 'education material', 'other').",
         },
     },
     "required": ["title", "summary", "topics", "suggested_grade", "author",
@@ -54,17 +57,47 @@ READER_SCHEMA = {
 }
 
 READER_SYSTEM = (
-    "You prepare sources for a clinical knowledge library. Read the source, "
-    "title it, summarise it, tag its topics, record what it says about its own "
-    "provenance, and propose a reliability grade from 1 to 10 based on the "
+    "You prepare sources for a knowledge library. Read the source, "
+    "title it, summarise it, classify its document type, tag its topics, record what it says "
+    "about its own provenance, and propose a reliability grade from 1 to 10 based on the "
     "strength of its evidence and the authority of its origin. Be honest about "
     "weak sources — the grade decides what's allowed to reach a traversal. "
     "For author/published/reference: report only what the text itself states; "
     "an empty string beats a fabricated citation.\n\n"
-    "Topics are the shelves a practitioner browses by — reuse an existing one "
-    "whenever it genuinely fits (shown to you below); coin a new one only when "
-    "nothing existing covers the source."
+    "DOMAIN MINDFULNESS & CLASSIFICATION:\n"
+    "- Distinguish clinical material (diagnostics, pathophysiology, clinical trials, protocols, "
+    "therapies) from marketing, commercial, promotional, or operational material (brochures, "
+    "clinic advertisements, promotional campaigns, service pricing, pitch decks, business overviews).\n"
+    "- If a document is marketing or promotional, set doc_type to 'marketing'. "
+    "If it is administrative or operational, set doc_type to 'administrative'.\n"
+    "- Marketing, commercial, and promotional materials MUST be graded low (1-3) because they "
+    "are commercial copy, not peer-reviewed clinical evidence.\n"
+    "- TAGGING RULES: Topics are the shelves a practitioner browses by. Reuse an existing topic "
+    "ONLY when it genuinely fits the actual content. NEVER tag marketing, promotional, or "
+    "administrative documents with clinical condition tags or broad clinical specialty labels "
+    "(such as 'integrated medicine', 'integrative medicine', 'functional medicine', 'cardiology', "
+    "'oncology') just because a clinic or healthcare provider is mentioned or offering the service. "
+    "For marketing or commercial materials, assign accurate functional tags such as 'marketing', "
+    "'branding', 'clinic operations', or 'commercial strategy'."
 )
+
+# Catch-all clinical specialty umbrella terms that should never be tagged on marketing/administrative docs
+DISALLOWED_CLINICAL_TAGS_FOR_NON_CLINICAL = {
+    "integrated medicine", "integrative medicine", "functional medicine",
+    "general medicine", "clinical medicine", "medicine", "internal medicine",
+    "healthcare", "medical care", "health", "wellness",
+}
+
+# Generic umbrella non-entities, specialties, and marketing buzzwords that should never
+# enter the clinical knowledge graph as standalone Entity nodes.
+DISALLOWED_GENERIC_ENTITIES = {
+    "integrated medicine", "integrative medicine", "functional medicine",
+    "medicine", "healthcare", "wellness", "health", "hospital", "clinic",
+    "treatment", "treatments", "therapy", "therapies", "service", "services",
+    "marketing", "advertisement", "promotion", "consultation",
+    "patient", "patients", "doctor", "practitioner", "physician", "staff",
+    "care", "medical care", "vitality", "longevity",
+}
 
 # Extensible on purpose — MedGemma's actual output decides what's real, this
 # is guidance for the extraction prompt, not an enforced enum (see
@@ -86,31 +119,36 @@ KG_BUILDER_SCHEMA = {
             "items": {
                 "type": "object",
                 "properties": {
-                    "name": {"type": "string"},
+                    "name": {"type": "string", "description": "Specific clinical entity name in its standard form."},
                     "type": {"type": "string",
                              "description": "A clinical category, e.g. " +
                                             ", ".join(SUGGESTED_ENTITY_TYPES) +
-                                            " — use another if none fits."},
+                                            " — use another specific clinical category if none fits."},
                 },
                 "required": ["name", "type"],
                 "additionalProperties": False,
             },
+            "description": "Only genuine biomedical and clinical entities. "
+                           "Return an EMPTY array if the passage is promotional, marketing, "
+                           "operational, conversational, or lacks concrete biomedical substance.",
         },
         "relationships": {
             "type": "array",
             "items": {
                 "type": "object",
                 "properties": {
-                    "head": {"type": "string", "description": "An entity name above."},
+                    "head": {"type": "string", "description": "An entity name from entities above."},
                     "rel_type": {"type": "string",
                                 "description": "A relationship type, e.g. " +
                                                ", ".join(SUGGESTED_RELATIONSHIP_TYPES) +
-                                               " — use another if none fits."},
-                    "tail": {"type": "string", "description": "An entity name above."},
+                                               " — use another clinical relationship if none fits."},
+                    "tail": {"type": "string", "description": "An entity name from entities above."},
                 },
                 "required": ["head", "rel_type", "tail"],
                 "additionalProperties": False,
             },
+            "description": "Only validated clinical/biological relationships between the extracted entities. "
+                           "Empty array if none.",
         },
     },
     "required": ["entities", "relationships"],
@@ -119,16 +157,29 @@ KG_BUILDER_SCHEMA = {
 
 KG_BUILDER_SYSTEM = (
     "You extract a clinical knowledge graph from one passage of a document.\n\n"
-    "List the clinical entities this passage actually discusses — conditions, "
-    "medications, symptoms, lab findings, procedures, anatomical sites, or "
-    "another category if none of those fit. Use the passage's own terminology, "
-    "not an abbreviation you'd have to expand from outside knowledge.\n\n"
-    "Then list the relationships this passage explicitly states or clearly "
-    "implies between those entities — what treats what, what causes what, what's "
-    "contraindicated with what, what indicates what, what interacts with what, or "
-    "another relationship type if none of those fit. Only relationships the "
-    "passage actually supports — do not infer a relationship from general "
-    "medical knowledge the passage itself doesn't state."
+    "DOMAIN MINDFULNESS & PASSAGE RELEVANCE:\n"
+    "- Only extract entities and relationships from passages that contain genuine clinical, "
+    "biomedical, or pharmacological substance.\n"
+    "- CRITICAL RULE — EMPTY RESULT FOR NON-CLINICAL CONTENT: If this passage is marketing, "
+    "commercial, promotional, administrative, operational, legal, conversational, or describes "
+    "clinic services, pricing, business offerings, or general wellness claims without concrete "
+    "biomedical facts, you MUST return:\n"
+    "  {\"entities\": [], \"relationships\": []}\n"
+    "- FORBIDDEN NON-ENTITIES: Do NOT extract generic specialties, umbrella fields, clinic or "
+    "business names, promotional slogans, or administrative titles as clinical entities. "
+    "Never extract terms such as 'integrated medicine', 'integrative medicine', 'functional medicine', "
+    "'medicine', 'healthcare', 'wellness', 'clinic', 'hospital', 'doctor', 'patient', 'treatment', "
+    "or 'services' as entities.\n\n"
+    "TRUE BIOMEDICAL ENTITIES ONLY:\n"
+    "List the specific clinical entities this passage actually discusses — conditions (e.g. Type 2 Diabetes), "
+    "medications (e.g. Metformin), symptoms, lab findings, diagnostic/therapeutic procedures, "
+    "or anatomical sites. Use the passage's own terminology, not an abbreviation you'd have to expand.\n\n"
+    "FACTUAL CLINICAL RELATIONSHIPS ONLY:\n"
+    "Then list the relationships this passage explicitly states or clearly implies between those entities "
+    "— what treats what, what causes what, what's contraindicated with what, what indicates what, "
+    "what interacts with what. Only relationships the passage actually supports — do not infer from "
+    "outside general knowledge. NEVER fabricate clinical relationships for marketing claims "
+    "(e.g. never output relationships like 'integrated medicine TREATS wellness')."
 )
 
 
@@ -170,9 +221,9 @@ def read_source(text: str, filename: str, kind: str, origin: str,
     shelves = known_topics or []
     folders = known_folders or []
     prompt = (
-        f"Topics already used in this library (reuse where one fits):\n"
+        f"Topics already used in this library (reuse ONLY if genuinely relevant to the source's actual content):\n"
         f"{', '.join(sorted(shelves)) or '(the library is empty)'}\n\n"
-        f"Folders already used in this library (reuse where one fits):\n"
+        f"Folders already used in this library (reuse ONLY if genuinely relevant):\n"
         f"{', '.join(sorted(folders)) or '(no folders yet)'}\n\n"
         f"Filename: {filename}\nKind: {kind}\nStated origin: {origin}\n\n"
         f"Source text:\n---\n{_reader_sample(text)}\n---"
@@ -187,7 +238,33 @@ def read_source(text: str, filename: str, kind: str, origin: str,
     card, _usage = get_client(Role.READER).chat_json(
         READER_SYSTEM, prompt, READER_SCHEMA, max_tokens=2_000, extra_body=NO_THINKING)
     card["suggested_grade"] = max(1, min(10, int(card["suggested_grade"])))
-    card["topics"] = [t.strip().lower() for t in card["topics"] if t.strip()][:4]
+    raw_topics = [t.strip().lower() for t in card.get("topics", []) if t.strip()]
+    doc_type = str(card.get("doc_type", "")).strip().lower()
+
+    # Post-processing domain mindfulness:
+    # If the document is marketing or administrative, strip generic clinical specialty tags
+    # that LLMs commonly hallucinate (such as "integrated medicine" / "integrative medicine").
+    combined_text = (card.get("title", "") + " " + card.get("summary", "") + " " + filename).lower()
+    is_marketing = (doc_type == "marketing") or any(
+        kw in combined_text
+        for kw in ["marketing", "promotional", "campaign", "advertisement", "brochure", "sales pitch", "pricing plan"]
+    )
+    is_admin = (doc_type == "administrative")
+
+    if is_marketing or is_admin:
+        raw_topics = [
+            t for t in raw_topics
+            if t not in DISALLOWED_CLINICAL_TAGS_FOR_NON_CLINICAL
+        ]
+        if is_marketing:
+            card["suggested_grade"] = min(card["suggested_grade"], 3)
+            if not raw_topics or not any(t in raw_topics for t in ["marketing", "promotion", "promotional", "commercial", "business"]):
+                raw_topics.insert(0, "marketing")
+        elif is_admin:
+            if not raw_topics or not any(t in raw_topics for t in ["administrative", "operations", "administration", "policy"]):
+                raw_topics.insert(0, "administrative")
+
+    card["topics"] = raw_topics[:4]
     for f in ("author", "published", "reference"):
         card[f] = card.get(f, "").strip()
     card["suggested_folder"] = store.normalize_folder_path(card.get("suggested_folder", ""))
@@ -303,11 +380,81 @@ def extract_article(stripped_text: str, url: str) -> str:
 
 def extract_graph(passage_text: str) -> dict:
     """One KG-builder call for one passage. Returns {entities, relationships}
-    in the shape store.ingest_document() expects."""
+    in the shape store.ingest_document() expects.
+    Enforces domain mindfulness: rejects generic non-entities and drops dangling
+    or fabricated relationships."""
     prompt = f"Passage:\n---\n{passage_text}\n---"
     result, _usage = get_client(Role.GRAPH_BUILDER).chat_json(
         KG_BUILDER_SYSTEM, prompt, KG_BUILDER_SCHEMA, extra_body=NO_THINKING)
-    return result
+
+    raw_entities = result.get("entities") or []
+    raw_relationships = result.get("relationships") or []
+
+    # Clean, filter, and deduplicate entities
+    valid_entities = []
+    seen_names = set()
+    name_map = {}  # lowercased name -> canonical preserved name
+
+    for ent in raw_entities:
+        if not isinstance(ent, dict):
+            continue
+        raw_name = str(ent.get("name", "")).strip()
+        # strip common outer punctuation marks
+        clean_name = raw_name.strip(".,;:\"'()[]{}*`")
+        lower_name = clean_name.lower()
+
+        # Validation checks
+        if not clean_name or len(clean_name) < 2:
+            continue
+        if lower_name in DISALLOWED_GENERIC_ENTITIES:
+            continue
+        if lower_name in seen_names:
+            continue
+
+        ent_type = str(ent.get("type", "")).strip()
+        if not ent_type:
+            ent_type = "Condition"
+
+        seen_names.add(lower_name)
+        name_map[lower_name] = clean_name
+        valid_entities.append({"name": clean_name, "type": ent_type})
+
+    # Filter and validate relationships
+    valid_relationships = []
+    seen_rels = set()
+
+    for rel in raw_relationships:
+        if not isinstance(rel, dict):
+            continue
+        head = str(rel.get("head", "")).strip().strip(".,;:\"'()[]{}*`")
+        tail = str(rel.get("tail", "")).strip().strip(".,;:\"'()[]{}*`")
+        rel_type = str(rel.get("rel_type", "")).strip()
+
+        head_lower = head.lower()
+        tail_lower = tail.lower()
+
+        # Both endpoints must be valid surviving entities
+        if head_lower not in seen_names or tail_lower not in seen_names:
+            continue
+        # No self-loops or empty rel types
+        if head_lower == tail_lower or not rel_type:
+            continue
+
+        rel_key = (head_lower, rel_type.upper(), tail_lower)
+        if rel_key in seen_rels:
+            continue
+        seen_rels.add(rel_key)
+
+        valid_relationships.append({
+            "head": name_map[head_lower],
+            "rel_type": rel_type,
+            "tail": name_map[tail_lower],
+        })
+
+    return {
+        "entities": valid_entities,
+        "relationships": valid_relationships,
+    }
 
 
 MERGE_SCHEMA = {

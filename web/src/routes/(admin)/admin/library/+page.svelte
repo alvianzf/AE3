@@ -1201,7 +1201,7 @@
 	// already have to their own Reader suggestions.
 	const DOC_TYPES = [
 		'article', 'book', 'presentation', 'education material',
-		'lecture notes', 'protocol', 'picture', 'chart', 'other'
+		'lecture notes', 'protocol', 'picture', 'chart', 'marketing', 'administrative', 'other'
 	];
 	async function setDocType(s: any, docType: string) {
 		if (docType === (s.doc_type ?? '')) return;
