@@ -46,10 +46,10 @@
 	   button, on top of its flat color — not a full glass/blur treatment
 	   (buttons aren't translucent, there's nothing behind them worth
 	   blurring), just the same sheen language as the glass panels. */
-	.filled { background: var(--accent); background-image: linear-gradient(165deg, rgba(255, 255, 255, .28), transparent 55%); color: #fff; box-shadow: var(--shadow); }
-	.filled:hover:not(:disabled) { background: var(--accent-ink); background-image: linear-gradient(165deg, rgba(255, 255, 255, .28), transparent 55%); }
-	.outlined { background: transparent; color: var(--accent-ink); border-color: var(--accent); }
-	.outlined:hover:not(:disabled) { background: var(--accent-soft); }
+	.filled { background: var(--accent); background-image: var(--btn-fill-image, linear-gradient(165deg, rgba(255, 255, 255, .28), transparent 55%)); color: #fff; box-shadow: var(--shadow); }
+	.filled:hover:not(:disabled) { background: var(--accent-ink); background-image: var(--btn-fill-hover-image, linear-gradient(165deg, rgba(255, 255, 255, .28), transparent 55%)); }
+	.outlined { background: var(--btn-outline-bg, transparent); color: var(--btn-outline-ink, var(--accent-ink)); border-color: var(--btn-outline-border, var(--accent)); }
+	.outlined:hover:not(:disabled) { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
 	.text { background: transparent; color: var(--accent-ink); padding-inline: .5rem; }
 	.text:hover:not(:disabled) { background: var(--accent-soft); }
 	.ghost { background: var(--panel-2); color: var(--ink-2); border-color: var(--glass-border); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); }

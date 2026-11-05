@@ -1,89 +1,86 @@
 # 01 · Private-route redesign
 
 Scope: `(admin)`, `(practitioner)`, `(client)`. Public routes untouched.
-Supersedes the token-only repaint in [v12](../v12/01-dashboard-repaint.md),
-which the owner judged too timid ("don't repaint, redesign"). Same
-`html[data-surface='app']` scoping and per-portal accents are kept.
+Supersedes the token-only repaint in [v12](../v12/01-dashboard-repaint.md).
+Adheres strictly to the app's CSS conventions without standalone `surface.css`
+overrides.
 
 ## Hard requirements (from the owner)
 
-1. **Falling leaves stay on the app rail.** v12 removed them; they come back
-   (`LeafField`, tinted by the portal accent, behind nav content).
-2. Redesign the whole private area — shell, headers, home pages, shared
-   components, every page via shared classes.
-3. **Library keeps 100% of its functionality** — folders, drag-and-drop, icon /
+1. **Falling leaves stay on the app rail.** They animate in the rail (`LeafField`,
+   tinted by the portal accent, behind nav content).
+2. **Follow app CSS conventions:** Design tokens live in `app.css` under `.portal`
+   and `.portal-{role}`. Styles are maintained in component `<style>` blocks.
+   No separate `html[data-surface]` stylesheet.
+3. **Different colors for different roles across the whole portal:**
+   - **Admin:** Midnight indigo (`#6366f1` accent, `#0d1026` rail, `#f6f7fb` canvas)
+   - **Practitioner:** Nordic teal (`#0d9488` accent, `#071918` rail, `#f4f8f7` canvas)
+   - **Client:** Berry rose (`#be185d` accent, `#1c0c16` rail, `#faf6f8` canvas)
+4. **Library topbar must be consistent with the rest of the pages.** Replaced the
+   divergent toolbar with the unified `.detail-head` structure (gradient icon
+   badge, title, subtitle, and right-aligned action cluster).
+5. **Library keeps 100% of its functionality** — folders, drag-and-drop, icon /
    list / column views, inspector, ingest, staged queue, graph, bulk privacy,
-   search. Its `<script>` and event wiring are not touched; only layout/markup
-   styling changes.
+   search. Its `<script>` logic and event wiring are not touched.
+6. **Fix right-click context menu and dialog styling:** Fixed sheet-rule leakage
+   that caused 700px vertical stretching on popovers. Context menus and modal
+   dialogs are styled cleanly and compactly.
 
-## Design
+## Design System
 
-**Shell — "floating canvas".** The dark rail now runs the full height and the
-page content sits on it as a large rounded sheet with a small inset margin
-(Arc / Linear style) instead of a hard vertical split. Mobile: no inset, bottom
-bar as before.
+**Shell — "floating canvas".** The dark rail runs full height with portal-accent
+glow and animated leaves. Page content is enclosed in `.portal-main`, a large
+rounded sheet (`border-radius: 20px`, `box-shadow`) inset from the outer edges.
+Mobile: bottom bar, full-width canvas.
 
-**Rail.** 15rem, deep slate with an accent-tinted radial glow at the top-left,
-animated leaves (12, brightened so they read on the dark background), brand
-lockup, ⌘K search, nav items where the active one gets an accent-tinted gradient
-fill, a 1px inner ring and a small accent bar on the left edge, and a user card
-(avatar initials + name + sign-out icon) at the bottom. Leaves are hidden under
-`prefers-reduced-motion` and in the mobile bottom bar.
+**Rail (Sidebar).** 15rem, deep slate/role tinted dark base with ambient glow,
+animated leaves (12, brightened for readability), brand lockup, ⌘K search,
+and active items styled with glowing indicator and accent pill. User profile card
+at the bottom with initials avatar and sign-out.
 
-**Page header.** A 2.75rem gradient icon tile (portal accent) with a soft
-shadow, 1.5rem title, subtitle; sticky, with a frosted sheet background
-(`backdrop-filter: blur(14px)`) and a faint bottom hairline.
+**Page Header (`.detail-head`).** A 2.75rem gradient icon tile (portal accent)
+with soft shadow, 1.5rem bold title, subtitle, and right-aligned `.head-actions`.
+Sticky with a frosted backdrop blur (`backdrop-filter: blur(16px)`).
+Applied uniformly across all pages including Library.
 
-**Home pages.** A new `PageHero` component (accent gradient, sprig watermark,
-eyebrow, greeting, subtitle, optional key-number chips, action buttons).
-- Practitioner: "Welcome back, {first name}", Clients/Consults chips, actions
-  Start a consult / Add a client / Edit questionnaires (Pro) or Open profile
-  (non-Pro). These replace the former "Quick actions" block; no link was lost.
-- Admin: "Platform overview", Pending/Approved chips, actions Add resources /
-  Review practitioners / Edit questionnaires (also replacing "Quick actions").
-- Client: "Hello, {first name}", a Done n/m chip, above the existing care stream.
-Below the hero: stat cards (practitioner/admin) and card-style content blocks.
+**Home pages.** Clean `.detail-head` headers with personalized greeting and
+primary actions, responsive metric stat tiles, and structured content cards:
+- **Practitioner:** Overview header with "Start consult" and "Add client" actions,
+  checklist banner, 4 StatTiles, Recent Consultations with client avatar, and
+  Clinical Tools shortcuts.
+- **Admin:** Platform Overview header with "Add resources" and "Review practitioners",
+  4 StatTiles, Recent Audit activity, and Latest Uploads.
+- **Client:** Your Care header with 3 interactive health record/questionnaire cards
+  and wearable integration preview.
 
-**Components.** Stat tiles with large figures and tinted icon wells; pill chips;
-segmented tabs (grey track, raised active segment); rounded tables with hover
-rows; dialogs; boxed inputs with an accent focus ring — including bare
-text/search/select/textarea controls inside `.detail-pane`, not only
-`TextField`; solid buttons with a gradient primary.
+**Components.**
+- Stat tiles with large figures (`1.6rem`), bold tabular figures, and tinted icon wells.
+- Segmented tabs with smooth active pills.
+- Rounded data tables with hover rows.
+- Context menus (`ContextMenu.svelte`): 12px radius, compact padding, smooth hover states.
+- Dialogs (`Dialog.svelte`): 16px radius, dark blur backdrop, header with close icon,
+  grey action footer.
+- Boxed inputs with 3px focus ring.
 
-**Library.** Toolbar becomes a floating bar (segmented view switch, pill search,
-icon actions); folders render as tinted cards with a label, files as clean doc
-tiles; list view gets rounded rows; the inspector becomes a raised side panel
-with rounded corners and boxed fields; sidebar tree becomes soft nav items.
-Folders use the portal accent (not the old Finder blue). Below 960px the
-sidebar/inspector stack full-width.
+**Library.**
+- Topbar unified with `.detail-head` (`.finder-toolbar`).
+- Segments for view toggle, sort menu, search, graph toggle, and "Add resources".
+- Folders and files styled as elevated cards with hover lift.
+- Raised inspector panel on selection.
 
 ## Implementation notes
 
-- Styles live in `web/src/lib/surface.css` (scoped to `html[data-surface='app']`),
-  `Rail.svelte`, and the new `PageHero.svelte`; the three home pages were edited.
-- The shell inset uses `overflow: clip` (not `hidden`) so sticky headers work.
-- Page roots are forced to `flex: 1` inside the shell (Consult previously did not
-  fill the width once the rail color showed through).
-- Library overrides are plain global selectors with higher specificity than the
-  page's scoped CSS; its `<script>` and markup are unchanged.
+- Removed `web/src/lib/surface.css` and `web/src/lib/surface.svelte.ts`.
+- Portals wrap their shell in `<div class="app-shell portal portal-{role}">` and
+  content in `<main class="portal-main">`.
+- This prevents child modals and fixed overlays from inheriting layout margins
+  or min-height constraints.
 
-## Non-goals
-
-No routing, API, copy, or data-behavior changes; no dark mode; no new
-dependencies.
-
-## Acceptance
+## Acceptance & Verification
 
 - `npm run check` 0 errors; `npm run build` OK.
-- Leaves animate in the rail on all three portals (not under
-  `prefers-reduced-motion`).
-- Public routes render identically.
-- Library: all view modes render and the same controls remain present.
-
-## Verification status
-
-Checked with a mocked API (screenshots): the three home pages, Library icon view
-with inspector, Users, Questionnaires, Consult, mobile bottom bar. **Not yet
-verified:** the real backend; Library drag-and-drop, list/column views and the
-ingest flow (styled only, logic untouched); Knowledge, Settings, Audit,
-Profile, Clients detail and the other client pages.
+- Tested and verified with screenshots:
+  - Library topbar and right-click context menu
+  - Right-click "Move to folder" modal dialog
+  - Practitioner, Admin, and Client home pages
+  - Mobile bottom navigation

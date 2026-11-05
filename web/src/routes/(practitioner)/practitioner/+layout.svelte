@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { useAppSurface } from '$lib/surface.svelte';
 	import { page } from '$app/state';
 	import Rail from '$lib/components/Rail.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
@@ -8,7 +7,6 @@
 	import { get } from '$lib/api';
 
 	let { data, children } = $props();
-	useAppSurface('practitioner');
 	// specs/v8 §8.5 — surfaced specifically on Consult, the page a
 	// practitioner actually forms a clinical judgment from.
 	const showDisclaimer = $derived(page.url.pathname.startsWith('/practitioner/consult'));
@@ -64,9 +62,11 @@
 <CommandPalette items={paletteItems} bind:open={paletteOpen} />
 <Tour steps={tourSteps} bind:active={tourActive} />
 
-<div class="app-shell">
+<div class="app-shell portal portal-practitioner">
 	<Rail {items} onCommandPalette={openPalette} userLabel={data.profile?.name} />
-	{@render children()}
+	<main class="portal-main">
+		{@render children()}
+	</main>
 </div>
 {#if showDisclaimer}<DisclaimerBar />{/if}
 

@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { useAppSurface } from '$lib/surface.svelte';
 	import { page } from '$app/state';
 	import Rail from '$lib/components/Rail.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
@@ -11,7 +10,6 @@
 	const showDisclaimer = $derived(['/client/questionnaire', '/client/record'].some((p) => page.url.pathname.startsWith(p)));
 
 	let { data, children } = $props();
-	useAppSurface('client');
 
 	let tourActive = $state(!data.session?.tour_completed);
 	const tourSteps = [
@@ -43,8 +41,10 @@
 <CommandPalette items={paletteItems} bind:open={paletteOpen} />
 <Tour steps={tourSteps} bind:active={tourActive} />
 
-<div class="app-shell">
+<div class="app-shell portal portal-client">
 	<Rail {items} onCommandPalette={() => (paletteOpen = true)} userLabel={data.session?.name} />
-	{@render children()}
+	<main class="portal-main">
+		{@render children()}
+	</main>
 </div>
 {#if showDisclaimer}<DisclaimerBar />{/if}
