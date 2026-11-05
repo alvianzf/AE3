@@ -17,8 +17,9 @@
 	// needed.
 	let {
 		label,
+		icon = 'more-vertical',
 		items
-	}: { label: string; items: Snippet } = $props();
+	}: { label: string; icon?: string; items: Snippet } = $props();
 
 	let open = $state(false);
 	let wrapEl = $state<HTMLDivElement>();
@@ -56,7 +57,7 @@
 
 <div class="menu-wrap" bind:this={wrapEl}>
 	<button class="menu-trigger" onclick={toggle} title={label} aria-label={label} aria-expanded={open}>
-		<Icon name="more-vertical" />
+		<Icon name={icon} size={icon === 'more-vertical' ? 17 : 15} />
 	</button>
 	{#if open}
 		<!-- Not role="menu"/"menuitem" — that ARIA pattern expects roving-
