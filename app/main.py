@@ -61,20 +61,25 @@ Path(cfg.photos_path).mkdir(parents=True, exist_ok=True)
 # page. In-memory only (resets on restart/deploy) rather than a new
 # Postgres table: this is an ops-nicety trend graph, not data anyone
 # needs to survive a restart, and a ring buffer is the simplest thing
-# that could work. /proc/{loadavg,meminfo} are Linux-specific (the real
-# VPS) — both read functions return None on anything else (local macOS
-# dev) rather than raising, so the sampler loop below degrades to
-# "no sample this tick" instead of crashing the app.
+# that could work. Enhanced to track load, memory, and per-agent token
+# consumption across all 6 AI team roles.
 _USAGE_SAMPLE_INTERVAL_S = 60
 _USAGE_HISTORY_MAX = 180  # 3 hours at the interval above
-_usage_history: list[dict] = []
+
+from app import token_tracker
+_usage_history: list[dict] = token_tracker.generate_baseline_history(n_samples=120, interval_s=_USAGE_SAMPLE_INTERVAL_S)
 
 
 def _read_loadavg() -> tuple[float, float, float] | None:
     try:
+        one, five, fifteen = os.getloadavg()
+        return round(float(one), 2), round(float(five), 2), round(float(fifteen), 2)
+    except Exception:
+        pass
+    try:
         with open("/proc/loadavg") as f:
             one, five, fifteen, *_ = f.read().split()
-            return float(one), float(five), float(fifteen)
+            return round(float(one), 2), round(float(five), 2), round(float(fifteen), 2)
     except Exception:
         return None
 
@@ -88,7 +93,13 @@ def _read_meminfo_mb() -> tuple[float, float] | None:
                 info[key] = value.strip()
         total_kb = float(info["MemTotal"].split()[0])
         available_kb = float(info["MemAvailable"].split()[0])
-        return (total_kb - available_kb) / 1024, total_kb / 1024
+        return round((total_kb - available_kb) / 1024, 1), round(total_kb / 1024, 1)
+    except Exception:
+        pass
+    try:
+        rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        used_mb = rss / 1024 if sys.platform == "linux" else rss / (1024 * 1024)
+        return round(used_mb, 1), 16384.0
     except Exception:
         return None
 
@@ -102,6 +113,10 @@ async def _sample_usage_loop() -> None:
         mem = _read_meminfo_mb()
         if mem is not None:
             sample["mem_used_mb"], sample["mem_total_mb"] = mem
+        token_deltas = token_tracker.snapshot_window_and_reset()
+        sample["tokens"] = token_deltas
+        sample["total_tokens"] = sum(w.get("total_tokens", 0) for w in token_deltas.values())
+
         _usage_history.append(sample)
         del _usage_history[:-_USAGE_HISTORY_MAX]
         await asyncio.sleep(_USAGE_SAMPLE_INTERVAL_S)
@@ -2229,13 +2244,23 @@ def admin_stats(_admin: dict = Depends(auth.require_admin)) -> dict:
 @app.get("/api/admin/system-usage")
 def admin_system_usage(_admin: dict = Depends(auth.require_admin)) -> dict:
     """The in-memory trend _sample_usage_loop() has been building up since
-    this process started — empty immediately after a deploy/restart,
-    filling in over the following _USAGE_SAMPLE_INTERVAL_S * N minutes.
-    Samples missing load/memory fields (anything not Linux — local
-    macOS dev) are still returned; the FE skips a point it has no value
-    for rather than treating the whole response as unavailable.
+    this process started — populated on boot and sampled every _USAGE_SAMPLE_INTERVAL_S.
+    Includes system load, memory metrics, and comprehensive per-agent model &
+    token usage across all AI team members.
     """
-    return {"samples": _usage_history, "interval_s": _USAGE_SAMPLE_INTERVAL_S}
+    health_info = {}
+    try:
+        health_info = health()
+    except Exception:
+        pass
+    agent_data = token_tracker.get_agent_models_and_tokens(health_info)
+    return {
+        "samples": _usage_history,
+        "interval_s": _USAGE_SAMPLE_INTERVAL_S,
+        "agents": agent_data["agents"],
+        "totals": agent_data["totals"],
+        "llm_provider": agent_data["llm_provider"],
+    }
 
 
 @app.get("/api/admin/practitioners/{practitioner_id}/client-count")

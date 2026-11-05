@@ -105,7 +105,13 @@ class AnthropicLLMClient:
             parsed, response = _attempt()
         if parsed is None:
             raise ValueError(f"{self.model} ({self.role.value}) returned no tool_use block (twice)")
-        return parsed, self._usage(response)
+        usage = self._usage(response)
+        try:
+            from app.token_tracker import record_tokens
+            record_tokens(self.role, usage.get("input_tokens", 0), usage.get("output_tokens", 0), self.model)
+        except Exception:
+            pass
+        return parsed, usage
 
     def chat_text(self, system: str, prompt: str, max_tokens: int = 100_000,
                  extra_body: dict | None = None) -> tuple[str, dict]:
@@ -121,7 +127,13 @@ class AnthropicLLMClient:
             messages=[{"role": "user", "content": prompt}],
         )
         text = "".join(b.text for b in response.content if b.type == "text").strip()
-        return text, self._usage(response)
+        usage = self._usage(response)
+        try:
+            from app.token_tracker import record_tokens
+            record_tokens(self.role, usage.get("input_tokens", 0), usage.get("output_tokens", 0), self.model)
+        except Exception:
+            pass
+        return text, usage
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         raise NotImplementedError(
