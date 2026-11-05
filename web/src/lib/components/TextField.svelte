@@ -7,6 +7,7 @@
 		required = false,
 		disabled = false,
 		hint = '',
+		list = '',
 		id = `tf-${Math.random().toString(36).slice(2)}`
 	}: {
 		label: string;
@@ -16,6 +17,7 @@
 		required?: boolean;
 		disabled?: boolean;
 		hint?: string;
+		list?: string;
 		id?: string;
 	} = $props();
 </script>
@@ -25,7 +27,7 @@
 	{#if type === 'textarea'}
 		<textarea {id} bind:value {placeholder} {required} {disabled} rows="4"></textarea>
 	{:else}
-		<input {id} {type} bind:value {placeholder} {required} {disabled} />
+		<input {id} {type} bind:value {placeholder} {required} {disabled} list={list || undefined} />
 	{/if}
 	{#if hint}<p class="hint">{hint}</p>{/if}
 </div>

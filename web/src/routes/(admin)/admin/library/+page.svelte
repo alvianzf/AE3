@@ -1220,18 +1220,96 @@
 	let movingSource = $state<any>(null);
 	let movingOpen = $state(false);
 	let movingPath = $state('');
+	let movingBulk = $state(false);
+	let bulkTagOpen = $state(false);
+	let bulkTagInput = $state('');
+	let deletingBulk = $state(false);
 
 	function askMove(s: any) {
 		movingSource = s;
+		movingBulk = false;
 		movingPath = s.folder_path ?? '';
 		movingOpen = true;
+	}
+
+	function askBulkMove() {
+		if (!librarySelected.size) return;
+		movingBulk = true;
+		movingSource = null;
+		movingPath = currentPath ?? '';
+		movingOpen = true;
+	}
+
+	function askBulkTag() {
+		if (!librarySelected.size) return;
+		bulkTagInput = currentTag && currentTag !== '__untagged__' ? currentTag : '';
+		bulkTagOpen = true;
+	}
+
+	async function confirmBulkTag(e?: Event) {
+		if (e) e.preventDefault();
+		const tag = bulkTagInput.trim().toLowerCase();
+		if (!tag) return;
+		const ids = [...librarySelected];
+		bulkTagOpen = false;
+		try {
+			for (const id of ids) {
+				const doc = (data.sources ?? []).find((x: any) => x.id === id);
+				const existing = doc?.topics ?? [];
+				if (!existing.includes(tag)) {
+					await patch(fetch, `/sources/${id}/topics`, { topics: [...existing, tag] });
+				}
+			}
+			toast(`Assigned category "${tag}" to ${ids.length} item${ids.length === 1 ? '' : 's'}.`);
+			await invalidateAll();
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		}
+	}
+
+	async function bulkRemoveTag(tag: string) {
+		if (!tag || tag === '__untagged__') return;
+		const ids = [...librarySelected];
+		if (!ids.length) return;
+		try {
+			for (const id of ids) {
+				const doc = (data.sources ?? []).find((x: any) => x.id === id);
+				const existing = doc?.topics ?? [];
+				if (existing.includes(tag)) {
+					await patch(fetch, `/sources/${id}/topics`, { topics: existing.filter((t: string) => t !== tag) });
+				}
+			}
+			toast(`Removed category "${tag}" from ${ids.length} item${ids.length === 1 ? '' : 's'}.`);
+			await invalidateAll();
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		}
+	}
+
+	function askDeleteBulk() {
+		if (!librarySelected.size) return;
+		deleting = null;
+		deletingBulk = true;
+		confirmingDelete = true;
+	}
+
+	function onDocClick(e: MouseEvent, s: any) {
+		if (e.shiftKey || e.metaKey || e.ctrlKey) {
+			toggleLibrarySelected(s.id);
+			selectedDocId = s.id;
+		} else {
+			if (librarySelected.size > 0 && !librarySelected.has(s.id)) {
+				librarySelected = new Set();
+			}
+			selectedDocId = s.id;
+		}
 	}
 
 	// A real floating context menu at the cursor — the same actions the
 	// Inspector's own "More actions" menu already offers for a document,
 	// not a jump straight to one dialog (Move) the way this used to work.
-	let ctxMenu = $state<{ x: number; y: number; kind: 'doc' | 'folder' | 'tag' | 'empty' | 'staged'; target: any } | null>(null);
-	function openContextMenu(e: MouseEvent, kind: 'doc' | 'folder' | 'tag' | 'empty' | 'staged', target: any) {
+	let ctxMenu = $state<{ x: number; y: number; kind: 'doc' | 'folder' | 'tag' | 'empty' | 'staged' | 'bulk-doc'; target: any } | null>(null);
+	function openContextMenu(e: MouseEvent, kind: 'doc' | 'folder' | 'tag' | 'empty' | 'staged' | 'bulk-doc', target: any) {
 		e.preventDefault();
 		e.stopPropagation();
 		const x = Math.min(e.clientX, window.innerWidth - 220);
@@ -1239,7 +1317,14 @@
 		ctxMenu = { x, y, kind, target };
 	}
 	function onDocContextMenu(e: MouseEvent, s: any) {
-		openContextMenu(e, 'doc', s);
+		if (librarySelected.has(s.id) && librarySelected.size > 1) {
+			openContextMenu(e, 'bulk-doc', { count: librarySelected.size });
+		} else {
+			if (!librarySelected.has(s.id)) {
+				librarySelected = new Set([s.id]);
+			}
+			openContextMenu(e, 'doc', s);
+		}
 	}
 	function onStagedContextMenu(e: MouseEvent, item: any) {
 		openContextMenu(e, 'staged', item);
@@ -1253,7 +1338,11 @@
 	}
 	function onEmptyContextMenu(e: MouseEvent) {
 		if (mainTab !== 'library' && mainTab !== 'tags') return;
-		openContextMenu(e, 'empty', null);
+		if (librarySelected.size > 1) {
+			openContextMenu(e, 'bulk-doc', { count: librarySelected.size });
+		} else {
+			openContextMenu(e, 'empty', null);
+		}
 	}
 	function closeContextMenu() {
 		ctxMenu = null;
@@ -1323,6 +1412,21 @@
 
 	async function confirmMove(e: Event) {
 		e.preventDefault();
+		if (movingBulk) {
+			const ids = [...librarySelected];
+			if (!ids.length) return;
+			try {
+				await Promise.all(ids.map((id) => patch(fetch, `/sources/${id}/folder`, { folder_path: movingPath })));
+				toast(`Moved ${ids.length} item${ids.length === 1 ? '' : 's'} to "${movingPath || '(root)'}".`);
+				librarySelected = new Set();
+				movingOpen = false;
+				movingBulk = false;
+				await invalidateAll();
+			} catch (err: any) {
+				toast(err.message, 'alert');
+			}
+			return;
+		}
 		if (!movingSource) return;
 		await setFolder(movingSource, movingPath);
 		movingOpen = false;
@@ -1548,16 +1652,33 @@
 
 	function askDelete(s: any) {
 		deleting = s;
+		deletingBulk = false;
 		confirmingDelete = true;
 	}
 
 	async function confirmDelete() {
+		if (deletingBulk) {
+			const ids = [...librarySelected];
+			confirmingDelete = false;
+			deletingBulk = false;
+			try {
+				await Promise.all(ids.map((id) => del(fetch, `/sources/${id}`)));
+				toast(`Removed ${ids.length} item${ids.length === 1 ? '' : 's'} from library.`);
+				librarySelected = new Set();
+				selectedDocId = null;
+				await invalidateAll();
+			} catch (err: any) {
+				toast(err.message, 'alert');
+			}
+			return;
+		}
 		if (!deleting) return;
 		const s = deleting;
 		confirmingDelete = false;
 		try {
 			await del(fetch, `/sources/${s.id}`);
 			toast('Source removed from the library.');
+			if (selectedDocId === s.id) selectedDocId = null;
 			await invalidateAll();
 		} catch (err: any) {
 			toast(err.message, 'alert');
@@ -1865,8 +1986,98 @@
 		}
 		return false;
 	}
+
+	let finderContentEl = $state<HTMLDivElement | null>(null);
+	let isMarqueeSelecting = $state(false);
+	let marqueeActive = $state(false);
+	let marqueeStart = $state<{ x: number; y: number }>({ x: 0, y: 0 });
+	let marqueeCurrent = $state<{ x: number; y: number }>({ x: 0, y: 0 });
+	let marqueeInitialSelected = $state<Set<string>>(new Set());
+
+	function onContentMouseDown(e: MouseEvent) {
+		if (e.button !== 0) return;
+		if (mainTab !== 'library' && mainTab !== 'tags') return;
+
+		const target = e.target as HTMLElement | null;
+		if (!target) return;
+
+		// Don't start marquee if user clicked on an interactive control
+		if (target.closest('button, a, input, select, textarea, label, [role="button"], .staged-pill-btn, .staged-table-btn, .fchip, .crumb, .badge-tag')) {
+			return;
+		}
+		if (target.closest('.finder-sidebar, .finder-toolbar, .finder-path-bar, .status-row')) {
+			return;
+		}
+
+		isMarqueeSelecting = true;
+		marqueeActive = false;
+		marqueeStart = { x: e.clientX, y: e.clientY };
+		marqueeCurrent = { x: e.clientX, y: e.clientY };
+		marqueeInitialSelected = (e.shiftKey || e.metaKey || e.ctrlKey)
+			? new Set(librarySelected)
+			: new Set();
+	}
+
+	function onWindowMouseMove(e: MouseEvent) {
+		if (!isMarqueeSelecting) return;
+
+		marqueeCurrent = { x: e.clientX, y: e.clientY };
+		const dx = marqueeCurrent.x - marqueeStart.x;
+		const dy = marqueeCurrent.y - marqueeStart.y;
+
+		if (!marqueeActive && Math.hypot(dx, dy) > 4) {
+			marqueeActive = true;
+		}
+
+		if (marqueeActive && finderContentEl) {
+			const boxLeft = Math.min(marqueeStart.x, marqueeCurrent.x);
+			const boxTop = Math.min(marqueeStart.y, marqueeCurrent.y);
+			const boxRight = Math.max(marqueeStart.x, marqueeCurrent.x);
+			const boxBottom = Math.max(marqueeStart.y, marqueeCurrent.y);
+
+			const docElements = finderContentEl.querySelectorAll('[data-doc-id]');
+			const next = new Set<string>(marqueeInitialSelected);
+
+			docElements.forEach((el) => {
+				const id = el.getAttribute('data-doc-id');
+				if (!id) return;
+				const rect = el.getBoundingClientRect();
+				const intersects = !(
+					rect.right < boxLeft ||
+					rect.left > boxRight ||
+					rect.bottom < boxTop ||
+					rect.top > boxBottom
+				);
+				if (intersects) {
+					next.add(id);
+				} else if (!marqueeInitialSelected.has(id)) {
+					next.delete(id);
+				}
+			});
+
+			librarySelected = next;
+		}
+	}
+
+	function onWindowMouseUp(e: MouseEvent) {
+		if (!isMarqueeSelecting) return;
+
+		if (!marqueeActive) {
+			if (!e.shiftKey && !e.metaKey && !e.ctrlKey) {
+				const target = e.target as HTMLElement | null;
+				if (target && !target.closest('button, a, input, select, textarea, label, [data-doc-id]')) {
+					librarySelected = new Set();
+					selectedDocId = null;
+				}
+			}
+		}
+
+		isMarqueeSelecting = false;
+		marqueeActive = false;
+	}
 </script>
 
+<svelte:window onmousemove={onWindowMouseMove} onmouseup={onWindowMouseUp} />
 <svelte:head><title>Library — Admin portal</title></svelte:head>
 
 <!-- Complete rework, grounded in Apple's own Finder/HIG patterns (not
@@ -2035,8 +2246,11 @@
 			<div class="status-row">
 				{#if librarySelected.size}
 					<span class="hint">{librarySelected.size} selected</span>
+					<button class="status-action" onclick={askBulkMove} title="Move to folder"><Icon name="folder" size={13} /></button>
+					<button class="status-action" onclick={askBulkTag} title="Assign category"><Icon name="tag" size={13} /></button>
 					<button class="status-action" onclick={() => setPrivateBulk(true)} title="Make private"><Icon name="lock" size={13} /></button>
 					<button class="status-action" onclick={() => setPrivateBulk(false)} title="Make public"><Icon name="unlock" size={13} /></button>
+					<button class="status-action danger" onclick={askDeleteBulk} title="Remove selected from library"><Icon name="trash" size={13} /></button>
 					<button class="status-action" onclick={() => (librarySelected = new Set())} title="Clear selection"><Icon name="x" size={13} /></button>
 				{:else}
 					<span class="hint">
@@ -2140,12 +2354,25 @@
 			class="finder-content"
 			class:grid-mode={(mainTab === 'library' || mainTab === 'tags') && viewMode === 'icons'}
 			class:external-dragover={contentExternalDragOver}
+			class:marquee-active={isMarqueeSelecting && marqueeActive}
+			bind:this={finderContentEl}
+			onmousedown={onContentMouseDown}
 			oncontextmenu={onEmptyContextMenu}
 			ondragenter={onContentDragEnter}
 			ondragover={onContentDragOver}
 			ondragleave={onContentDragLeave}
 			ondrop={onContentDrop}
 		>
+			{#if isMarqueeSelecting && marqueeActive}
+				{@const boxLeft = Math.min(marqueeStart.x, marqueeCurrent.x)}
+				{@const boxTop = Math.min(marqueeStart.y, marqueeCurrent.y)}
+				{@const boxWidth = Math.abs(marqueeCurrent.x - marqueeStart.x)}
+				{@const boxHeight = Math.abs(marqueeCurrent.y - marqueeStart.y)}
+				<div
+					class="marquee-selection-box"
+					style="left: {boxLeft}px; top: {boxTop}px; width: {boxWidth}px; height: {boxHeight}px;"
+				></div>
+			{/if}
 			{#if contentExternalDragOver}
 				<div class="drop-overlay">
 					<div class="drop-pill">
@@ -2257,11 +2484,13 @@
 						<button
 							class="icon-tile doc-tile"
 							class:on={selectedDocId === s.id}
+							class:selected={librarySelected.has(s.id)}
+							data-doc-id={s.id}
 							oncontextmenu={(e) => onDocContextMenu(e, s)}
 							draggable="true"
 							ondragstart={() => (draggedId = s.id)}
 							ondragend={() => (draggedId = null)}
-							onclick={() => (selectedDocId = s.id)}
+							onclick={(e) => onDocClick(e, s)}
 							ondblclick={() => window.open(`/admin/${s.id}`, '_blank')}
 						>
 							<div class="tile-header-bar">
@@ -2269,6 +2498,14 @@
 								<div class="tile-badges">
 									{#if s.is_private}<span class="tile-badge lock" title="Private"><Icon name="lock" size={10} /></span>{/if}
 									{#if needsFinalization.has(s.id)}<span class="tile-badge bell" title="Needs placement review"><Icon name="bell" size={10} /></span>{/if}
+									<input
+										type="checkbox"
+										class="tile-select-check"
+										class:visible={librarySelected.size > 0 || librarySelected.has(s.id)}
+										checked={librarySelected.has(s.id)}
+										onclick={(e) => { e.stopPropagation(); toggleLibrarySelected(s.id); }}
+										aria-label="Select {s.title}"
+									/>
 								</div>
 							</div>
 							<div class="tile-art doc-art">
@@ -2391,11 +2628,13 @@
 							<tr
 								class="doc-tr"
 								class:on={selectedDocId === s.id}
+								class:selected={librarySelected.has(s.id)}
+								data-doc-id={s.id}
 								oncontextmenu={(e) => onDocContextMenu(e, s)}
 								draggable="true"
 								ondragstart={() => (draggedId = s.id)}
 								ondragend={() => (draggedId = null)}
-								onclick={() => (selectedDocId = s.id)}
+								onclick={(e) => onDocClick(e, s)}
 								ondblclick={() => window.open(`/admin/${s.id}`, '_blank')}
 							>
 								<td>
@@ -2467,11 +2706,13 @@
 										<button
 											class="col-row doc"
 											class:active={selectedDocId === s.id}
+											class:selected={librarySelected.has(s.id)}
+											data-doc-id={s.id}
 											oncontextmenu={(e) => onDocContextMenu(e, s)}
 											draggable="true"
 											ondragstart={() => (draggedId = s.id)}
 											ondragend={() => (draggedId = null)}
-											onclick={() => (selectedDocId = s.id)}
+											onclick={(e) => onDocClick(e, s)}
 											ondblclick={() => window.open(`/admin/${s.id}`, '_blank')}
 										>
 											<Icon name={fileIcon(s)} size={14} /> {s.title}
@@ -2510,11 +2751,13 @@
 										<button
 											class="col-row doc"
 											class:active={selectedDocId === s.id}
+											class:selected={librarySelected.has(s.id)}
+											data-doc-id={s.id}
 											oncontextmenu={(e) => onDocContextMenu(e, s)}
 											draggable="true"
 											ondragstart={() => (draggedId = s.id)}
 											ondragend={() => (draggedId = null)}
-											onclick={() => (selectedDocId = s.id)}
+											onclick={(e) => onDocClick(e, s)}
 											ondblclick={() => window.open(`/admin/${s.id}`, '_blank')}
 										>
 											<Icon name={fileIcon(s)} size={14} /> {s.title}
@@ -2670,6 +2913,34 @@
 						<Icon name="trash" size={15} /> Remove file
 					</button>
 				{/if}
+			{:else if menu.kind === 'bulk-doc'}
+				<div class="ctx-header">
+					<Icon name="check" size={13} />
+					<span>{librarySelected.size} items selected</span>
+				</div>
+				<button onclick={() => { askBulkMove(); closeContextMenu(); }}>
+					<Icon name="folder" size={15} /> Move {librarySelected.size} items to folder…
+				</button>
+				<button onclick={() => { askBulkTag(); closeContextMenu(); }}>
+					<Icon name="tag" size={15} /> Assign category to {librarySelected.size} items…
+				</button>
+				{#if mainTab === 'tags' && currentTag && currentTag !== '__untagged__'}
+					<button onclick={() => { bulkRemoveTag(currentTag); closeContextMenu(); }}>
+						<Icon name="tag" size={15} /> Remove from "{currentTag}"
+					</button>
+				{/if}
+				<button onclick={() => { setPrivateBulk(true); closeContextMenu(); }}>
+					<Icon name="lock" size={15} /> Make private ({librarySelected.size})
+				</button>
+				<button onclick={() => { setPrivateBulk(false); closeContextMenu(); }}>
+					<Icon name="unlock" size={15} /> Make public ({librarySelected.size})
+				</button>
+				<button class="danger" onclick={() => { askDeleteBulk(); closeContextMenu(); }}>
+					<Icon name="trash" size={15} /> Remove {librarySelected.size} items from library
+				</button>
+				<button onclick={() => { librarySelected = new Set(); closeContextMenu(); }}>
+					<Icon name="x" size={15} /> Clear selection
+				</button>
 			{:else}
 				<button onclick={() => (ingestOpen = true)}><Icon name="plus" size={15} /> Add resources</button>
 				{#if mainTab === 'tags'}
@@ -2795,8 +3066,10 @@
 	</div>
 </Dialog>
 
-<Dialog bind:open={confirmingDelete} title="Remove source">
-	{#if deleting}
+<Dialog bind:open={confirmingDelete} title={deletingBulk ? `Remove ${librarySelected.size} sources` : "Remove source"}>
+	{#if deletingBulk}
+		<p>Remove {librarySelected.size} selected source(s) and their passages? Answers will stop citing them. This cannot be undone.</p>
+	{:else if deleting}
 		<p>Remove "{deleting.title}" and its {deleting.chunks ?? 0} passage(s)? Answers will stop citing it.</p>
 	{/if}
 	{#snippet footer()}
@@ -2865,7 +3138,20 @@
 </Dialog>
 
 <Dialog bind:open={movingOpen} title="Move to folder">
-	{#if movingSource}
+	{#if movingBulk}
+		<form onsubmit={confirmMove} id="mv-bulk-form">
+			<p class="hint">Moving {librarySelected.size} selected documents.</p>
+			<TextField label="Folder path" bind:value={movingPath} placeholder="(root)" />
+			{#if folderPaths.length}
+				<p class="hint">Existing folders:</p>
+				<div class="move-suggestions">
+					{#each folderPaths as p (p)}
+						<button type="button" class="fchip" onclick={() => (movingPath = p)}>{p}</button>
+					{/each}
+				</div>
+			{/if}
+		</form>
+	{:else if movingSource}
 		<form onsubmit={confirmMove} id="mv-form">
 			<p class="hint">Moving "{movingSource.title.slice(0, 60)}".</p>
 			<TextField label="Folder path" bind:value={movingPath} placeholder="(root)" />
@@ -2881,7 +3167,31 @@
 	{/if}
 	{#snippet footer()}
 		<Button variant="ghost" onclick={() => (movingOpen = false)}>Cancel</Button>
-		<Button onclick={confirmMove}>Move</Button>
+		<Button onclick={confirmMove}>{movingBulk ? `Move ${librarySelected.size} items` : 'Move'}</Button>
+	{/snippet}
+</Dialog>
+
+<Dialog bind:open={bulkTagOpen} title="Assign category to {librarySelected.size} items">
+	<form onsubmit={confirmBulkTag} id="bulk-tag-form">
+		<p class="hint">Assign a tag or category (e.g. <code>cardiology</code> or <code>cardiology/arrhythmia</code>) to {librarySelected.size} selected documents.</p>
+		<TextField label="Category tag" bind:value={bulkTagInput} placeholder="e.g. pharmacology" list="bulk-known-tags" />
+		<datalist id="bulk-known-tags">
+			{#each allKnownTags as t (t)}
+				<option value={t}></option>
+			{/each}
+		</datalist>
+		{#if allKnownTags.length}
+			<p class="hint">Existing categories:</p>
+			<div class="move-suggestions">
+				{#each allKnownTags.slice(0, 15) as t (t)}
+					<button type="button" class="fchip" onclick={() => (bulkTagInput = t)}>{t}</button>
+				{/each}
+			</div>
+		{/if}
+	</form>
+	{#snippet footer()}
+		<Button variant="ghost" onclick={() => (bulkTagOpen = false)}>Cancel</Button>
+		<Button onclick={confirmBulkTag}>Assign category</Button>
 	{/snippet}
 </Dialog>
 
@@ -4032,10 +4342,24 @@
 		box-shadow: 0 12px 28px -6px rgba(16, 24, 40, 0.1), 0 2px 6px rgba(16, 24, 40, 0.04);
 		transform: translateY(-3px);
 	}
-	.icon-tile.on {
+	.icon-tile.on, .icon-tile.selected {
 		background: var(--accent-soft);
 		border-color: var(--accent);
 		box-shadow: 0 0 0 2px var(--accent), 0 8px 24px -4px color-mix(in srgb, var(--accent) 30%, transparent);
+	}
+	.icon-tile.selected .tile-label { color: var(--accent-ink); }
+	.tile-select-check {
+		width: 1rem;
+		height: 1rem;
+		border-radius: 4px;
+		accent-color: var(--accent);
+		cursor: pointer;
+		opacity: 0;
+		transition: opacity .15s ease;
+	}
+	.icon-tile:hover .tile-select-check,
+	.tile-select-check.visible {
+		opacity: 1;
 	}
 	.tile-header-bar {
 		display: flex;
@@ -4265,7 +4589,33 @@
 	.finder-table td:nth-child(2) { display: flex; align-items: center; gap: .6rem; font-weight: 550; }
 	.folder-tr, .doc-tr { cursor: pointer; transition: background .12s var(--ease); }
 	.folder-tr:hover, .doc-tr:hover { background: color-mix(in srgb, var(--panel-2) 90%, white); }
-	.folder-tr.on, .doc-tr.on { background: var(--accent-soft); }
+	.folder-tr.on, .doc-tr.on, .doc-tr.selected { background: var(--accent-soft) !important; }
+	.col-row.doc.selected { background: color-mix(in srgb, var(--accent) 14%, var(--panel)) !important; color: var(--accent-ink); }
+	.marquee-selection-box {
+		position: fixed;
+		z-index: 9999;
+		pointer-events: none;
+		background: color-mix(in srgb, var(--accent) 18%, transparent);
+		border: 1.5px solid var(--accent);
+		border-radius: 4px;
+		box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 25%, transparent);
+	}
+	.finder-content.marquee-active {
+		user-select: none;
+		-webkit-user-select: none;
+	}
+	:global(.ctx-header) {
+		display: flex;
+		align-items: center;
+		gap: .4rem;
+		padding: .4rem .7rem;
+		font-size: .72rem;
+		font-weight: 700;
+		color: var(--muted);
+		border-bottom: 1px solid var(--line);
+		margin-bottom: .25rem;
+		letter-spacing: .02em;
+	}
 	.job-progress { display: grid; gap: .25rem; width: 100%; }
 	.job-progress .track { height: 4px; background: var(--panel); overflow: hidden; border-radius: 99px; }
 	.job-progress .fill { height: 100%; background: var(--accent); transition: width .3s var(--ease); }

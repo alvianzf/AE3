@@ -26,3 +26,4 @@ This spec introduces:
   - `Retry ingestion`: Re-triggers `POST /api/staged/${id}/ingest`.
   - `Remove file`: Discards the file.
 - View visibility helper `isStagedVisible`: Ensures in-flight uploads appear inside their target folder or category during ingestion.
+
