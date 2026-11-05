@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { useAppSurface } from '$lib/surface.svelte';
 	import { page } from '$app/state';
 	import Rail from '$lib/components/Rail.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
@@ -10,6 +11,7 @@
 	const showDisclaimer = $derived(['/client/questionnaire', '/client/record'].some((p) => page.url.pathname.startsWith(p)));
 
 	let { data, children } = $props();
+	useAppSurface('client');
 
 	let tourActive = $state(!data.session?.tour_completed);
 	const tourSteps = [

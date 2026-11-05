@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { useAppSurface } from '$lib/surface.svelte';
 	import { page } from '$app/state';
 	import Rail from '$lib/components/Rail.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
@@ -7,6 +8,7 @@
 	import { get } from '$lib/api';
 
 	let { data, children } = $props();
+	useAppSurface('practitioner');
 	// specs/v8 §8.5 — surfaced specifically on Consult, the page a
 	// practitioner actually forms a clinical judgment from.
 	const showDisclaimer = $derived(page.url.pathname.startsWith('/practitioner/consult'));
@@ -68,6 +70,3 @@
 </div>
 {#if showDisclaimer}<DisclaimerBar />{/if}
 
-<style>
-	.app-shell { --rail-indicator: #7fe0d6; }
-</style>

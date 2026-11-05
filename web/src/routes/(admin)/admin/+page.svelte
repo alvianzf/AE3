@@ -90,12 +90,14 @@
 </div>
 
 <style>
-	.tile-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: var(--space-3); margin-bottom: var(--space-6); }
-	.cols-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); gap: var(--space-6); }
-	.block { margin-bottom: var(--space-6); }
+	.tile-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: var(--space-4); margin-bottom: var(--space-5); }
+	.cols-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr)); gap: var(--space-4); align-items: start; }
+	.cols-2 .block { margin-bottom: 0; }
+	.block { margin-bottom: var(--space-5); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow); padding: var(--space-4) var(--space-5); }
 	.block-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
-	.block h2, .block-head h2 { font-size: var(--text-lg); margin-bottom: var(--space-3); }
-	.see-all { font-size: var(--text-sm); color: var(--accent-ink); text-decoration: none; }
+	.block h2, .block-head h2 { font-size: var(--text-base); font-weight: 650; margin-bottom: var(--space-3); }
+	.see-all { font-size: var(--text-sm); font-weight: 600; color: var(--accent-ink); text-decoration: none; }
+	.see-all:hover { text-decoration: underline; }
 	.action-row { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 	.activity-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
 	.activity-list li {
