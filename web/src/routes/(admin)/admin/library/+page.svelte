@@ -257,6 +257,17 @@
 	let q = $state('');
 	let activeTopic = $state('');
 
+	// Direct instruction: the Library's Files/Folders browsing should
+	// feel like macOS Finder. Icon view (the grid Finder opens to by
+	// default) and List view, not a separate "Folders" mode — in Finder,
+	// folders are just items inside whichever view you're already in.
+	let viewMode = $state<'icons' | 'list'>(
+		(typeof localStorage !== 'undefined' && (localStorage.getItem('admin-library-view') as any)) || 'icons'
+	);
+	$effect(() => {
+		try { localStorage.setItem('admin-library-view', viewMode); } catch {}
+	});
+
 	// Sort — file name or date ingested, each ascending/descending. Not
 	// "date uploaded" as a third, separate option: checked the data
 	// model first (found live, "sort by... date uploaded" asked) — a
@@ -345,24 +356,6 @@
 		sortTree(roots);
 		return roots;
 	});
-	// Direct feedback: the old Folders mode (FolderTree.svelte — nested,
-	// indented, chevron-to-expand) "has the same UI as a computer
-	// folder." Flattened instead: every folder's full path as one plain
-	// row in a single alphabetical list, no nesting/indentation/chevron
-	// at all — a jump-to list, not a file-explorer tree widget.
-	const flatFolders = $derived.by(() => {
-		const out: { path: string; count: number }[] = [];
-		function walk(nodes: TreeNode[]) {
-			for (const n of nodes) {
-				out.push({ path: n.path, count: n.count });
-				walk(n.children);
-			}
-		}
-		walk(folderTree);
-		out.sort((a, b) => a.path.localeCompare(b.path));
-		return out;
-	});
-
 	// specs/v8 §7.4 — Graph view rebuilt on <canvas> (GraphView.svelte),
 	// re-added as a third tab alongside Library/Tree view. Concepts only
 	// now — the document/folder layer the original two-layer version also
@@ -1078,8 +1071,13 @@
 				</Menu>
 			</div>
 			<div class="lp-modes" role="group" aria-label="Library view">
-				<button class:on={mainTab === 'library'} onclick={() => (mainTab = 'library')}>List</button>
-				<button class:on={mainTab === 'tree'} onclick={() => (mainTab = 'tree')}>Folders</button>
+				<!-- Finder's own two primary view modes — icon grid
+				     (its default) and list — not a separate "Folders"
+				     mode; folders are just items inside whichever view
+				     you're in, the way a real file browser works. -->
+				<button class:on={mainTab === 'library' && viewMode === 'icons'} onclick={() => { mainTab = 'library'; viewMode = 'icons'; }} title="Icons"><Icon name="grid" size={15} /></button>
+				<button class:on={mainTab === 'library' && viewMode === 'list'} onclick={() => { mainTab = 'library'; viewMode = 'list'; }} title="List"><Icon name="list" size={15} /></button>
+				<span class="lp-modes-sep"></span>
 				<button class:on={mainTab === 'graph'} onclick={() => (mainTab = 'graph')}>Graph</button>
 			</div>
 
@@ -1113,11 +1111,18 @@
 					</Menu>
 				</div>
 				{#if !searching}
-					<nav class="breadcrumb" aria-label="Folder path">
-						<button onclick={() => { currentPath = ''; page = 1; }} disabled={!currentPath}>Library</button>
+					<!-- Finder's own path bar: small folder icon per
+					     segment, a chevron separator, a pill-shaped bar —
+					     not a plain breadcrumb sentence. -->
+					<nav class="pathbar" aria-label="Folder path">
+						<button class="crumb" onclick={() => { currentPath = ''; page = 1; }} disabled={!currentPath}>
+							<Icon name="folder" size={12} />Library
+						</button>
 						{#each breadcrumb as crumb, i (crumb.path)}
-							<span class="sep">/</span>
-							<button onclick={() => { currentPath = crumb.path; page = 1; }} disabled={i === breadcrumb.length - 1}>{crumb.name}</button>
+							<Icon name="chevron" size={10} />
+							<button class="crumb" onclick={() => { currentPath = crumb.path; page = 1; }} disabled={i === breadcrumb.length - 1}>
+								<Icon name="folder" size={12} />{crumb.name}
+							</button>
 						{/each}
 						<button class="new-folder" onclick={() => { newFolderName = ''; newFolderOpen = true; }} title="New folder" aria-label="New folder"><Icon name="plus" size={12} /></button>
 					</nav>
@@ -1142,8 +1147,86 @@
 			{/if}
 		</div>
 
-		<div class="list-pane-body">
-			{#if mainTab === 'library'}
+		<div class="list-pane-body" class:grid-mode={mainTab === 'library' && viewMode === 'icons'}>
+			{#if mainTab === 'library' && viewMode === 'icons'}
+				<!-- Finder's Icon View: a grid of tiles, folders tinted the
+				     familiar Finder blue, files a plain document icon,
+				     label centered underneath. -->
+				<div class="icon-grid">
+					{#if !searching}
+						{#each visibleSubfolders as node (node.path)}
+							<button
+								class="icon-tile folder-tile"
+								draggable="true"
+								ondragstart={() => (draggedFolderPath = node.path)}
+								ondragend={() => (draggedFolderPath = null)}
+								ondragover={(e) => e.preventDefault()}
+								ondrop={(e) => { e.preventDefault(); handleDropOnFolder(node.path); }}
+								onclick={() => { currentPath = node.path; page = 1; }}
+							>
+								<Icon name="folder" size={36} />
+								<span class="tile-label">{node.name}</span>
+							</button>
+						{/each}
+					{/if}
+					{#if !searching && !currentPath}
+						{#each data.staged ?? [] as item (item.id)}
+							<div class="icon-tile staged-tile">
+								<Icon name="file" size={36} />
+								<span class="tile-label">{item.filename ?? item.source_url ?? 'Pasted text'}</span>
+								{#if jobsByStagedId[item.id]?.status === 'error'}
+									<span class="tile-sub job-error">Failed</span>
+								{:else}
+									<div class="job-progress tiny">
+										<div class="track"><div class="fill" style="width: {jobProgressPercent(jobsByStagedId[item.id] ?? { step: 'queued' })}%"></div></div>
+									</div>
+								{/if}
+							</div>
+						{/each}
+					{/if}
+					{#each pageItems as s (s.id)}
+						<button
+							class="icon-tile doc-tile"
+							class:on={selectedDocId === s.id}
+							oncontextmenu={(e) => onDocContextMenu(e, s)}
+							draggable="true"
+							ondragstart={() => (draggedId = s.id)}
+							ondragend={() => (draggedId = null)}
+							onclick={() => (selectedDocId = s.id)}
+						>
+							<span class="tile-icon">
+								<Icon name="file" size={36} />
+								{#if s.is_private}<span class="tile-badge"><Icon name="lock" size={10} /></span>{/if}
+								{#if needsFinalization.has(s.id)}<span class="tile-badge bell"><Icon name="bell" size={10} /></span>{/if}
+							</span>
+							<span class="tile-label">{s.title}</span>
+						</button>
+					{:else}
+						<div class="list-empty">
+							{#if !data.sources.length}
+								<EmptyState icon="book" title="Your library is empty" body='Upload a document, paste text, or scrape a URL to start teaching Functional Health Collab.'>
+									{#snippet action()}<Button onclick={() => (ingestOpen = true)}>+ Add resources</Button>{/snippet}
+								</EmptyState>
+							{:else if searching}
+								<EmptyState icon="search" title="Nothing matches that search" body="Try a different term, or clear the search.">
+									{#snippet action()}<Button variant="ghost" onclick={() => { q = ''; page = 1; }}>Clear search</Button>{/snippet}
+								</EmptyState>
+							{:else}
+								<EmptyState icon="folder" title="This folder is empty" body="Upload a document here, or browse to another folder.">
+									{#snippet action()}<Button onclick={() => (ingestOpen = true)}>+ Add resources</Button>{/snippet}
+								</EmptyState>
+							{/if}
+						</div>
+					{/each}
+				</div>
+				{#if totalPages > 1}
+					<div class="pager">
+						<button onclick={() => (page = shownPage - 1)} disabled={shownPage <= 1}>←</button>
+						<span class="hint">{shownPage} / {totalPages}</span>
+						<button onclick={() => (page = shownPage + 1)} disabled={shownPage >= totalPages}>→</button>
+					</div>
+				{/if}
+			{:else if mainTab === 'library'}
 				{#if !searching}
 					{#each visibleSubfolders as node (node.path)}
 						<button
@@ -1232,30 +1315,6 @@
 						<button onclick={() => (page = shownPage + 1)} disabled={shownPage >= totalPages}>→</button>
 					</div>
 				{/if}
-			{:else if mainTab === 'tree'}
-				<button class="list-row folder-row" onclick={() => { currentPath = ''; mainTab = 'library'; page = 1; }}>
-					<Icon name="folder" size={15} />
-					<span class="row-title">All documents</span>
-					<span class="row-sub">{data.sources.length}</span>
-				</button>
-				{#each flatFolders as f (f.path)}
-					<div class="list-row doc-row">
-						<button class="row-main" onclick={() => { currentPath = f.path; mainTab = 'library'; page = 1; }}>
-							<span class="row-title">{f.path}</span>
-							<span class="row-sub">{f.count} document{f.count === 1 ? '' : 's'}</span>
-						</button>
-						<Menu label="More actions for {f.path}">
-							{#snippet items()}
-								<button onclick={() => askRenameFolder(f.path)}><Icon name="edit" size={14} />Rename</button>
-								<button onclick={() => setFolderPrivate(f.path, true)}><Icon name="lock" size={14} />Make private</button>
-								<button onclick={() => setFolderPrivate(f.path, false)}><Icon name="unlock" size={14} />Make public</button>
-								<button class="danger" onclick={() => askDeleteFolder(f.path, f.count)}><Icon name="trash" size={14} />Delete</button>
-							{/snippet}
-						</Menu>
-					</div>
-				{:else}
-					<p class="hint" style="padding: var(--space-4)">No folders yet — move a document into one from the List view.</p>
-				{/each}
 			{:else if mainTab === 'graph'}
 				{#if data.graph}
 					<p class="hint graph-stats">{data.graph.entities ?? 0} concepts · {data.graph.mentions ?? 0} links · {(data.graph.unlinked ?? []).length} unlinked</p>
@@ -1271,8 +1330,6 @@
 			{:else}
 				<GraphView nodes={conceptGraph?.nodes ?? []} edges={conceptGraph?.edges ?? []} />
 			{/if}
-		{:else if mainTab === 'tree'}
-			<p class="hint">Pick a folder on the left, or switch to List to select a document.</p>
 		{:else if selectedDoc}
 			{@const s = selectedDoc}
 			<div class="detail-head">
@@ -1624,12 +1681,14 @@
 	/* ── List pane: search, topic/sort controls, breadcrumb, then the
 	   flat row list itself (folders, staged jobs, documents). ── */
 	.lp-top { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-2); }
-	.lp-modes { display: flex; gap: .1rem; margin-bottom: var(--space-3); }
+	.lp-modes { display: flex; align-items: center; gap: .1rem; margin-bottom: var(--space-3); }
 	.lp-modes button {
-		flex: 1 1 auto; border: 1px solid var(--line); background: var(--panel); color: var(--muted);
-		font: inherit; font-size: var(--text-xs); font-weight: 650; padding: .35rem 0; cursor: pointer;
+		display: flex; align-items: center; justify-content: center; gap: .3rem;
+		border: 1px solid var(--line); background: var(--panel); color: var(--muted);
+		font: inherit; font-size: var(--text-xs); font-weight: 650; padding: .4rem .6rem; cursor: pointer;
 	}
 	.lp-modes button.on { color: var(--accent-ink); background: var(--accent-soft); border-color: var(--accent); }
+	.lp-modes-sep { flex: 1 1 auto; }
 	.search-input-wrap { position: relative; margin-bottom: var(--space-2); }
 	.search {
 		width: 100%; font-size: var(--text-sm); padding: .5rem .5rem .5rem var(--space-3);
@@ -1645,13 +1704,21 @@
 		flex: 1 1 auto; min-width: 0; border: 1px solid var(--line-2); background: var(--panel);
 		color: var(--ink); font-size: var(--text-xs); padding: .3rem .4rem; cursor: pointer;
 	}
-	.breadcrumb { display: flex; align-items: center; gap: .3rem; margin-bottom: var(--space-2); font-size: var(--text-xs); flex-wrap: wrap; }
-	.breadcrumb button {
-		border: none; background: none; cursor: pointer; font: inherit; color: var(--accent-ink); padding: .1rem .2rem;
+	/* Finder's path bar: a pill-shaped bar, a small folder icon per
+	   segment, chevrons pointing right between them. */
+	.pathbar {
+		display: flex; align-items: center; gap: .25rem; margin-bottom: var(--space-2); font-size: var(--text-xs);
+		flex-wrap: wrap; background: var(--panel-2); border: 1px solid var(--line); border-radius: 99px; padding: .25rem .4rem;
 	}
-	.breadcrumb button:disabled { color: var(--ink); cursor: default; font-weight: 650; }
-	.breadcrumb .sep { color: var(--muted); }
-	.breadcrumb .new-folder { margin-left: auto; color: var(--muted); }
+	.pathbar :global(svg) { flex: 0 0 auto; }
+	.pathbar > :global(svg) { color: var(--muted); }
+	.crumb {
+		display: flex; align-items: center; gap: .3rem; border: none; background: none; cursor: pointer;
+		font: inherit; color: var(--accent-ink); padding: .2rem .4rem; border-radius: 99px;
+	}
+	.crumb:hover:not(:disabled) { background: var(--panel); }
+	.crumb:disabled { color: var(--ink); cursor: default; font-weight: 650; }
+	.new-folder { margin-left: auto; color: var(--muted); border: none; background: none; cursor: pointer; padding: .2rem .4rem; }
 	.queue-status { margin: 0 0 var(--space-2); }
 	.retry-link { border: none; background: none; color: var(--accent-ink); cursor: pointer; font: inherit; padding: 0; text-decoration: underline; }
 	.bulk-bar { display: flex; align-items: center; gap: .4rem; margin-bottom: var(--space-2); }
@@ -1680,6 +1747,36 @@
 	.job-error { color: var(--danger); margin: 0; }
 	.list-empty { padding: var(--space-4); }
 	.pager { display: flex; align-items: center; justify-content: center; gap: var(--space-3); padding: var(--space-3); }
+
+	/* ── Finder's Icon View: a grid of tiles instead of rows. Folders
+	   are tinted the familiar Finder blue; files are a plain document
+	   icon; the label sits centered underneath, same as a real file
+	   browser's icon grid. ── */
+	.list-pane-body.grid-mode { padding: var(--space-3); }
+	.icon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr)); gap: var(--space-2); }
+	.icon-tile {
+		display: flex; flex-direction: column; align-items: center; gap: .3rem; padding: var(--space-2) .3rem;
+		border: 1px solid transparent; background: none; cursor: pointer; text-align: center; border-radius: var(--r);
+	}
+	.icon-tile:hover { background: var(--panel-2); }
+	.icon-tile.on { background: var(--accent-soft); border-color: var(--accent); }
+	.folder-tile :global(svg) { color: #4FA0E0; fill: #4FA0E0; fill-opacity: .18; }
+	.doc-tile :global(svg), .staged-tile :global(svg) { color: var(--muted); }
+	.tile-icon { position: relative; display: flex; }
+	.tile-badge {
+		position: absolute; bottom: -.1rem; right: -.3rem; width: 1rem; height: 1rem; border-radius: 50%;
+		background: var(--panel); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; color: var(--muted);
+	}
+	.tile-badge.bell { color: var(--accent); right: -1.1rem; }
+	.tile-label {
+		font-size: var(--text-xs); color: var(--ink); overflow: hidden; display: -webkit-box;
+		-webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; word-break: break-word; line-height: 1.25;
+	}
+	.icon-tile.on .tile-label { color: var(--accent-ink); }
+	.tile-sub { font-size: .65rem; color: var(--danger); }
+	.staged-tile { opacity: .8; }
+	.job-progress.tiny { width: 100%; margin-top: -.1rem; }
+	.job-progress.tiny .track { height: 3px; }
 	.pager button { border: 1px solid var(--line); background: var(--panel); cursor: pointer; padding: .2rem .6rem; }
 	.pager button:disabled { opacity: .4; cursor: not-allowed; }
 
