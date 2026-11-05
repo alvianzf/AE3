@@ -37,6 +37,21 @@ _MAX_OUTPUT_TOKENS = {
 }
 
 
+def _cacheable_system(system: str) -> list[dict]:
+    """specs/v9/01 (candidate A): every call site here passes a static,
+    per-role system prompt reused across many calls within the same
+    role (RELEVANCE_SYSTEM once per traversal hop, CHECK_SYSTEM once per
+    consult, REASONER_SYSTEM once per consult and again on a retry,
+    KG_BUILDER_SYSTEM/READER_SYSTEM once per ingest) — marking it
+    ephemeral-cacheable lets Anthropic skip reprocessing those tokens on
+    a cache hit within the TTL, measurably faster and cheaper than a
+    full read, with zero change to the prompt, model, or output. Below
+    Anthropic's per-model minimum cacheable length, cache_control is
+    simply a no-op, not an error, so this is safe to apply unconditionally
+    rather than special-casing short prompts."""
+    return [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
+
+
 class AnthropicLLMClient:
     def __init__(self, role, model: str):
         self.role = role
@@ -74,7 +89,7 @@ class AnthropicLLMClient:
             response = self._client.messages.create(
                 model=self.model,
                 max_tokens=self._clamp(max_tokens),
-                system=system,
+                system=_cacheable_system(system),
                 messages=[{"role": "user", "content": prompt}],
                 tools=[tool],
                 tool_choice={"type": "tool", "name": "emit"},
@@ -102,7 +117,7 @@ class AnthropicLLMClient:
         response = self._client.messages.create(
             model=self.model,
             max_tokens=self._clamp(max_tokens),
-            system=system,
+            system=_cacheable_system(system),
             messages=[{"role": "user", "content": prompt}],
         )
         text = "".join(b.text for b in response.content if b.type == "text").strip()

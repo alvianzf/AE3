@@ -424,36 +424,50 @@ def _run_ingest(
     # entirely — it always lands at folder_path="" below regardless of
     # what the Reader suggests, so there's no point nudging a one-
     # practitioner document toward the shared library's taxonomy.
+    #
+    # specs/v9/01 (candidate B): the Reader call's result (`card`) is only
+    # consumed after this block (the delete-replaces/graph-extraction/
+    # write steps below) — nothing stops it from running concurrently with
+    # chunking+embedding, which used to block on it for no reason visible
+    # in the code. Same calls, same results, same on_progress labels in
+    # the same order — only the Reader's wall-clock cost now overlaps
+    # chunking+embedding's instead of preceding it.
     facets = store.facets()
-    card = ingestion_pipeline.read_source(
-        body, filename, kind, origin, known_topics=facets["topics"],
-        known_folders=None if owner_practitioner_id else facets["folders"])
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        card_future = pool.submit(
+            ingestion_pipeline.read_source, body, filename, kind, origin,
+            known_topics=facets["topics"],
+            known_folders=None if owner_practitioner_id else facets["folders"])
 
-    # Remove the superseded source only once the new one has been read, so a
-    # failure part-way through does not leave the library short.
+        on_progress("chunking")
+        passages = store.chunk_pages(pages)
+        # Embed + extract the knowledge graph now, so the document is connected
+        # to the rest of the corpus (and searchable) the moment it lands, rather
+        # than sitting as an island. Graph-building is additive — never lose the
+        # source over it — but embedding is not: without it the document is
+        # invisible to seed search entirely, so an embedding failure does fail
+        # the ingest (unlike the old concept-extraction path this replaces).
+        # The failure itself is still surfaced as a clean, actionable error
+        # (matching /api/scrape's handling of the same class of failure a few
+        # routes away), not a bare unhandled 500.
+        on_progress("embedding")
+        try:
+            embeddings = get_llm_client(LLMRole.EMBEDDER).embed([p["text"] for p in passages])
+        except openai.APIError as exc:
+            raise HTTPException(
+                502, "The AI service is temporarily unavailable. Try again shortly."
+            ) from exc
+        for i, p in enumerate(passages):
+            p["embedding"] = embeddings[i] if i < len(embeddings) else None
+
+        card = card_future.result()
+
+    # Remove the superseded source only once the new one has both been read
+    # AND successfully embedded (stricter than before this change — it used
+    # to require only a successful read — so a failure part-way through
+    # still never leaves the library short).
     if replaces:
         store.delete_document(replaces)
-
-    on_progress("chunking")
-    passages = store.chunk_pages(pages)
-    # Embed + extract the knowledge graph now, so the document is connected
-    # to the rest of the corpus (and searchable) the moment it lands, rather
-    # than sitting as an island. Graph-building is additive — never lose the
-    # source over it — but embedding is not: without it the document is
-    # invisible to seed search entirely, so an embedding failure does fail
-    # the ingest (unlike the old concept-extraction path this replaces).
-    # The failure itself is still surfaced as a clean, actionable error
-    # (matching /api/scrape's handling of the same class of failure a few
-    # routes away), not a bare unhandled 500.
-    on_progress("embedding")
-    try:
-        embeddings = get_llm_client(LLMRole.EMBEDDER).embed([p["text"] for p in passages])
-    except openai.APIError as exc:
-        raise HTTPException(
-            502, "The AI service is temporarily unavailable. Try again shortly."
-        ) from exc
-    for i, p in enumerate(passages):
-        p["embedding"] = embeddings[i] if i < len(embeddings) else None
 
     # Graph-building is additive — never lose the source, or the other
     # passages' already-extracted entities, over one passage's failure.
