@@ -3,6 +3,7 @@
 	import { api } from '$lib/api';
 	import { toast } from '$lib/stores/toast';
 	import TextField from '$lib/components/TextField.svelte';
+	import Icon from '$lib/components/Icon.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import Toggle from '$lib/components/Toggle.svelte';
 	import Chip from '$lib/components/Chip.svelte';
@@ -94,7 +95,7 @@
 
 <svelte:head><title>Profile — Practitioner portal</title></svelte:head>
 
-<div class="pane-row"><div class="detail-pane"><div class="detail-head"><div><h1>Your profile</h1></div></div>
+<div class="pane-row"><div class="detail-pane"><div class="detail-head"><div class="head-title"><span class="head-ico"><Icon name="settings" size={16} /></span><h1>Your profile</h1></div></div>
 	<form onsubmit={save}>
 		<div class="photo-row">
 			<div class="photo" style={(photoPreview || p?.photo_path) ? `background-image:url(${photoPreview || p?.photo_path})` : ''}>

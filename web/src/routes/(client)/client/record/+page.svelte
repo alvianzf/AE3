@@ -59,7 +59,7 @@
 
 <svelte:head><title>Health record — Client portal</title></svelte:head>
 
-<div class="pane-row"><div class="detail-pane"><div class="detail-head"><div><h1>Your health record</h1></div></div>
+<div class="pane-row"><div class="detail-pane"><div class="detail-head"><div class="head-title"><span class="head-ico"><Icon name="user-card" size={16} /></span><h1>Your health record</h1></div></div>
 	<p class="hint">
 		Add labs, conditions, medications, or anything else your practitioner should know about
 		before your next consult. Your practitioner can see everything here; you can only remove

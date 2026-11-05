@@ -29,12 +29,24 @@
 	async function loadOmniIndex() {
 		if (omniLoaded) return;
 		omniLoaded = true;
-		const [sources, practitioners, clients] = await Promise.all([
-			get(fetch, '/sources').catch(() => []),
+		// per_page=500, same as the Library's own load — the bare
+		// GET /sources default (per_page=10) was silently limiting
+		// document search to the 10 newest.
+		const [sourcesRes, practitioners, clients, questionnaires] = await Promise.all([
+			get(fetch, '/sources?per_page=500').catch(() => ({ sources: [] })),
 			get(fetch, '/admin/practitioners').catch(() => []),
-			get(fetch, '/admin/clients').catch(() => [])
+			get(fetch, '/admin/clients').catch(() => []),
+			get(fetch, '/admin/questionnaires').catch(() => [])
 		]);
+		const sources = sourcesRes?.sources ?? sourcesRes ?? [];
+		const folderPaths = [...new Set(
+			(sources ?? []).map((s: any) => s.folder_path).filter((p: string) => p)
+		)] as string[];
 		searchExtra = [
+			...folderPaths.map((p) => ({
+				label: p.split('/').pop() ?? p, icon: 'folder', group: 'Folders',
+				href: `/admin/library?folder=${encodeURIComponent(p)}`
+			})),
 			...(sources ?? []).map((s: any) => ({ label: s.title, href: `/admin/${s.id}`, icon: 'file', group: 'Documents' })),
 			...(practitioners ?? []).map((p: any) => ({
 				label: p.name, icon: 'users', group: 'Practitioners',
@@ -43,6 +55,9 @@
 			...(clients ?? []).map((c: any) => ({
 				label: c.name, icon: 'user-card', group: 'Clients',
 				href: `/admin/users?tab=clients&q=${encodeURIComponent(c.name ?? '')}`
+			})),
+			...(questionnaires ?? []).map((q: any) => ({
+				label: q.title, icon: 'clipboard', group: 'Questionnaires', href: `/admin/questionnaires`
 			}))
 		];
 	}

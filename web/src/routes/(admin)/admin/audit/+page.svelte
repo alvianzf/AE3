@@ -3,6 +3,7 @@
 	import DataTable from '$lib/components/DataTable.svelte';
 	import Chip from '$lib/components/Chip.svelte';
 	import Button from '$lib/components/Button.svelte';
+	import Icon from '$lib/components/Icon.svelte';
 
 	let { data } = $props();
 
@@ -38,7 +39,7 @@
      6-row inline preview crowded a narrow rail panel. Full history (up to
      the 100 most recent events GET /api/audit returns) gets its own screen
      instead. -->
-<div class="pane-row"><div class="detail-pane"><div class="detail-head"><div><h1>Audit history</h1></div></div>
+<div class="pane-row"><div class="detail-pane"><div class="detail-head"><div class="head-title"><span class="head-ico"><Icon name="history" size={16} /></span><h1>Audit history</h1></div></div>
 	<p class="hint">Library-only events — who changed what in the knowledge base, and when. Each Pro practitioner's own patient-vault activity is separate and isn't shown here.</p>
 
 	<DataTable

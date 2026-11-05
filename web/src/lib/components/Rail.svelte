@@ -4,6 +4,7 @@
 	import { post } from '$lib/api';
 	import Sprig from './Sprig.svelte';
 	import Icon from './Icon.svelte';
+	import LeafField from './LeafField.svelte';
 
 	// Full rebuild: a flat, dark, icon-only rail — not a gradient-painted
 	// panel, not a floating white dock, not a tile launcher. Square
@@ -38,6 +39,11 @@
 </script>
 
 <nav class="rail" aria-label="Main navigation">
+	<!-- The "pattern" is the real falling-leaves motif — randomized
+	     position/size/rotation, actually animated, same as the public
+	     hero — not a static tiled silhouette, per direct feedback. Sits
+	     behind the nav content, tinted by the portal's own accent. -->
+	<div class="rail-leaves"><LeafField count={10} /></div>
 	<a href="/" class="mark" aria-label="Functional Health Collab home"><Sprig size={18} /></a>
 
 	<!-- Direct instruction: omni search is always on, right under the
@@ -79,23 +85,24 @@
 	/* A patterned gradient tinted by each portal's own --rail-indicator
 	   (set per layout: violet for admin, teal for practitioner, the
 	   default pink for client) — so the rail reads as a different role
-	   at a glance, not just a different highlighted nav item. The
-	   "pattern" is a tiled repeat of the exact leaf silhouette
-	   LeafField.svelte animates elsewhere — one of the three things kept
-	   from every prior redesign — not a generic texture. */
+	   at a glance, not just a different highlighted nav item. */
 	.rail {
 		width: var(--rail-w); flex: 0 0 auto; position: sticky; top: 0; height: 100dvh;
 		display: flex; flex-direction: column; align-items: center; gap: var(--space-3);
 		padding: var(--space-3) 0; color: var(--rail-ink); z-index: 40;
 		background:
-			url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='44' height='44' viewBox='0 0 24 24'%3E%3Cpath d='M12 3c4 2 7 5.5 7 10a7 7 0 0 1-14 0c0-4.5 3-8 7-10z' fill='white' fill-opacity='.05'/%3E%3C/svg%3E"),
 			linear-gradient(165deg, color-mix(in srgb, var(--rail-indicator) 30%, transparent), transparent 60%),
 			rgba(28, 26, 24, .82);
-		background-repeat: repeat, no-repeat, no-repeat;
-		background-size: 44px 44px, auto, auto;
 		backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
 		border-right: 1px solid rgba(255, 255, 255, .08);
+		isolation: isolate;
 	}
+	/* The real falling-leaves motif, not a static tile — randomized
+	   position/size/rotation/animation, same component the public hero
+	   uses, tinted to the portal's own accent and sitting behind every
+	   bit of real nav content. */
+	.rail-leaves { position: absolute; inset: 0; z-index: 0; --leaf-color: var(--rail-indicator); }
+	.mark, .search-trigger, ul, .foot { position: relative; z-index: 1; }
 	.mark { color: var(--rail-ink); display: flex; padding: .4rem var(--space-4); }
 	.search-trigger {
 		display: flex; align-items: center; gap: .6rem; width: calc(100% - var(--space-4)); margin: var(--space-2) var(--space-2) var(--space-3);
@@ -138,6 +145,7 @@
 			flex-direction: row; align-items: center; padding: 0;
 		}
 		.mark { display: none; }
+		.rail-leaves { display: none; }
 		.search-trigger {
 			width: 2.8rem; height: 2.8rem; margin: 0; padding: 0; justify-content: center;
 			border: none; background: none; flex: 0 0 auto;

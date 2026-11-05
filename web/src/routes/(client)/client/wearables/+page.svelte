@@ -1,10 +1,11 @@
 <script lang="ts">
 	import Sprig from '$lib/components/Sprig.svelte';
+	import Icon from '$lib/components/Icon.svelte';
 </script>
 
 <svelte:head><title>Wearables — Client portal</title></svelte:head>
 
-<div class="pane-row"><div class="detail-pane"><div class="detail-head"><div><h1>Connect a wearable</h1></div></div>
+<div class="pane-row"><div class="detail-pane"><div class="detail-head"><div class="head-title"><span class="head-ico"><Icon name="watch" size={16} /></span><h1>Connect a wearable</h1></div></div>
 	<!-- Wearable OAuth connect is real (app/wearables.py) but what happens after
 	     is fixture data, not a live vendor pull (see that module's docstring).
 	     Showing a working "Connect" button here would let a client believe

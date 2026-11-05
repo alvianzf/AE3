@@ -202,6 +202,13 @@ svg { flex: 0 0 auto; }
    not a hero heading. */
 .detail-head h1 { font-size: var(--text-base); font-weight: var(--weight-bold); }
 .detail-head p { color: var(--muted); font-size: var(--text-xs); margin-top: .1rem; }
+/* The icon+title row every page's heading now starts with, matching
+   the Library toolbar's own icon-button-then-title rhythm (its 1.9rem
+   buttons are what actually sets that bar's real height — plain text
+   alone sat shorter, which is why the two never looked quite the same
+   padding even with identical padding values). */
+.detail-head .head-title { display: flex; align-items: center; gap: .5rem; min-height: 1.9rem; }
+.detail-head .head-ico { display: flex; align-items: center; justify-content: center; color: var(--ink-2); flex: 0 0 auto; }
 @media (max-width: 960px) {
   .pane-row { flex-direction: column; }
   .list-pane { width: 100%; border-right: none; border-bottom: 1px solid var(--line); min-height: auto; max-height: 40vh; }
