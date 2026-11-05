@@ -8,6 +8,9 @@ export const ssr = false;
 // to its own /admin/settings page (a tile here, not a thing every page
 // load has to carry).
 export async function load({ fetch }) {
-	const stats = await get(fetch, '/admin/stats').catch(() => ({}));
-	return { stats };
+	const [stats, audit] = await Promise.all([
+		get(fetch, '/admin/stats').catch(() => ({})),
+		get(fetch, '/audit').catch(() => [])
+	]);
+	return { stats, audit };
 }

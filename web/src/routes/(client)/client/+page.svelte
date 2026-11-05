@@ -33,38 +33,41 @@
 
 <svelte:head><title>Home — Client portal</title></svelte:head>
 
-<div class="page-head">
-	<div>
-		<h1>Your care</h1>
-		<p>What's next, at a glance.</p>
+<!-- Wrapped in the same .pane-row/.detail-pane/.detail-head shell every
+     other page in the app uses — this page previously had no wrapper at
+     all, so it rendered with none of the shared padding/background/
+     sticky-header treatment the rest of the portal gets. -->
+<div class="pane-row">
+	<div class="detail-pane">
+		<div class="detail-head"><div><h1>Your care</h1><p>What's next, at a glance.</p></div></div>
+
+		<div class="stream">
+			{#each items as it (it.href)}
+				<a class="row" class:done={it.done} href={it.href}>
+					<span class="ic" class:done={it.done}><Icon name={it.icon} size={18} /></span>
+					<span class="body">
+						<strong>{it.title}</strong>
+						<span class="hint">{it.body}</span>
+					</span>
+					<span class="action">{it.action} →</span>
+				</a>
+			{/each}
+			<!-- specs/v6.6 — honest, never-optimistic state, unchanged: wearables
+			     stays "Coming soon," not a fixture pretending to be live data. -->
+			<a class="row" href="/client/wearables">
+				<span class="ic"><Icon name="watch" size={18} /></span>
+				<span class="body">
+					<strong>Wearables</strong>
+					<span class="hint">Coming soon.</span>
+				</span>
+				<span class="action">—</span>
+			</a>
+		</div>
 	</div>
 </div>
 
-<div class="stream">
-	{#each items as it (it.href)}
-		<a class="row" class:done={it.done} href={it.href}>
-			<span class="ic" class:done={it.done}><Icon name={it.icon} size={18} /></span>
-			<span class="body">
-				<strong>{it.title}</strong>
-				<span class="hint">{it.body}</span>
-			</span>
-			<span class="action">{it.action} →</span>
-		</a>
-	{/each}
-	<!-- specs/v6.6 — honest, never-optimistic state, unchanged: wearables
-	     stays "Coming soon," not a fixture pretending to be live data. -->
-	<a class="row" href="/client/wearables">
-		<span class="ic"><Icon name="watch" size={18} /></span>
-		<span class="body">
-			<strong>Wearables</strong>
-			<span class="hint">Coming soon.</span>
-		</span>
-		<span class="action">—</span>
-	</a>
-</div>
-
 <style>
-	.stream { display: grid; gap: var(--space-3); margin-top: var(--space-5); max-width: 36rem; }
+	.stream { display: grid; gap: var(--space-3); max-width: 36rem; }
 	.row {
 		display: flex; align-items: center; gap: var(--space-4); text-decoration: none; color: inherit;
 		background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg);

@@ -5,13 +5,14 @@
 		label,
 		value,
 		href,
-		icon
-	}: { label: string; value: string | number; href?: string; icon?: string } = $props();
+		icon,
+		tone
+	}: { label: string; value: string | number; href?: string; icon?: string; tone?: 'warn' } = $props();
 
 	const Tag = $derived(href ? 'a' : 'div');
 </script>
 
-<svelte:element this={Tag} href={href} class="tile">
+<svelte:element this={Tag} href={href} class="tile" class:warn={tone === 'warn'}>
 	{#if icon}<span class="ico"><Icon name={icon} size={20} /></span>{/if}
 	<div>
 		<div class="val">{value}</div>
@@ -30,4 +31,6 @@
 	.ico { display: inline-flex; color: var(--accent-ink); flex: 0 0 auto; }
 	.val { font-size: var(--text-xl); font-weight: 700; letter-spacing: -.02em; }
 	.lbl { font-size: var(--text-xs); color: var(--muted); letter-spacing: .04em; }
+	.tile.warn { border-color: var(--warn); background: var(--warn-soft); }
+	.tile.warn .ico, .tile.warn .val { color: var(--warn); }
 </style>

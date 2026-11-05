@@ -1,16 +1,26 @@
 <script lang="ts">
+	import StatTile from '$lib/components/StatTile.svelte';
+	import Button from '$lib/components/Button.svelte';
+	import Chip from '$lib/components/Chip.svelte';
+	import Icon from '$lib/components/Icon.svelte';
+
 	let { data } = $props();
 	const s = $derived(data.stats ?? {});
 
 	// Rail navigation reaches every section directly now — this page is
-	// just a quick read on the platform, not a launcher. A flat list of
-	// facts, not stat tiles in boxes.
-	const rows = $derived([
-		{ label: 'Pending applications', value: s.pending_practitioners ?? 0, href: '/admin/users', warn: (s.pending_practitioners ?? 0) > 0 },
-		{ label: 'Approved practitioners', value: s.approved_practitioners ?? 0, href: '/admin/users' },
-		{ label: 'New contact submissions', value: s.new_contacts ?? 0, href: '/admin/users', warn: (s.new_contacts ?? 0) > 0 },
-		{ label: 'Total profile views', value: s.total_views ?? 0 }
+	// a quick read on the whole platform plus the handful of things an
+	// admin actually comes here to check: what needs a decision (stat
+	// tiles, warn-toned when non-zero), where to go next (quick actions),
+	// and what just happened (recent activity) — not a menu of every
+	// section again, the rail already is that.
+	const tiles = $derived([
+		{ label: 'Pending applications', value: s.pending_practitioners ?? 0, icon: 'users', href: '/admin/users?tab=practitioners', warn: (s.pending_practitioners ?? 0) > 0 },
+		{ label: 'Approved practitioners', value: s.approved_practitioners ?? 0, icon: 'user-card', href: '/admin/users?tab=practitioners' },
+		{ label: 'New contact submissions', value: s.new_contacts ?? 0, icon: 'mail', href: '/admin/users', warn: (s.new_contacts ?? 0) > 0 },
+		{ label: 'Total profile views', value: s.total_views ?? 0, icon: 'eye' }
 	]);
+
+	const recent = $derived((data.audit ?? []).slice(0, 6));
 </script>
 
 <svelte:head><title>Overview — Admin portal</title></svelte:head>
@@ -18,26 +28,57 @@
 <div class="pane-row">
 	<div class="detail-pane">
 		<div class="detail-head"><div><h1>Overview</h1><p>A quick read on the whole platform.</p></div></div>
-		<div class="stat-list">
-			{#each rows as r (r.label)}
-				{#if r.href}
-					<a class="stat-row" class:warn={r.warn} href={r.href}>
-						<span>{r.label}</span><strong>{r.value}</strong>
-					</a>
-				{:else}
-					<div class="stat-row"><span>{r.label}</span><strong>{r.value}</strong></div>
-				{/if}
+
+		<div class="tile-grid">
+			{#each tiles as t (t.label)}
+				<StatTile label={t.label} value={t.value} icon={t.icon} href={t.href} tone={t.warn ? 'warn' : undefined} />
 			{/each}
 		</div>
+
+		<section class="block">
+			<h2>Quick actions</h2>
+			<div class="action-row">
+				<Button variant="outlined" href="/admin/library"><Icon name="plus" size={15} />Add resources</Button>
+				<Button variant="outlined" href="/admin/users?tab=practitioners"><Icon name="check" size={15} />Review practitioners</Button>
+				<Button variant="outlined" href="/admin/questionnaires"><Icon name="clipboard" size={15} />Edit questionnaires</Button>
+			</div>
+		</section>
+
+		<section class="block">
+			<div class="block-head">
+				<h2>Recent activity</h2>
+				<a class="see-all" href="/admin/audit">See all →</a>
+			</div>
+			{#if recent.length}
+				<ul class="activity-list">
+					{#each recent as a, i (a.ts + i)}
+						<li>
+							<Chip tone="neutral">{a.action}</Chip>
+							<span class="who">{a.actor}</span>
+							{#if a.detail}<span class="hint">{a.detail}</span>{/if}
+							<span class="when">{(a.ts ?? '').slice(0, 16).replace('T', ' ')}</span>
+						</li>
+					{/each}
+				</ul>
+			{:else}
+				<p class="hint">Nothing logged yet.</p>
+			{/if}
+		</section>
 	</div>
 </div>
 
 <style>
-	.stat-list { border-top: 1px solid var(--line); max-width: 28rem; }
-	.stat-row {
-		display: flex; align-items: center; justify-content: space-between; padding: var(--space-3) 0;
-		border-bottom: 1px solid var(--line); color: var(--ink); text-decoration: none;
+	.tile-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: var(--space-3); margin-bottom: var(--space-6); max-width: 52rem; }
+	.block { margin-bottom: var(--space-6); max-width: 40rem; }
+	.block-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
+	.block h2, .block-head h2 { font-size: var(--text-lg); margin-bottom: var(--space-3); }
+	.see-all { font-size: var(--text-sm); color: var(--accent-ink); text-decoration: none; }
+	.action-row { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+	.activity-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
+	.activity-list li {
+		display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; font-size: var(--text-sm);
+		padding: var(--space-2) 0; border-bottom: 1px solid var(--line);
 	}
-	.stat-row.warn strong { color: var(--warn); }
-	a.stat-row:hover { color: var(--accent-ink); }
+	.who { font-weight: var(--weight-medium); color: var(--ink-2); }
+	.when { margin-left: auto; color: var(--muted); font-size: var(--text-xs); }
 </style>
