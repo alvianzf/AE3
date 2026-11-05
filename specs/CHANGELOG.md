@@ -1,5 +1,27 @@
 # Specs changelog
 
+## 2026-11-05 — v10, production drift against v9's codebase-only picture
+
+See [v10/README.md](v10/README.md). Implementing v9's candidates A
+(Anthropic prompt caching) and B (parallelize the ingest Reader call)
+and investigating candidate F (raise `INGESTION_CONCURRENCY`) per
+direct instruction meant SSHing into the production VPS for the first
+time this spec series has done that, rather than reasoning from the
+codebase alone. Three things didn't match what the code implied:
+candidate C's "formalize the local embedder" framing was already
+half-wrong (`EMBEDDER_FORCE_LOCAL=true` is already the live, deliberate
+production config, not a fallback default waiting to be flipped — and
+Nebius's embeddings endpoint is still returning `402 insufficient_quota`
+on a direct test, so there's no live "choice" being made at all right
+now); candidate F's real constraint is the VPS itself (2 vCPUs, a
+single gunicorn worker serving all live traffic, embedding already
+CPU-bound local inference) rather than anything in the code, and is
+recommended against on this box; and two minor operational loose ends
+(a stale `clinic.service.bak` unit file, no git checkout on the deploy
+box) were found and recorded, not fixed. A and B are implemented and
+deployed to production, verified via a clean graceful reload and a
+healthy health check.
+
 ## 2026-11-04 — v9, backend pipeline latency brainstorm (spec only, not implemented)
 
 See [v9/README.md](v9/README.md). Direct request: make the backend AI
