@@ -189,7 +189,7 @@ svg { flex: 0 0 auto; }
   gap: var(--space-4); flex-wrap: wrap;
   position: sticky; top: calc(-1 * var(--space-5)); z-index: 5;
   margin: calc(-1 * var(--space-5)) calc(-1 * var(--space-6)) var(--space-5);
-  padding: .6rem var(--space-6); background: var(--panel-2); border-bottom: 1px solid var(--glass-border);
+  padding: .5rem var(--space-3); background: var(--panel-2); border-bottom: 1px solid var(--glass-border);
   background-image: var(--glass-sheen);
   backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
 }

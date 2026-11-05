@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
+	import { page } from '$app/state';
 	import { post, put } from '$lib/api';
 	import { toast } from '$lib/stores/toast';
 	import Tabs from '$lib/components/Tabs.svelte';
@@ -12,7 +13,9 @@
 	import Toggle from '$lib/components/Toggle.svelte';
 
 	let { data } = $props();
-	let active = $state('practitioners');
+	// Arriving from the omni-search palette (?tab=&q=) lands straight on
+	// the right tab with the right person already searched for.
+	let active = $state(page.url.searchParams.get('tab') ?? 'practitioners');
 	let openNew = $state(false);
 	// Admin-account management (create/role-change/suspend) is
 	// superadmin-only on the backend (auth.require_superadmin) — a plain
@@ -23,12 +26,21 @@
 
 	// Practitioner search — same client-side-filter-over-an-already-loaded
 	// list approach the Library page's search box uses.
-	let practitionerQuery = $state('');
+	let practitionerQuery = $state(page.url.searchParams.get('tab') === 'practitioners' ? (page.url.searchParams.get('q') ?? '') : '');
 	const filteredPractitioners = $derived.by(() => {
 		const needle = practitionerQuery.trim().toLowerCase();
 		if (!needle) return data.practitioners;
 		return data.practitioners.filter((p: any) =>
 			[p.name, p.email].some((v) => (v ?? '').toLowerCase().includes(needle))
+		);
+	});
+
+	let clientQuery = $state(page.url.searchParams.get('tab') === 'clients' ? (page.url.searchParams.get('q') ?? '') : '');
+	const filteredClients = $derived.by(() => {
+		const needle = clientQuery.trim().toLowerCase();
+		if (!needle) return data.clients;
+		return data.clients.filter((c: any) =>
+			[c.name, c.email, c.practitioner_name].some((v) => (v ?? '').toLowerCase().includes(needle))
 		);
 	});
 
@@ -311,9 +323,18 @@
 			{/snippet}
 		</DataTable>
 	{:else}
+		<div class="toolbar">
+			<input
+				class="search"
+				type="search"
+				placeholder="Search name, email, or practitioner…"
+				bind:value={clientQuery}
+				aria-label="Search clients"
+			/>
+		</div>
 		<DataTable
 			columns={[{ key: 'name', label: 'Name' }, { key: 'email', label: 'Email' }, { key: 'practitioner_name', label: 'Practitioner' }, { key: 'active', label: 'Status' }, { key: 'actions', label: '' }]}
-			rows={data.clients}
+			rows={filteredClients}
 			empty="No clients yet."
 		>
 			{#snippet row(c)}
