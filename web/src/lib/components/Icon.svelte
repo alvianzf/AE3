@@ -63,7 +63,8 @@
 		slide: 'M3 5.5A1.5 1.5 0 0 1 4.5 4h15A1.5 1.5 0 0 1 21 5.5v11A1.5 1.5 0 0 1 19.5 18h-15A1.5 1.5 0 0 1 3 16.5zM10 8.5l6 3-6 3zM8 21h8',
 		audio: 'M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM21 16a3 3 0 1 1-6 0 3 3 0 0 1 6 0z',
 		video: 'M3 6.5A1.5 1.5 0 0 1 4.5 5h11A1.5 1.5 0 0 1 17 6.5v11a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 17.5zM17 10l4-2.5v9L17 14',
-		archive: 'M4 4h16v16H4zM4 9h16M10 4v2M10 9v2M10 13v2M10 17v2'
+		archive: 'M4 4h16v16H4zM4 9h16M10 4v2M10 9v2M10 13v2M10 17v2',
+		columns: 'M4 4h5v16H4zM10.5 4h5v16h-5zM17 4h3v16h-3z'
 	};
 
 	let { name, size = 17 }: { name: string; size?: number } = $props();

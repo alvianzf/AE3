@@ -257,7 +257,7 @@
 	// feel like macOS Finder. Icon view (the grid Finder opens to by
 	// default) and List view, not a separate "Folders" mode — in Finder,
 	// folders are just items inside whichever view you're already in.
-	let viewMode = $state<'icons' | 'list'>(
+	let viewMode = $state<'icons' | 'list' | 'columns'>(
 		(typeof localStorage !== 'undefined' && (localStorage.getItem('admin-library-view') as any)) || 'icons'
 	);
 	$effect(() => {
@@ -443,6 +443,26 @@
 	const visibleSubfolders = $derived.by(() => {
 		if (!currentPath) return folderTree;
 		return findNode(folderTree, currentPath)?.children ?? [];
+	});
+
+	// Column View: one column per level from the root down through
+	// currentPath, each showing that level's siblings — the real Finder
+	// behavior where picking a folder in column N reveals its contents as
+	// column N+1, while columns to the left keep showing their own
+	// siblings so you can jump to a different branch without losing your
+	// place. The trailing column (currentPath's own contents) also lists
+	// its documents, same as Icon/List view's main pane.
+	const folderColumns = $derived.by(() => {
+		const segments = currentPath ? currentPath.split('/') : [];
+		const cols: { path: string; nodes: TreeNode[] }[] = [{ path: '', nodes: folderTree }];
+		let acc = '';
+		let levelNodes = folderTree;
+		for (const seg of segments) {
+			acc = acc ? `${acc}/${seg}` : seg;
+			levelNodes = levelNodes.find((n) => n.path === acc)?.children ?? [];
+			cols.push({ path: acc, nodes: levelNodes });
+		}
+		return cols;
 	});
 
 	const breadcrumb = $derived.by(() => {
@@ -1109,6 +1129,7 @@
 			<div class="tb-view-toggle" role="group" aria-label="View">
 				<button class:on={viewMode === 'icons'} onclick={() => (viewMode = 'icons')} title="Icon View"><Icon name="grid" size={15} /></button>
 				<button class:on={viewMode === 'list'} onclick={() => (viewMode = 'list')} title="List View"><Icon name="list" size={15} /></button>
+				<button class:on={viewMode === 'columns'} onclick={() => (viewMode = 'columns')} title="Column View"><Icon name="columns" size={15} /></button>
 			</div>
 			<Menu label="Sort" icon="sort">
 				{#snippet items()}
@@ -1312,7 +1333,7 @@
 						</div>
 					{/each}
 				</div>
-			{:else}
+			{:else if viewMode === 'list'}
 				<!-- Finder's List View: a real table — Name, Date, Type,
 				     Grade columns, not a card. -->
 				<table class="finder-table">
@@ -1394,6 +1415,53 @@
 						{/each}
 					</tbody>
 				</table>
+			{:else}
+				<!-- Finder's Column View: one column per hierarchy level,
+				     each showing its own siblings so a different branch is
+				     always one click away without losing where you are. -->
+				<div class="column-view">
+					{#each folderColumns as col, i (col.path)}
+						<div class="col-pane">
+							{#each col.nodes as node (node.path)}
+								<button
+									class="col-row"
+									class:active={currentPath === node.path || currentPath.startsWith(`${node.path}/`)}
+									class:drag-target={dragOverPath === node.path}
+									draggable="true"
+									ondragstart={() => (draggedFolderPath = node.path)}
+									ondragend={() => { draggedFolderPath = null; dragOverPath = null; }}
+									ondragover={(e) => { e.preventDefault(); dragOverPath = node.path; }}
+									ondragleave={() => (dragOverPath = null)}
+									ondrop={(e) => { e.preventDefault(); handleDropOnFolder(node.path); }}
+									onclick={() => { currentPath = node.path; selectedFolderPath = null; }}
+								>
+									<Icon name="folder" size={14} /> {node.name}
+									<span class="row-sub">{node.count}</span>
+									{#if node.children.length}<Icon name="chevron" size={11} />{/if}
+								</button>
+							{/each}
+							{#if i === folderColumns.length - 1}
+								{#each filtered as s (s.id)}
+									<button
+										class="col-row doc"
+										class:active={selectedDocId === s.id}
+										oncontextmenu={(e) => onDocContextMenu(e, s)}
+										draggable="true"
+										ondragstart={() => (draggedId = s.id)}
+										ondragend={() => (draggedId = null)}
+										onclick={() => (selectedDocId = s.id)}
+										ondblclick={() => window.open(`/admin/${s.id}`, '_blank')}
+									>
+										<Icon name={fileIcon(s)} size={14} /> {s.title}
+									</button>
+								{/each}
+								{#if !col.nodes.length && !filtered.length}
+									<p class="hint col-empty">Empty.</p>
+								{/if}
+							{/if}
+						</div>
+					{/each}
+				</div>
 			{/if}
 		</div>
 
@@ -1889,6 +1957,26 @@
 	.job-progress .track { height: 4px; background: var(--panel); overflow: hidden; }
 	.job-progress .fill { height: 100%; background: var(--accent); transition: width .3s var(--ease); }
 	.job-error { color: var(--danger); margin: 0; }
+
+	/* ── Finder's Column View: a horizontally-scrolling row of columns,
+	   each its own vertically-scrolling list of siblings. ── */
+	.column-view { display: flex; height: 100%; overflow-x: auto; }
+	.col-pane {
+		width: 14rem; flex: 0 0 auto; border-right: 1px solid var(--line); overflow-y: auto;
+		padding: var(--space-2);
+	}
+	.col-row {
+		display: flex; align-items: center; gap: .4rem; width: 100%; text-align: left;
+		border: 1px solid transparent; background: none; cursor: pointer; font: inherit; font-size: var(--text-sm);
+		color: var(--ink); padding: .35rem .5rem; border-radius: var(--r);
+	}
+	.col-row:hover { background: var(--panel-2); }
+	.col-row.active { background: var(--accent-soft); color: var(--accent-ink); }
+	.col-row.drag-target { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+	.col-row .row-sub { color: var(--muted); font-size: var(--text-xs); }
+	.col-row :global(svg:last-child) { margin-left: auto; color: var(--muted); flex: 0 0 auto; }
+	.col-row.doc :global(svg:first-child) { color: var(--muted); }
+	.col-empty { padding: var(--space-2) .5rem; }
 
 	/* ── The Inspector: Finder's own Get Info panel — only appears
 	   once something is selected, dismissible, not a permanently-
