@@ -87,25 +87,26 @@
 <style>
 	.checklist {
 		display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap;
-		border: 1px solid var(--line); background: var(--panel-2);
+		border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--line)); background: var(--accent-soft); border-radius: var(--r-lg);
 		padding: var(--space-3) var(--space-4); margin-bottom: var(--space-5); font-size: var(--text-sm);
 	}
 	.checklist-label { font-weight: 650; color: var(--ink-2); }
 	.checklist-item { display: flex; align-items: center; gap: .4rem; text-decoration: none; color: var(--ink); }
 	.checklist-item.done { color: var(--muted); text-decoration: line-through; }
 	.mark { font-weight: 700; }
-	.tile-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: var(--space-3); margin-bottom: var(--space-6); max-width: 52rem; }
-	.block { margin-bottom: var(--space-6); max-width: 40rem; }
+	.tile-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: var(--space-4); margin-bottom: var(--space-5); }
+	.block { margin-bottom: var(--space-5); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow); padding: var(--space-4) var(--space-5); }
 	.block-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
-	.block h2, .block-head h2 { font-size: var(--text-lg); margin-bottom: var(--space-3); }
-	.see-all { font-size: var(--text-sm); color: var(--accent-ink); text-decoration: none; }
+	.block h2, .block-head h2 { font-size: var(--text-base); font-weight: 650; margin-bottom: var(--space-3); }
+	.see-all { font-size: var(--text-sm); font-weight: 600; color: var(--accent-ink); text-decoration: none; }
+	.see-all:hover { text-decoration: underline; }
 	.action-row { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 	.consult-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .3rem; }
 	.consult-list a {
 		display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; font-size: var(--text-sm);
-		padding: var(--space-2) 0; border-bottom: 1px solid var(--line); text-decoration: none; color: var(--ink);
+		padding: .6rem .5rem; margin: 0 -.5rem; border-radius: var(--r); text-decoration: none; color: var(--ink);
 	}
-	.consult-list a:hover { color: var(--accent-ink); }
+	.consult-list a:hover { background: var(--panel-2); }
 	.who { font-weight: var(--weight-medium); color: var(--ink-2); }
 	.when { margin-left: auto; color: var(--muted); font-size: var(--text-xs); }
 </style>

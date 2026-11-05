@@ -67,16 +67,16 @@
 </div>
 
 <style>
-	.stream { display: grid; gap: var(--space-3); max-width: 36rem; }
+	.stream { display: grid; gap: var(--space-3); max-width: 44rem; }
 	.row {
 		display: flex; align-items: center; gap: var(--space-4); text-decoration: none; color: inherit;
 		background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg);
-		padding: var(--space-4); transition: border-color .15s var(--ease), transform .15s var(--ease);
+		padding: var(--space-4); box-shadow: var(--shadow); transition: border-color .15s var(--ease), box-shadow .15s var(--ease);
 	}
-	.row:hover { border-color: var(--line-2); transform: translateX(2px); }
+	.row:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); box-shadow: 0 4px 12px rgba(16, 24, 40, .08); }
 	.ic {
 		display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
-		width: 2.6rem; height: 2.6rem; border-radius: 50%; background: var(--accent-soft); color: var(--accent-ink);
+		width: 2.6rem; height: 2.6rem; border-radius: 10px; background: var(--accent-soft); color: var(--accent-ink);
 	}
 	.ic.done { background: var(--ok-soft); color: var(--ok); }
 	.body { display: flex; flex-direction: column; gap: .2rem; flex: 1 1 auto; min-width: 0; }

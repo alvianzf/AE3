@@ -1,5 +1,9 @@
 # Specs changelog
 
+## 2026-11-05 — v12, private-route (dashboard) repaint
+
+See [v12/README.md](v12/README.md). Direct instruction: the admin, practitioner and client portals looked stale; repaint to a modern, professional look. Token-driven and scoped to `html[data-surface='app']` so public routes are unchanged: solid surfaces (no glass), new slate sidebar with user card, white page header, card-based home pages, boxed inputs with focus ring, per-portal accents (rose / teal / indigo).
+
 ## 2026-11-05 — v11, landing page + public nav redesign
 
 See [v11/README.md](v11/README.md). Direct instruction: redesign the
