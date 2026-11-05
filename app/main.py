@@ -18,6 +18,7 @@ import re
 import resource
 import shutil
 import sys
+import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -1456,52 +1457,266 @@ def get_concept_graph(_admin: dict = Depends(auth.require_admin)) -> dict:
     return store.concept_graph()
 
 
-@app.post("/api/relink")
-def relink(_admin: dict = Depends(auth.require_admin)) -> dict:
-    """Build the knowledge graph for documents that have none.
+_current_maintenance: dict | None = None
+_maintenance_lock = threading.Lock()
+_maintenance_stop_requested = False
 
-    Documents ingested before graph-building existed (or where extraction
-    failed) are islands: reachable via seed search, invisible to
-    traversal (nothing to expand from). This connects them.
-    """
+
+def _update_maintenance(
+    kind: str,
+    status: str,
+    current: float,
+    total: float,
+    step: str,
+    detail: str,
+    percentage: int | None = None,
+    result: dict | None = None,
+    error: str | None = None,
+):
+    global _current_maintenance
+    if percentage is None:
+        percentage = int((current / max(1.0, total)) * 100) if total > 0 else 0
+    percentage = max(0, min(100, percentage))
+    _current_maintenance = {
+        "active": status == "running",
+        "kind": kind,
+        "status": status,
+        "current": current,
+        "total": total,
+        "percentage": percentage,
+        "step": step,
+        "detail": detail,
+        "result": result,
+        "error": error,
+        "updated_at": time.time(),
+    }
+
+
+def _stream_relink():
+    global _maintenance_stop_requested, _current_maintenance
+    _maintenance_stop_requested = False
+
+    docs = store.unlinked_documents()
+    total_docs = len(docs)
+
+    init_msg = f"Found {total_docs} unlinked document(s)..." if total_docs > 0 else "No unlinked documents found."
+    _update_maintenance("relink", "running", 0, max(1, total_docs), "start", init_msg, percentage=0)
+    yield {"event": "start", "kind": "relink", "percentage": 0, "current": 0, "total": max(1, total_docs), "detail": init_msg}
+
+    if total_docs == 0:
+        res = {"linked": [], "failed": [], **store.graph_stats()}
+        _update_maintenance("relink", "done", 1, 1, "done", "No unlinked documents found.", percentage=100, result=res)
+        yield {"event": "done", "kind": "relink", "percentage": 100, "current": 1, "total": 1, "detail": "No unlinked documents found.", "result": res}
+        return
+
     done, failed = [], []
-    for doc in store.unlinked_documents():
+    for i, doc in enumerate(docs, 1):
+        if _maintenance_stop_requested:
+            logging.info("relink stopped by admin request")
+            break
+
         full = store.document_text(doc["id"])
-        if not full or not full["passages"]:
+        if not full or not full.get("passages"):
             failed.append(doc["title"])
+            pct = int(((i - 1) / total_docs) * 100)
+            _update_maintenance("relink", "running", i, total_docs, "skipped", f"Skipped '{doc['title']}' (no passages)", percentage=pct)
+            yield {"event": "progress", "kind": "relink", "percentage": pct, "current": i, "total": total_docs, "detail": f"Skipped '{doc['title']}' (no passages)"}
             continue
+
         try:
-            entities_per_passage, relationships = [], []
-            for p in full["passages"]:
-                graph = ingestion_pipeline.extract_graph(p["text"])
-                entities_per_passage.append(graph["entities"])
-                relationships.extend(graph["relationships"])
-            edges = store.link_document(doc["id"], entities_per_passage, relationships)
+            passages = full["passages"]
+            num_passages = len(passages)
+            entities_per_passage: list[list[dict] | None] = [None] * num_passages
+            relationships: list[dict] = []
+
+            def _extract(idx: int, text: str):
+                try:
+                    graph = ingestion_pipeline.extract_graph(text)
+                    return idx, graph.get("entities", []), graph.get("relationships", [])
+                except Exception as exc:
+                    logging.warning("extraction failed for passage of %s: %s", doc["title"], exc)
+                    return idx, [], []
+
+            done_passages = 0
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                futures = [pool.submit(_extract, p_idx, p["text"]) for p_idx, p in enumerate(passages)]
+                for future in as_completed(futures):
+                    if _maintenance_stop_requested:
+                        break
+                    p_idx, ents, rels = future.result()
+                    entities_per_passage[p_idx] = ents
+                    relationships.extend(rels)
+                    done_passages += 1
+                    cur_prog = (i - 1) + (done_passages / max(1, num_passages))
+                    pct = int((cur_prog / total_docs) * 100)
+                    detail = f"Doc {i}/{total_docs}: '{doc['title']}' ({done_passages}/{num_passages} passages)"
+                    _update_maintenance("relink", "running", cur_prog, total_docs, "extracting", detail, percentage=pct)
+                    yield {"event": "progress", "kind": "relink", "percentage": pct, "current": cur_prog, "total": total_docs, "detail": detail}
+
+            if _maintenance_stop_requested:
+                break
+
+            clean_entities = [e or [] for e in entities_per_passage]
+            edges = store.link_document(doc["id"], clean_entities, relationships)
             store.log("admin", "linked", f"{doc['title']} — {edges} graph edges")
             done.append({"title": doc["title"], "edges": edges})
+
+            pct = int((i / total_docs) * 100)
+            detail = f"Linked '{doc['title']}' ({edges} edges)"
+            _update_maintenance("relink", "running", i, total_docs, "linked", detail, percentage=pct)
+            yield {"event": "progress", "kind": "relink", "percentage": pct, "current": i, "total": total_docs, "detail": detail}
         except Exception as exc:
             logging.warning("relink failed for %s: %s", doc["title"], exc)
             failed.append(doc["title"])
-    return {"linked": done, "failed": failed, **store.graph_stats()}
+            pct = int((i / total_docs) * 100)
+            detail = f"Failed '{doc['title']}': {exc}"
+            _update_maintenance("relink", "running", i, total_docs, "failed", detail, percentage=pct)
+            yield {"event": "progress", "kind": "relink", "percentage": pct, "current": i, "total": total_docs, "detail": detail}
+
+    res = {"linked": done, "failed": failed, **store.graph_stats()}
+    summary = f"Finished! Linked {len(done)} source(s), {len(failed)} failed."
+    _update_maintenance("relink", "done", total_docs, total_docs, "done", summary, percentage=100, result=res)
+    yield {"event": "done", "kind": "relink", "percentage": 100, "current": total_docs, "total": total_docs, "detail": summary, "result": res}
 
 
-@app.post("/api/consolidate")
-def consolidate(_admin: dict = Depends(auth.require_admin)) -> dict:
-    """Let the model tidy the entity index, then rewrite the graph to match.
+def _run_relink() -> dict:
+    res = {}
+    for ev in _stream_relink():
+        if ev.get("event") == "done":
+            res = ev.get("result", {})
+    return res
 
-    The alias table in graph/store.py's canon() catches the predictable
-    cases; this catches the tail — two labels for one idea that no static
-    map anticipated. Merging them turns two disconnected halves of the
-    graph into one. Requires APOC — see store.merge_entities()'s docstring.
-    """
+
+def _stream_consolidate():
+    global _maintenance_stop_requested, _current_maintenance
+    _maintenance_stop_requested = False
+
+    _update_maintenance("consolidate", "running", 0, 4, "start", "Starting entity consolidation...", percentage=5)
+    yield {"event": "start", "kind": "consolidate", "percentage": 5, "current": 0, "total": 4, "detail": "Starting entity consolidation..."}
+
     names = [e["name"] for e in store.all_entities()]
+    _update_maintenance("consolidate", "running", 1, 4, "scanning", f"Found {len(names)} entities in graph", percentage=25)
+    yield {"event": "progress", "kind": "consolidate", "percentage": 25, "current": 1, "total": 4, "detail": f"Scanning {len(names)} entities in knowledge graph..."}
+
+    if len(names) < 2:
+        res = {"entity": {"groups": [], "absorbed": 0, "before": len(names)}, **store.graph_stats()}
+        msg = f"Only {len(names)} entity in graph — nothing to consolidate."
+        _update_maintenance("consolidate", "done", 4, 4, "done", msg, percentage=100, result=res)
+        yield {"event": "done", "kind": "consolidate", "percentage": 100, "current": 4, "total": 4, "detail": msg, "result": res}
+        return
+
+    if _maintenance_stop_requested:
+        return
+
+    _update_maintenance("consolidate", "running", 2, 4, "analyzing", f"Analyzing {len(names)} entities with AI...", percentage=50)
+    yield {"event": "progress", "kind": "consolidate", "percentage": 50, "current": 2, "total": 4, "detail": f"Analyzing {len(names)} entities with AI for potential merges..."}
+
     groups = ingestion_pipeline.suggest_entity_merges(names)
+
+    if _maintenance_stop_requested:
+        return
+
+    _update_maintenance("consolidate", "running", 3, 4, "merging", f"Applying {len(groups)} merge group(s)...", percentage=75)
+    yield {"event": "progress", "kind": "consolidate", "percentage": 75, "current": 3, "total": 4, "detail": f"Applying {len(groups)} merge group(s) in Neo4j graph..."}
+
     absorbed = store.merge_entities(groups) if groups else 0
     if groups:
         store.log("admin", "consolidated", "entities: " + "; ".join(
             f"{g['canonical']} ← {', '.join(g['aliases'])}" for g in groups)[:400])
-    return {"entity": {"groups": groups, "absorbed": absorbed, "before": len(names)},
-           **store.graph_stats()}
+
+    res = {"entity": {"groups": groups, "absorbed": absorbed, "before": len(names)}, **store.graph_stats()}
+    summary = f"Finished! Merged {absorbed} duplicate entities."
+    _update_maintenance("consolidate", "done", 4, 4, "done", summary, percentage=100, result=res)
+    yield {"event": "done", "kind": "consolidate", "percentage": 100, "current": 4, "total": 4, "detail": summary, "result": res}
+
+
+def _run_consolidate() -> dict:
+    res = {}
+    for ev in _stream_consolidate():
+        if ev.get("event") == "done":
+            res = ev.get("result", {})
+    return res
+
+
+@app.get("/api/maintenance/status")
+def maintenance_status(_admin: dict = Depends(auth.require_admin)) -> dict:
+    """Returns the current state of any active maintenance job (relink or consolidate)."""
+    global _current_maintenance
+    if not _current_maintenance:
+        return {"active": False, "kind": None}
+    return dict(_current_maintenance)
+
+
+@app.post("/api/maintenance/stop")
+def stop_maintenance(_admin: dict = Depends(auth.require_admin)) -> dict:
+    """Requests cancellation of any running maintenance task."""
+    global _maintenance_stop_requested, _current_maintenance
+    _maintenance_stop_requested = True
+    if _current_maintenance:
+        _current_maintenance["active"] = False
+        _current_maintenance["status"] = "cancelled"
+        _current_maintenance["detail"] = "Maintenance stopped by admin."
+    return {"status": "stopping"}
+
+
+@app.post("/api/relink")
+def relink(
+    request: Request,
+    stream: bool = False,
+    _admin: dict = Depends(auth.require_admin),
+):
+    """Build the knowledge graph for documents that have none.
+    Supports live SSE progress streaming via stream=true or Accept: text/event-stream.
+    """
+    global _current_maintenance
+    if _current_maintenance and _current_maintenance.get("active"):
+        raise HTTPException(409, "A maintenance task is already running.")
+
+    wants_stream = stream or ("text/event-stream" in request.headers.get("accept", ""))
+
+    if not wants_stream:
+        return _run_relink()
+
+    def sse():
+        try:
+            for ev in _stream_relink():
+                yield f"data: {json.dumps(ev)}\n\n"
+        except Exception as exc:
+            err_msg = str(exc)
+            _update_maintenance("relink", "error", 0, 1, "error", err_msg, error=err_msg)
+            yield f"data: {json.dumps({'event': 'error', 'kind': 'relink', 'message': err_msg})}\n\n"
+
+    return StreamingResponse(sse(), media_type="text/event-stream")
+
+
+@app.post("/api/consolidate")
+def consolidate(
+    request: Request,
+    stream: bool = False,
+    _admin: dict = Depends(auth.require_admin),
+):
+    """Let the model tidy the entity index, then rewrite the graph to match.
+    Supports live SSE progress streaming via stream=true or Accept: text/event-stream.
+    """
+    global _current_maintenance
+    if _current_maintenance and _current_maintenance.get("active"):
+        raise HTTPException(409, "A maintenance task is already running.")
+
+    wants_stream = stream or ("text/event-stream" in request.headers.get("accept", ""))
+
+    if not wants_stream:
+        return _run_consolidate()
+
+    def sse():
+        try:
+            for ev in _stream_consolidate():
+                yield f"data: {json.dumps(ev)}\n\n"
+        except Exception as exc:
+            err_msg = str(exc)
+            _update_maintenance("consolidate", "error", 0, 1, "error", err_msg, error=err_msg)
+            yield f"data: {json.dumps({'event': 'error', 'kind': 'consolidate', 'message': err_msg})}\n\n"
+
+    return StreamingResponse(sse(), media_type="text/event-stream")
 
 
 @app.get("/api/sources/{source_id}/related")
