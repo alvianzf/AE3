@@ -630,6 +630,22 @@
 		try { localStorage.setItem('admin-library-view', viewMode); } catch {}
 	});
 
+	// Icon and folder size toggle in Icon view (specs/v15/18)
+	let iconSize = $state<'large' | 'medium' | 'small'>(
+		(typeof localStorage !== 'undefined' && (localStorage.getItem('admin-library-icon-size') as any)) || 'large'
+	);
+	$effect(() => {
+		try { localStorage.setItem('admin-library-icon-size', iconSize); } catch {}
+	});
+
+	const tileIconSizes = $derived({
+		folder: iconSize === 'small' ? 22 : iconSize === 'medium' ? 30 : 38,
+		tag: iconSize === 'small' ? 22 : iconSize === 'medium' ? 30 : 38,
+		doc: iconSize === 'small' ? 20 : iconSize === 'medium' ? 28 : 36,
+		staged: iconSize === 'small' ? 20 : iconSize === 'medium' ? 28 : 34
+	});
+	const tileBadgeIconSize = $derived(iconSize === 'small' ? 8 : 10);
+
 	// The quick-access tree sidebar is always there (Icon or List view
 	// alike — only the Concept graph has no use for it), collapsible
 	// with its own chevron rather than tied to the view toggle.
@@ -2452,6 +2468,35 @@
 					<button class:on={viewMode === 'list'} onclick={() => (viewMode = 'list')} title="List View"><Icon name="list" size={15} /></button>
 					<button class:on={viewMode === 'columns'} onclick={() => (viewMode = 'columns')} title="Column View"><Icon name="columns" size={15} /></button>
 				</div>
+				<div class="tb-view-toggle tb-size-toggle" role="group" aria-label="Icon and folder size">
+					<button
+						class="size-toggle-btn"
+						class:on={iconSize === 'small'}
+						onclick={() => (iconSize = 'small')}
+						title="Small icons"
+						aria-label="Small icons"
+					>
+						S
+					</button>
+					<button
+						class="size-toggle-btn"
+						class:on={iconSize === 'medium'}
+						onclick={() => (iconSize = 'medium')}
+						title="Medium icons"
+						aria-label="Medium icons"
+					>
+						M
+					</button>
+					<button
+						class="size-toggle-btn"
+						class:on={iconSize === 'large'}
+						onclick={() => (iconSize = 'large')}
+						title="Large icons (current)"
+						aria-label="Large icons (current)"
+					>
+						L
+					</button>
+				</div>
 				<Menu label="Sort" icon="sort">
 					{#snippet items()}
 						<button onclick={() => (sortBy = 'title')} class="menu-choice" class:menu-active={sortBy === 'title'}>Name</button>
@@ -2706,7 +2751,7 @@
 		{/if}
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
-			class="finder-content"
+			class="finder-content size-{iconSize}"
 			class:grid-mode={(mainTab === 'library' || mainTab === 'tags') && viewMode === 'icons'}
 			class:external-dragover={contentExternalDragOver}
 			class:marquee-active={isMarqueeSelecting && marqueeActive}
@@ -2748,7 +2793,7 @@
 					{/if}
 				</div>
 			{:else if viewMode === 'icons'}
-				<div class="icon-grid">
+				<div class="icon-grid size-{iconSize}">
 					{#if !searching}
 						{#if mainTab === 'library'}
 							{#each visibleSubfolders as node (node.path)}
@@ -2779,7 +2824,7 @@
 										/>
 									</div>
 									<div class="tile-art folder-art">
-										<Icon name="folder" size={38} />
+										<Icon name="folder" size={tileIconSizes.folder} />
 									</div>
 									<span class="tile-label">{node.name}</span>
 									<span class="tile-meta-pill">{node.count} {node.count === 1 ? 'item' : 'items'}</span>
@@ -2812,7 +2857,7 @@
 										/>
 									</div>
 									<div class="tile-art folder-art tag-art">
-										<Icon name="tag" size={38} />
+										<Icon name="tag" size={tileIconSizes.tag} />
 									</div>
 									<span class="tile-label">{node.name}</span>
 									<span class="tile-meta-pill">{node.count} {node.count === 1 ? 'item' : 'items'}</span>
@@ -2837,7 +2882,7 @@
 									</span>
 								</div>
 								<div class="tile-art doc-art">
-									<Icon name="file" size={34} />
+									<Icon name="file" size={tileIconSizes.staged} />
 								</div>
 								<span class="tile-label">{item.filename ?? item.source_url ?? 'Pasted text'}</span>
 								{#if jobsByStagedId[item.id]?.status === 'error'}
@@ -2875,8 +2920,8 @@
 							<div class="tile-header-bar">
 								<span class="file-ext-tag">{s.filename?.split('.').pop()?.toUpperCase() || s.doc_type || 'DOC'}</span>
 								<div class="tile-badges">
-									{#if s.is_private}<span class="tile-badge lock" title="Private"><Icon name="lock" size={10} /></span>{/if}
-									{#if needsFinalization.has(s.id)}<span class="tile-badge bell" title="Needs placement review"><Icon name="bell" size={10} /></span>{/if}
+									{#if s.is_private}<span class="tile-badge lock" title="Private"><Icon name="lock" size={tileBadgeIconSize} /></span>{/if}
+									{#if needsFinalization.has(s.id)}<span class="tile-badge bell" title="Needs placement review"><Icon name="bell" size={tileBadgeIconSize} /></span>{/if}
 									<input
 										type="checkbox"
 										class="tile-select-check"
@@ -2888,7 +2933,7 @@
 								</div>
 							</div>
 							<div class="tile-art doc-art">
-								<Icon name={fileIcon(s)} size={36} />
+								<Icon name={fileIcon(s)} size={tileIconSizes.doc} />
 							</div>
 							<span class="tile-label">{s.title}</span>
 							<span class="tile-footer-hint">Double-click to open</span>
@@ -3410,6 +3455,21 @@
 					<button onclick={() => { newCategoryName = ''; newCategoryOpen = true; closeContextMenu(); }}><Icon name="tag" size={15} /> New category</button>
 				{:else}
 					<button onclick={() => { newFolderName = ''; newFolderOpen = true; closeContextMenu(); }}><Icon name="folder" size={15} /> New folder</button>
+				{/if}
+				{#if viewMode === 'icons'}
+					<div class="ctx-divider"></div>
+					<div class="ctx-header">
+						<span>Icon & Folder Size</span>
+					</div>
+					<button class:menu-active={iconSize === 'small'} onclick={() => { iconSize = 'small'; closeContextMenu(); }}>
+						{#if iconSize === 'small'}<Icon name="check" size={13} />{:else}<span class="menu-check-spacer"></span>{/if} Small
+					</button>
+					<button class:menu-active={iconSize === 'medium'} onclick={() => { iconSize = 'medium'; closeContextMenu(); }}>
+						{#if iconSize === 'medium'}<Icon name="check" size={13} />{:else}<span class="menu-check-spacer"></span>{/if} Medium
+					</button>
+					<button class:menu-active={iconSize === 'large'} onclick={() => { iconSize = 'large'; closeContextMenu(); }}>
+						{#if iconSize === 'large'}<Icon name="check" size={13} />{:else}<span class="menu-check-spacer"></span>{/if} Large (current)
+					</button>
 				{/if}
 			{/if}
 		{/snippet}
@@ -4531,6 +4591,11 @@
 		background: var(--panel);
 		box-shadow: 0 2px 6px rgba(16, 24, 40, 0.08);
 	}
+	.tb-size-toggle button {
+		font-size: .75rem;
+		font-weight: 750;
+		letter-spacing: .02em;
+	}
 	.tb-search {
 		display: flex;
 		align-items: center;
@@ -4802,6 +4867,17 @@
 		grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr));
 		gap: 1.1rem;
 		padding: .5rem;
+		transition: all .2s var(--ease);
+	}
+	.icon-grid.size-medium {
+		grid-template-columns: repeat(auto-fill, minmax(8.25rem, 1fr));
+		gap: .85rem;
+		padding: .4rem;
+	}
+	.icon-grid.size-small {
+		grid-template-columns: repeat(auto-fill, minmax(6.25rem, 1fr));
+		gap: .6rem;
+		padding: .3rem;
 	}
 	.icon-tile {
 		display: flex;
@@ -4817,6 +4893,16 @@
 		position: relative;
 		transition: all .2s var(--ease);
 		box-shadow: 0 1px 3px rgba(16, 24, 40, 0.03);
+	}
+	.icon-grid.size-medium .icon-tile {
+		padding: .7rem .6rem .75rem;
+		border-radius: 14px;
+		gap: .35rem;
+	}
+	.icon-grid.size-small .icon-tile {
+		padding: .5rem .45rem .55rem;
+		border-radius: 11px;
+		gap: .25rem;
 	}
 	.icon-tile:hover {
 		background: color-mix(in srgb, var(--panel) 98%, white);
@@ -4901,8 +4987,75 @@
 		height: 4.25rem;
 		border-radius: 16px;
 		margin: .2rem 0 .4rem;
-		transition: transform .2s var(--ease);
+		transition: transform .2s var(--ease), width .2s var(--ease), height .2s var(--ease);
 	}
+	.icon-grid.size-medium .tile-art {
+		width: 3.2rem;
+		height: 3.2rem;
+		border-radius: 12px;
+		margin: .1rem 0 .25rem;
+	}
+	.icon-grid.size-small .tile-art {
+		width: 2.35rem;
+		height: 2.35rem;
+		border-radius: 9px;
+		margin: 0 0 .15rem;
+	}
+	.icon-grid.size-medium .tile-label {
+		font-size: .8rem;
+		line-height: 1.25;
+	}
+	.icon-grid.size-small .tile-label {
+		font-size: .72rem;
+		line-height: 1.2;
+	}
+	.icon-grid.size-medium .tile-meta-pill {
+		font-size: .62rem;
+		padding: .1rem .45rem;
+	}
+	.icon-grid.size-medium .tile-footer-hint {
+		font-size: .6rem;
+	}
+	.icon-grid.size-small .tile-meta-pill,
+	.icon-grid.size-small .tile-footer-hint {
+		display: none;
+	}
+	.icon-grid.size-small .tile-header-bar {
+		min-height: 1rem;
+	}
+	.icon-grid.size-small .file-ext-tag,
+	.icon-grid.size-small .badge-tag {
+		font-size: .52rem;
+		padding: .08rem .3rem;
+		border-radius: 4px;
+	}
+	.icon-grid.size-small .tile-badge {
+		width: .95rem;
+		height: .95rem;
+	}
+	.icon-grid.size-small .tile-select-check {
+		width: .85rem;
+		height: .85rem;
+	}
+	.icon-grid.size-medium .file-ext-tag,
+	.icon-grid.size-medium .badge-tag {
+		font-size: .58rem;
+		padding: .12rem .35rem;
+	}
+	.finder-content.size-medium .finder-table th,
+	.finder-content.size-medium .finder-table td {
+		padding: .5rem var(--space-3);
+		font-size: var(--text-sm);
+	}
+	.finder-content.size-small .finder-table th,
+	.finder-content.size-small .finder-table td {
+		padding: .32rem var(--space-2);
+		font-size: var(--text-xs);
+	}
+	.finder-content.size-medium .col-pane { width: 13.5rem; }
+	.finder-content.size-medium .col-row { padding: .45rem .65rem; font-size: var(--text-sm); }
+	.finder-content.size-small .col-pane { width: 12rem; padding: var(--space-2); }
+	.finder-content.size-small .col-row { padding: .32rem .5rem; font-size: var(--text-xs); }
 	.icon-tile:hover .tile-art { transform: scale(1.08); }
 	.folder-art {
 		background: color-mix(in srgb, #38bdf8 14%, var(--panel-2));
