@@ -61,6 +61,19 @@
 		background: var(--danger-soft);
 		color: var(--danger);
 	}
+	.ctx-menu :global(button.menu-active) {
+		font-weight: 650;
+		color: var(--accent-ink);
+	}
+	.ctx-menu :global(.ctx-divider) {
+		height: 1px;
+		background: var(--line);
+		margin: .25rem 0;
+	}
+	.ctx-menu :global(.menu-check-spacer) {
+		width: 13px;
+		display: inline-block;
+	}
 	.ctx-menu :global(button:disabled) { opacity: .45; cursor: not-allowed; }
 	.ctx-menu :global(button:disabled:hover) { background: none; color: var(--ink); }
 </style>
