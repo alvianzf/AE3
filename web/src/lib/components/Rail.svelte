@@ -4,7 +4,6 @@
 	import { post } from '$lib/api';
 	import Sprig from './Sprig.svelte';
 	import Icon from './Icon.svelte';
-	import Menu from './Menu.svelte';
 
 	// Full rebuild: a flat, dark, icon-only rail — not a gradient-painted
 	// panel, not a floating white dock, not a tile launcher. Square
@@ -41,6 +40,14 @@
 <nav class="rail" aria-label="Main navigation">
 	<a href="/" class="mark" aria-label="Functional Health Collab home"><Sprig size={18} /></a>
 
+	<!-- Direct instruction: omni search is always on, right under the
+	     logo — not buried in the footer with account actions. -->
+	{#if onCommandPalette}
+		<button class="search-trigger" onclick={onCommandPalette} title="Search (⌘K)">
+			<Icon name="search" size={16} /><span class="lbl">Search…</span>
+		</button>
+	{/if}
+
 	<ul>
 		{#each items as it (it.href)}
 			<li>
@@ -54,24 +61,17 @@
 	</ul>
 
 	<div class="foot">
-		{#if onCommandPalette}
-			<button class="icon-item search-trigger" onclick={onCommandPalette} title="Search (⌘K)">
-				<Icon name="search" size={17} /><span class="lbl">Search</span>
-			</button>
-		{/if}
 		{#if showSwitcher}
 			<a class="icon-item" href={switcherTo === 'admin' ? '/admin' : '/practitioner'}>
 				<Icon name="switch" size={17} /><span class="lbl">{switcherTo === 'admin' ? 'Admin view' : 'Practitioner view'}</span>
 			</a>
 		{/if}
-		<Menu label="Account">
-			{#snippet items()}
-				{#if userLabel}<div class="who-row">{userLabel}</div>{/if}
-				<form method="post" action="/api/auth/logout" onsubmit={logout}>
-					<button type="submit" class="danger"><Icon name="x" size={15} /> Sign out</button>
-				</form>
-			{/snippet}
-		</Menu>
+		{#if userLabel}<div class="who-row" title={userLabel}>{userLabel}</div>{/if}
+		<form method="post" action="/api/auth/logout" onsubmit={logout}>
+			<button type="submit" class="icon-item signout">
+				<Icon name="x" size={17} /><span class="lbl">Sign out</span>
+			</button>
+		</form>
 	</div>
 </nav>
 
@@ -81,7 +81,14 @@
 		display: flex; flex-direction: column; align-items: center; gap: var(--space-3);
 		padding: var(--space-3) 0; background: var(--rail-bg); color: var(--rail-ink); z-index: 40;
 	}
-	.mark { color: var(--rail-ink); display: flex; padding: .4rem var(--space-4); margin-bottom: var(--space-2); }
+	.mark { color: var(--rail-ink); display: flex; padding: .4rem var(--space-4); }
+	.search-trigger {
+		display: flex; align-items: center; gap: .6rem; width: calc(100% - var(--space-4)); margin: var(--space-2) var(--space-2) var(--space-3);
+		height: 2.2rem; padding: 0 .7rem; border: 1px solid rgba(255, 255, 255, .18); border-radius: var(--r);
+		background: rgba(255, 255, 255, .06); color: var(--rail-ink); opacity: .75; cursor: pointer; font: inherit;
+	}
+	.search-trigger .lbl { font-size: var(--text-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.search-trigger:hover { opacity: 1; background: rgba(255, 255, 255, .1); }
 	ul { list-style: none; margin: 0; padding: 0 var(--space-2); display: flex; flex-direction: column; gap: .15rem; width: 100%; }
 	li a {
 		display: flex; align-items: center; gap: .7rem; width: 100%; height: 2.5rem; padding: 0 .7rem;
@@ -103,19 +110,24 @@
 	}
 	.icon-item .lbl { font-size: var(--text-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 	.icon-item:hover { opacity: 1; background: rgba(255, 255, 255, .06); }
-	.foot :global(.menu-wrap) { width: 100%; }
-	.foot :global(.menu-wrap .menu-trigger) {
-		width: 100%; height: 2.4rem; border-radius: 0; color: var(--rail-ink); opacity: .65; justify-content: flex-start; padding: 0 .7rem;
+	.icon-item.signout { font: inherit; }
+	/* Direct instruction: who's signed in and sign-out must both be
+	   plainly visible, not tucked behind a "⋮" dropdown. */
+	.who-row {
+		padding: .5rem .7rem; font-size: var(--text-xs); color: var(--rail-ink); opacity: .55;
+		text-transform: uppercase; letter-spacing: .04em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 	}
-	.foot :global(.menu-wrap .menu-trigger:hover) { opacity: 1; background: rgba(255, 255, 255, .06); }
-	.foot :global(.menu-wrap .menu-pop) { left: 100%; right: auto; bottom: 0; top: auto; margin: 0 0 0 .4rem; }
-	.who-row { padding: .5rem .6rem; font-size: var(--text-sm); color: var(--muted); white-space: nowrap; }
 	@media (max-width: 760px) {
 		.rail {
 			position: fixed; bottom: 0; top: auto; left: 0; right: 0; width: 100%; height: auto;
 			flex-direction: row; align-items: center; padding: 0;
 		}
 		.mark { display: none; }
+		.search-trigger {
+			width: 2.8rem; height: 2.8rem; margin: 0; padding: 0; justify-content: center;
+			border: none; background: none; flex: 0 0 auto;
+		}
+		.search-trigger .lbl { display: none; }
 		ul { flex-direction: row; justify-content: space-around; padding: 0; }
 		li a { flex-direction: column; gap: .15rem; height: 3rem; width: auto; padding: 0 .5rem; border-left: none; border-top: 3px solid transparent; }
 		li a.on { border-left-color: transparent; border-top-color: var(--rail-indicator); }
@@ -123,7 +135,7 @@
 		.badge { position: absolute; top: .2rem; right: .2rem; }
 		.foot { margin-top: 0; flex-direction: row; width: auto; padding: 0 .5rem; }
 		.icon-item .lbl { display: none; }
-		.icon-item, .foot :global(.menu-wrap .menu-trigger) { width: 2.8rem; height: 3rem; justify-content: center; padding: 0; }
-		.foot :global(.menu-wrap .menu-pop) { left: auto; right: 0; bottom: 100%; margin: 0 0 .4rem; }
+		.icon-item { width: 2.8rem; height: 3rem; justify-content: center; padding: 0; }
+		.who-row { display: none; }
 	}
 </style>
