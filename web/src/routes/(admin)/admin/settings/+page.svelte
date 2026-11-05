@@ -76,8 +76,10 @@
 			</div>
 			<p class="hint">
 				Switches Reader, Graph-builder, Answer-engine, Reasoner and Checker-LLM between
-				Nebius and Anthropic (Opus 5 / Sonnet 5 / Haiku 4.5). Embedder always stays on
-				Nebius — Anthropic has no embeddings endpoint.
+				Nebius and Anthropic (Opus 5 / Sonnet 5 / Haiku 4.5). This toggle never touches
+				Embedder — Anthropic has no embeddings endpoint — but that doesn't mean Embedder
+				is on Nebius either; check System health below for what it's actually running
+				(a local CPU fallback kicks in independently, e.g. during a Nebius billing gap).
 			</p>
 			<Toggle
 				checked={llmProvider === 'anthropic'}
