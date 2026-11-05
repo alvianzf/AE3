@@ -9,3 +9,4 @@
 - [07-mobile-navigation-bottom-menu-and-burger-drawer.md](07-mobile-navigation-bottom-menu-and-burger-drawer.md) — Mobile responsive navigation with bottom bar showing important menus and burger side drawer for the full menu.
 - [08-private-routes-container-layout-and-library-ui-rework.md](08-private-routes-container-layout-and-library-ui-rework.md) — Radical redesign of the private routes container layout and Library studio UI while preserving all functionalities.
 - [09-practitioner-consult-session-ai-patient-summary.md](09-practitioner-consult-session-ai-patient-summary.md) — Opening AI clinical briefing of patient profile and health/consultation history strictly up to the consultation point.
+- [10-library-tag-category-organization-window.md](10-library-tag-category-organization-window.md) — Dedicated Tags & Categories organization window for the library studio where folders represent tags/categories over the same document dataset.
