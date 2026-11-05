@@ -137,3 +137,4 @@ In rapid feature iterations, code evolves to satisfy immediate clinical and oper
 | **Concept Graph** | Clustered 150-node D3 graph | Multi-graph separation, 100% spacing, data-volume node sizing, minimap, neighbor glow |
 | **App Shell** | Desktop-only rail | Adaptive mobile bottom bar, burger drawer, isolated viewport scrolling |
 | **Consultation** | Blank chat start | Automatic opening AI patient history briefing at session launch |
+
