@@ -1,10 +1,12 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
-	import { post } from '$lib/api';
+	import { get, post } from '$lib/api';
 	import { toast } from '$lib/stores/toast';
 	import Toggle from '$lib/components/Toggle.svelte';
 	import Chip from '$lib/components/Chip.svelte';
 	import Icon from '$lib/components/Icon.svelte';
+	import UsageChart from '$lib/components/UsageChart.svelte';
 
 	let { data } = $props();
 	// Mirrors the backend's own guard (POST /api/superadmin/llm-provider
@@ -43,6 +45,28 @@
 		}
 		return rows;
 	});
+
+	// Polled, not just loaded once — this page is exactly where an admin
+	// would leave a tab open to watch the box during a bulk ingest or a
+	// traffic spike. Same interval the backend samples at
+	// (_USAGE_SAMPLE_INTERVAL_S, 60s) — polling faster than that would
+	// just repeat the same point.
+	let usage = $state(data.usage);
+	onMount(() => {
+		const timer = setInterval(async () => {
+			usage = await get(fetch, '/admin/system-usage').catch(() => usage);
+		}, 60_000);
+		return () => clearInterval(timer);
+	});
+
+	function toPoints(key: string): { x: number; y: number }[] {
+		return (usage?.samples ?? [])
+			.filter((s: any) => s[key] !== undefined)
+			.map((s: any) => ({ x: s.ts, y: s[key] }));
+	}
+	const loadPoints = $derived(toPoints('load1'));
+	const memPoints = $derived(toPoints('mem_used_mb'));
+	const memTotalMb = $derived(usage?.samples?.at(-1)?.mem_total_mb);
 </script>
 
 <svelte:head><title>Settings — Admin portal</title></svelte:head>
@@ -65,6 +89,28 @@
 				</div>
 			{/each}
 		</div>
+	</section>
+
+	<section class="block">
+		<div class="block-head">
+			<span class="block-ico"><Icon name="bolt" size={16} /></span>
+			<h2>Usage &amp; load</h2>
+			<Chip tone="neutral">last 3h</Chip>
+		</div>
+		{#if usage?.samples?.length}
+			<div class="usage-grid">
+				<div>
+					<span class="check-label">Load average (1 min)</span>
+					<UsageChart points={loadPoints} />
+				</div>
+				<div>
+					<span class="check-label">Memory used{memTotalMb ? ` of ${(memTotalMb / 1024).toFixed(1)}GB` : ''}</span>
+					<UsageChart points={memPoints} unit="MB" color="var(--accent-ink)" />
+				</div>
+			</div>
+		{:else}
+			<p class="hint">No usage history yet — this server only samples load/memory on Linux (production), not local dev, and the trend fills in over the next few minutes after a restart.</p>
+		{/if}
 	</section>
 
 	{#if isSuperadmin}
@@ -109,4 +155,6 @@
 		padding: .5rem .7rem; border: 1px solid var(--line); border-radius: var(--r); background: var(--panel);
 	}
 	.check-label { font-size: var(--text-sm); color: var(--ink-2); text-transform: capitalize; }
+	.usage-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: var(--space-5); }
+	.usage-grid .check-label { display: block; margin-bottom: .4rem; }
 </style>

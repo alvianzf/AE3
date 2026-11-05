@@ -57,6 +57,55 @@ STATIC = Path(__file__).parent.parent / "static"
 WEB_BUILD = Path(__file__).parent.parent / "web-build"
 Path(cfg.photos_path).mkdir(parents=True, exist_ok=True)
 
+# specs/v11/02 — a lightweight usage/load trend for the admin Settings
+# page. In-memory only (resets on restart/deploy) rather than a new
+# Postgres table: this is an ops-nicety trend graph, not data anyone
+# needs to survive a restart, and a ring buffer is the simplest thing
+# that could work. /proc/{loadavg,meminfo} are Linux-specific (the real
+# VPS) — both read functions return None on anything else (local macOS
+# dev) rather than raising, so the sampler loop below degrades to
+# "no sample this tick" instead of crashing the app.
+_USAGE_SAMPLE_INTERVAL_S = 60
+_USAGE_HISTORY_MAX = 180  # 3 hours at the interval above
+_usage_history: list[dict] = []
+
+
+def _read_loadavg() -> tuple[float, float, float] | None:
+    try:
+        with open("/proc/loadavg") as f:
+            one, five, fifteen, *_ = f.read().split()
+            return float(one), float(five), float(fifteen)
+    except Exception:
+        return None
+
+
+def _read_meminfo_mb() -> tuple[float, float] | None:
+    try:
+        info: dict[str, str] = {}
+        with open("/proc/meminfo") as f:
+            for line in f:
+                key, _, value = line.partition(":")
+                info[key] = value.strip()
+        total_kb = float(info["MemTotal"].split()[0])
+        available_kb = float(info["MemAvailable"].split()[0])
+        return (total_kb - available_kb) / 1024, total_kb / 1024
+    except Exception:
+        return None
+
+
+async def _sample_usage_loop() -> None:
+    while True:
+        sample: dict = {"ts": time.time()}
+        load = _read_loadavg()
+        if load is not None:
+            sample["load1"], sample["load5"], sample["load15"] = load
+        mem = _read_meminfo_mb()
+        if mem is not None:
+            sample["mem_used_mb"], sample["mem_total_mb"] = mem
+        _usage_history.append(sample)
+        del _usage_history[:-_USAGE_HISTORY_MAX]
+        await asyncio.sleep(_USAGE_SAMPLE_INTERVAL_S)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -123,7 +172,9 @@ async def lifespan(app: FastAPI):
     # above, so a job this boot inherited from a dead process is already
     # resolved to a clear error before any new work can start.
     ingestion_queue.start_workers()
+    usage_sampler_task = asyncio.create_task(_sample_usage_loop())
     yield
+    usage_sampler_task.cancel()
 
 
 app = FastAPI(title="Functional Health Collab", lifespan=lifespan)
@@ -2173,6 +2224,18 @@ def admin_set_can_upload_library(
 @app.get("/api/admin/stats")
 def admin_stats(_admin: dict = Depends(auth.require_admin)) -> dict:
     return core_store.site_stats()
+
+
+@app.get("/api/admin/system-usage")
+def admin_system_usage(_admin: dict = Depends(auth.require_admin)) -> dict:
+    """The in-memory trend _sample_usage_loop() has been building up since
+    this process started — empty immediately after a deploy/restart,
+    filling in over the following _USAGE_SAMPLE_INTERVAL_S * N minutes.
+    Samples missing load/memory fields (anything not Linux — local
+    macOS dev) are still returned; the FE skips a point it has no value
+    for rather than treating the whole response as unavailable.
+    """
+    return {"samples": _usage_history, "interval_s": _USAGE_SAMPLE_INTERVAL_S}
 
 
 @app.get("/api/admin/practitioners/{practitioner_id}/client-count")
