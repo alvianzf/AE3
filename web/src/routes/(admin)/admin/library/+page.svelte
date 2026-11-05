@@ -16,6 +16,7 @@
 	import Menu from '$lib/components/Menu.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
+	import ContextMenu from '$lib/components/ContextMenu.svelte';
 
 	let { data } = $props();
 
@@ -666,9 +667,29 @@
 		movingOpen = true;
 	}
 
-	function onDocContextMenu(e: MouseEvent, s: any) {
+	// A real floating context menu at the cursor — the same actions the
+	// Inspector's own "More actions" menu already offers for a document,
+	// not a jump straight to one dialog (Move) the way this used to work.
+	let ctxMenu = $state<{ x: number; y: number; kind: 'doc' | 'folder' | 'empty'; target: any } | null>(null);
+	function openContextMenu(e: MouseEvent, kind: 'doc' | 'folder' | 'empty', target: any) {
 		e.preventDefault();
-		askMove(s);
+		e.stopPropagation();
+		const x = Math.min(e.clientX, window.innerWidth - 220);
+		const y = Math.min(e.clientY, window.innerHeight - 260);
+		ctxMenu = { x, y, kind, target };
+	}
+	function onDocContextMenu(e: MouseEvent, s: any) {
+		openContextMenu(e, 'doc', s);
+	}
+	function onFolderContextMenu(e: MouseEvent, node: TreeNode) {
+		openContextMenu(e, 'folder', node);
+	}
+	function onEmptyContextMenu(e: MouseEvent) {
+		if (mainTab !== 'library') return;
+		openContextMenu(e, 'empty', null);
+	}
+	function closeContextMenu() {
+		ctxMenu = null;
 	}
 
 	async function confirmMove(e: Event) {
@@ -1261,7 +1282,8 @@
 				</aside>
 			{/if}
 		{/if}
-		<div class="finder-content" class:grid-mode={mainTab === 'library' && viewMode === 'icons'}>
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="finder-content" class:grid-mode={mainTab === 'library' && viewMode === 'icons'} oncontextmenu={onEmptyContextMenu}>
 			{#if mainTab === 'graph'}
 				<div class="graph-pane">
 					{#if data.graph}
@@ -1289,6 +1311,7 @@
 								ondrop={(e) => { e.preventDefault(); handleDropOnFolder(node.path); }}
 								onclick={() => (selectedFolderPath = node.path)}
 								ondblclick={() => { currentPath = node.path; selectedFolderPath = null; }}
+								oncontextmenu={(e) => onFolderContextMenu(e, node)}
 							>
 								<Icon name="folder" size={40} />
 								<span class="tile-label">{node.name}</span>
@@ -1368,6 +1391,7 @@
 									ondrop={(e) => { e.preventDefault(); handleDropOnFolder(node.path); }}
 									onclick={() => (selectedFolderPath = node.path)}
 									ondblclick={() => { currentPath = node.path; selectedFolderPath = null; }}
+									oncontextmenu={(e) => onFolderContextMenu(e, node)}
 								>
 									<td><Icon name="folder" size={16} /></td>
 									<td>{node.name}</td>
@@ -1447,6 +1471,7 @@
 									ondragleave={() => (dragOverPath = null)}
 									ondrop={(e) => { e.preventDefault(); handleDropOnFolder(node.path); }}
 									onclick={() => { currentPath = node.path; selectedFolderPath = null; }}
+									oncontextmenu={(e) => onFolderContextMenu(e, node)}
 								>
 									<Icon name="folder" size={14} /> {node.name}
 									<span class="row-sub">{node.count}</span>
@@ -1525,7 +1550,7 @@
 					</label>
 					<label class="field">
 						<span>Visibility</span>
-						<button class="visibility-toggle" onclick={() => setPrivate(s, !s.is_private)}>
+						<button class="visibility-toggle" class:is-private={s.is_private} onclick={() => setPrivate(s, !s.is_private)}>
 							<Icon name={s.is_private ? 'lock' : 'unlock'} size={14} /> {s.is_private ? 'Private' : 'Public'}
 						</button>
 					</label>
@@ -1563,6 +1588,32 @@
 		<Button onclick={runMaintenance} loading={maintenanceRunning}>Run</Button>
 	{/snippet}
 </Dialog>
+
+{#if ctxMenu}
+	{@const menu = ctxMenu}
+	<ContextMenu x={menu.x} y={menu.y} onClose={closeContextMenu}>
+		{#snippet items()}
+			{#if menu.kind === 'doc'}
+				{@const s = menu.target}
+				<button onclick={() => { selectedDocId = s.id; closeContextMenu(); }}><Icon name="eye" size={15} /> Open</button>
+				<button onclick={() => askMove(s)}><Icon name="folder" size={15} /> Move to folder…</button>
+				{#if s.is_private}<button onclick={() => askAccess(s)}><Icon name="users" size={15} /> Edit access…</button>{/if}
+				<button onclick={() => askAssignUploader(s)}><Icon name="user-card" size={15} /> {s.uploaded_by ? 'Reassign uploader…' : 'Assign uploader…'}</button>
+				<button class="danger" onclick={() => askDelete(s)}><Icon name="trash" size={15} /> Remove from library</button>
+			{:else if menu.kind === 'folder'}
+				{@const node = menu.target}
+				<button onclick={() => { currentPath = node.path; selectedFolderPath = null; closeContextMenu(); }}><Icon name="folder" size={15} /> Open</button>
+				<button onclick={() => askRenameFolder(node.path)}><Icon name="edit" size={15} /> Rename…</button>
+				<button onclick={() => setFolderPrivate(node.path, true)}><Icon name="lock" size={15} /> Privatize</button>
+				<button onclick={() => setFolderPrivate(node.path, false)}><Icon name="unlock" size={15} /> Make public</button>
+				<button class="danger" onclick={() => askDeleteFolder(node.path, node.count)}><Icon name="trash" size={15} /> Delete folder</button>
+			{:else}
+				<button onclick={() => (ingestOpen = true)}><Icon name="plus" size={15} /> Add resources</button>
+				<button onclick={() => { newFolderName = ''; newFolderOpen = true; }}><Icon name="folder" size={15} /> New folder</button>
+			{/if}
+		{/snippet}
+	</ContextMenu>
+{/if}
 
 <Dialog bind:open={ingestOpen} title="Add resources" wide>
 	<Tabs bind:active={ingestTab} tabs={[{ id: 'upload', label: 'Upload a document' }, { id: 'text', label: 'Paste text' }, { id: 'url', label: 'Enter URL' }]} />
@@ -1995,7 +2046,11 @@
 	   once something is selected, dismissible, not a permanently-
 	   reserved half-width pane. ── */
 	.inspector {
-		width: 19rem; flex: 0 0 auto; border-left: 1px solid var(--glass-border); background: var(--panel-2);
+		/* A visibly different panel from .finder's own background, not
+		   just a more-transparent shade of the same white (--panel-2 is
+		   actually lighter than --panel, so it barely read as distinct) —
+		   a warm tinted, higher-opacity fill instead. */
+		width: 19rem; flex: 0 0 auto; border-left: 1px solid var(--glass-border); background: rgba(245, 242, 237, .85);
 		padding: var(--space-4); overflow-y: auto;
 		backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
 	}
@@ -2022,10 +2077,15 @@
 	.field select:focus, .field input[type="text"]:focus, .field input[type="number"]:focus {
 		outline: none; border-bottom-color: var(--accent);
 	}
+	/* Distinct colors per state, not the same neutral gray either way —
+	   private reads as "restricted" (warn tone), public as "open" (ok
+	   tone), same tone language Chip already uses elsewhere. */
 	.visibility-toggle {
-		display: inline-flex; align-items: center; gap: .4rem; border: 1px solid var(--line-2);
-		background: var(--panel); color: var(--ink); padding: .5rem .6rem; cursor: pointer; font: inherit; width: fit-content;
+		display: inline-flex; align-items: center; gap: .4rem; border: 1px solid var(--line-2); border-radius: var(--r);
+		padding: .5rem .6rem; cursor: pointer; font: inherit; width: fit-content;
+		background: var(--ok-soft); color: var(--ok); border-color: color-mix(in srgb, var(--ok) 35%, transparent);
 	}
+	.visibility-toggle.is-private { background: var(--warn-soft); color: var(--warn); border-color: color-mix(in srgb, var(--warn) 35%, transparent); }
 	.fchip {
 		font: inherit; font-size: var(--text-sm); cursor: pointer;
 		border: 1px solid var(--line); background: var(--panel-2); color: var(--ink);
@@ -2034,12 +2094,12 @@
 	.fchip:hover { border-color: var(--accent); }
 	.tags { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem; }
 	.tag {
-		font: inherit; font-size: var(--text-xs); cursor: pointer; display: inline-flex; align-items: center; gap: .2rem;
-		border: 1px solid var(--line); background: var(--panel-2); color: var(--muted); padding: .15rem .5rem;
+		font: inherit; font-size: .68rem; cursor: pointer; display: inline-flex; align-items: center; gap: .2rem;
+		border: 1px solid var(--line); border-radius: 99px; background: var(--panel-2); color: var(--muted); padding: .12rem .55rem;
 	}
 	.tag:hover { border-color: var(--danger); color: var(--danger); }
 	.tag-input {
-		font: inherit; font-size: var(--text-xs); border: 1px dashed var(--line-2);
+		font: inherit; font-size: .68rem; border: 1px dashed var(--line-2); border-radius: 99px;
 		padding: .15rem .5rem; background: transparent; color: var(--ink); width: 6rem;
 	}
 	.view {
