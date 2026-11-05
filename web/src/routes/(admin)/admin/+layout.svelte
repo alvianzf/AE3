@@ -14,9 +14,9 @@
 	];
 
 	const items = [
-		{ href: '/admin', label: 'Overview', icon: 'home' },
-		{ href: '/admin/library', label: 'Library', icon: 'book' },
-		{ href: '/admin/users', label: 'Users', icon: 'users' },
+		{ href: '/admin', label: 'Overview', icon: 'home', primary: true },
+		{ href: '/admin/library', label: 'Library', icon: 'book', primary: true },
+		{ href: '/admin/users', label: 'Users', icon: 'users', primary: true },
 		{ href: '/admin/questionnaires', label: 'Questionnaires', icon: 'clipboard' },
 		{ href: '/admin/audit', label: 'Audit history', icon: 'history' },
 		{ href: '/admin/settings', label: 'Settings', icon: 'settings' }

@@ -20,9 +20,9 @@
 
 	const isPro = $derived(data.profile?.plan === 'pro');
 	const items = $derived([
-		{ href: '/practitioner', label: 'Home', icon: 'home' },
-		{ href: '/practitioner/consult', label: 'Consult', icon: 'message', locked: !isPro },
-		{ href: '/practitioner/clients', label: 'Clients', icon: 'users', locked: !isPro },
+		{ href: '/practitioner', label: 'Home', icon: 'home', primary: true },
+		{ href: '/practitioner/consult', label: 'Consult', icon: 'message', locked: !isPro, primary: true },
+		{ href: '/practitioner/clients', label: 'Clients', icon: 'users', locked: !isPro, primary: true },
 		{ href: '/practitioner/contacts', label: 'Contacts', icon: 'mail' },
 		{ href: '/practitioner/knowledge', label: 'Library weights', icon: 'book', locked: !isPro },
 		{ href: '/practitioner/questionnaires', label: 'Questionnaires', icon: 'clipboard', locked: !isPro },

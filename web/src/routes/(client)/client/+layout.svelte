@@ -19,9 +19,9 @@
 	];
 
 	const items = [
-		{ href: '/client', label: 'Home', icon: 'home' },
-		{ href: '/client/questionnaire', label: 'Questionnaire', icon: 'clipboard' },
-		{ href: '/client/record', label: 'Health record', icon: 'user-card' },
+		{ href: '/client', label: 'Home', icon: 'home', primary: true },
+		{ href: '/client/questionnaire', label: 'Questionnaire', icon: 'clipboard', primary: true },
+		{ href: '/client/record', label: 'Health record', icon: 'user-card', primary: true },
 		{ href: '/client/files', label: 'Files', icon: 'folder' },
 		{ href: '/client/wearables', label: 'Wearables', icon: 'watch' }
 	];
