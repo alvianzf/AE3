@@ -159,11 +159,17 @@ svg { flex: 0 0 auto; }
 .list-row .row-title { font-weight: var(--weight-medium); color: var(--ink); }
 .list-row .row-sub { font-size: var(--text-xs); color: var(--muted); }
 
-.detail-pane { flex: 1 1 auto; min-width: 0; padding: var(--space-5) var(--space-6); overflow-y: auto; }
+.detail-pane { flex: 1 1 auto; min-width: 0; padding: var(--space-5) var(--space-6); overflow-y: auto; background: var(--panel); }
+/* A sticky topbar, not an inline heading that scrolls away — the same
+   "chrome stays, content scrolls" split the Library's .finder-toolbar
+   already gets, applied to every other page's existing h1 instead of
+   adding a second, duplicate title bar. */
 .detail-head {
   display: flex; align-items: flex-start; justify-content: space-between;
-  gap: var(--space-4); flex-wrap: wrap; margin-bottom: var(--space-5);
-  padding-bottom: var(--space-4); border-bottom: 1px solid var(--line);
+  gap: var(--space-4); flex-wrap: wrap;
+  position: sticky; top: calc(-1 * var(--space-5)); z-index: 5;
+  margin: calc(-1 * var(--space-5)) calc(-1 * var(--space-6)) var(--space-5);
+  padding: var(--space-4) var(--space-6); background: var(--panel); border-bottom: 1px solid var(--line);
 }
 .detail-head h1 { font-size: var(--text-2xl); font-weight: var(--weight-bold); }
 .detail-head p { color: var(--muted); margin-top: .3rem; }

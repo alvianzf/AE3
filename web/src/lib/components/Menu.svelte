@@ -23,10 +23,22 @@
 
 	let open = $state(false);
 	let wrapEl = $state<HTMLDivElement>();
+	let triggerEl = $state<HTMLButtonElement>();
+	// Found live: inside a scrolling pane (e.g. the Library's .inspector
+	// aside, overflow-y: auto), an absolutely-positioned popover is
+	// clipped by that ancestor's overflow box — it rendered half-hidden.
+	// Fixed positioning, computed from the trigger's own screen position,
+	// escapes every ancestor's overflow/clip the same way a native
+	// context menu would.
+	let pos = $state({ top: 0, right: 0 });
 
 	function toggle(e: MouseEvent) {
 		e.stopPropagation();
 		open = !open;
+		if (open && triggerEl) {
+			const r = triggerEl.getBoundingClientRect();
+			pos = { top: r.bottom + 4, right: window.innerWidth - r.right };
+		}
 	}
 	function close() {
 		open = false;
@@ -46,17 +58,26 @@
 		function onKeydown(e: KeyboardEvent) {
 			if (e.key === 'Escape') close();
 		}
+		// Fixed-position popover: a scroll anywhere (e.g. the Library's
+		// scrolling .inspector aside) moves the trigger out from under it
+		// unless we recompute — simplest is just to close, same as a
+		// native context menu would on scroll.
+		function onScroll() {
+			close();
+		}
 		document.addEventListener('click', onDocClick, true);
 		document.addEventListener('keydown', onKeydown);
+		document.addEventListener('scroll', onScroll, true);
 		return () => {
 			document.removeEventListener('click', onDocClick, true);
 			document.removeEventListener('keydown', onKeydown);
+			document.removeEventListener('scroll', onScroll, true);
 		};
 	});
 </script>
 
 <div class="menu-wrap" bind:this={wrapEl}>
-	<button class="menu-trigger" onclick={toggle} title={label} aria-label={label} aria-expanded={open}>
+	<button bind:this={triggerEl} class="menu-trigger" onclick={toggle} title={label} aria-label={label} aria-expanded={open}>
 		<Icon name={icon} size={icon === 'more-vertical' ? 17 : 15} />
 	</button>
 	{#if open}
@@ -65,7 +86,7 @@
 		     doesn't implement; each item is already its own real,
 		     individually-focusable <button>/<a>, which is accessible on
 		     its own without that extra scaffolding half-built on top. -->
-		<div class="menu-pop" onclick={close}>
+		<div class="menu-pop" style="top: {pos.top}px; right: {pos.right}px;" onclick={close}>
 			{@render items()}
 		</div>
 	{/if}
@@ -86,10 +107,10 @@
 	}
 	.menu-trigger:hover { background: var(--panel-2); color: var(--ink); }
 	.menu-pop {
-		position: absolute; top: 100%; right: 0; left: auto; bottom: auto; margin: .25rem 0 0;
+		position: fixed;
 		padding: .3rem; border: 1px solid var(--line); border-radius: var(--r-lg);
 		background: var(--panel); box-shadow: var(--shadow-lg); min-width: 11rem;
-		display: grid; gap: .1rem; z-index: 30;
+		display: grid; gap: .1rem; z-index: 50;
 	}
 	/* Each item is whatever the caller renders (a <button> or <a>, danger
 	   or not) — this just normalizes their shared layout so callers don't
