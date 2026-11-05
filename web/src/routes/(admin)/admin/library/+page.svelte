@@ -11,7 +11,7 @@
 	import Button from '$lib/components/Button.svelte';
 	import Dialog from '$lib/components/Dialog.svelte';
 	import Icon from '$lib/components/Icon.svelte';
-	import type { TreeNode } from '$lib/components/FolderTree.svelte';
+	import FolderTree, { type TreeNode } from '$lib/components/FolderTree.svelte';
 	import GraphView, { type GraphNode, type GraphEdge } from '$lib/components/GraphView.svelte';
 	import Menu from '$lib/components/Menu.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
@@ -351,6 +351,10 @@
 		sortTree(roots);
 		return roots;
 	});
+	// Tree mode's root-level leaf rows (documents with no folder_path) —
+	// alongside the top-level folder nodes above, the same split
+	// FolderTree's own `docs`/`showDocs` props expect.
+	const rootDocs = $derived(sortDocs((data.sources ?? []).filter((s: any) => !s.folder_path)));
 	// specs/v8 §7.4 — Graph view rebuilt on <canvas> (GraphView.svelte),
 	// re-added as a third tab alongside Library/Tree view. Concepts only
 	// now — the document/folder layer the original two-layer version also
@@ -1081,7 +1085,7 @@
 		<button class="tb-btn" onclick={goUp} disabled={!currentPath || mainTab !== 'library'} title="Back" aria-label="Up one level">
 			<Icon name="chevron" size={14} />
 		</button>
-		<span class="tb-title">{mainTab === 'graph' ? 'Concept graph' : currentFolderName}</span>
+		<span class="tb-title">{mainTab === 'graph' ? 'Concept graph' : mainTab === 'tree' ? 'Folder tree' : currentFolderName}</span>
 		<div class="tb-spacer"></div>
 		{#if mainTab === 'library'}
 			<div class="tb-view-toggle" role="group" aria-label="View">
@@ -1103,6 +1107,9 @@
 				{#if q}<button class="search-clear" onclick={() => { q = ''; page = 1; }} aria-label="Clear search">&times;</button>{/if}
 			</div>
 		{/if}
+		<button class="tb-btn" class:on={mainTab === 'tree'} onclick={() => (mainTab = mainTab === 'tree' ? 'library' : 'tree')} title="Tree view" aria-label="Toggle tree view">
+			<Icon name="tree" size={15} />
+		</button>
 		<button class="tb-btn" class:on={mainTab === 'graph'} onclick={() => (mainTab = mainTab === 'graph' ? 'library' : 'graph')} title="Concept graph" aria-label="Toggle concept graph">
 			<Icon name="globe" size={15} />
 		</button>
@@ -1179,6 +1186,34 @@
 						<GraphView nodes={conceptGraph?.nodes ?? []} edges={conceptGraph?.edges ?? []} />
 					{/if}
 				</div>
+			{:else if mainTab === 'tree'}
+				<!-- The whole hierarchy at once — every folder, nested and
+				     expandable — as a quick-overview supplement to Icon/
+				     List view's one-level-at-a-time browsing. Clicking a
+				     folder here jumps straight into List/Icon view
+				     already at that path; clicking a document opens its
+				     full detail page. -->
+				<div class="tree-pane">
+					<button
+						class="tree-root"
+						ondragover={(e) => e.preventDefault()}
+						ondrop={(e) => { e.preventDefault(); handleDropOnFolder(''); }}
+						onclick={() => { currentPath = ''; mainTab = 'library'; page = 1; }}
+					>
+						<Icon name="folder" size={14} /> Library <span class="row-sub">{data.sources.length}</span>
+					</button>
+					<FolderTree
+						nodes={folderTree}
+						activePath={currentPath}
+						docs={rootDocs}
+						showDocs
+						onSelect={(path) => { currentPath = path; mainTab = 'library'; page = 1; }}
+						onDrop={handleDropOnFolder}
+						onRename={askRenameFolder}
+						onPrivatize={setFolderPrivate}
+						onDelete={(path, count) => askDeleteFolder(path, count)}
+					/>
+				</div>
 			{:else if viewMode === 'icons'}
 				<div class="icon-grid">
 					{#if !searching}
@@ -1244,7 +1279,7 @@
 								<EmptyState icon="search" title="Nothing matches that search" body="Try a different term, or clear the search.">
 									{#snippet action()}<Button variant="ghost" onclick={() => { q = ''; page = 1; }}>Clear search</Button>{/snippet}
 								</EmptyState>
-							{:else}
+							{:else if !visibleSubfolders.length}
 								<EmptyState icon="folder" title="This folder is empty" body="Upload a document here, or browse to another folder.">
 									{#snippet action()}<Button onclick={() => (ingestOpen = true)}>+ Add resources</Button>{/snippet}
 								</EmptyState>
@@ -1324,7 +1359,7 @@
 										<EmptyState icon="search" title="Nothing matches that search" body="Try a different term, or clear the search.">
 											{#snippet action()}<Button variant="ghost" onclick={() => { q = ''; page = 1; }}>Clear search</Button>{/snippet}
 										</EmptyState>
-									{:else}
+									{:else if !visibleSubfolders.length}
 										<EmptyState icon="folder" title="This folder is empty" body="Upload a document here, or browse to another folder.">
 											{#snippet action()}<Button onclick={() => (ingestOpen = true)}>+ Add resources</Button>{/snippet}
 										</EmptyState>
@@ -1764,8 +1799,14 @@
 	.pager { display: flex; align-items: center; justify-content: center; gap: var(--space-3); padding: var(--space-3); }
 	.pager button { border: 1px solid var(--line); background: var(--panel); cursor: pointer; padding: .2rem .6rem; }
 	.pager button:disabled { opacity: .4; cursor: not-allowed; }
-	.list-empty { padding: var(--space-4); }
+	.list-empty { grid-column: 1 / -1; padding: var(--space-6) var(--space-4); width: 100%; }
 	.graph-pane { padding: var(--space-3); height: 100%; display: flex; flex-direction: column; }
+	.tree-pane { padding: var(--space-3); max-width: 36rem; }
+	.tree-root {
+		display: flex; align-items: center; gap: .4rem; border: none; background: none; cursor: pointer;
+		font: inherit; color: var(--ink); padding: .3rem 0; margin-bottom: .3rem; width: 100%; text-align: left;
+	}
+	.tree-root:hover { color: var(--accent-ink); }
 
 	/* ── Finder's Icon View: a grid of tiles. Folders are tinted the
 	   familiar Finder blue; files are a plain document icon; the label

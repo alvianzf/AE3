@@ -69,7 +69,7 @@
 		{#if userLabel}<div class="who-row" title={userLabel}>{userLabel}</div>{/if}
 		<form method="post" action="/api/auth/logout" onsubmit={logout}>
 			<button type="submit" class="icon-item signout">
-				<Icon name="x" size={17} /><span class="lbl">Sign out</span>
+				<Icon name="power" size={17} /><span class="lbl">Sign out</span>
 			</button>
 		</form>
 	</div>
