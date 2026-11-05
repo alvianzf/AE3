@@ -584,10 +584,25 @@
 	// cards all being small forms at once; there's only ever one
 	// detail pane open now).
 	let selectedDocId = $state<string | null>(null);
+	// Found live: closing the Inspector (selectedDocId = null) immediately
+	// re-triggered the auto-select-first-doc effect below, so the X button
+	// looked like it did nothing — it closed and reopened on the same
+	// doc in the same tick. This flag distinguishes "nothing selected yet"
+	// from "the user explicitly dismissed it"; a fresh folder/search
+	// clears it, so landing somewhere new still shows the first result.
+	let inspectorDismissed = $state(false);
+	$effect(() => {
+		currentPath; q; mainTab; viewMode;
+		inspectorDismissed = false;
+	});
 	const selectedDoc = $derived(filtered.find((d: any) => d.id === selectedDocId) ?? null);
 	$effect(() => {
-		if (!selectedDocId && filtered.length) selectedDocId = filtered[0].id;
+		if (!selectedDocId && !inspectorDismissed && filtered.length) selectedDocId = filtered[0].id;
 	});
+	function closeInspector() {
+		selectedDocId = null;
+		inspectorDismissed = true;
+	}
 
 	async function setTopics(s: any, topics: string[]) {
 		try {
@@ -1323,6 +1338,7 @@
 						onRename={askRenameFolder}
 						onPrivatize={setFolderPrivate}
 						onDelete={(path, count) => askDeleteFolder(path, count)}
+						onContextMenu={onFolderContextMenu}
 					/>
 				</aside>
 			{/if}
@@ -1556,7 +1572,7 @@
 			<aside class="inspector">
 				<div class="inspector-head">
 					<h2>{s.title}</h2>
-					<button class="icon-btn" onclick={() => (selectedDocId = null)} title="Close" aria-label="Close inspector"><Icon name="x" size={15} /></button>
+					<button class="icon-btn" onclick={closeInspector} title="Close" aria-label="Close inspector"><Icon name="x" size={15} /></button>
 				</div>
 				<p class="hint">{s.author ? `by ${s.author}` : 'No author on record'}{s.uploaded_by ? ` · uploaded by ${s.uploaded_by}` : ''}</p>
 				<div class="inspector-actions">
