@@ -21,6 +21,7 @@
 		onRename,
 		onPrivatize,
 		onDelete,
+		onContextMenu,
 		docs = [],
 		showDocs = false,
 		depth = 0
@@ -32,6 +33,9 @@
 		onRename: (path: string) => void;
 		onPrivatize: (path: string, isPrivate: boolean) => void;
 		onDelete: (path: string, count: number) => void;
+		// Right-click on a node — opt-in, so this component works as
+		// before for any caller that doesn't pass it.
+		onContextMenu?: (e: MouseEvent, node: TreeNode) => void;
 		// Documents to show as leaf rows at this exact level (not
 		// subfolder contents — those come from each node's own `.docs`)
 		// — opt-in via showDocs, so the admin-page sidebar's existing
@@ -68,6 +72,7 @@
 				ondragover={(e) => { e.preventDefault(); dragOverPath = node.path; }}
 				ondragleave={() => (dragOverPath = null)}
 				ondrop={(e) => { e.preventDefault(); dragOverPath = null; onDrop(node.path); }}
+				oncontextmenu={(e) => { if (onContextMenu) { e.preventDefault(); onContextMenu(e, node); } }}
 			>
 				{#if node.children.length || (showDocs && node.docs.length)}
 					<button class="chevron" onclick={(e) => toggle(node.path, e)} aria-label="Toggle {node.name}">
@@ -102,7 +107,7 @@
 					</ul>
 				{/if}
 				{#if node.children.length}
-					<FolderTree nodes={node.children} {activePath} {onSelect} {onDrop} {onRename} {onPrivatize} {onDelete} {showDocs} depth={depth + 1} />
+					<FolderTree nodes={node.children} {activePath} {onSelect} {onDrop} {onRename} {onPrivatize} {onDelete} {onContextMenu} {showDocs} depth={depth + 1} />
 				{/if}
 			{/if}
 		</li>
