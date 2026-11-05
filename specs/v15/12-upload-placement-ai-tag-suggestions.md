@@ -40,3 +40,4 @@ In each `.placement-card` of the confirmation dialog:
 - `npm --prefix web run check`: 0 errors.
 - `npm --prefix web run build`: Built static site successfully.
 - `pytest tests/`: All 11 tests passed.
+

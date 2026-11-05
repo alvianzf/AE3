@@ -1195,6 +1195,39 @@ def get_active_job_for_staged(staged_id: str) -> dict | None:
     return dict(row) if row else None
 
 
+def cancel_active_jobs_for_staged(
+    staged_id: str,
+    message: str = "Ingestion stopped by user.",
+    owner: str | None = None,
+) -> list[str]:
+    """Cancels any running or queued jobs for this staged_id by marking them
+    status='error' with a clear cancellation message. Returns list of cancelled job IDs."""
+    query = (
+        "SELECT id FROM ingestion_jobs "
+        "WHERE staged_id = %s AND status IN ('queued', 'running')"
+    )
+    params: list = [staged_id]
+    if owner is not None:
+        query += " AND owner = %s"
+        params.append(owner)
+
+    with core_connection() as conn:
+        rows = conn.execute(query, tuple(params)).fetchall()
+        cancelled_ids = [r["id"] for r in rows]
+        if cancelled_ids:
+            update_query = (
+                "UPDATE ingestion_jobs SET status = 'error', step = 'error', "
+                "error_message = %s, updated_at = %s "
+                "WHERE staged_id = %s AND status IN ('queued', 'running')"
+            )
+            update_params: list = [message, _now(), staged_id]
+            if owner is not None:
+                update_query += " AND owner = %s"
+                update_params.append(owner)
+            conn.execute(update_query, tuple(update_params))
+        return cancelled_ids
+
+
 def fail_orphaned_ingestion_jobs() -> int:
     """Called once at boot (app/main.py's lifespan). A job's background
     thread lives inside one worker process — a SIGHUP graceful reload

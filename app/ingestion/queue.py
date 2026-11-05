@@ -55,6 +55,13 @@ async def _worker(name: str) -> None:
     while True:
         job_id, fn, args, kwargs = await queue.get()
         try:
+            # Check if job was cancelled while waiting in queue
+            from .. import core_store
+            job = core_store.get_ingestion_job(job_id)
+            if job and job.get("status") == "error":
+                logging.info("ingestion queue worker %s: job %s was cancelled before pickup", name, job_id)
+                continue
+
             # _run_staged_ingest_job (app/main.py) is a plain synchronous
             # function — to_thread() is the same thread-pool execution
             # BackgroundTasks itself used, just with this queue's worker
