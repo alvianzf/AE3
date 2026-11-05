@@ -1230,8 +1230,8 @@
 	// A real floating context menu at the cursor — the same actions the
 	// Inspector's own "More actions" menu already offers for a document,
 	// not a jump straight to one dialog (Move) the way this used to work.
-	let ctxMenu = $state<{ x: number; y: number; kind: 'doc' | 'folder' | 'tag' | 'empty'; target: any } | null>(null);
-	function openContextMenu(e: MouseEvent, kind: 'doc' | 'folder' | 'tag' | 'empty', target: any) {
+	let ctxMenu = $state<{ x: number; y: number; kind: 'doc' | 'folder' | 'tag' | 'empty' | 'staged'; target: any } | null>(null);
+	function openContextMenu(e: MouseEvent, kind: 'doc' | 'folder' | 'tag' | 'empty' | 'staged', target: any) {
 		e.preventDefault();
 		e.stopPropagation();
 		const x = Math.min(e.clientX, window.innerWidth - 220);
@@ -1240,6 +1240,9 @@
 	}
 	function onDocContextMenu(e: MouseEvent, s: any) {
 		openContextMenu(e, 'doc', s);
+	}
+	function onStagedContextMenu(e: MouseEvent, item: any) {
+		openContextMenu(e, 'staged', item);
 	}
 	function onFolderContextMenu(e: MouseEvent, node: TreeNode) {
 		openContextMenu(e, 'folder', node);
@@ -1803,14 +1806,64 @@
 		await discardStaged(id);
 	}
 
-	async function discardStaged(id: string) {
+	async function stopIngesting(stagedId: string) {
+		if (pollTimers[stagedId]) {
+			clearInterval(pollTimers[stagedId]);
+			delete pollTimers[stagedId];
+		}
 		try {
-			await del(fetch, `/staged/${id}`);
-			toast('Discarded.');
+			await post(fetch, `/staged/${stagedId}/stop`, {});
+			jobsByStagedId = {
+				...jobsByStagedId,
+				[stagedId]: { status: 'error', step: 'error', error_message: 'Ingestion stopped by user.' }
+			};
+			toast('Ingestion stopped.');
 			await invalidateAll();
 		} catch (err: any) {
 			toast(err.message, 'alert');
 		}
+	}
+
+	async function removeStagedFile(stagedId: string) {
+		if (pollTimers[stagedId]) {
+			clearInterval(pollTimers[stagedId]);
+			delete pollTimers[stagedId];
+		}
+		delete pendingTargetFolders[stagedId];
+		delete pendingTargetTags[stagedId];
+		try {
+			await del(fetch, `/staged/${stagedId}`);
+			const next = { ...jobsByStagedId };
+			delete next[stagedId];
+			jobsByStagedId = next;
+			toast('File removed.');
+			await invalidateAll();
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		}
+	}
+
+	async function discardStaged(id: string) {
+		await removeStagedFile(id);
+	}
+
+	function isStagedVisible(item: any): boolean {
+		if (searching) return false;
+		if (mainTab === 'library') {
+			const target = pendingTargetFolders[item.id];
+			if (currentPath) {
+				return target === currentPath;
+			}
+			return !target || target === '';
+		}
+		if (mainTab === 'tags') {
+			const target = pendingTargetTags[item.id];
+			if (currentTag && currentTag !== '__untagged__') {
+				return target === currentTag;
+			}
+			return !target || target === '';
+		}
+		return false;
 	}
 </script>
 
@@ -2161,9 +2214,17 @@
 							{/each}
 						{/if}
 					{/if}
-					{#if !searching && !currentPath && mainTab === 'library'}
-						{#each data.staged ?? [] as item (item.id)}
-							<div class="icon-tile staged-tile" class:error={jobsByStagedId[item.id]?.status === 'error'}>
+					{#if !searching}
+						{#each (data.staged ?? []).filter(isStagedVisible) as item (item.id)}
+							<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+							<div
+								class="icon-tile staged-tile"
+								class:error={jobsByStagedId[item.id]?.status === 'error'}
+								oncontextmenu={(e) => onStagedContextMenu(e, item)}
+								role="region"
+								aria-label="Ingesting {item.filename ?? 'file'}"
+								tabindex="0"
+							>
 								<div class="tile-header-bar">
 									<span class="badge-tag {jobsByStagedId[item.id]?.status === 'error' ? 'err' : 'ingest'}">
 										{#if jobsByStagedId[item.id]?.status === 'error'}Failed{:else}Ingesting{/if}
@@ -2174,11 +2235,19 @@
 								</div>
 								<span class="tile-label">{item.filename ?? item.source_url ?? 'Pasted text'}</span>
 								{#if jobsByStagedId[item.id]?.status === 'error'}
-									<span class="tile-sub job-error">Processing failed</span>
+									<span class="tile-sub job-error">{jobsByStagedId[item.id]?.error_message || 'Processing failed'}</span>
+									<div class="staged-tile-footer">
+										<button class="staged-pill-btn" onclick={(e) => { e.stopPropagation(); ingestOne(item.id); }}>Retry</button>
+										<button class="staged-pill-btn danger" onclick={(e) => { e.stopPropagation(); removeStagedFile(item.id); }}>Remove</button>
+									</div>
 								{:else}
 									<div class="job-progress tiny">
 										<div class="track"><div class="fill" style="width: {jobProgressPercent(jobsByStagedId[item.id] ?? { step: 'queued' })}%"></div></div>
 										<span class="job-pct">{jobProgressPercent(jobsByStagedId[item.id] ?? { step: 'queued' })}%</span>
+									</div>
+									<div class="staged-tile-footer">
+										<button class="staged-pill-btn danger" onclick={(e) => { e.stopPropagation(); stopIngesting(item.id); }} title="Stop ingesting">Stop</button>
+										<button class="staged-pill-btn danger" onclick={(e) => { e.stopPropagation(); removeStagedFile(item.id); }} title="Stop ingesting and remove file">Remove</button>
 									</div>
 								{/if}
 							</div>
@@ -2279,6 +2348,44 @@
 									</tr>
 								{/each}
 							{/if}
+						{/if}
+						{#if !searching}
+							{#each (data.staged ?? []).filter(isStagedVisible) as item (item.id)}
+								<tr
+									class="doc-tr staged-tr"
+									class:error={jobsByStagedId[item.id]?.status === 'error'}
+									oncontextmenu={(e) => onStagedContextMenu(e, item)}
+								>
+									<td><Icon name="file" size={16} /></td>
+									<td>
+										<div class="staged-row-title">
+											<span class="staged-name">{item.filename ?? item.source_url ?? 'Pasted text'}</span>
+											<span class="badge-tag {jobsByStagedId[item.id]?.status === 'error' ? 'err' : 'ingest'}">
+												{jobsByStagedId[item.id]?.status === 'error' ? 'Failed' : 'Ingesting'}
+											</span>
+										</div>
+									</td>
+									<td class="hint">
+										{#if jobsByStagedId[item.id]?.status === 'error'}
+											Failed
+										{:else}
+											{jobProgressPercent(jobsByStagedId[item.id] ?? { step: 'queued' })}% ({jobLabel(jobsByStagedId[item.id] ?? { step: 'queued' })})
+										{/if}
+									</td>
+									<td class="hint">—</td>
+									<td>
+										<div class="staged-row-actions">
+											{#if jobsByStagedId[item.id]?.status === 'error'}
+												<button class="staged-table-btn" onclick={() => ingestOne(item.id)}>Retry</button>
+												<button class="staged-table-btn danger" onclick={() => removeStagedFile(item.id)}>Remove</button>
+											{:else}
+												<button class="staged-table-btn danger" onclick={() => stopIngesting(item.id)}>Stop</button>
+												<button class="staged-table-btn danger" onclick={() => removeStagedFile(item.id)}>Remove</button>
+											{/if}
+										</div>
+									</td>
+								</tr>
+							{/each}
 						{/if}
 						{#each filtered as s (s.id)}
 							<tr
@@ -2543,6 +2650,25 @@
 				{#if node.path !== '__untagged__'}
 					<button onclick={() => { askRenameTag(node.path); closeContextMenu(); }}><Icon name="edit" size={15} /> Rename category…</button>
 					<button class="danger" onclick={() => { askDeleteTag(node.path, node.count); closeContextMenu(); }}><Icon name="trash" size={15} /> Remove category</button>
+				{/if}
+			{:else if menu.kind === 'staged'}
+				{@const item = menu.target}
+				{@const job = jobsByStagedId[item.id]}
+				{@const isRunning = jobActive(job)}
+				{#if isRunning}
+					<button onclick={() => { stopIngesting(item.id); closeContextMenu(); }}>
+						<Icon name="x" size={15} /> Stop ingesting
+					</button>
+					<button class="danger" onclick={() => { removeStagedFile(item.id); closeContextMenu(); }}>
+						<Icon name="trash" size={15} /> Stop ingesting and remove file
+					</button>
+				{:else}
+					<button onclick={() => { ingestOne(item.id); closeContextMenu(); }}>
+						<Icon name="sparkles" size={15} /> Retry ingestion
+					</button>
+					<button class="danger" onclick={() => { removeStagedFile(item.id); closeContextMenu(); }}>
+						<Icon name="trash" size={15} /> Remove file
+					</button>
 				{/if}
 			{:else}
 				<button onclick={() => (ingestOpen = true)}><Icon name="plus" size={15} /> Add resources</button>
@@ -4018,12 +4144,75 @@
 	}
 	.tile-sub { font-size: .7rem; font-weight: 600; color: var(--danger); }
 	.staged-tile {
-		opacity: .9;
+		opacity: .95;
 		background: color-mix(in srgb, var(--panel-2) 90%, white);
+		cursor: context-menu;
 	}
 	.staged-tile.error {
 		border-color: var(--danger);
 		background: var(--danger-soft);
+	}
+	.staged-tile-footer {
+		display: flex;
+		gap: .35rem;
+		margin-top: auto;
+		width: 100%;
+		justify-content: center;
+	}
+	.staged-pill-btn {
+		font-size: .65rem;
+		font-weight: 600;
+		padding: .15rem .5rem;
+		border-radius: 99px;
+		background: var(--panel);
+		border: 1px solid var(--line);
+		color: var(--ink);
+		cursor: pointer;
+		transition: all .15s ease;
+	}
+	.staged-pill-btn:hover {
+		background: var(--panel-2);
+		border-color: var(--line-strong);
+	}
+	.staged-pill-btn.danger {
+		color: var(--danger);
+		background: var(--danger-soft);
+		border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+	}
+	.staged-pill-btn.danger:hover {
+		background: var(--danger);
+		color: white;
+	}
+	.staged-row-title {
+		display: flex;
+		align-items: center;
+		gap: .5rem;
+	}
+	.staged-row-actions {
+		display: flex;
+		gap: .3rem;
+	}
+	.staged-table-btn {
+		font-size: .7rem;
+		font-weight: 600;
+		padding: .2rem .55rem;
+		border-radius: var(--radius-sm);
+		background: var(--panel-2);
+		border: 1px solid var(--line);
+		color: var(--ink);
+		cursor: pointer;
+	}
+	.staged-table-btn:hover {
+		background: var(--panel);
+	}
+	.staged-table-btn.danger {
+		color: var(--danger);
+		background: var(--danger-soft);
+		border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+	}
+	.staged-table-btn.danger:hover {
+		background: var(--danger);
+		color: white;
 	}
 	.job-progress.tiny {
 		width: 100%;

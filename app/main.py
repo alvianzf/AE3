@@ -507,6 +507,13 @@ def _run_ingest(
 
         on_progress("chunking")
         passages = store.chunk_pages(pages)
+
+        if not pre_write_check():
+            raise HTTPException(409, {
+                "message": "Cancelled — ingestion was stopped by user.",
+                "duplicate_of": None,
+            })
+
         # Embed + extract the knowledge graph now, so the document is connected
         # to the rest of the corpus (and searchable) the moment it lands, rather
         # than sitting as an island. Graph-building is additive — never lose the
@@ -527,6 +534,12 @@ def _run_ingest(
             p["embedding"] = embeddings[i] if i < len(embeddings) else None
 
         card = card_future.result()
+
+    if not pre_write_check():
+        raise HTTPException(409, {
+            "message": "Cancelled — ingestion was stopped by user.",
+            "duplicate_of": None,
+        })
 
     # Remove the superseded source only once the new one has both been read
     # AND successfully embedded (stricter than before this change — it used
@@ -571,6 +584,13 @@ def _run_ingest(
         # would jump in lockstep with the slowest-so-far passage instead of
         # advancing as each one actually lands.
         for future in as_completed(futures):
+            if not pre_write_check():
+                for f in futures:
+                    f.cancel()
+                raise HTTPException(409, {
+                    "message": "Cancelled — ingestion was stopped by user.",
+                    "duplicate_of": None,
+                })
             i, entities, rels = future.result()
             entities_per_passage[i] = entities
             relationships.extend(rels)
@@ -786,6 +806,20 @@ def _job_error_message(exc: Exception) -> str:
     return str(exc)
 
 
+_cancelled_job_ids: set[str] = set()
+
+
+def _is_job_cancelled(job_id: str, staged_id: str, owner: str | None) -> bool:
+    if job_id in _cancelled_job_ids:
+        return True
+    if core_store.get_staged_source(staged_id, owner) is None:
+        return True
+    job = core_store.get_ingestion_job(job_id)
+    if job and job.get("status") == "error":
+        return True
+    return False
+
+
 def _run_staged_ingest_job(
     job_id: str, staged_id: str, owner: str | None, staged_kind: str,
     pages: list[tuple[int | None, str]], body: str, digest: str, page_count: int,
@@ -812,26 +846,18 @@ def _run_staged_ingest_job(
     # identical.
     core_store.update_ingestion_job(job_id, status="running")
 
-    # Cheap early exit if it's already gone — avoids spending a Reader LLM
-    # call and a full embed/graph-extraction pass on a document the user
-    # discarded before this job even started. Not sufficient by itself:
-    # pages/body/original were already captured as plain arguments when
-    # this was handed to BackgroundTasks, so a discard *during* the slow
-    # chain (Reader onward, which can run minutes on a large document)
-    # would sail right past a check made only here — _run_ingest's own
-    # pre_write_check below re-confirms this again immediately before the
-    # actual Neo4j write, the real point of no return (found in review).
-    if core_store.get_staged_source(staged_id, owner) is None:
+    # Cheap early exit if it's already gone or cancelled
+    if _is_job_cancelled(job_id, staged_id, owner):
         core_store.update_ingestion_job(
             job_id, status="error", step="error",
-            error_message="Cancelled — the staged item was discarded before ingestion finished.")
+            error_message="Cancelled — ingestion was stopped by user.")
         return
 
     try:
         result = _run_ingest(
             pages, body, digest, page_count, filename, kind, origin, replaces, original,
             on_progress=progress,
-            pre_write_check=lambda: core_store.get_staged_source(staged_id, owner) is not None,
+            pre_write_check=lambda: not _is_job_cancelled(job_id, staged_id, owner),
             owner_practitioner_id=owner if personal else None,
             uploaded_by=uploaded_by,
         )
@@ -847,6 +873,8 @@ def _run_staged_ingest_job(
         logging.exception("staged ingest job %s (%s) failed", job_id, filename)
         core_store.update_ingestion_job(
             job_id, status="error", step="error", error_message=_job_error_message(exc))
+    finally:
+        _cancelled_job_ids.discard(job_id)
 
 
 def _promote_staged_async(
@@ -1027,6 +1055,20 @@ def staged_file(
     )
 
 
+@app.post("/api/staged/{staged_id}/stop")
+def stop_staged_ingest(
+    staged_id: str,
+    _caller: dict = Depends(auth.require_admin_or_upload_permitted_practitioner),
+) -> dict:
+    owner = _staged_owner_filter(_caller)
+    staged = core_store.get_staged_source(staged_id, owner)
+    if staged is None:
+        raise HTTPException(404, "no such staged item")
+    cancelled = core_store.cancel_active_jobs_for_staged(staged_id, "Ingestion stopped by user.", owner)
+    _cancelled_job_ids.update(cancelled)
+    return {"stopped": staged_id, "cancelled_jobs": cancelled}
+
+
 @app.delete("/api/staged/{staged_id}")
 def discard_staged(
     staged_id: str,
@@ -1036,6 +1078,8 @@ def discard_staged(
     staged = core_store.get_staged_source(staged_id, owner)
     if staged is None:
         raise HTTPException(404, "no such staged item")
+    cancelled = core_store.cancel_active_jobs_for_staged(staged_id, "Cancelled — staged item removed.", owner)
+    _cancelled_job_ids.update(cancelled)
     core_store.delete_staged_source(staged_id, owner)
     if staged["kind"] == "file":
         originals.delete(staged_id)
@@ -1169,11 +1213,26 @@ def list_own_staged(session: dict = Depends(auth.require_pro_practitioner)) -> l
     return core_store.list_staged_sources(session["id"])
 
 
+@app.post("/api/me/knowledge/stage/{staged_id}/stop")
+def stop_own_staged_ingest(
+    staged_id: str,
+    session: dict = Depends(auth.require_pro_practitioner),
+) -> dict:
+    staged = core_store.get_staged_source(staged_id, session["id"])
+    if staged is None:
+        raise HTTPException(404, "no such staged item")
+    cancelled = core_store.cancel_active_jobs_for_staged(staged_id, "Ingestion stopped by user.", session["id"])
+    _cancelled_job_ids.update(cancelled)
+    return {"stopped": staged_id, "cancelled_jobs": cancelled}
+
+
 @app.delete("/api/me/knowledge/stage/{staged_id}")
 def discard_own_staged(staged_id: str, session: dict = Depends(auth.require_pro_practitioner)) -> dict:
     staged = core_store.get_staged_source(staged_id, session["id"])
     if staged is None:
         raise HTTPException(404, "no such staged item")
+    cancelled = core_store.cancel_active_jobs_for_staged(staged_id, "Cancelled — staged item removed.", session["id"])
+    _cancelled_job_ids.update(cancelled)
     core_store.delete_staged_source(staged_id, session["id"])
     if staged["kind"] == "file":
         originals.delete(staged_id)
