@@ -61,6 +61,7 @@
 		componentId?: number;
 		targetX?: number;
 		targetY?: number;
+		_isNeighbor?: boolean;
 	};
 
 	let simNodes: SimNode[] = [];
@@ -163,7 +164,7 @@
 			if (n.y > maxY) maxY = n.y;
 		}
 		if (minX === Infinity) return { minX: 0, maxX: width, minY: 0, maxY: height, w: width, h: height };
-		const pad = 80;
+		const pad = 140;
 		minX -= pad; maxX += pad; minY -= pad; maxY += pad;
 		const w = Math.max(10, maxX - minX);
 		const h = Math.max(10, maxY - minY);
@@ -227,7 +228,7 @@
 			ctx.stroke();
 
 			// Edge relationship label tags
-			if (transform.k > 0.7) {
+			if (isFocusActive || transform.k > 0.45) {
 				ctx.save();
 				ctx.font = `600 ${9 / transform.k}px ui-sans-serif, system-ui, sans-serif`;
 				ctx.textAlign = 'center';
@@ -415,7 +416,7 @@
 	function fitToView() {
 		if (!canvasEl || !zoomBehavior || !simNodes.length) return;
 		const bounds = getGraphBounds();
-		const scale = Math.min(1.8, Math.max(0.12, Math.min(width / bounds.w, height / bounds.h)));
+		const scale = Math.min(1.8, Math.max(0.04, Math.min(width / bounds.w, height / bounds.h)));
 		const tx = width / 2 - scale * (bounds.minX + bounds.w / 2);
 		const ty = height / 2 - scale * (bounds.minY + bounds.h / 2);
 		select(canvasEl)
@@ -429,13 +430,17 @@
 		let best: SimNode | null = null, bestDist = Infinity;
 		for (const n of simNodes) {
 			if (n.x == null || n.y == null) continue;
-			const r = (n.size ?? 6) + 6;
+			const r = Math.max((n.size ?? 6) + 12, 16 / transform.k);
 			const d = Math.hypot(n.x - x, n.y - y);
 			if (d <= r && d < bestDist) { best = n; bestDist = d; }
 		}
 		return best;
 	}
 
+	let potentialDrag: SimNode | null = null;
+	let dragStartX = 0;
+	let dragStartY = 0;
+	let isRealDrag = false;
 	let dragging: SimNode | null = null;
 	let minimapDragging = false;
 
@@ -443,10 +448,10 @@
 		const rect = canvasEl!.getBoundingClientRect();
 		const hit = nodeAt(e.clientX - rect.left, e.clientY - rect.top);
 		if (hit) {
-			dragging = hit;
-			dragging.fx = dragging.x;
-			dragging.fy = dragging.y;
-			simulation?.alphaTarget(0.3).restart();
+			potentialDrag = hit;
+			dragStartX = e.clientX;
+			dragStartY = e.clientY;
+			isRealDrag = false;
 			canvasEl!.setPointerCapture(e.pointerId);
 		}
 	}
@@ -454,12 +459,24 @@
 	function onPointerMove(e: PointerEvent) {
 		const rect = canvasEl!.getBoundingClientRect();
 		const px = e.clientX - rect.left, py = e.clientY - rect.top;
-		if (dragging) {
+
+		if (potentialDrag && !isRealDrag) {
+			if (Math.hypot(e.clientX - dragStartX, e.clientY - dragStartY) > 4) {
+				isRealDrag = true;
+				dragging = potentialDrag;
+				dragging.fx = dragging.x;
+				dragging.fy = dragging.y;
+				simulation?.alphaTarget(0.3).restart();
+			}
+		}
+
+		if (dragging && isRealDrag) {
 			dragging.fx = (px - transform.x) / transform.k;
 			dragging.fy = (py - transform.y) / transform.k;
 			scheduleDraw();
 			return;
 		}
+
 		const hit = nodeAt(px, py);
 		const nextHovered = hit?.id ?? null;
 		if (nextHovered !== hoveredId) {
@@ -470,18 +487,29 @@
 	}
 
 	function onPointerUp(e: PointerEvent) {
+		const wasDragging = isRealDrag && dragging;
 		if (dragging) {
 			dragging.fx = null;
 			dragging.fy = null;
 			simulation?.alphaTarget(0);
 			dragging = null;
-			canvasEl!.releasePointerCapture(e.pointerId);
+		}
+		potentialDrag = null;
+		isRealDrag = false;
+		try { canvasEl!.releasePointerCapture(e.pointerId); } catch {}
+
+		if (wasDragging) {
 			return;
 		}
+
 		const rect = canvasEl!.getBoundingClientRect();
 		const hit = nodeAt(e.clientX - rect.left, e.clientY - rect.top);
 		if (hit) {
-			selectedNodeId = selectedNodeId === hit.id ? null : hit.id;
+			if (selectedNodeId === hit.id) {
+				selectedNodeId = null;
+			} else {
+				focusNode(hit.id);
+			}
 			onNodeClick?.(hit);
 			scheduleDraw();
 		} else {
@@ -536,6 +564,7 @@
 
 	function focusNode(nodeId: string) {
 		selectedNodeId = nodeId;
+		hoveredId = null;
 		scheduleDraw();
 		const target = simNodes.find((n) => n.id === nodeId);
 		if (!target || target.x == null || target.y == null || !canvasEl || !zoomBehavior) return;
@@ -592,7 +621,7 @@
 				}
 			}
 
-			const radius = Math.max(90, Math.sqrt(compNodes.length) * 65 + 40);
+			const radius = Math.max(180, Math.sqrt(compNodes.length) * 130 + 80);
 			discoveredComponents.push({
 				id: compId++,
 				nodeIds: compNodeIds,
@@ -616,13 +645,13 @@
 			discoveredComponents[0].cx = width / 2;
 			discoveredComponents[0].cy = height / 2;
 
-			// Arrange subsequent subgraphs radially around it with generous breathing room
-			const baseOrbit = discoveredComponents[0].radius + 340;
+			// Arrange subsequent subgraphs radially around it with generous breathing room (+100% distance)
+			const baseOrbit = discoveredComponents[0].radius + 680;
 			const remaining = discoveredComponents.length - 1;
 			for (let i = 1; i < discoveredComponents.length; i++) {
 				const angle = ((i - 1) * Math.PI * 2) / remaining;
 				// If many small components, stagger orbits to prevent overlap
-				const orbit = remaining > 6 ? baseOrbit + (i % 2) * 180 : baseOrbit;
+				const orbit = remaining > 6 ? baseOrbit + (i % 2) * 360 : baseOrbit;
 				discoveredComponents[i].cx = width / 2 + Math.cos(angle) * orbit;
 				discoveredComponents[i].cy = height / 2 + Math.sin(angle) * orbit;
 			}
@@ -639,7 +668,7 @@
 				n.targetX = comp.cx;
 				n.targetY = comp.cy;
 				if (n.x == null || isNaN(n.x)) {
-					const spread = Math.min(comp.radius * 0.75, 25 + Math.sqrt(idx) * 22);
+					const spread = Math.min(comp.radius * 0.75, 50 + Math.sqrt(idx) * 44);
 					n.x = comp.cx + Math.cos(idx * angleStep) * spread;
 					n.y = comp.cy + Math.sin(idx * angleStep) * spread;
 				}
@@ -649,17 +678,17 @@
 		let fitted = false;
 		simulation?.stop();
 
-		// Simulation physics:
-		// - Increased link distance (120 vs 70)
-		// - Higher repulsion charge (-340 vs -140)
-		// - Ample collision radius ((size + 18) vs +10)
+		// Simulation physics (+100% node distance):
+		// - Link distance doubled from 120 to 240
+		// - Repulsion charge doubled from -340 to -680 (distanceMax doubled from 850 to 1700)
+		// - Collision padding doubled from +18 to +36
 		// - Per-component target X/Y anchoring so disconnected graphs stay in their own space!
 		simulation = forceSimulation(simNodes as any)
-			.force('link', forceLink(simEdges).id((d: any) => d.id).distance(120).strength(0.35))
-			.force('charge', forceManyBody().strength(-340).distanceMax(850))
-			.force('collide', forceCollide().radius((d: any) => (d.size ?? 6) + 18).strength(0.85))
-			.force('x', forceX((d: any) => d.targetX ?? width / 2).strength(0.09))
-			.force('y', forceY((d: any) => d.targetY ?? height / 2).strength(0.09))
+			.force('link', forceLink(simEdges).id((d: any) => d.id).distance(240).strength(0.35))
+			.force('charge', forceManyBody().strength(-680).distanceMax(1700))
+			.force('collide', forceCollide().radius((d: any) => (d.size ?? 6) + 36).strength(0.85))
+			.force('x', forceX((d: any) => d.targetX ?? width / 2).strength((d: any) => (d._isNeighbor ? 0.35 : 0.08)))
+			.force('y', forceY((d: any) => d.targetY ?? height / 2).strength((d: any) => (d._isNeighbor ? 0.35 : 0.08)))
 			.on('tick', scheduleDraw)
 			.on('end', () => { if (!fitted) { fitted = true; fitToView(); } });
 
@@ -670,10 +699,118 @@
 		return () => simulation?.stop();
 	});
 
+	// ── ADJACENT NODE SEPARATION ON CLICK ──
+	// When a node is clicked / selected, its 1-hop adjacent neighbors bloom outward
+	// radially in an uncluttered circle to provide clear viewing of all connections.
+	$effect(() => {
+		const selId = selectedNodeId;
+		if (!simulation || !simNodes.length) return;
+
+		if (!selId) {
+			// Deselected: restore default component targets & default link distances
+			for (const comp of components) {
+				for (const n of comp.nodes) {
+					n.targetX = comp.cx;
+					n.targetY = comp.cy;
+					n._isNeighbor = false;
+				}
+			}
+			const linkForce = simulation.force('link') as any;
+			if (linkForce) {
+				linkForce.distance(240).strength(0.35);
+			}
+			simulation.alpha(0.25).restart();
+			return;
+		}
+
+		const sNode = simNodes.find((n) => n.id === selId);
+		if (!sNode || sNode.x == null || sNode.y == null) return;
+
+		// Collect direct (1-hop) neighbors
+		const neighborNodes: SimNode[] = [];
+		const neighborIds = new Set<string>();
+
+		for (const e of simEdges) {
+			const sIdVal = typeof e.source === 'object' ? e.source.id : e.source;
+			const tIdVal = typeof e.target === 'object' ? e.target.id : e.target;
+			if (sIdVal === selId && !neighborIds.has(tIdVal)) {
+				const n = simNodes.find((x) => x.id === tIdVal);
+				if (n) { neighborNodes.push(n); neighborIds.add(tIdVal); }
+			} else if (tIdVal === selId && !neighborIds.has(sIdVal)) {
+				const n = simNodes.find((x) => x.id === sIdVal);
+				if (n) { neighborNodes.push(n); neighborIds.add(sIdVal); }
+			}
+		}
+
+		// Reset non-neighbors to their component center
+		for (const comp of components) {
+			for (const n of comp.nodes) {
+				if (n.id !== selId && !neighborIds.has(n.id)) {
+					n.targetX = comp.cx;
+					n.targetY = comp.cy;
+					n._isNeighbor = false;
+				}
+			}
+		}
+
+		// Anchor the selected node where it is
+		sNode.targetX = sNode.x;
+		sNode.targetY = sNode.y;
+		sNode._isNeighbor = false;
+
+		if (neighborNodes.length > 0) {
+			// Generous radial separation so all adjacent nodes are clearly visible
+			const R = Math.max(300, 240 + neighborNodes.length * 28);
+
+			// Sort neighbors by existing angle from sNode to preserve natural topological direction
+			neighborNodes.sort((a, b) => {
+				const angleA = Math.atan2((a.y ?? sNode.y!) - sNode.y!, (a.x ?? sNode.x!) - sNode.x!);
+				const angleB = Math.atan2((b.y ?? sNode.y!) - sNode.y!, (b.x ?? sNode.x!) - sNode.x!);
+				return angleA - angleB;
+			});
+
+			const baseAngle = Math.atan2(
+				(neighborNodes[0].y ?? sNode.y!) - sNode.y!,
+				(neighborNodes[0].x ?? sNode.x!) - sNode.x!
+			);
+			const step = (Math.PI * 2) / neighborNodes.length;
+
+			neighborNodes.forEach((n, idx) => {
+				n._isNeighbor = true;
+				const angle = baseAngle + idx * step;
+				n.targetX = sNode.x! + Math.cos(angle) * R;
+				n.targetY = sNode.y! + Math.sin(angle) * R;
+
+				// Give an outward velocity impulse so nodes smoothly bloom outward
+				const curDist = Math.hypot((n.x ?? sNode.x!) - sNode.x!, (n.y ?? sNode.y!) - sNode.y!);
+				if (curDist < R * 0.9) {
+					n.vx = (n.targetX - (n.x ?? sNode.x!)) * 0.22;
+					n.vy = (n.targetY - (n.y ?? sNode.y!)) * 0.22;
+				}
+			});
+
+			// Expand link distance for incident edges connecting to the selected node
+			const linkForce = simulation.force('link') as any;
+			if (linkForce) {
+				linkForce.distance((d: any) => {
+					const s = typeof d.source === 'object' ? d.source.id : d.source;
+					const t = typeof d.target === 'object' ? d.target.id : d.target;
+					return (s === selId || t === selId) ? R : 240;
+				}).strength((d: any) => {
+					const s = typeof d.source === 'object' ? d.source.id : d.source;
+					const t = typeof d.target === 'object' ? d.target.id : d.target;
+					return (s === selId || t === selId) ? 0.65 : 0.35;
+				});
+			}
+
+			simulation.alpha(0.35).restart();
+		}
+	});
+
 	$effect(() => {
 		if (!canvasEl) return;
 		zoomBehavior = zoom<HTMLCanvasElement, unknown>()
-			.scaleExtent([0.08, 4])
+			.scaleExtent([0.04, 4])
 			.filter((e: any) => !dragging && !e.target.closest?.('button') && !e.target.closest?.('.context-hud') && !e.target.closest?.('.context-map-wrap'))
 			.on('zoom', (e: D3ZoomEvent<HTMLCanvasElement, unknown>) => {
 				transform = e.transform;
@@ -716,7 +853,7 @@
 					placeholder="Find concept…"
 					bind:value={searchFilter}
 					onfocus={() => (searchFocused = true)}
-					onblur={() => setTimeout(() => (searchFocused = false), 350)}
+					onblur={() => setTimeout(() => (searchFocused = false), 450)}
 				/>
 				{#if searchFilter}
 					<button class="clear-btn" onclick={() => (searchFilter = '')} aria-label="Clear search">×</button>
@@ -727,8 +864,9 @@
 							<button
 								type="button"
 								class="search-hit"
-								onmousedown={(e) => { e.preventDefault(); focusNode(hit.id); searchFilter = ''; }}
-								onclick={() => { focusNode(hit.id); searchFilter = ''; }}
+								onpointerdown={(e) => { e.preventDefault(); focusNode(hit.id); searchFilter = ''; searchFocused = false; }}
+								onmousedown={(e) => { e.preventDefault(); focusNode(hit.id); searchFilter = ''; searchFocused = false; }}
+								onclick={() => { focusNode(hit.id); searchFilter = ''; searchFocused = false; }}
 							>
 								<span class="hit-dot" style="background: {colorFor(hit.group)}"></span>
 								<span class="hit-label">{hit.label}</span>
@@ -764,7 +902,7 @@
 						<span class="hud-swatch" style="background: {colorFor(activeNode.group)}"></span>
 						<h3 class="hud-title">{activeNode.label}</h3>
 						{#if selectedNodeId}
-							<button class="hud-close" onclick={() => { selectedNodeId = null; scheduleDraw(); }} title="Unpin selection" aria-label="Unpin selection">×</button>
+							<button class="hud-close" onclick={() => { selectedNodeId = null; hoveredId = null; scheduleDraw(); }} title="Unpin selection" aria-label="Unpin selection">×</button>
 						{/if}
 					</div>
 					<div class="hud-badges">
