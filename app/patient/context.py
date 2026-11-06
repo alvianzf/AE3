@@ -36,6 +36,7 @@ class PatientContext:
     country: str | None
     conditions: list[str] = field(default_factory=list)
     medications: list[str] = field(default_factory=list)
+    protocols: list[str] = field(default_factory=list)
     recent_labs: list[dict] = field(default_factory=list)
     legacy_notes: list[dict] = field(default_factory=list)
     questionnaire_summary: str = ""
@@ -51,6 +52,7 @@ class PatientContext:
             lines.append(f"DOB: {self.dob}")
         lines.append(f"Active conditions: {', '.join(self.conditions) or 'none recorded'}")
         lines.append(f"Current medications: {', '.join(self.medications) or 'none recorded'}")
+        lines.append(f"Client-specific protocols (implemented by practitioner): {', '.join(self.protocols) or 'none active'}")
         # Always stated, never omitted when empty — same as conditions/
         # medications above. An omitted line reads as "not checked"; an
         # explicit "none recorded" gives the Reasoner real grounds to say
@@ -82,13 +84,15 @@ def get_patient_context(practitioner_id: str, client_id: str) -> PatientContext 
     if client is None:
         return None
 
-    conditions, medications, labs, legacy = [], [], [], []
+    conditions, medications, protocols, labs, legacy = [], [], [], [], []
     for entry in client["entries"]:
         kind, content = entry["kind"], entry["content"]
         if kind == "condition":
             conditions.append(content)
         elif kind == "medication":
             medications.append(content)
+        elif kind == "protocol":
+            protocols.append(content)
         elif kind == "lab":
             labs.append({"content": content, "date": entry["created_at"][:10]})
         elif kind in ("history", "note"):
@@ -111,6 +115,7 @@ def get_patient_context(practitioner_id: str, client_id: str) -> PatientContext 
         country=client.get("country"),
         conditions=conditions,
         medications=medications,
+        protocols=protocols,
         recent_labs=labs[-_RECENT_LAB_COUNT:],
         legacy_notes=legacy,
         questionnaire_summary=questionnaire_summary,

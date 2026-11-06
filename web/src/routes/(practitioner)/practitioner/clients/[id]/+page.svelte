@@ -20,8 +20,12 @@
 	// was empty because there was no way to record one, not because none
 	// existed). This panel is that missing write path.
 	const KIND_LABELS: Record<string, string> = {
-		lab: 'Lab / test result', condition: 'Condition', medication: 'Medication',
-		note: 'Note', history: 'History'
+		protocol: 'Client Protocol (Phased)',
+		lab: 'Lab / test result',
+		condition: 'Condition',
+		medication: 'Medication',
+		note: 'Note',
+		history: 'History'
 	};
 	// A client can also add to their own record (POST /api/me/entries) —
 	// self-reported entries carry this marker (app/main.py) so it's clear

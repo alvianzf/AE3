@@ -55,6 +55,11 @@
 
 	const corePillars = [
 		{
+			icon: 'shield',
+			title: 'Client-Specific Phased Protocols',
+			desc: 'Each client receives a protocol built specifically for their unique biology. You decide what interventions to use and the exact timing of when each phase is implemented.'
+		},
+		{
 			icon: 'users',
 			title: 'Clients See You, Never a Bot',
 			desc: 'Your clients receive compassionate, attentive human care from you. The clinical intelligence engine runs strictly behind the scenes as your personal copilot.'
@@ -68,11 +73,6 @@
 			icon: 'book',
 			title: 'Curated Clinical Evidence Base',
 			desc: 'Upload your own trusted medical textbooks, diagnostic guides, and peer-reviewed journals. The assistant draws exclusively from what you verify — zero open-web hallucinations.'
-		},
-		{
-			icon: 'shield',
-			title: 'Strict Patient Data Isolation',
-			desc: 'Every practitioner workspace is completely isolated. Your client records, notes, and lab data are encrypted and never pooled, sold, or shared across practitioners.'
 		}
 	];
 
@@ -126,8 +126,8 @@
 
 		<p class="hero-lede">
 			Functional Health Collab provides independent practitioners with an augmented clinical workspace.
-			Connect complex client intake histories, track biomarker trajectories, and query your curated clinical
-			literature in seconds — eliminating missing information so you can focus on transformative care.
+			Build individualized protocols specific to each client, decide exactly what to implement and when,
+			and eliminate missing information so you can focus on transformative care.
 		</p>
 
 		<div class="hero-actions">
@@ -143,7 +143,12 @@
 		<div class="hero-stats">
 			<div class="stat-item">
 				<strong>100%</strong>
-				<span>Human-Client Care</span>
+				<span>Client-Specific</span>
+			</div>
+			<div class="stat-div"></div>
+			<div class="stat-item">
+				<strong>You Decide</strong>
+				<span>What & When to Implement</span>
 			</div>
 			<div class="stat-div"></div>
 			<div class="stat-item">
@@ -154,11 +159,6 @@
 			<div class="stat-item">
 				<strong>Exact</strong>
 				<span>Page Citations</span>
-			</div>
-			<div class="stat-div"></div>
-			<div class="stat-item">
-				<strong>Private</strong>
-				<span>Curated Library</span>
 			</div>
 		</div>
 	</div>
@@ -197,6 +197,13 @@
 				<p>Everything you need to deliver world-class functional health care without drowning in clinical administration:</p>
 				
 				<div class="feature-rows">
+					<div class="f-row">
+						<div class="f-bullet"><Icon name="shield" size={16} /></div>
+						<div>
+							<strong>Client-Specific Protocol Staging</strong>
+							<p>Each client receives a protocol tailored to their unique biology. You decide what interventions to implement and the exact timing of each phase.</p>
+						</div>
+					</div>
 					<div class="f-row">
 						<div class="f-bullet"><Icon name="check" size={16} /></div>
 						<div>
@@ -254,6 +261,22 @@
 								<span class="citation-pill">📖 Textbook of Functional Medicine p. 418</span>
 							</div>
 						</div>
+						<!-- Client-Specific Protocol Staging Box -->
+						<div class="preview-protocol-box">
+							<div class="protocol-header">
+								<span class="protocol-tag">Client Protocol (Phased & Specific)</span>
+								<span class="protocol-status">Practitioner Discretion</span>
+							</div>
+							<div class="protocol-phase active">
+								<span class="phase-dot active"></span>
+								<span><strong>Phase 1 (Implemented Now):</strong> Dietary Elimination & Mucosal Barrier Support</span>
+							</div>
+							<div class="protocol-phase scheduled">
+								<span class="phase-dot scheduled"></span>
+								<span><strong>Phase 2 (Scheduled — Week 4 Review):</strong> Micronutrient Optimization & Re-testing</span>
+							</div>
+							<p class="protocol-note">✓ You decide what interventions are used and exactly when each stage begins.</p>
+						</div>
 					</div>
 				</div>
 			</div>
@@ -278,6 +301,20 @@
 					<p>{s.desc}</p>
 				</div>
 			{/each}
+		</div>
+
+		<div class="sovereignty-banner">
+			<div class="sovereignty-icon">
+				<Icon name="shield" size={22} />
+			</div>
+			<div class="sovereignty-text">
+				<h3>Clinical Sovereignty: Protocols Are Specific to Each Client</h3>
+				<p>
+					Every client has a protocol built specifically for their unique biology, lab results, and history.
+					The platform never prescribes or automates care — you, the practitioner, decide what interventions to use,
+					how they are staged into phases, and exactly when they are implemented.
+				</p>
+			</div>
 		</div>
 
 		<div class="who-box">
@@ -730,6 +767,102 @@
 		padding: .2rem .5rem;
 		border-radius: 4px;
 		border: 1px solid rgba(82, 183, 136, 0.2);
+	}
+
+	/* ── Protocol Box in Preview ─────────────────────────────────────── */
+	.preview-protocol-box {
+		background: #081a11;
+		border: 1px solid rgba(82, 183, 136, 0.35);
+		border-radius: 10px;
+		padding: .85rem;
+		display: flex;
+		flex-direction: column;
+		gap: .4rem;
+		margin-top: .3rem;
+	}
+	.protocol-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: .5rem;
+	}
+	.protocol-tag {
+		font-size: .65rem;
+		font-weight: 750;
+		color: #74c69d;
+		text-transform: uppercase;
+		letter-spacing: .05em;
+	}
+	.protocol-status {
+		font-size: .65rem;
+		background: rgba(82, 183, 136, 0.18);
+		color: #52b788;
+		padding: .15rem .45rem;
+		border-radius: 4px;
+		font-weight: 700;
+	}
+	.protocol-phase {
+		display: flex;
+		align-items: center;
+		gap: .45rem;
+		font-size: .75rem;
+		color: #d8f3dc;
+		background: rgba(255, 255, 255, 0.04);
+		padding: .35rem .55rem;
+		border-radius: 6px;
+	}
+	.protocol-phase strong {
+		color: #ffffff;
+	}
+	.phase-dot {
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+		flex: 0 0 auto;
+	}
+	.phase-dot.active { background: #52b788; }
+	.phase-dot.scheduled { background: #ffb703; }
+	.protocol-note {
+		margin: .2rem 0 0;
+		font-size: .68rem;
+		color: #74c69d;
+		font-style: italic;
+	}
+
+	/* ── Sovereignty Banner ─────────────────────────────────────────── */
+	.sovereignty-banner {
+		background: #e8f4ec;
+		border: 1.5px solid rgba(45, 106, 79, 0.25);
+		border-radius: 16px;
+		padding: var(--space-5);
+		max-width: 52rem;
+		margin: 0 auto var(--space-5);
+		display: flex;
+		align-items: flex-start;
+		gap: var(--space-4);
+	}
+	.sovereignty-icon {
+		width: 44px;
+		height: 44px;
+		border-radius: 12px;
+		background: #2d6a4f;
+		color: #ffffff;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex: 0 0 auto;
+	}
+	.sovereignty-text h3 {
+		font-size: var(--text-base);
+		font-weight: 850;
+		color: #1b4332;
+		margin: 0 0 .3rem;
+	}
+	.sovereignty-text p {
+		margin: 0;
+		font-size: var(--text-sm);
+		color: #2d6a4f;
+		line-height: 1.55;
 	}
 
 	/* ── Guidance Section ────────────────────────────────────────────── */

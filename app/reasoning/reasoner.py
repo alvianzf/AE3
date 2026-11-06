@@ -176,6 +176,7 @@ def format_deterministic_consult_summary(history_data: dict, consultation_point:
     entries = history_data.get("entries") or []
     conditions = [e["content"] for e in entries if e["kind"] == "condition"]
     medications = [e["content"] for e in entries if e["kind"] == "medication"]
+    protocols = [e["content"] for e in entries if e["kind"] == "protocol"]
     labs = [f"{e['content']} ({e['created_at'][:10]})" for e in entries if e["kind"] == "lab"]
     legacy_notes = [f"[{e['kind']}] {e['content']}" for e in entries if e["kind"] in ("history", "note")]
 
@@ -195,6 +196,7 @@ def format_deterministic_consult_summary(history_data: dict, consultation_point:
         "## Active Clinical Profile",
         f"- **Active Conditions**: {', '.join(conditions) if conditions else 'None recorded'}",
         f"- **Current Medications**: {', '.join(medications) if medications else 'None recorded'}",
+        f"- **Client-Specific Protocols**: {'; '.join(protocols) if protocols else 'None active'}",
         f"- **Recent Labs & Diagnostics**: {'; '.join(labs) if labs else 'None recorded'}",
     ]
 
@@ -234,6 +236,8 @@ def format_deterministic_consult_summary(history_data: dict, consultation_point:
         focal_points.append(f"Review progress and symptom control for active conditions: {', '.join(conditions)}.")
     if medications:
         focal_points.append(f"Evaluate therapeutic adherence, efficacy, and side-effect profile for current medications: {', '.join(medications)}.")
+    if protocols:
+        focal_points.append(f"Review implementation status, tolerance, and timing of client-specific protocols: {', '.join(protocols)}.")
     if labs:
         focal_points.append("Review recent laboratory results and assess if follow-up diagnostic panels are indicated.")
     if prior_sessions:

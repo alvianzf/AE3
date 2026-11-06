@@ -18,7 +18,9 @@ from pathlib import Path
 
 from .db import schema_connection, vault_connection, vault_connection_creating_schema
 
-KINDS = ("lab", "history", "note", "session_summary", "condition", "medication")
+KINDS = ("lab", "history", "note", "session_summary", "condition", "medication", "protocol")
+# "protocol" added: client-specific clinical protocols staged and implemented
+# at the practitioner's sole discretion (what interventions and when).
 # "condition"/"medication" added for app/patient/context.py — structured
 # retrieval-time patient context needs to tell an active condition from a
 # current medication, which the older "history"/"note" kinds never

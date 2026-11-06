@@ -60,6 +60,12 @@ Direct user request:
 - Standardized buttons (`.btn.filled`, `.btn-primary` -> `#2d6a4f` with hover to `#1b4332`), input fields, badges, and card panels across `pricing`, `faq`, `login`, `signup`, `contact`, `terms`, `privacy`, and `cookies`.
 - Removed legacy pink/burgundy `var(--accent)` leaks across public subpages.
 
+### 2.7 Practitioner Clinical Sovereignty & Client-Specific Phased Protocols
+- Per user instruction ("for practitioners: Each client has a protocol specific for them. Practitioners will decide what and when it is implemented. Add that to the practitioners flow"):
+  - **Client-Specific Protocols**: Every client receives a care plan tailored specifically to their individual presentation, biomarkers, and history rather than generic templates.
+  - **Practitioner Sovereignty & Phased Staging**: Highlighted across the `/join` hero, feature pillars, capabilities rows, guidance section, and interactive consult preview that the practitioner maintains total control over what interventions are approved and exactly when each phase is implemented.
+  - **Clinical Vault Support (`vault.KINDS`)**: Added `"protocol"` to `vault.KINDS` and `PatientContext`, allowing clinicians to record and manage phased care protocols directly on client health records, automatically recognized during consult opening briefings and retrieval.
+
 ---
 
 ## 3. Verification & Git Sync
