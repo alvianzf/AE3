@@ -8,6 +8,10 @@
 			a: 'No. Clients never interact with an AI, bot, or automated agent. Functional Health Collab is a clinical intelligence platform used exclusively by your human practitioner. It operates behind the scenes to synthesize your health timeline, questionnaires, and lab biomarkers against peer-reviewed clinical research. Every consultation, decision, and personalized care plan comes directly from your licensed human practitioner.'
 		},
 		{
+			q: 'How are client protocols created and implemented?',
+			a: 'Each client receives an individualized protocol designed specifically for their unique biology, lab results, and health history. The platform never prescribes or auto-implements treatments. Your human practitioner decides what therapies to include, how to prioritize them into phases, and exactly when each stage is implemented.'
+		},
+		{
 			q: 'What does "practitioner augmentation" mean?',
 			a: 'Functional medicine involves immense complexity — dozens of lab biomarkers, intricate symptom timelines, and vast clinical research. Functional Health Collab equips practitioners with deep synthesis tools so no patient detail or critical lab trend is ever lost in paperwork. Your practitioner arrives at your consultation deeply informed and fully prepared.'
 		},

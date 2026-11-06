@@ -17,6 +17,7 @@
 	const pro = [
 		'Everything in Basic included',
 		'Consult workspace — clinical synthesis with peer-reviewed citations',
+		'Client-specific protocol staging — decide what to implement and when',
 		'Interactive patient timeline & biomarker vault',
 		'Custom functional health intake questionnaires',
 		'Private clinical library — curate and weight your own reference sources'
