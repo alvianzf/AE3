@@ -344,8 +344,8 @@
 	@media (prefers-reduced-motion: reduce) { .rail-leaves { display: none; } }
 	.mark { display: flex; align-items: center; gap: .65rem; padding: .25rem .5rem var(--space-3); color: #fff; text-decoration: none; }
 	.logo {
-		display: inline-flex; align-items: center; justify-content: center; width: 2rem; height: 2rem; border-radius: 9px;
-		background: color-mix(in srgb, var(--rail-indicator) 22%, transparent); color: var(--rail-indicator);
+		display: inline-flex; align-items: center; justify-content: center;
+		background: none; border: none; box-shadow: none; color: var(--rail-indicator);
 	}
 	.brand { font-weight: 650; font-size: var(--text-base); letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 	.search-trigger {

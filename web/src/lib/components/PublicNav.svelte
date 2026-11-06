@@ -77,43 +77,54 @@
 
 <style>
 	.topbar {
-		position: sticky; top: 0; z-index: 40; background: var(--panel); background-image: var(--glass-sheen);
-		border-bottom: 1px solid var(--glass-border);
-		backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+		position: sticky; top: 0; z-index: 40;
+		background: rgba(255, 255, 255, 0.92);
+		border-bottom: 1px solid rgba(45, 106, 79, 0.12);
+		backdrop-filter: blur(20px) saturate(160%);
+		-webkit-backdrop-filter: blur(20px) saturate(160%);
 	}
 	.inner { display: flex; align-items: center; gap: var(--space-6); padding: var(--space-3) var(--space-5); min-height: 3.75rem; }
-	.brand { display: flex; align-items: center; gap: .55rem; color: var(--ink); text-decoration: none; font-weight: 750; font-size: var(--text-base); }
-	/* Direct feedback: never put the mark in a colored box — it's the
-	   bare SVG, tinted by currentColor, same as everywhere else the
-	   brand mark appears (Rail, the footer). */
-	.mark { display: flex; align-items: center; justify-content: center; color: var(--accent-ink); }
+	.brand {
+		display: flex; align-items: center; gap: .6rem;
+		color: #1b4332; text-decoration: none;
+		font-weight: 750; font-size: var(--text-base);
+		letter-spacing: -.02em;
+	}
+	/* Logo mark has NO boxes, borders, or backgrounds - pure SVG */
+	.mark {
+		display: inline-flex; align-items: center; justify-content: center;
+		color: #2d6a4f; background: none; border: none; box-shadow: none; padding: 0;
+	}
 	.links { display: flex; gap: var(--space-5); margin-right: auto; }
 	.links a {
 		position: relative; color: var(--ink-2); text-decoration: none; font-size: var(--text-sm);
 		font-weight: 650; padding: .4rem .1rem;
+		transition: color var(--duration-fast);
 	}
 	.links a::after {
 		content: ''; position: absolute; left: 0; right: 100%; bottom: -1px; height: 2px;
-		background: var(--accent); transition: right var(--duration-base) var(--ease);
+		background: #2d6a4f; transition: right var(--duration-base) var(--ease);
 	}
 	.links a.on::after, .links a:hover::after { right: 0; }
-	.links a.on, .links a:hover { color: var(--accent-ink); }
+	.links a.on, .links a:hover { color: #2d6a4f; }
 	.cta { display: flex; align-items: center; gap: var(--space-4); min-height: 2.2rem; }
 	.ghostlink { color: var(--ink-2); text-decoration: none; font-size: var(--text-sm); font-weight: 650; }
+	.ghostlink:hover { color: #2d6a4f; }
 	.btn.filled {
-		background: var(--accent); color: #fff; padding: .5rem 1.1rem; border-radius: var(--r);
+		background: #2d6a4f; color: #fff; padding: .5rem 1.15rem; border-radius: var(--r);
 		text-decoration: none; font-size: var(--text-sm); font-weight: 750;
+		transition: background var(--duration-fast), transform var(--duration-fast);
 	}
-	.btn.filled:hover { background: var(--accent-ink); }
-	.hamburger { display: none; color: var(--ink); background: none; border: none; cursor: pointer; padding: .4rem; margin-left: auto; }
-	.mobile-sheet { display: flex; flex-direction: column; gap: .1rem; padding: var(--space-2) var(--space-4) var(--space-4); }
+	.btn.filled:hover { background: #1b4332; transform: translateY(-1px); }
+	.hamburger { display: none; color: #1b4332; background: none; border: none; cursor: pointer; padding: .4rem; margin-left: auto; }
+	.mobile-sheet { display: flex; flex-direction: column; gap: .1rem; padding: var(--space-2) var(--space-4) var(--space-4); background: #ffffff; }
 	.mobile-sheet a {
 		color: var(--ink-2); text-decoration: none; padding: .65rem .6rem; border-radius: var(--r);
 		font-size: var(--text-sm); font-weight: 650;
 	}
-	.mobile-sheet a:hover, .mobile-sheet a.on { background: var(--panel-2); color: var(--accent-ink); }
-	.mobile-sheet hr { border: none; border-top: 1px solid var(--line); margin: .4rem 0; }
-	.mobile-sheet .sheet-cta { background: var(--accent); color: #fff; font-weight: 750; text-align: center; }
+	.mobile-sheet a:hover, .mobile-sheet a.on { background: #e8f4ec; color: #2d6a4f; }
+	.mobile-sheet hr { border: none; border-top: 1px solid rgba(45, 106, 79, 0.12); margin: .4rem 0; }
+	.mobile-sheet .sheet-cta { background: #2d6a4f; color: #fff; font-weight: 750; text-align: center; }
 	@media (max-width: 760px) {
 		.links, .cta { display: none; }
 		.hamburger { display: flex; }
