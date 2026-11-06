@@ -3,7 +3,6 @@
 	import { PUBLIC_SITE_URL } from '$env/static/public';
 	import { get } from '$lib/api';
 	import Sprig from '$lib/components/Sprig.svelte';
-	import Chip from '$lib/components/Chip.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import Seo from '$lib/components/Seo.svelte';
 	import LeafField from '$lib/components/LeafField.svelte';
@@ -20,7 +19,7 @@
 	const available = $derived((practitioners ?? []).filter((p: any) => p.accepting_new_clients));
 
 	const description =
-		"Find verified functional health practitioners backed by a cited AI knowledge engine grounded in peer-reviewed medical and botanical literature — zero hallucinations, full citations, and human clinical care.";
+		"Find verified functional health practitioners backed by cited clinical and botanical evidence. Personalized, root-cause health plans with full citation transparency.";
 
 	const orgJsonLd = {
 		'@context': 'https://schema.org',
@@ -31,52 +30,75 @@
 		logo: `${PUBLIC_SITE_URL}/favicon.svg`
 	};
 
+	const healthFocusAreas = [
+		{
+			title: 'Gut Health & Digestion',
+			icon: 'leaf',
+			desc: 'Rebalance your microbiome, resolve bloating and food intolerances, and restore the gut-brain axis.'
+		},
+		{
+			title: 'Hormonal & Thyroid Balance',
+			icon: 'sparkles',
+			desc: 'Regulate cortisol, optimize thyroid function, balance sex hormones, and restore steady all-day vitality.'
+		},
+		{
+			title: 'Immune & Autoimmune Support',
+			icon: 'shield',
+			desc: 'Calm systemic inflammation, uncover hidden immune triggers, and support cellular resilience.'
+		},
+		{
+			title: 'Metabolic & Longevity Health',
+			icon: 'watch',
+			desc: 'Optimize insulin sensitivity, cardiovascular markers, and restorative deep sleep cycles.'
+		}
+	];
+
 	const pillars = [
 		{
 			icon: 'leaf',
-			title: 'Root-Cause & Botanical Wisdom',
-			body: 'Functional medicine looks beyond symptom suppression to address root causes, incorporating botanical therapeutics and lifestyle medicine.'
+			title: 'Root-Cause Discovery',
+			body: 'Your practitioner looks at your whole life story — genetics, diet, stress, and environment — to solve the root problem, not just mask symptoms.'
 		},
 		{
 			icon: 'book',
-			title: 'Curated Knowledge, Never the Open Web',
-			body: 'Every answer your practitioner’s assistant provides comes exclusively from vetted monographs, clinical textbooks, and peer-reviewed journals.'
+			title: 'Curated Evidence, Never Web Rumors',
+			body: 'Every therapeutic recommendation draws from verified functional medicine monographs and peer-reviewed clinical research.'
 		},
 		{
 			icon: 'check',
-			title: 'Independent Second Check',
-			body: 'A dedicated anti-hallucination verification engine cross-examines every generated statement against source passages before your provider sees it.'
+			title: 'Every Claim Independently Checked',
+			body: 'An automated anti-hallucination engine verifies all citations against source documents before recommendations reach your care plan.'
 		},
 		{
-			icon: 'shield',
-			title: 'Transparent & Verifiable Citations',
-			body: 'Every recommendation is accompanied by verifiable citations with page numbers and exact quotes, keeping decisions fully evidence-backed.'
+			icon: 'lock',
+			title: 'Private, Patient-Owned Health Vault',
+			body: 'Your medical history, questionnaire responses, and lab tests remain private, encrypted, and completely under your control.'
 		}
 	];
 
 	const steps = [
 		{
 			step: '01',
-			title: 'Match with a Specialist',
-			desc: 'Browse verified practitioners by focus area — microbiome, endocrine health, autoimmunity, longevity, or integrative care.'
+			title: 'Browse & Choose Your Specialist',
+			desc: 'Explore verified practitioners by clinical focus — gut health, hormonal balance, autoimmune support, or integrative wellness.'
 		},
 		{
 			step: '02',
-			title: 'Private Intake & Health Vault',
-			desc: 'Share your health journey, comprehensive questionnaires, and lab biomarkers in your secure, patient-owned portal.'
+			title: 'Complete Your Health Intake',
+			desc: 'Share your health history, symptoms timeline, and previous lab results in your secure, confidential client portal.'
 		},
 		{
 			step: '03',
-			title: 'Grounded, Cited Care Plan',
-			desc: 'Your practitioner synthesizes complex health data with cited evidence to craft an actionable, personalized whole-health roadmap.'
+			title: 'Receive Your Grounded Care Plan',
+			desc: 'Collaborate with your practitioner on a personalized roadmap featuring nutrition, botanical therapies, and cited protocols.'
 		}
 	];
 </script>
 
-<Seo title="Functional Health Collab — Whole-Person Health Grounded in Science & Nature" {description} path="/" />
+<Seo title="Functional Health Collab — Real Answers for Your Health, Grounded in Science & Nature" {description} path="/" />
 <svelte:head>{@html jsonLdScript(orgJsonLd)}</svelte:head>
 
-<!-- ══ HERO SECTION: Botanical Forest Theme with Falling Leaves ══ -->
+<!-- ══ CLIENT-FOCUSED HERO SECTION: Nature & Leaves Botanical Canopy ══ -->
 <section class="hero-section">
 	<div class="leaf-ambient">
 		<LeafField count={28} />
@@ -84,50 +106,50 @@
 
 	<div class="container hero-container">
 		<div class="hero-content">
-			<!-- Clean leaf badge with bare SVG logo (no box, no background) -->
+			<!-- Clean leaf badge with bare SVG logo (no boxes, no backgrounds) -->
 			<div class="nature-badge">
 				<span class="logo-mark"><Sprig size={18} /></span>
-				<span>Rooted in Nature · Grounded in Evidence</span>
+				<span>Personalized Functional Health For You</span>
 			</div>
 
 			<h1 class="hero-title">
-				Whole-person health, guided by <span class="highlight-nature">nature</span> and proven by <span class="highlight-science">science</span>.
+				Feel like yourself again. Care guided by <span class="highlight-nature">nature</span>, proven by <span class="highlight-science">science</span>.
 			</h1>
 
 			<p class="hero-description">
-				Connect with independent functional health practitioners supported by an AI knowledge base
-				drawn only from vetted clinical monographs and peer-reviewed studies. No open-internet guesses. Every claim cited and verified.
+				Partner with dedicated functional medicine practitioners who investigate root causes instead of rushing you.
+				Every recommendation is cross-referenced with peer-reviewed medical and botanical literature — with the citations to prove it.
 			</p>
 
 			<div class="hero-actions">
 				<a class="btn-nature-primary" href="/practitioners">
-					<span>Find a Practitioner</span>
+					<span>Find Your Practitioner</span>
 					<Icon name="chevron" size={14} />
 				</a>
-				<a class="btn-nature-secondary" href="#how-it-works">
-					<span>How It Works</span>
+				<a class="btn-nature-secondary" href="/signup">
+					<span>Sign Up as a Client</span>
 				</a>
 			</div>
 
 			<div class="hero-trust-bar">
 				<div class="trust-item">
 					<Icon name="check" size={15} />
-					<span>100% Sourced Citations</span>
+					<span>100% Verified Citations</span>
 				</div>
 				<div class="trust-divider"></div>
 				<div class="trust-item">
 					<Icon name="lock" size={14} />
-					<span>Encrypted Health Records</span>
+					<span>Private Encrypted Vault</span>
 				</div>
 				<div class="trust-divider"></div>
 				<div class="trust-item">
 					<Icon name="sparkles" size={15} />
-					<span>Independent AI Verification</span>
+					<span>No Guesswork or Open-Web Hallucinations</span>
 				</div>
 			</div>
 		</div>
 
-		<!-- Botanical & Knowledge Graph SVG Illustration -->
+		<!-- Botanical & Evidence Knowledge Graph SVG Illustration -->
 		<div class="hero-visual" aria-hidden="true">
 			<div class="visual-card">
 				<svg class="botanical-svg" viewBox="0 0 460 380" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -146,11 +168,11 @@
 						</filter>
 					</defs>
 
-					<!-- Ambient Botanical Aura -->
+					<!-- Ambient Botanical Glow -->
 					<circle cx="230" cy="190" r="140" fill="#2d6a4f" fill-opacity="0.08" filter="url(#softGlow)" />
 					<circle cx="230" cy="190" r="90" fill="#74c69d" fill-opacity="0.06" />
 
-					<!-- Knowledge Graph Traversal Network Behind Plant -->
+					<!-- Knowledge Graph Traversal Lines -->
 					<g opacity="0.45" stroke="#74c69d" stroke-width="1.2" stroke-dasharray="3 3">
 						<line x1="120" y1="100" x2="230" y2="170" />
 						<line x1="340" y1="90" x2="230" y2="170" />
@@ -172,44 +194,40 @@
 					<path d="M170 60 C150 40, 160 15, 190 20 C200 45, 190 55, 170 60 Z" fill="url(#leafGrad)" stroke="#52b788" stroke-width="1.5" />
 					<path d="M230 80 C240 50, 265 40, 260 70 C250 85, 238 82, 230 80 Z" fill="url(#leafGrad)" stroke="#74c69d" stroke-width="1.5" />
 
-					<!-- Cited Evidence Nodes (Pills with Icons & Labels) -->
-					<!-- Node 1: Clinical Studies -->
+					<!-- Evidence Nodes for Clients -->
 					<g transform="translate(60, 75)">
 						<rect width="130" height="42" rx="10" fill="#143023" stroke="#52b788" stroke-width="1.2" />
 						<circle cx="22" cy="21" r="10" fill="#2d6a4f" />
 						<path d="M18 21 L21 24 L27 18" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
 						<text x="38" y="19" fill="#e8f4ec" font-size="11" font-weight="650" font-family="system-ui">Clinical Research</text>
-						<text x="38" y="31" fill="#74c69d" font-size="9" font-family="system-ui">Peer-reviewed · Cited</text>
+						<text x="38" y="31" fill="#74c69d" font-size="9" font-family="system-ui">Peer-Reviewed Evidence</text>
 					</g>
 
-					<!-- Node 2: Botanical Monographs -->
 					<g transform="translate(275, 70)">
 						<rect width="145" height="42" rx="10" fill="#143023" stroke="#52b788" stroke-width="1.2" />
 						<circle cx="22" cy="21" r="10" fill="#2d6a4f" />
 						<path d="M22 15 C19 18, 18 23, 22 27 C26 23, 25 18, 22 15 Z" fill="#74c69d" />
-						<text x="38" y="19" fill="#e8f4ec" font-size="11" font-weight="650" font-family="system-ui">Botanical Monographs</text>
-						<text x="38" y="31" fill="#74c69d" font-size="9" font-family="system-ui">Herbal Pharmacopoeia</text>
+						<text x="38" y="19" fill="#e8f4ec" font-size="11" font-weight="650" font-family="system-ui">Botanical Therapeutics</text>
+						<text x="38" y="31" fill="#74c69d" font-size="9" font-family="system-ui">Herbal Monographs</text>
 					</g>
 
-					<!-- Node 3: Patient Biomarkers -->
 					<g transform="translate(40, 235)">
 						<rect width="140" height="42" rx="10" fill="#143023" stroke="#52b788" stroke-width="1.2" />
 						<circle cx="22" cy="21" r="10" fill="#2d6a4f" />
 						<circle cx="22" cy="21" r="5" stroke="#74c69d" stroke-width="1.5" />
-						<text x="38" y="19" fill="#e8f4ec" font-size="11" font-weight="650" font-family="system-ui">Patient Biomarkers</text>
-						<text x="38" y="31" fill="#74c69d" font-size="9" font-family="system-ui">Labs & History Vault</text>
+						<text x="38" y="19" fill="#e8f4ec" font-size="11" font-weight="650" font-family="system-ui">Your Private Labs</text>
+						<text x="38" y="31" fill="#74c69d" font-size="9" font-family="system-ui">Encrypted Health Vault</text>
 					</g>
 
-					<!-- Node 4: Verified Care Plan -->
 					<g transform="translate(290, 230)">
 						<rect width="135" height="42" rx="10" fill="#143023" stroke="#52b788" stroke-width="1.2" />
 						<circle cx="22" cy="21" r="10" fill="#52b788" />
 						<path d="M18 21 L21 24 L27 18" stroke="#081c15" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-						<text x="38" y="19" fill="#e8f4ec" font-size="11" font-weight="650" font-family="system-ui">Verified Care Plan</text>
-						<text x="38" y="31" fill="#74c69d" font-size="9" font-family="system-ui">Grounded · 100% Checked</text>
+						<text x="38" y="19" fill="#e8f4ec" font-size="11" font-weight="650" font-family="system-ui">Cited Care Plan</text>
+						<text x="38" y="31" fill="#74c69d" font-size="9" font-family="system-ui">Personalized For You</text>
 					</g>
 
-					<!-- Central Verified Stamp -->
+					<!-- Central Grounded Stamp -->
 					<g transform="translate(180, 160)">
 						<rect width="100" height="30" rx="15" fill="#52b788" />
 						<text x="50" y="19" fill="#0d2318" font-size="11" font-weight="750" text-anchor="middle" font-family="system-ui">✓ Grounded AI</text>
@@ -220,13 +238,47 @@
 	</div>
 </section>
 
-<!-- ══ SECTION 1: HOW THE CARE FLOW WORKS ══ -->
+<!-- ══ SECTION 1: WHAT WE HELP CLIENTS SOLVE ══ -->
+<section class="focus-section">
+	<div class="container">
+		<div class="section-header text-center">
+			<div class="sub-badge">Areas of Care</div>
+			<h2>Real answers for complex, lingering health challenges</h2>
+			<p>When conventional medicine says "your labs look normal" but you still feel exhausted, functional health uncovers the hidden imbalances.</p>
+		</div>
+
+		<div class="focus-grid">
+			{#each healthFocusAreas as fa (fa.title)}
+				<div class="focus-card" use:reveal>
+					<div class="focus-icon-wrap">
+						{#if fa.icon === 'leaf'}
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="focus-svg">
+								<path d="M11 20A7 7 0 0 1 4 13C4 8.5 7 5 11 3c4 2 7 5.5 7 10a7 7 0 0 1-7 7z" stroke-width="1.8"/>
+								<path d="M11 5v14" stroke-width="1.8" stroke-linecap="round"/>
+							</svg>
+						{:else if fa.icon === 'sparkles'}
+							<Icon name="sparkles" size={22} />
+						{:else if fa.icon === 'shield'}
+							<Icon name="shield-check" size={22} />
+						{:else}
+							<Icon name="watch" size={22} />
+						{/if}
+					</div>
+					<h3>{fa.title}</h3>
+					<p>{fa.desc}</p>
+				</div>
+			{/each}
+		</div>
+	</div>
+</section>
+
+<!-- ══ SECTION 2: THE CLIENT CARE JOURNEY ══ -->
 <section id="how-it-works" class="flow-section">
 	<div class="container">
 		<div class="section-header text-center">
-			<div class="sub-badge">Care Journey</div>
-			<h2>A thoughtful, evidence-grounded care partnership</h2>
-			<p>Modern functional medicine brings together deep biological insights, botanical evidence, and dedicated clinical time.</p>
+			<div class="sub-badge">Your Journey</div>
+			<h2>How it works for you as a client</h2>
+			<p>A structured, supportive path from your first consultation to lasting wellness.</p>
 		</div>
 
 		<div class="steps-grid">
@@ -242,17 +294,17 @@
 	</div>
 </section>
 
-<!-- ══ SECTION 2: FEATURED PRACTITIONERS (Fixing the "Weird" Flow) ══ -->
+<!-- ══ SECTION 3: FEATURED PRACTITIONERS FOR CLIENTS ══ -->
 <section class="practitioners-section">
 	<div class="container">
 		<div class="practitioners-header">
 			<div>
-				<div class="sub-badge">Practitioner Network</div>
-				<h2>Independent practitioners accepting new clients</h2>
-				<p>Browse verified functional medicine professionals backed by cited clinical knowledge.</p>
+				<div class="sub-badge">Verified Specialists</div>
+				<h2>Meet practitioners accepting new clients</h2>
+				<p>Choose a dedicated functional medicine specialist aligned with your health focus.</p>
 			</div>
 			<a class="view-all-link" href="/practitioners">
-				<span>Browse All Directory</span>
+				<span>Explore Full Directory</span>
 				<Icon name="chevron" size={14} />
 			</a>
 		</div>
@@ -281,7 +333,7 @@
 						</div>
 
 						<p class="p-bio">
-							{p.bio || 'Dedicated to personalized, root-cause health coaching combining lifestyle, nutrition, and evidence-grounded medicine.'}
+							{p.bio || 'Dedicated to personalized root-cause coaching combining nutrition, lifestyle modifications, and evidence-grounded medicine.'}
 						</p>
 
 						<div class="p-specialties">
@@ -292,7 +344,7 @@
 
 						<div class="p-card-footer">
 							<a class="btn-consult-card" href="/coach/{p.id}">
-								<span>View Profile & Consult</span>
+								<span>View Profile & Book Consult</span>
 								<Icon name="chevron" size={13} />
 							</a>
 						</div>
@@ -301,10 +353,10 @@
 			</div>
 
 			<div class="directory-jump-box">
-				<p>Looking for a specific condition, language, or clinical modality?</p>
+				<p>Looking for a specific health condition, test interpretation, or modality?</p>
 				<a class="btn-explore-directory" href="/practitioners">
 					<Icon name="search" size={15} />
-					<span>Search the Full Directory ({practitioners.length} practitioners)</span>
+					<span>Search All {practitioners.length} Practitioners</span>
 				</a>
 			</div>
 		{:else}
@@ -317,13 +369,13 @@
 	</div>
 </section>
 
-<!-- ══ SECTION 3: THE 4 PILLARS OF NATURE & EVIDENCE ══ -->
+<!-- ══ SECTION 4: THE 4 PILLARS OF EVIDENCE & NATURE ══ -->
 <section class="pillars-section">
 	<div class="container">
 		<div class="section-header text-center">
-			<div class="sub-badge">Evidence & Nature</div>
-			<h2>Why grounded, cited AI transforms health decisions</h2>
-			<p>Traditional AI tools hallucinate unvetted internet lore. Functional Health Collab is built on a radically different architecture.</p>
+			<div class="sub-badge">Why It Works</div>
+			<h2>Why clients trust Functional Health Collab</h2>
+			<p>We combine deep clinical attention with an AI assistant that only references validated scientific and botanical sources.</p>
 		</div>
 
 		<div class="pillars-grid">
@@ -332,7 +384,6 @@
 					<div class="pillar-icon-wrap">
 						{#if p.icon === 'leaf'}
 							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="p-ico">
-								<path d="M12 2C6.5 2 2 6.5 2 12c0 5 3.5 9 8.5 9.8V14h-2v-3h2V9c0-2.5 1.5-4 4-4 1.2 0 2 .1 2 .1v2.5h-1.3c-1.2 0-1.7.7-1.7 1.6V11h3l-.5 3h-2.5v7.8c5-.8 8.5-4.8 8.5-9.8 0-5.5-4.5-10-10-10z" opacity="0"/>
 								<path d="M11 20A7 7 0 0 1 4 13C4 8.5 7 5 11 3c4 2 7 5.5 7 10a7 7 0 0 1-7 7z" stroke-width="1.8"/>
 								<path d="M11 5v14" stroke-width="1.8" stroke-linecap="round"/>
 							</svg>
@@ -341,7 +392,7 @@
 						{:else if p.icon === 'check'}
 							<Icon name="check" size={22} />
 						{:else}
-							<Icon name="shield-check" size={22} />
+							<Icon name="lock" size={22} />
 						{/if}
 					</div>
 					<h3>{p.title}</h3>
@@ -352,100 +403,35 @@
 	</div>
 </section>
 
-<!-- ══ SECTION 4: FOR PRACTITIONERS & CLINICS (Dedicated Clinical Studio) ══ -->
-<section class="practitioner-platform-section">
-	<div class="container">
-		<div class="platform-inner">
-			<div class="platform-copy">
-				<div class="sub-badge light">For Practitioners</div>
-				<h2>Elevate your practice with an AI that knows your library</h2>
-				<p>
-					Spend less time hunting through textbooks and PubMed while writing consult notes.
-					Functional Health Collab equips you with a private clinical intelligence studio tuned strictly to your curated monographs and literature.
-				</p>
-
-				<div class="features-list">
-					<div class="feature-item">
-						<span class="feat-bullet">🌿</span>
-						<div>
-							<strong>Curated Knowledge Studio:</strong>
-							<span>Ingest clinical protocols, monographs, and research books with automatic graph linking.</span>
-						</div>
-					</div>
-					<div class="feature-item">
-						<span class="feat-bullet">🔍</span>
-						<div>
-							<strong>Real-Time Cited Traversal:</strong>
-							<span>Query complex clinical questions during intake and receive synthesis with exact page citations.</span>
-						</div>
-					</div>
-					<div class="feature-item">
-						<span class="feat-bullet">🛡️</span>
-						<div>
-							<strong>Anti-Hallucination Second Check:</strong>
-							<span>Independent verification audits citations before generating answers to safeguard clinical safety.</span>
-						</div>
-					</div>
-				</div>
-
-				<div class="platform-actions">
-					<a class="btn-nature-primary" href="/join">
-						<span>Apply to Join Network</span>
-						<Icon name="chevron" size={14} />
-					</a>
-					<a class="btn-platform-secondary" href="/pricing">
-						<span>View Plans & Pricing</span>
-					</a>
-				</div>
-			</div>
-
-			<div class="platform-card-preview" aria-hidden="true">
-				<div class="studio-mockup">
-					<div class="mockup-header">
-						<span class="mockup-dot red"></span>
-						<span class="mockup-dot yellow"></span>
-						<span class="mockup-dot green"></span>
-						<span class="mockup-title">Clinical Consult Studio · Graph Engine</span>
-					</div>
-					<div class="mockup-body">
-						<div class="mockup-query">
-							<span class="mockup-tag">Patient Case #402</span>
-							<p>Evaluate adaptogenic botanicals for HPA axis dysregulation with elevated evening cortisol.</p>
-						</div>
-						<div class="mockup-response">
-							<div class="res-head">
-								<span class="badge-verified">✓ 4 Sources Verified · 0 Unchecked</span>
-							</div>
-							<p>
-								Ashwagandha (<em>Withania somnifera</em>) demonstrates significant serum cortisol reduction [Source: <em>Herbal Medicine Clinical Guide</em>, p. 84]. Phosphatidylserine attenuates ACTH response to acute mental stress [Source: <em>Endocrine Biomarkers</em>, p. 112].
-							</p>
-							<div class="res-chips">
-								<span class="source-chip">Withania Monograph (p. 84)</span>
-								<span class="source-chip">HPA Axis Protocol (p. 23)</span>
-							</div>
-						</div>
-					</div>
-				</div>
-			</div>
+<!-- ══ SECTION 5: CLIENT TESTIMONIAL / COMMITMENT ══ -->
+<section class="commitment-section">
+	<div class="container commitment-inner">
+		<div class="quote-mark">“</div>
+		<blockquote>
+			Finally, someone who connected the dots between my gut issues, my chronic fatigue, and my sleep. Having a practitioner who listens and backs up every single dietary change with real clinical research gave me my life back.
+		</blockquote>
+		<div class="client-author">
+			<strong>Jessica M.</strong>
+			<span>Client with Autoimmune & Microbiome Focus</span>
 		</div>
 	</div>
 </section>
 
-<!-- ══ CLOSING CTA BAND ══ -->
+<!-- ══ CLOSING CTA BAND FOR CLIENTS ══ -->
 <section class="cta-nature-band">
 	<div class="leaf-ambient">
 		<LeafField count={20} />
 	</div>
 	<div class="container cta-band-content">
-		<h2>Begin your journey toward evidence-grounded health.</h2>
-		<p>Connect with a practitioner who takes the time to listen, investigate, and cite every step of your care.</p>
+		<h2>Take the first step toward lasting vitality.</h2>
+		<p>Connect with a practitioner who takes the time to listen, investigate root causes, and cite every recommendation.</p>
 		<div class="cta-band-buttons">
 			<a class="btn-cta-main" href="/practitioners">
 				<Icon name="search" size={16} />
 				<span>Find Your Practitioner</span>
 			</a>
-			<a class="btn-cta-sub" href="/join">
-				<span>Are You a Practitioner? Apply Today</span>
+			<a class="btn-cta-sub" href="/signup">
+				<span>Sign Up as a Client</span>
 			</a>
 		</div>
 	</div>
@@ -465,13 +451,13 @@
 		--nature-cream: #fafbf8;
 	}
 
-	/* ── Hero Section ────────────────────────────────────────────────── */
+	/* ── Hero Section (100% Client Focused) ─────────────────────────── */
 	.hero-section {
 		position: relative;
 		background: linear-gradient(155deg, #0d2318 0%, #173827 45%, #0f2b1d 100%);
 		color: #ffffff;
 		overflow: hidden;
-		padding: var(--space-7) 0 calc(var(--space-7) + 1rem);
+		padding: var(--space-7) 0 calc(var(--space-7) + 1.2rem);
 	}
 	.leaf-ambient {
 		position: absolute;
@@ -668,15 +654,64 @@
 		padding: .25rem .75rem;
 		border-radius: 99px;
 	}
-	.sub-badge.light {
-		background: rgba(82, 183, 136, 0.25);
-		color: #d8f3dc;
-	}
 
-	/* ── Flow Section (How It Works) ─────────────────────────────────── */
-	.flow-section {
+	/* ── Focus Areas (What We Help Clients With) ─────────────────────── */
+	.focus-section {
 		padding: var(--space-7) 0;
 		background: #ffffff;
+		border-bottom: 1px solid #e9ecef;
+	}
+	.focus-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+		gap: var(--space-5);
+	}
+	.focus-card {
+		background: #fbfdfb;
+		border: 1px solid rgba(45, 106, 79, 0.15);
+		border-radius: 18px;
+		padding: var(--space-5);
+		display: flex;
+		flex-direction: column;
+		gap: .6rem;
+		transition: transform .2s var(--ease), box-shadow .2s var(--ease);
+	}
+	.focus-card:hover {
+		transform: translateY(-3px);
+		box-shadow: 0 10px 25px rgba(45, 106, 79, 0.08);
+		border-color: #52b788;
+	}
+	.focus-icon-wrap {
+		width: 2.8rem;
+		height: 2.8rem;
+		border-radius: 12px;
+		background: #e8f4ec;
+		color: #2d6a4f;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.focus-svg {
+		width: 1.4rem;
+		height: 1.4rem;
+	}
+	.focus-card h3 {
+		font-size: var(--text-lg);
+		font-weight: 750;
+		color: #1b4332;
+		margin: 0;
+	}
+	.focus-card p {
+		font-size: var(--text-sm);
+		color: #4a5568;
+		line-height: 1.55;
+		margin: 0;
+	}
+
+	/* ── Flow Section (How It Works for Clients) ─────────────────────── */
+	.flow-section {
+		padding: var(--space-7) 0;
+		background: #fbfdfb;
 		border-bottom: 1px solid #e9ecef;
 	}
 	.steps-grid {
@@ -686,7 +721,7 @@
 	}
 	.step-card {
 		position: relative;
-		background: #fbfdfb;
+		background: #ffffff;
 		border: 1px solid rgba(45, 106, 79, 0.15);
 		border-radius: 18px;
 		padding: var(--space-5);
@@ -944,7 +979,7 @@
 		gap: var(--space-4);
 	}
 
-	/* ── Pillars Section (Nature & Evidence) ─────────────────────────── */
+	/* ── Pillars Section (Evidence & Nature) ─────────────────────────── */
 	.pillars-section {
 		padding: var(--space-7) 0;
 		background: #ffffff;
@@ -997,168 +1032,49 @@
 		margin: 0;
 	}
 
-	/* ── Section 4: For Practitioners Platform ───────────────────────── */
-	.practitioner-platform-section {
+	/* ── Client Testimonial / Story Section ──────────────────────────── */
+	.commitment-section {
 		padding: var(--space-7) 0;
-		background: #0f2b1d;
-		color: #ffffff;
+		background: #f4f8f4;
+		border-bottom: 1px solid rgba(45, 106, 79, 0.12);
 	}
-	.platform-inner {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: var(--space-7);
-		align-items: center;
-	}
-	.platform-copy {
+	.commitment-inner {
+		max-width: 44rem;
+		margin: 0 auto;
+		text-align: center;
 		display: flex;
 		flex-direction: column;
+		align-items: center;
 		gap: var(--space-4);
 	}
-	.platform-copy h2 {
-		font-size: clamp(2rem, 3.2vw, 2.8rem);
-		font-weight: 800;
-		color: #ffffff;
-		line-height: 1.15;
-		letter-spacing: -.02em;
-		margin: 0;
-	}
-	.platform-copy p {
-		font-size: var(--text-base);
-		color: #d8f3dc;
-		line-height: 1.6;
-		margin: 0;
-	}
-	.features-list {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-3);
-		margin-top: .4rem;
-	}
-	.feature-item {
-		display: flex;
-		align-items: flex-start;
-		gap: .65rem;
-		font-size: var(--text-sm);
-		color: #d8f3dc;
-		line-height: 1.5;
-	}
-	.feature-item strong {
-		color: #ffffff;
-	}
-	.feat-bullet {
-		font-size: 1.1rem;
+	.quote-mark {
+		font-size: 4rem;
 		line-height: 1;
-	}
-	.platform-actions {
-		display: flex;
-		align-items: center;
-		gap: var(--space-4);
-		flex-wrap: wrap;
-		margin-top: var(--space-3);
-	}
-	.btn-platform-secondary {
-		display: inline-flex;
-		align-items: center;
-		color: #74c69d;
-		font-weight: 700;
-		font-size: var(--text-sm);
-		text-decoration: underline;
-		text-underline-offset: 4px;
-	}
-	.btn-platform-secondary:hover {
-		color: #ffffff;
-	}
-	.studio-mockup {
-		background: #143023;
-		border: 1px solid rgba(82, 183, 136, 0.35);
-		border-radius: 18px;
-		overflow: hidden;
-		box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
-	}
-	.mockup-header {
-		display: flex;
-		align-items: center;
-		gap: .4rem;
-		padding: .75rem 1rem;
-		background: #0a1f15;
-		border-bottom: 1px solid rgba(82, 183, 136, 0.2);
-	}
-	.mockup-dot {
-		width: 10px;
-		height: 10px;
-		border-radius: 50%;
-	}
-	.mockup-dot.red { background: #e63946; }
-	.mockup-dot.yellow { background: #ffb703; }
-	.mockup-dot.green { background: #52b788; }
-	.mockup-title {
-		margin-left: .5rem;
-		font-size: var(--text-xs);
-		color: #74c69d;
-		font-weight: 600;
-	}
-	.mockup-body {
-		padding: var(--space-4);
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-3);
-	}
-	.mockup-query {
-		background: rgba(255, 255, 255, 0.05);
-		border-radius: 10px;
-		padding: .75rem;
-		border-left: 3px solid #52b788;
-	}
-	.mockup-tag {
-		font-size: .65rem;
-		text-transform: uppercase;
-		font-weight: 750;
-		color: #74c69d;
-		letter-spacing: .05em;
-	}
-	.mockup-query p {
-		margin: .3rem 0 0;
-		font-size: var(--text-xs);
-		color: #ffffff;
-	}
-	.mockup-response {
-		background: #0d2318;
-		border: 1px solid rgba(82, 183, 136, 0.25);
-		border-radius: 12px;
-		padding: .85rem;
-		display: flex;
-		flex-direction: column;
-		gap: .5rem;
-	}
-	.badge-verified {
-		font-size: .7rem;
-		font-weight: 750;
+		font-family: Georgia, serif;
 		color: #52b788;
-		background: rgba(82, 183, 136, 0.15);
-		padding: .2rem .5rem;
-		border-radius: 4px;
 	}
-	.mockup-response p {
+	.commitment-inner blockquote {
 		margin: 0;
-		font-size: var(--text-xs);
-		color: #d8f3dc;
-		line-height: 1.5;
+		font-size: clamp(1.15rem, 2vw, 1.35rem);
+		line-height: 1.6;
+		color: #1b4332;
+		font-style: italic;
+		font-weight: 550;
 	}
-	.res-chips {
+	.client-author {
 		display: flex;
-		gap: .4rem;
-		flex-wrap: wrap;
+		flex-direction: column;
+		gap: .15rem;
+		font-size: var(--text-sm);
 	}
-	.source-chip {
-		font-size: .65rem;
-		background: rgba(255, 255, 255, 0.08);
-		color: #74c69d;
-		padding: .2rem .5rem;
-		border-radius: 4px;
-		border: 1px solid rgba(82, 183, 136, 0.2);
+	.client-author strong {
+		color: #1b4332;
+	}
+	.client-author span {
+		color: #52796f;
 	}
 
-	/* ── Closing CTA Band ────────────────────────────────────────────── */
+	/* ── Closing CTA Band (100% Client Focused) ──────────────────────── */
 	.cta-nature-band {
 		position: relative;
 		background: linear-gradient(145deg, #132a1f 0%, #1b4332 60%, #0d2218 100%);
@@ -1240,9 +1156,6 @@
 		}
 		.hero-visual {
 			order: -1;
-		}
-		.platform-inner {
-			grid-template-columns: 1fr;
 		}
 	}
 	@media (max-width: 640px) {
