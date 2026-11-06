@@ -119,3 +119,4 @@ In `web/src/routes/(admin)/admin/library/+page.svelte`:
 - **Production Compilation**: `npm --prefix web run build` passes with 0 errors.
 - **Backend Test Suite**: `.venv/bin/pytest tests/` passes 22 tests cleanly in 7.88s.
 - **Real-Time Notification Verification**: Single deletion, bulk deletion, folder deletion, and individual card dismissal immediately prune the notification counter and dialog.
+

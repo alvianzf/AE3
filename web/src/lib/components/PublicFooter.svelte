@@ -50,13 +50,22 @@
 </footer>
 
 <style>
-	.site-footer { border-top: 1px solid var(--line); margin-top: var(--space-7); background: var(--panel-2); }
+	.site-footer {
+		border-top: 1px solid rgba(45, 106, 79, 0.15);
+		margin-top: var(--space-7);
+		background: #f4f6f0;
+	}
 	.inner { display: flex; flex-wrap: wrap; gap: var(--space-6); padding: var(--space-6) var(--space-5); }
-	.brand { display: flex; align-items: center; gap: .5rem; font-weight: 700; color: var(--ink); flex: 1 1 10rem; }
-	nav h3 { font-size: var(--text-xs); letter-spacing: .06em; color: var(--muted); margin-bottom: .6rem; }
+	.brand {
+		display: flex; align-items: center; gap: .6rem;
+		font-weight: 700; color: #1b4332; flex: 1 1 10rem;
+		background: none; border: none; box-shadow: none;
+	}
+	.brand :global(svg) { color: #2d6a4f; }
+	nav h3 { font-size: var(--text-xs); letter-spacing: .06em; color: #52796f; margin-bottom: .6rem; text-transform: uppercase; font-weight: 700; }
 	nav ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .45rem; }
-	nav a { color: var(--ink-2); text-decoration: none; font-size: var(--text-sm); }
-	nav a:hover { color: var(--accent-ink); }
-	.disclaimer { padding: 0 var(--space-5) var(--space-5); color: var(--muted); font-size: var(--text-xs); max-width: 60rem; }
-	.disclaimer a { color: var(--muted); text-decoration: underline; }
+	nav a { color: #2d3748; text-decoration: none; font-size: var(--text-sm); font-weight: 500; transition: color .15s ease; }
+	nav a:hover { color: #2d6a4f; }
+	.disclaimer { padding: 0 var(--space-5) var(--space-5); color: #52796f; font-size: var(--text-xs); max-width: 60rem; line-height: 1.6; }
+	.disclaimer a { color: #2d6a4f; text-decoration: underline; }
 </style>
