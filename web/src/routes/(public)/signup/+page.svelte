@@ -29,12 +29,6 @@
 	// (POST /api/clients 400s without one, app/main.py) — fetched client-side
 	// rather than at prerender time so the picker never offers a practitioner
 	// who has since been suspended or downgraded off Pro.
-	//
-	// specs/v4.1/01 — the pro-only filter here has no equivalent on
-	// /practitioners (all plans browsable there), so a practitioner a
-	// visitor found and liked could silently vanish from this list. If the
-	// preselected practitioner isn't in the pro-only set, surface that
-	// explicitly instead of just dropping the selection.
 	let preselectedMissing = $state(false);
 	onMount(async () => {
 		try {
@@ -66,52 +60,109 @@
 	}
 </script>
 
-<Seo title="Create your account — Functional Health Collab" description="Create your client account on Functional Health Collab." path="/signup" noindex />
+<Seo title="Create Client Account — Functional Health Collab" description="Create your confidential client account and connect with your functional health practitioner." path="/signup" noindex />
 
 <div class="container wrap">
 	<section class="card-panel">
-		<div class="ph"><h2><Sprig /> Create your account</h2></div>
+		<div class="ph">
+			<h2><Sprig size={20} /> Create Your Client Account</h2>
+		</div>
 		<form class="pb" onsubmit={submit}>
 			{#if loadingPractitioners}
-				<p class="hint">Loading practitioners…</p>
+				<p class="hint">Loading available practitioners…</p>
 			{:else if practitioners.length === 0}
-				<!-- specs/v4.1/01 — was a dead end: one line of text, no way
-				     forward. Point back at the directory instead. -->
 				<p class="hint">No practitioners are accepting new clients right now.</p>
-				<a class="btn ghost" href="/practitioners">Browse practitioners</a>
+				<a class="btn-ghost" href="/practitioners">Browse Practitioner Directory</a>
 			{:else}
 				{#if preselectedMissing}
-					<p class="hint alert">The practitioner you selected isn't currently accepting new clients — pick another below.</p>
+					<div class="alert-box">
+						<p>The practitioner you selected isn't currently accepting new clients — choose another provider below.</p>
+					</div>
 				{/if}
 				<Select
-					label="Choose your practitioner"
+					label="Select your practitioner"
 					bind:value={practitionerId}
 					required
 					options={practitioners.map((p) => ({ value: p.id, label: p.name }))}
 				/>
-				<TextField label="Full name" bind:value={name} required />
-				<TextField label="Email" type="email" bind:value={email} required />
+				<TextField label="Full Name" bind:value={name} placeholder="Your name" required />
+				<TextField label="Email Address" type="email" bind:value={email} placeholder="you@example.com" required />
 				<TextField label="Password" type="password" bind:value={password} required hint="At least 8 characters" />
 				{#if error}<p class="error">{error}</p>{/if}
-				<Button type="submit" loading={submitting} disabled={!practitionerId}>Create account</Button>
+				<Button type="submit" loading={submitting} disabled={!practitionerId}>Create Client Account</Button>
 			{/if}
-			<p class="hint">Already have an account? <a href="/login">Log in</a></p>
+			<div class="auth-hints">
+				<p class="hint">Already have an account? <a href="/login">Log in</a></p>
+				<p class="hint">Practitioner? <a href="/join">Apply to practice</a></p>
+			</div>
 		</form>
 	</section>
 </div>
 
 <style>
 	.wrap {
-		padding: var(--space-6) var(--space-5); max-width: 26rem;
-		min-height: 70dvh; display: flex; flex-direction: column; justify-content: center;
+		padding: var(--space-7) var(--space-5);
+		max-width: 30rem;
+		margin: 0 auto;
+		min-height: 70dvh;
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
 	}
-	form { display: grid; gap: var(--space-3); }
-	.error { color: var(--danger); font-size: var(--text-sm); }
-	.hint.alert { color: var(--warn); }
-	.btn.ghost {
-		display: inline-flex; align-items: center; justify-content: center;
-		border: 1px solid var(--line-2); color: var(--ink); padding: .55rem 1rem;
-		border-radius: var(--r); text-decoration: none; font-size: var(--text-sm); font-weight: 650;
-		min-height: var(--tap-min); width: fit-content;
+	form {
+		display: grid;
+		gap: var(--space-4);
+	}
+	.error {
+		color: var(--danger, #b13434);
+		font-size: var(--text-sm);
+		background: #fbe8e8;
+		padding: .65rem .85rem;
+		border-radius: 8px;
+		margin: 0;
+	}
+	.alert-box {
+		background: #fdf3e3;
+		border: 1px solid rgba(168, 106, 18, 0.25);
+		color: #a86a12;
+		padding: .65rem .85rem;
+		border-radius: 8px;
+		font-size: var(--text-xs);
+	}
+	.alert-box p {
+		margin: 0;
+	}
+	.auth-hints {
+		display: grid;
+		gap: .35rem;
+		margin-top: .4rem;
+		border-top: 1px solid rgba(45, 106, 79, 0.1);
+		padding-top: var(--space-3);
+	}
+	.hint {
+		font-size: var(--text-xs);
+		color: #52796f;
+		margin: 0;
+	}
+	.hint a {
+		color: #2d6a4f;
+		font-weight: 750;
+	}
+	.btn-ghost {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		border: 1.5px solid rgba(45, 106, 79, 0.25);
+		color: #1b4332;
+		padding: .65rem 1rem;
+		border-radius: 10px;
+		text-decoration: none;
+		font-size: var(--text-sm);
+		font-weight: 750;
+		text-align: center;
+	}
+	.btn-ghost:hover {
+		background: #f4f8f4;
+		border-color: #2d6a4f;
 	}
 </style>

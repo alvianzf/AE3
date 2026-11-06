@@ -19,7 +19,7 @@
 	const available = $derived((practitioners ?? []).filter((p: any) => p.accepting_new_clients));
 
 	const description =
-		"Find verified functional health practitioners backed by cited clinical and botanical evidence. Personalized, root-cause health plans with full citation transparency.";
+		"Find verified functional health practitioners equipped with comprehensive clinical intelligence. Personalized root-cause health plans with no missing information.";
 
 	const orgJsonLd = {
 		'@context': 'https://schema.org',
@@ -32,47 +32,47 @@
 
 	const healthFocusAreas = [
 		{
-			title: 'Gut Health & Digestion',
+			title: 'Gut Health & Microbiome',
 			icon: 'leaf',
-			desc: 'Rebalance your microbiome, resolve bloating and food intolerances, and restore the gut-brain axis.'
+			desc: 'Rebalance your microbiome, resolve bloating and food sensitivities, and restore gut mucosal integrity.'
 		},
 		{
 			title: 'Hormonal & Thyroid Balance',
 			icon: 'sparkles',
-			desc: 'Regulate cortisol, optimize thyroid function, balance sex hormones, and restore steady all-day vitality.'
+			desc: 'Regulate cortisol rhythms, optimize thyroid conversion, balance sex hormones, and regain steady all-day vitality.'
 		},
 		{
 			title: 'Immune & Autoimmune Support',
 			icon: 'shield',
-			desc: 'Calm systemic inflammation, uncover hidden immune triggers, and support cellular resilience.'
+			desc: 'Calm systemic inflammatory pathways, uncover hidden triggers, and restore cellular resilience.'
 		},
 		{
 			title: 'Metabolic & Longevity Health',
 			icon: 'watch',
-			desc: 'Optimize insulin sensitivity, cardiovascular markers, and restorative deep sleep cycles.'
+			desc: 'Optimize insulin sensitivity, cardiovascular biomarkers, and restorative circadian sleep cycles.'
 		}
 	];
 
 	const pillars = [
 		{
 			icon: 'leaf',
-			title: 'Root-Cause Discovery',
-			body: 'Your practitioner looks at your whole life story — genetics, diet, stress, and environment — to solve the root problem, not just mask symptoms.'
-		},
-		{
-			icon: 'book',
-			title: 'Curated Evidence, Never Web Rumors',
-			body: 'Every therapeutic recommendation draws from verified functional medicine monographs and peer-reviewed clinical research.'
+			title: 'Root-Cause Investigation',
+			body: 'Your practitioner explores your entire life context — genetics, nutrition, stressors, sleep, and environment — to treat the root cause rather than just suppress symptoms.'
 		},
 		{
 			icon: 'check',
-			title: 'Every Claim Independently Checked',
-			body: 'An automated anti-hallucination engine verifies all citations against source documents before recommendations reach your care plan.'
+			title: 'No More Missing Information',
+			body: 'No more fragmented lab results or forgotten symptoms. Your complete health history, biomarker trends, and intake answers are unified into one comprehensive patient view.'
+		},
+		{
+			icon: 'book',
+			title: 'Peer-Reviewed Clinical Evidence',
+			body: 'Every therapeutic recommendation is cross-referenced with peer-reviewed functional medicine literature and clinical research with full citation transparency.'
 		},
 		{
 			icon: 'lock',
 			title: 'Private, Patient-Owned Health Vault',
-			body: 'Your medical history, questionnaire responses, and lab tests remain private, encrypted, and completely under your control.'
+			body: 'Your health history, symptom logs, and biomarker data remain private, encrypted, and strictly under your control.'
 		}
 	];
 
@@ -80,17 +80,17 @@
 		{
 			step: '01',
 			title: 'Browse & Choose Your Specialist',
-			desc: 'Explore verified practitioners by clinical focus — gut health, hormonal balance, autoimmune support, or integrative wellness.'
+			desc: 'Explore verified functional medicine practitioners by clinical focus — gut health, hormonal balance, autoimmune support, or metabolic health.'
 		},
 		{
 			step: '02',
-			title: 'Complete Your Health Intake',
-			desc: 'Share your health history, symptoms timeline, and previous lab results in your secure, confidential client portal.'
+			title: 'Share Your Complete Health Story',
+			desc: 'Complete in-depth functional health questionnaires, map your symptom timeline, and securely upload past lab panels into your confidential portal.'
 		},
 		{
 			step: '03',
-			title: 'Receive Your Grounded Care Plan',
-			desc: 'Collaborate with your practitioner on a personalized roadmap featuring nutrition, botanical therapies, and cited protocols.'
+			title: 'Receive Your Informed Care Plan',
+			desc: 'Your practitioner arrives at your consultation deeply informed with all dots connected, delivering an actionable, personalized care roadmap.'
 		}
 	];
 </script>
@@ -118,7 +118,7 @@
 
 			<p class="hero-description">
 				Partner with dedicated functional medicine practitioners who investigate root causes instead of rushing you.
-				Every recommendation is cross-referenced with peer-reviewed medical and botanical literature — with the citations to prove it.
+				Behind the scenes, your practitioner is equipped with deep clinical intelligence that connects your full health timeline, labs, and peer-reviewed medical literature — delivering personalized care with zero missing information.
 			</p>
 
 			<div class="hero-actions">
@@ -133,18 +133,23 @@
 
 			<div class="hero-trust-bar">
 				<div class="trust-item">
+					<Icon name="users" size={15} />
+					<span>100% Human Care</span>
+				</div>
+				<div class="trust-divider"></div>
+				<div class="trust-item">
 					<Icon name="check" size={15} />
-					<span>100% Verified Citations</span>
+					<span>No Missing Information</span>
+				</div>
+				<div class="trust-divider"></div>
+				<div class="trust-item">
+					<Icon name="book" size={14} />
+					<span>Peer-Reviewed Citations</span>
 				</div>
 				<div class="trust-divider"></div>
 				<div class="trust-item">
 					<Icon name="lock" size={14} />
 					<span>Private Encrypted Vault</span>
-				</div>
-				<div class="trust-divider"></div>
-				<div class="trust-item">
-					<Icon name="sparkles" size={15} />
-					<span>No Guesswork or Open-Web Hallucinations</span>
 				</div>
 			</div>
 		</div>
@@ -207,30 +212,30 @@
 						<rect width="145" height="42" rx="10" fill="#143023" stroke="#52b788" stroke-width="1.2" />
 						<circle cx="22" cy="21" r="10" fill="#2d6a4f" />
 						<path d="M22 15 C19 18, 18 23, 22 27 C26 23, 25 18, 22 15 Z" fill="#74c69d" />
-						<text x="38" y="19" fill="#e8f4ec" font-size="11" font-weight="650" font-family="system-ui">Botanical Therapeutics</text>
-						<text x="38" y="31" fill="#74c69d" font-size="9" font-family="system-ui">Herbal Monographs</text>
+						<text x="38" y="19" fill="#e8f4ec" font-size="11" font-weight="650" font-family="system-ui">Clinical Protocols</text>
+						<text x="38" y="31" fill="#74c69d" font-size="9" font-family="system-ui">Peer-Reviewed Studies</text>
 					</g>
 
 					<g transform="translate(40, 235)">
 						<rect width="140" height="42" rx="10" fill="#143023" stroke="#52b788" stroke-width="1.2" />
 						<circle cx="22" cy="21" r="10" fill="#2d6a4f" />
 						<circle cx="22" cy="21" r="5" stroke="#74c69d" stroke-width="1.5" />
-						<text x="38" y="19" fill="#e8f4ec" font-size="11" font-weight="650" font-family="system-ui">Your Private Labs</text>
-						<text x="38" y="31" fill="#74c69d" font-size="9" font-family="system-ui">Encrypted Health Vault</text>
+						<text x="38" y="19" fill="#e8f4ec" font-size="11" font-weight="650" font-family="system-ui">Complete Labs</text>
+						<text x="38" y="31" fill="#74c69d" font-size="9" font-family="system-ui">Biomarker Trajectories</text>
 					</g>
 
 					<g transform="translate(290, 230)">
-						<rect width="135" height="42" rx="10" fill="#143023" stroke="#52b788" stroke-width="1.2" />
+						<rect width="140" height="42" rx="10" fill="#143023" stroke="#52b788" stroke-width="1.2" />
 						<circle cx="22" cy="21" r="10" fill="#52b788" />
 						<path d="M18 21 L21 24 L27 18" stroke="#081c15" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-						<text x="38" y="19" fill="#e8f4ec" font-size="11" font-weight="650" font-family="system-ui">Cited Care Plan</text>
+						<text x="38" y="19" fill="#e8f4ec" font-size="11" font-weight="650" font-family="system-ui">Informed Care Plan</text>
 						<text x="38" y="31" fill="#74c69d" font-size="9" font-family="system-ui">Personalized For You</text>
 					</g>
 
 					<!-- Central Grounded Stamp -->
-					<g transform="translate(180, 160)">
-						<rect width="100" height="30" rx="15" fill="#52b788" />
-						<text x="50" y="19" fill="#0d2318" font-size="11" font-weight="750" text-anchor="middle" font-family="system-ui">✓ Grounded AI</text>
+					<g transform="translate(160, 160)">
+						<rect width="140" height="30" rx="15" fill="#52b788" />
+						<text x="70" y="19" fill="#0d2318" font-size="11" font-weight="750" text-anchor="middle" font-family="system-ui">Clinical Intelligence</text>
 					</g>
 				</svg>
 			</div>
@@ -375,7 +380,7 @@
 		<div class="section-header text-center">
 			<div class="sub-badge">Why It Works</div>
 			<h2>Why clients trust Functional Health Collab</h2>
-			<p>We combine deep clinical attention with an AI assistant that only references validated scientific and botanical sources.</p>
+			<p>High-touch human care from practitioners who are deeply informed, cross-referencing your complete history with validated clinical literature.</p>
 		</div>
 
 		<div class="pillars-grid">

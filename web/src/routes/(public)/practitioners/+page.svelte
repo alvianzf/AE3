@@ -48,7 +48,7 @@
 
 <Seo
 	title="Find a Functional Medicine Practitioner — Functional Health Collab"
-	description="Browse independent functional medicine practitioners using grounded, cited AI clinical knowledge — filter by focus area, language, and client availability."
+	description="Browse independent functional medicine practitioners backed by comprehensive clinical intelligence — filter by focus area, language, and client availability."
 	path="/practitioners"
 />
 
@@ -66,8 +66,7 @@
 		</div>
 		<h1>Find the right practitioner, on your terms.</h1>
 		<p>
-			Browse verified functional medicine and holistic health specialists backed by peer-reviewed
-			literature and grounded AI. Choose a partner aligned with your unique health goals.
+			Discover experienced functional and integrative practitioners backed by peer-reviewed clinical research and deep clinical synthesis. Choose a partner aligned with your unique health goals.
 		</p>
 	</div>
 </section>

@@ -16,7 +16,7 @@
 	const description = $derived(
 		p.bio?.trim()
 			? p.bio.slice(0, 200)
-			: `${p.name} on Functional Health Collab — verified functional medicine practitioner using grounded, cited clinical AI.`
+			: `${p.name} on Functional Health Collab — verified functional medicine practitioner backed by synthesized clinical intelligence.`
 	);
 
 	const personJsonLd = $derived({
@@ -157,8 +157,8 @@
 				<div class="wf-step">
 					<span class="wf-num">2</span>
 					<div>
-						<strong>Grounded, Cited AI Synthesis</strong>
-						<p>{p.name} cross-references your case against vetted clinical literature and botanical monographs with zero hallucinations.</p>
+						<strong>Deep Clinical Preparation</strong>
+						<p>{p.name} reviews your complete health history, timelines, and lab biomarkers, cross-referencing your case against peer-reviewed functional medicine literature so no detail is missed.</p>
 					</div>
 				</div>
 				<div class="wf-step">

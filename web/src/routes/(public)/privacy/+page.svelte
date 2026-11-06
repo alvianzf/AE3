@@ -17,15 +17,15 @@
 	<p>Depending on your account type:</p>
 	<ul>
 		<li><strong>Practitioners</strong>: name, email, a public profile (bio, specialties, languages, photo), and billing information handled by Stripe (we never see your card number).</li>
-		<li><strong>Clients</strong>: name, email, and whatever health information your own practitioner records on your behalf — questionnaire answers, health-record entries, and files they share with you.</li>
+		<li><strong>Clients</strong>: name, email, and whatever health information your own practitioner records on your behalf — questionnaire answers, health-record entries, and files they share with you. Clients do not interface with open AI chat.</li>
 		<li><strong>Everyone</strong>: basic access logs (IP address, browser user agent) kept for security and abuse prevention.</li>
 	</ul>
 
 	<h2>Who we share it with</h2>
 	<p>We use the following processors, and only for the purpose named:</p>
 	<ul>
-		<li><strong>Nebius</strong> — hosts the AI models that read, index, and answer from your practitioner's library.</li>
-		<li><strong>Anthropic</strong> — an optional, practitioner-opted-in alternate AI provider for the same purpose.</li>
+		<li><strong>Nebius</strong> — hosts the clinical language models that read, index, and answer from your practitioner's library.</li>
+		<li><strong>Anthropic</strong> — an optional, practitioner-opted-in alternate provider for the same purpose.</li>
 		<li><strong>Stripe</strong> — processes practitioner subscription billing. We never store your payment details ourselves.</li>
 	</ul>
 	<p>We do not sell personal data, and a client's records are never shared with any practitioner other than their own.</p>
@@ -38,11 +38,11 @@
 </div>
 
 <style>
-	.page { max-width: 38rem; padding: var(--space-7) 0; }
-	h1 { font-size: var(--text-2xl); margin-bottom: var(--space-4); }
-	h2 { font-size: var(--text-lg); margin: var(--space-5) 0 var(--space-2); }
-	p, li { color: var(--ink-2); line-height: 1.6; }
+	.page { max-width: 42rem; padding: var(--space-7) var(--space-5); margin: 0 auto; }
+	h1 { font-size: clamp(2rem, 3.2vw, 2.6rem); font-weight: 850; color: #1b4332; margin-bottom: var(--space-4); }
+	h2 { font-size: var(--text-lg); font-weight: 800; color: #1b4332; margin: var(--space-5) 0 var(--space-2); }
+	p, li { color: #3e5a4d; line-height: 1.65; }
 	ul { padding-left: 1.2rem; display: grid; gap: .4rem; }
-	.notice { background: var(--accent-soft); border: 1px solid var(--line); border-radius: var(--r); padding: var(--space-3); font-size: var(--text-sm); color: var(--ink); }
-	a { color: var(--accent-ink); }
+	.notice { background: #e8f4ec; border: 1px solid rgba(45, 106, 79, 0.2); border-radius: 10px; padding: var(--space-3) var(--space-4); font-size: var(--text-sm); color: #1b4332; }
+	a { color: #2d6a4f; font-weight: 700; }
 </style>

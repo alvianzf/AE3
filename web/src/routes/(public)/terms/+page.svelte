@@ -13,10 +13,10 @@
 
 	<h2>Medical disclaimer</h2>
 	<p>
-		Functional Health Collab is a decision-support tool for licensed practitioners. It is not
-		a medical device, and nothing it produces is medical advice to a
-		client. Every answer is grounded in a practitioner's own curated
-		library and independently checked, but the practitioner — not Functional Health Collab —
+		Functional Health Collab is a clinical intelligence and decision-support tool for licensed practitioners. It is not
+		a medical device, and nothing it produces is direct medical advice to a
+		client. Every synthesized insight is grounded in a practitioner's own curated
+		library and independently verified, but the practitioner — not Functional Health Collab —
 		remains responsible for the care they provide.
 	</p>
 
@@ -31,9 +31,9 @@
 
 	<h2>Client accounts</h2>
 	<p>
-		A client account is created and managed by your practitioner. Your
+		A client account is created and managed in coordination with your practitioner. Your
 		data is visible only to that practitioner, never to any other
-		practitioner on the platform.
+		practitioner on the platform. Clients never interact with an autonomous AI.
 	</p>
 
 	<h2>Acceptable use</h2>
@@ -48,9 +48,9 @@
 </div>
 
 <style>
-	.page { max-width: 38rem; padding: var(--space-7) 0; }
-	h1 { font-size: var(--text-2xl); margin-bottom: var(--space-4); }
-	h2 { font-size: var(--text-lg); margin: var(--space-5) 0 var(--space-2); }
-	p { color: var(--ink-2); line-height: 1.6; }
-	.notice { background: var(--accent-soft); border: 1px solid var(--line); border-radius: var(--r); padding: var(--space-3); font-size: var(--text-sm); color: var(--ink); }
+	.page { max-width: 42rem; padding: var(--space-7) var(--space-5); margin: 0 auto; }
+	h1 { font-size: clamp(2rem, 3.2vw, 2.6rem); font-weight: 850; color: #1b4332; margin-bottom: var(--space-4); }
+	h2 { font-size: var(--text-lg); font-weight: 800; color: #1b4332; margin: var(--space-5) 0 var(--space-2); }
+	p { color: #3e5a4d; line-height: 1.65; }
+	.notice { background: #e8f4ec; border: 1px solid rgba(45, 106, 79, 0.2); border-radius: 10px; padding: var(--space-3) var(--space-4); font-size: var(--text-sm); color: #1b4332; }
 </style>

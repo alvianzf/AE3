@@ -18,12 +18,6 @@
 		error = '';
 		try {
 			const session = await post(fetch, '/auth/login', { email, password });
-			// Same fallback PublicNav.svelte uses for the identical lookup —
-			// previously this one fell back to an admin-only route, which
-			// would 401 any non-admin role that ever reached it
-			// (specs/v4/04-known-issues.md#l1). Dead code today (the backend
-			// only ever returns a role present in LANDING) but inconsistent
-			// and would misbehave the moment that stops being true.
 			goto(LANDING[session?.role] || '/account');
 		} catch (err: any) {
 			error = err.status === 401 ? 'Incorrect email or password.' : err.message;
@@ -37,22 +31,58 @@
 
 <div class="container wrap">
 	<section class="card-panel">
-		<div class="ph"><h2><Sprig /> Log in</h2></div>
+		<div class="ph">
+			<h2><Sprig size={20} /> Member Sign In</h2>
+		</div>
 		<form class="pb" onsubmit={submit}>
-			<TextField label="Email" type="email" bind:value={email} required />
+			<TextField label="Email address" type="email" bind:value={email} placeholder="you@example.com" required />
 			<TextField label="Password" type="password" bind:value={password} required />
 			{#if error}<p class="error">{error}</p>{/if}
-			<Button type="submit" loading={submitting}>Sign in</Button>
-			<p class="hint">New here? <a href="/signup">Create a client account</a> or <a href="/join">apply as a practitioner</a>.</p>
+			<Button type="submit" loading={submitting}>Sign In</Button>
+			<div class="auth-hints">
+				<p class="hint">Looking for care? <a href="/signup">Create a client account</a></p>
+				<p class="hint">Practicing clinician? <a href="/join">Apply as a practitioner</a></p>
+			</div>
 		</form>
 	</section>
 </div>
 
 <style>
 	.wrap {
-		padding: var(--space-6) var(--space-5); max-width: 26rem;
-		min-height: 70dvh; display: flex; flex-direction: column; justify-content: center;
+		padding: var(--space-7) var(--space-5);
+		max-width: 28rem;
+		margin: 0 auto;
+		min-height: 70dvh;
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
 	}
-	form { display: grid; gap: var(--space-3); }
-	.error { color: var(--danger); font-size: var(--text-sm); }
+	form {
+		display: grid;
+		gap: var(--space-4);
+	}
+	.error {
+		color: var(--danger, #b13434);
+		font-size: var(--text-sm);
+		background: #fbe8e8;
+		padding: .65rem .85rem;
+		border-radius: 8px;
+		margin: 0;
+	}
+	.auth-hints {
+		display: grid;
+		gap: .35rem;
+		margin-top: .4rem;
+		border-top: 1px solid rgba(45, 106, 79, 0.1);
+		padding-top: var(--space-3);
+	}
+	.hint {
+		font-size: var(--text-xs);
+		color: #52796f;
+		margin: 0;
+	}
+	.hint a {
+		color: #2d6a4f;
+		font-weight: 700;
+	}
 </style>
