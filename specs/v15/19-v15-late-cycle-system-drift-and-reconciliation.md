@@ -111,7 +111,7 @@ This specification formalizes and reconciles the architectural, behavioral, and 
   - **Medium**: 8.25rem columns, 3.2rem art containers, 30px/28px icons, compact typography.
   - **Small**: 6.25rem columns, 2.35rem art containers, 22px/20px icons, hidden secondary hints to maximize item density matching macOS Finder small icon layout.
 - **Dual-Access Sizing Controls**:
-  - Segmented toolbar button group (`S`, `M`, `L`) immediately adjacent to the Grid / List / Columns view switcher.
+  - Segmented toolbar button group with dedicated scaling glyphs (`size-small`, `size-medium`, `size-large`) immediately adjacent to the Grid / List / Columns view switcher.
   - Canvas context menu submenu ("Icon & Folder Size") with checkmark states.
   - Local storage persistence (`admin-library-icon-size`).
 - **Synchronized Multi-View Density**:

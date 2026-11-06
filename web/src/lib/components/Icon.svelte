@@ -74,7 +74,14 @@
 		// the glyph itself — the one file type common enough in a
 		// knowledge library to deserve its own unmistakable icon rather
 		// than just a color/shape variant of the generic document icon.
-		pdf: 'M6 3.5h8l4 4v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1zM14 3.5V8h4.5M7.5 17.5v-4h1a1.2 1.2 0 1 1 0 2.4h-1M11 17.5v-4h1.3a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H11zM15.3 17.5v-4h2M15.3 15.5h1.7'
+		pdf: 'M6 3.5h8l4 4v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1zM14 3.5V8h4.5M7.5 17.5v-4h1a1.2 1.2 0 1 1 0 2.4h-1M11 17.5v-4h1.3a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H11zM15.3 17.5v-4h2M15.3 15.5h1.7',
+		// Icon & folder size density glyphs for Library (Small, Medium, Large)
+		'size-small': 'M7 11A1.2 1.2 0 0 1 8.2 9.8h2.3l1.2 1.2h4.1A1.2 1.2 0 0 1 17 12.2v3.1A1.2 1.2 0 0 1 15.8 16.5h-7.6A1.2 1.2 0 0 1 7 15.3z',
+		'size-medium': 'M5 9A1.5 1.5 0 0 1 6.5 7.5h3.5l1.5 1.5h6A1.5 1.5 0 0 1 19 10.5v5.5A1.5 1.5 0 0 1 17.5 17.5h-11A1.5 1.5 0 0 1 5 16z',
+		'size-large': 'M3 6.5A1.5 1.5 0 0 1 4.5 5h5l2 2h8A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z',
+		'folder-small': 'M7 11A1.2 1.2 0 0 1 8.2 9.8h2.3l1.2 1.2h4.1A1.2 1.2 0 0 1 17 12.2v3.1A1.2 1.2 0 0 1 15.8 16.5h-7.6A1.2 1.2 0 0 1 7 15.3z',
+		'folder-medium': 'M5 9A1.5 1.5 0 0 1 6.5 7.5h3.5l1.5 1.5h6A1.5 1.5 0 0 1 19 10.5v5.5A1.5 1.5 0 0 1 17.5 17.5h-11A1.5 1.5 0 0 1 5 16z',
+		'folder-large': 'M3 6.5A1.5 1.5 0 0 1 4.5 5h5l2 2h8A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z'
 	};
 
 	let { name, size = 17 }: { name: string; size?: number } = $props();

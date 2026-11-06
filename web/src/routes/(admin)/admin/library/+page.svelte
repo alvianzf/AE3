@@ -2476,7 +2476,7 @@
 						title="Small icons"
 						aria-label="Small icons"
 					>
-						S
+						<Icon name="size-small" size={15} />
 					</button>
 					<button
 						class="size-toggle-btn"
@@ -2485,7 +2485,7 @@
 						title="Medium icons"
 						aria-label="Medium icons"
 					>
-						M
+						<Icon name="size-medium" size={15} />
 					</button>
 					<button
 						class="size-toggle-btn"
@@ -2494,7 +2494,7 @@
 						title="Large icons (current)"
 						aria-label="Large icons (current)"
 					>
-						L
+						<Icon name="size-large" size={15} />
 					</button>
 				</div>
 				<Menu label="Sort" icon="sort">
@@ -3462,13 +3462,16 @@
 						<span>Icon & Folder Size</span>
 					</div>
 					<button class:menu-active={iconSize === 'small'} onclick={() => { iconSize = 'small'; closeContextMenu(); }}>
-						{#if iconSize === 'small'}<Icon name="check" size={13} />{:else}<span class="menu-check-spacer"></span>{/if} Small
+						{#if iconSize === 'small'}<Icon name="check" size={13} />{:else}<span class="menu-check-spacer"></span>{/if}
+						<Icon name="size-small" size={14} /> Small
 					</button>
 					<button class:menu-active={iconSize === 'medium'} onclick={() => { iconSize = 'medium'; closeContextMenu(); }}>
-						{#if iconSize === 'medium'}<Icon name="check" size={13} />{:else}<span class="menu-check-spacer"></span>{/if} Medium
+						{#if iconSize === 'medium'}<Icon name="check" size={13} />{:else}<span class="menu-check-spacer"></span>{/if}
+						<Icon name="size-medium" size={14} /> Medium
 					</button>
 					<button class:menu-active={iconSize === 'large'} onclick={() => { iconSize = 'large'; closeContextMenu(); }}>
-						{#if iconSize === 'large'}<Icon name="check" size={13} />{:else}<span class="menu-check-spacer"></span>{/if} Large (current)
+						{#if iconSize === 'large'}<Icon name="check" size={13} />{:else}<span class="menu-check-spacer"></span>{/if}
+						<Icon name="size-large" size={14} /> Large (current)
 					</button>
 				{/if}
 			{/if}
@@ -4590,11 +4593,6 @@
 		color: var(--accent-ink);
 		background: var(--panel);
 		box-shadow: 0 2px 6px rgba(16, 24, 40, 0.08);
-	}
-	.tb-size-toggle button {
-		font-size: .75rem;
-		font-weight: 750;
-		letter-spacing: .02em;
 	}
 	.tb-search {
 		display: flex;
