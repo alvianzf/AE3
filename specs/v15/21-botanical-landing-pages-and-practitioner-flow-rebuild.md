@@ -30,22 +30,17 @@ Direct user request:
   - Embedded as ambient background layers across the Landing Page hero, closing CTA banner, and the Practitioner Directory header.
   - Dynamically tinted via `--leaf-color: rgba(116, 198, 157, 0.45);`.
 
-### 2.3 Cohesive Practitioner & Client Care Journey
-1. **Hero & Value Proposition**:
-   - Direct dual pathways: "Find a Practitioner" (client search) and "How It Works" (care roadmap), alongside provider exploration links.
-   - Custom SVG artwork combining a living botanical stem with an evidence network (Clinical Research, Botanical Monographs, Biomarkers, and Verified Care Plan).
-2. **Three-Stage Care Flow**:
-   - Stage 01: Match with a Specialist.
-   - Stage 02: Private Intake & Health Vault.
-   - Stage 03: Grounded, Cited Care Plan.
-3. **Featured Practitioner Roster**:
-   - Replaced horizontal scroll strip with a responsive 3-column card grid.
-   - Displays avatar, verified status ("Accepting New Clients"), years of clinical experience, specialty badges, clinical philosophy excerpt, and direct action: **View Profile & Consult →**.
-   - Includes a full directory jump box linking directly to `/practitioners`.
-4. **Dedicated Practitioner Platform Section**:
-   - Cleanly partitioned from patient messaging into a dedicated provider section.
-   - Demonstrates the Knowledge Studio, Cited Traversal Engine, and Clinical Second Check with an interactive consult mockup.
-   - Direct CTA: **Apply to Join Network** (`/join`).
+### 2.3 100% Client-Centric Landing Page Architecture
+- Per user instruction ("Home in Landing page is for Clients"), the primary landing page (`/`) speaks exclusively to clients/patients seeking personalized functional health care.
+- **Removed Provider Clutter**: Eliminated internal clinician software pitches, studio architecture mockups, and mixed practitioner onboarding CTAs from the home page.
+- **Client-Centric Structure**:
+  1. *Hero*: Root-cause functional medicine value proposition, client trust badges, and dual client actions ("Find Your Practitioner" / "Sign Up as a Client").
+  2. *What We Help Clients Solve*: Focus areas spanning Gut Health & Digestion, Hormonal & Thyroid Balance, Immune & Autoimmune Support, and Metabolic Health.
+  3. *Your Care Journey*: 3-step client progression (Match with a Specialist -> Complete Health Intake -> Receive Grounded Care Plan).
+  4. *Featured Practitioners*: Verified practitioner cards highlighting areas of clinical focus, availability, and direct consultation booking.
+  5. *Evidence & Nature Pillars*: Root-cause medicine, curated clinical/botanical evidence, independent verification, and patient-owned encrypted data vaults.
+  6. *Client Story & Closing CTA*: Testimonial of care transformation and closing invitations for clients to take control of their health journey.
+- **Practitioner Pathways Preserved**: Clinical provider onboarding is cleanly partitioned to dedicated top navigation (`/join`) and footer links without distracting patient discovery.
 
 ### 2.4 Directory & Profile Pages Harmonization
 - **Directory (`/practitioners`)**:
@@ -63,3 +58,4 @@ Direct user request:
 - `npm --prefix web run build`: 0 errors (SvelteKit static adapter build complete).
 - `.venv/bin/pytest tests/`: 22 passed in 9.45s.
 - Synchronized across `develop` and `main` branches.
+
