@@ -1009,8 +1009,12 @@
 	.mode-toggle button:disabled { opacity: .6; cursor: not-allowed; }
 
 	@media (max-width: 860px) {
-		.chat-shell { grid-template-columns: 1fr; height: auto; }
-		.sidebar { grid-template-rows: none; }
-		.chat-main { height: 70dvh; }
+		.chat-shell { grid-template-columns: 1fr; height: auto; gap: var(--space-3); }
+		.sidebar { grid-template-rows: none; gap: var(--space-3); }
+		.clientlist { max-height: 8.5rem; }
+		.historylist { max-height: 8.5rem; }
+		.chat-main { height: 75dvh; min-height: 480px; }
+		.composer { padding: var(--space-2) var(--space-3) var(--space-3); }
+		.composer-row { flex-wrap: wrap; }
 	}
 </style>

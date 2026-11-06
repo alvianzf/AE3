@@ -300,6 +300,9 @@
 	function dismissFinalization(id: string) {
 		needsFinalization = new Set([...needsFinalization].filter((x) => x !== id));
 		pendingPlacements = pendingPlacements.filter((p) => p.documentId !== id);
+		if (pendingPlacements.length === 0) {
+			placementDialogOpen = false;
+		}
 	}
 
 	function addTagToPlacement(item: PendingPlacement, rawTag: string) {
@@ -391,16 +394,28 @@
 	}
 
 	$effect(() => {
-		if (!placementPreview) return;
-		const fresh = (data.sources ?? []).find((x: any) => x.id === placementPreview.id);
-		if (fresh && fresh !== placementPreview) placementPreview = fresh;
-	});
-
-	$effect(() => {
-		if (!pendingPlacements.length) return;
-		for (const p of pendingPlacements) {
-			const fresh = (data.sources ?? []).find((x: any) => x.id === p.documentId);
-			if (fresh) p.source = fresh;
+		const existingSourceIds = new Set((data.sources ?? []).map((x: any) => x.id));
+		if (placementPreview && !existingSourceIds.has(placementPreview.id)) {
+			placementPreview = null;
+		}
+		if (pendingPlacements.length) {
+			const valid = pendingPlacements.filter((p) => existingSourceIds.has(p.documentId));
+			if (valid.length !== pendingPlacements.length) {
+				pendingPlacements = valid;
+				if (pendingPlacements.length === 0) {
+					placementDialogOpen = false;
+				}
+			}
+			for (const p of pendingPlacements) {
+				const fresh = (data.sources ?? []).find((x: any) => x.id === p.documentId);
+				if (fresh) p.source = fresh;
+			}
+		}
+		if (needsFinalization.size) {
+			const valid = new Set([...needsFinalization].filter((id) => existingSourceIds.has(id)));
+			if (valid.size !== needsFinalization.size) {
+				needsFinalization = valid;
+			}
 		}
 	});
 
@@ -1777,6 +1792,12 @@
 		const { path } = deletingFolder;
 		deletingFolderSubmitting = true;
 		try {
+			// Dismiss any pending placements for docs inside this folder
+			for (const p of pendingPlacements) {
+				if (p.source?.folder_path === path || p.source?.folder_path?.startsWith(`${path}/`)) {
+					dismissFinalization(p.documentId);
+				}
+			}
 			const result = await post(fetch, '/library/folders/delete', { folder_path: path });
 			toast(`Deleted "${path}" (${result.deleted_documents} document${result.deleted_documents === 1 ? '' : 's'}).`);
 			deletingFolderOpen = false;
@@ -1957,6 +1978,7 @@
 			deletingBulk = false;
 			try {
 				if (docIds.length) {
+					for (const id of docIds) dismissFinalization(id);
 					await Promise.all(docIds.map((id) => del(fetch, `/sources/${id}`)));
 				}
 				if (folderList.length) {
@@ -1984,6 +2006,7 @@
 		}
 		if (!deleting) return;
 		const s = deleting;
+		dismissFinalization(s.id);
 		confirmingDelete = false;
 		try {
 			await del(fetch, `/sources/${s.id}`);
@@ -2448,7 +2471,8 @@
 					title="Tags & Categories view"
 				>
 					<Icon name="tag" size={13} />
-					<span>Tags & Categories</span>
+					<span class="ws-label-full">Tags & Categories</span>
+					<span class="ws-label-short">Tags</span>
 				</button>
 				<button
 					class="ws-btn"
@@ -3967,6 +3991,15 @@
 					<div class="placement-card-actions">
 						<button
 							type="button"
+							class="btn-dismiss-single"
+							onclick={() => dismissFinalization(item.documentId)}
+							title="Dismiss placement notification for this file"
+						>
+							<Icon name="x" size={12} />
+							<span>Dismiss</span>
+						</button>
+						<button
+							type="button"
 							class="btn-confirm-single"
 							onclick={() => confirmSinglePlacement(item)}
 							title="Confirm destination and tags for this file"
@@ -4451,6 +4484,26 @@
 		display: flex;
 		align-items: center;
 		justify-content: flex-end;
+		gap: .5rem;
+	}
+	.btn-dismiss-single {
+		display: inline-flex;
+		align-items: center;
+		gap: .3rem;
+		padding: .35rem .65rem;
+		border-radius: 6px;
+		background: var(--panel-2);
+		border: 1px solid var(--line);
+		color: var(--muted);
+		font-size: var(--text-xs);
+		font-weight: 550;
+		cursor: pointer;
+		transition: all .15s var(--ease);
+	}
+	.btn-dismiss-single:hover {
+		background: var(--danger-soft);
+		border-color: color-mix(in srgb, var(--danger) 40%, var(--line));
+		color: var(--danger);
 	}
 	.btn-confirm-single {
 		display: inline-flex;
@@ -5759,14 +5812,39 @@
 		font-style: italic;
 	}
 
+	.ws-label-short { display: none; }
+
 	@media (max-width: 960px) {
 		.finder-body { flex-direction: column; }
-		.finder-sidebar, .inspector { width: 100%; }
+		.finder-sidebar {
+			width: 100%;
+			max-height: 260px;
+		}
+		.inspector {
+			width: 100%;
+			max-height: 60vh;
+			border-top: 2px solid var(--accent);
+		}
 	}
 	@media (max-width: 760px) {
 		.finder-toolbar { padding: .75rem 1rem; gap: .6rem; }
-		.tb-actions { margin-left: 0; width: 100%; justify-content: space-between; }
-		.tb-search { min-width: 8rem; flex: 1 1 auto; }
+		.finder-toolbar .head-title { min-width: 0; width: 100%; }
+		.finder-toolbar .head-title > div { min-width: 0; overflow: hidden; }
+		.finder-toolbar .head-title h1 { font-size: 1.25rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+		.finder-toolbar .head-title p { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: var(--text-xs); }
+		.tb-actions { margin-left: 0; width: 100%; justify-content: flex-start; gap: .45rem; }
+		.tb-search { width: 100%; min-width: 100%; order: 10; margin-top: .15rem; }
+		.tb-placement-notify { font-size: var(--text-xs); padding: .35rem .6rem; }
+		.tb-placement-notify .notify-label { display: none; }
+	}
+	@media (max-width: 640px) {
+		.ws-label-full { display: none; }
+		.ws-label-short { display: inline; }
+	}
+	@media (max-width: 480px) {
+		.ws-btn { padding: .35rem .5rem; font-size: .7rem; }
+		.pathbar { padding: .6rem 1rem .2rem; }
+		.finder-body { padding: var(--space-2) var(--space-3) var(--space-4); }
 	}
 
 </style>
