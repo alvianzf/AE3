@@ -5,7 +5,7 @@ Administrators managing rich resource libraries and categories need flexible vis
 
 ## 2. Core Capabilities
 1. **Size Toggle Controls**:
-   - **Toolbar Segmented Control**: Positioned immediately adjacent to the View mode toggle (Grid / List / Columns), a 3-button toggle (`S`, `M`, `L`) allows one-click switching.
+   - **Toolbar Segmented Control**: Positioned immediately adjacent to the View mode toggle (Grid / List / Columns), a 3-button toggle with dedicated scale glyphs (`size-small`, `size-medium`, `size-large`) allows one-click switching with crisp, uniform stroke-width icons.
    - **Canvas Context Menu**: Right-clicking whitespace in Icon View displays an "Icon & Folder Size" submenu with checked state indicators for Small, Medium, and Large.
    - **Local Storage Persistence**: Preserves user preference via `localStorage.getItem('admin-library-icon-size')`, defaulting to `'large'`.
 
