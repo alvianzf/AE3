@@ -114,5 +114,5 @@
 	.photo { height: 9rem; background: var(--accent-soft); background-size: cover; background-position: center; display: flex; align-items: center; justify-content: center; }
 	.photo span { font-size: 2rem; font-weight: 700; color: var(--accent-ink); }
 	.body { padding: var(--space-4); display: flex; flex-direction: column; gap: .5rem; }
-	.bio { color: var(--muted); font-size: var(--text-sm); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+	.bio { color: var(--muted); font-size: var(--text-sm); display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 </style>

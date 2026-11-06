@@ -70,7 +70,8 @@
 
 <style>
 	.uploader { display: grid; gap: .5rem; margin-bottom: var(--space-4); }
-	.uploader-row { display: flex; gap: var(--space-3); align-items: center; }
+	.uploader-row { display: flex; gap: var(--space-3); align-items: center; flex-wrap: wrap; }
+	.uploader-row input[type="file"] { min-width: 0; max-width: 100%; flex: 1 1 12rem; }
 	.upload-progress {
 		display: flex; align-items: center; gap: var(--space-3);
 		background: var(--panel-2); border-radius: 99px; padding: .35rem .35rem .35rem .1rem;

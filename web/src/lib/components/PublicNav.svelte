@@ -105,7 +105,7 @@
 		text-decoration: none; font-size: var(--text-sm); font-weight: 750;
 	}
 	.btn.filled:hover { background: var(--accent-ink); }
-	.hamburger { display: none; color: var(--ink); background: none; border: none; cursor: pointer; padding: .4rem; }
+	.hamburger { display: none; color: var(--ink); background: none; border: none; cursor: pointer; padding: .4rem; margin-left: auto; }
 	.mobile-sheet { display: flex; flex-direction: column; gap: .1rem; padding: var(--space-2) var(--space-4) var(--space-4); }
 	.mobile-sheet a {
 		color: var(--ink-2); text-decoration: none; padding: .65rem .6rem; border-radius: var(--r);

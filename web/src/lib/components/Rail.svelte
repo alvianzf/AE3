@@ -284,14 +284,12 @@
 							class="drawer-item"
 							class:on={isActive(it.href)}
 							onclick={async (e) => {
-								console.log("DRAWER ITEM CLICKED:", it.href);
 								e.preventDefault();
 								closeDrawer();
 								try {
 									await goto(it.href);
-									console.log("GOTO FINISHED, CURRENT PATH:", window.location.pathname);
 								} catch (err) {
-									console.error("GOTO ERROR:", err);
+									console.error("Navigation error:", err);
 								}
 							}}
 							aria-current={isActive(it.href) ? 'page' : undefined}
