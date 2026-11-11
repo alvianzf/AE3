@@ -3657,6 +3657,12 @@ def me_download_client_file(client_id: str, file_id: str,
 app.mount("/photos", StaticFiles(directory=cfg.photos_path), name="photos")
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 app.mount("/_app", StaticFiles(directory=WEB_BUILD / "_app"), name="web-assets")
+# web/static/images/* (e.g. the FHC homepage's hero/portrait/logo assets)
+# adapter-static copies these into web-build/images alongside the page
+# HTML, but nothing mounted that subdirectory — requests fell through to
+# the catch-all SPA shell below and came back 200 with index.html instead
+# of the image, i.e. every <img> on the homepage was silently broken.
+app.mount("/images", StaticFiles(directory=WEB_BUILD / "images"), name="web-images")
 
 # Legacy URL, kept as a redirect — the directory is the site root now.
 _WEB_ROOT_FILES = {

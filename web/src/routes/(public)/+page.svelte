@@ -1,10 +1,24 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { PUBLIC_SITE_URL } from '$env/static/public';
 	import Seo from '$lib/components/Seo.svelte';
 	import { jsonLdScript } from '$lib/seo';
+	import { goToSection, consumePendingScroll } from '$lib/scrollToSection';
 
+	// Same-page section links, kept as JS scroll (not #hash hrefs) for
+	// consistency with the nav/footer — see $lib/scrollToSection. On this
+	// page the path is always '/', so this just scrolls in place.
+	function nav(id: string) {
+		goToSection(id, '/');
+	}
+
+	onMount(consumePendingScroll);
+
+	// SEO/OG description is the hero copy verbatim, not a paraphrase — keeps
+	// the search snippet and link-preview text in sync with what the page
+	// actually says above the fold.
 	const description =
-		'Personalised hormone, metabolic, gut and longevity care for women in perimenopause and menopause. 100% online, science-based functional medicine.';
+		'Personalised hormone, metabolic, gut and longevity care for women in midlife. Because your biology is unique, your health plan should be too.';
 
 	const orgJsonLd = {
 		'@context': 'https://schema.org',
@@ -155,8 +169,8 @@
 			<h1>Personalised hormone, metabolic, gut and longevity care for women in midlife.</h1>
 			<p class="sub">Because your biology is unique, your health plan should be too.</p>
 			<div class="hero-actions">
-				<a href="#book" class="btn-primary">Book your free 15-min intro call</a>
-				<a href="#programs" class="btn-secondary">View programs</a>
+				<a href="/" class="btn-primary" onclick={(e) => { e.preventDefault(); nav('book'); }}>Book your free 15-min intro call</a>
+				<a href="/" class="btn-secondary" onclick={(e) => { e.preventDefault(); nav('programs'); }}>View programs</a>
 			</div>
 		</div>
 		<div class="hero-photo">
@@ -231,7 +245,7 @@
 				health plans based on the latest scientific research.
 			</p>
 			<!-- TODO: "Meet the team" links to the future /about page with full team profiles -->
-			<a href="#about" class="link-arrow">Meet the team →</a>
+			<a href="/" class="link-arrow" onclick={(e) => { e.preventDefault(); nav('about'); }}>Meet the team →</a>
 		</div>
 		<div class="testing-partners">
 			<p class="partners-label">Our testing partners</p>
@@ -333,7 +347,7 @@
 							<p class="program-note">{p.note}</p>
 						{/if}
 					</div>
-					<a href="#book" class="program-cta" class:filled={p.highlight}>{p.cta}</a>
+					<a href="/" class="program-cta" class:filled={p.highlight} onclick={(e) => { e.preventDefault(); nav('book'); }}>{p.cta}</a>
 				</div>
 			{/each}
 		</div>
@@ -371,7 +385,7 @@
 			<h2>Ready to start?</h2>
 			<p>Schedule your free 15-minute introduction call. We'll listen to your story and help you find the program that fits.</p>
 			<!-- TODO (handoff README "still to be supplied"): real booking link -->
-			<a href="#book" class="cta-button">Book your free intro call</a>
+			<a href="/" class="cta-button" onclick={(e) => { e.preventDefault(); nav('book'); }}>Book your free intro call</a>
 			<p class="cta-footnote">100% online · Available in English, Dutch, Slovak, French, German, Italian and Finnish</p>
 		</div>
 	</div>

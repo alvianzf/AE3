@@ -1,16 +1,25 @@
 <script lang="ts">
+	import { page } from '$app/state';
+	import { goToSection } from '$lib/scrollToSection';
+
 	// FHC rebrand: one-page marketing site, so the footer nav mirrors the
 	// homepage anchors (not the old marketplace route list). Legal pages
 	// (/privacy, /terms) are kept since the disclaimer links to them.
+	// See $lib/scrollToSection for why these are ids, not #hash hrefs —
+	// this footer is shared across every public route, not just the home.
 	const links = [
-		{ href: '#approach', label: 'Our approach' },
-		{ href: '#how', label: 'How it works' },
-		{ href: '#programs', label: 'Programs' },
-		{ href: '#about', label: 'About us' }
+		{ id: 'approach', label: 'Our approach' },
+		{ id: 'how', label: 'How it works' },
+		{ id: 'programs', label: 'Programs' },
+		{ id: 'about', label: 'About us' }
 	];
 
 	// TODO: contact email still to be supplied (handoff README "still to be supplied")
 	const contactEmail: string | null = null;
+
+	function nav(id: string) {
+		goToSection(id, page.url.pathname);
+	}
 </script>
 
 <footer class="site-footer">
@@ -20,7 +29,7 @@
 			<p class="tagline">Personalised Perimenopause and Menopause Care</p>
 		</div>
 		<nav class="link-row" aria-label="Footer">
-			{#each links as l (l.href)}<a href={l.href}>{l.label}</a>{/each}
+			{#each links as l (l.id)}<a href="/" onclick={(e) => { e.preventDefault(); nav(l.id); }}>{l.label}</a>{/each}
 			{#if contactEmail}
 				<a href="mailto:{contactEmail}">{contactEmail}</a>
 			{:else}
