@@ -1,22 +1,29 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import Icon from './Icon.svelte';
+	import { goToSection } from '$lib/scrollToSection';
 
 	// Single-practice marketing nav (FHC rebrand): the old nav routed to
 	// marketplace pages (/practitioners, /join, /signup, /login); this one
-	// is in-page anchors on the one-page homepage, per the handoff.
+	// scrolls to sections of the one-page homepage, per the handoff — see
+	// $lib/scrollToSection for why these are ids, not #hash hrefs.
 	const links = [
-		{ href: '#approach', label: 'Our approach' },
-		{ href: '#how', label: 'How it works' },
-		{ href: '#programs', label: 'Programs' },
-		{ href: '#about', label: 'About us' }
+		{ id: 'approach', label: 'Our approach' },
+		{ id: 'how', label: 'How it works' },
+		{ id: 'programs', label: 'Programs' },
+		{ id: 'about', label: 'About us' }
 	];
 
 	let mobileOpen = $state(false);
+
+	function nav(id: string) {
+		goToSection(id, page.url.pathname);
+	}
 </script>
 
 <header class="topbar">
 	<div class="inner container">
-		<a href="/#top" class="brand">
+		<a href="/" class="brand">
 			<svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true" class="mark">
 				<circle cx="12" cy="16" r="9" fill="none" stroke="var(--pub-navy)" stroke-width="2.2" />
 				<circle cx="20" cy="16" r="9" fill="none" stroke="var(--pub-copper)" stroke-width="2.2" />
@@ -27,12 +34,12 @@
 			</span>
 		</a>
 		<nav class="links" aria-label="Main">
-			{#each links as l (l.href)}
-				<a href={l.href}>{l.label}</a>
+			{#each links as l (l.id)}
+				<a href="/" onclick={(e) => { e.preventDefault(); nav(l.id); }}>{l.label}</a>
 			{/each}
 		</nav>
 		<div class="cta">
-			<a href="#book" class="btn filled">Book a free intro call</a>
+			<a href="/" class="btn filled" onclick={(e) => { e.preventDefault(); nav('book'); }}>Book a free intro call</a>
 		</div>
 		<button class="hamburger" onclick={() => (mobileOpen = !mobileOpen)} aria-label="Open menu" aria-expanded={mobileOpen}>
 			<Icon name={mobileOpen ? 'x' : 'menu'} size={20} />
@@ -41,10 +48,10 @@
 
 	{#if mobileOpen}
 		<nav class="mobile-sheet" aria-label="Main">
-			{#each links as l (l.href)}
-				<a href={l.href} onclick={() => (mobileOpen = false)}>{l.label}</a>
+			{#each links as l (l.id)}
+				<a href="/" onclick={(e) => { e.preventDefault(); mobileOpen = false; nav(l.id); }}>{l.label}</a>
 			{/each}
-			<a href="#book" class="sheet-cta" onclick={() => (mobileOpen = false)}>Book a free intro call</a>
+			<a href="/" class="sheet-cta" onclick={(e) => { e.preventDefault(); mobileOpen = false; nav('book'); }}>Book a free intro call</a>
 		</nav>
 	{/if}
 </header>
