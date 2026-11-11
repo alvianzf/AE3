@@ -3670,6 +3670,16 @@ _WEB_ROOT_FILES = {
     "sitemap.xml", "llms.txt", "og-image.png",
 }
 
+# Routes whose own +page.ts calls error(404) (see web/src/routes/(public)/
+# join/+page.ts) — adapter-static never writes an HTML file for those (a
+# load() error means there's nothing to prerender), so they'd otherwise
+# fall into the generic "maybe it's a client route" branch below and get
+# served with a 200. That's wrong for a route that's actually gone: a
+# crawler or anything that doesn't run the JS bundle would see a blank
+# 200 shell instead of a 404. Force the real status here; the shell still
+# hydrates into the branded (public)/+error.svelte for real browsers.
+_HIDDEN_ROUTES = {"join", "join/submitted"}
+
 
 @app.get("/directory")
 def directory_redirect() -> RedirectResponse:
@@ -3698,5 +3708,5 @@ def web_app(full_path: str) -> FileResponse:
     # for paths that turn out not to exist.
     shell = WEB_BUILD / "app.html"
     if shell.is_file():
-        return FileResponse(shell)
+        return FileResponse(shell, status_code=404 if clean in _HIDDEN_ROUTES else 200)
     raise HTTPException(404, "Not found")
