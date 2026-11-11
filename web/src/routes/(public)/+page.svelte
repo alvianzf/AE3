@@ -483,7 +483,7 @@
 	.partners-list { display: flex; flex-direction: column; }
 	.partner-row { padding: 1rem 0; border-bottom: 1px solid var(--pub-warm-grey); display: flex; align-items: center; gap: var(--space-4); }
 	.partner-row:last-child { border-bottom: none; }
-	.partner-row img { width: 6.5rem; height: 3.5rem; flex-shrink: 0; object-fit: contain; object-position: left center; }
+	.partner-row img { width: 6.5rem; height: 3.5rem; flex-shrink: 0; object-fit: contain; object-position: center center; }
 	.partner-name { margin: 0; font-family: var(--pub-font-heading); font-weight: 600; font-size: 1.25rem; color: var(--pub-navy); }
 	.partner-desc { margin: 0; font-size: .9rem; color: var(--pub-text-muted); }
 
