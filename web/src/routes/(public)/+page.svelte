@@ -1,1193 +1,540 @@
 <script lang="ts">
-	import { browser } from '$app/environment';
 	import { PUBLIC_SITE_URL } from '$env/static/public';
-	import { get } from '$lib/api';
-	import Sprig from '$lib/components/Sprig.svelte';
-	import Icon from '$lib/components/Icon.svelte';
 	import Seo from '$lib/components/Seo.svelte';
-	import LeafField from '$lib/components/LeafField.svelte';
 	import { jsonLdScript } from '$lib/seo';
-	import { reveal } from '$lib/actions/reveal';
-
-	let { data } = $props();
-	let practitioners = $state(data.practitioners ?? []);
-	$effect(() => {
-		if (!browser) return;
-		get(fetch, '/practitioners').then((list) => { practitioners = list; }).catch(() => {});
-	});
-
-	const available = $derived((practitioners ?? []).filter((p: any) => p.accepting_new_clients));
 
 	const description =
-		"Find verified functional health practitioners equipped with comprehensive clinical intelligence. Personalized root-cause health plans with no missing information.";
+		'Personalised hormone, metabolic, gut and longevity care for women in perimenopause and menopause. 100% online, science-based functional medicine.';
 
 	const orgJsonLd = {
 		'@context': 'https://schema.org',
-		'@type': 'Organization',
-		name: 'Functional Health Collab',
+		'@type': 'MedicalBusiness',
+		name: 'Functional Health Collaborative',
 		url: PUBLIC_SITE_URL,
 		description,
 		logo: `${PUBLIC_SITE_URL}/favicon.svg`
 	};
 
-	const healthFocusAreas = [
+	const team = [
 		{
-			title: 'Gut Health & Microbiome',
-			icon: 'leaf',
-			desc: 'Rebalance your microbiome, resolve bloating and food sensitivities, and restore gut mucosal integrity.'
+			img: '/images/fhc/portrait-alex-ginsburg.jpg',
+			name: 'Alex Ginsburg, MCO, FNLP',
+			title: 'Certified Functional Nutritionist'
 		},
 		{
-			title: 'Hormonal & Thyroid Balance',
-			icon: 'sparkles',
-			desc: 'Regulate cortisol rhythms, optimize thyroid conversion, balance sex hormones, and regain steady all-day vitality.'
+			img: '/images/fhc/portrait-jana.jpg',
+			name: 'Jana Baçova, IMH-C',
+			title: 'Functional Hormone & Metabolic Health Practitioner'
 		},
 		{
-			title: 'Immune & Autoimmune Support',
-			icon: 'shield',
-			desc: 'Calm systemic inflammatory pathways, uncover hidden triggers, and restore cellular resilience.'
-		},
-		{
-			title: 'Metabolic & Longevity Health',
-			icon: 'watch',
-			desc: 'Optimize insulin sensitivity, cardiovascular biomarkers, and restorative circadian sleep cycles.'
+			img: '/images/fhc/portrait-kreetta-ryodi.jpg',
+			name: 'Kreetta Ryödi, IMH-C',
+			title: 'Functional Hormone & Metabolic Health Practitioner'
 		}
 	];
 
-	const pillars = [
+	const testingPartners = [
 		{
-			icon: 'leaf',
-			title: 'Root-Cause Investigation',
-			body: 'Your practitioner explores your entire life context — genetics, nutrition, stressors, sleep, and environment — to treat the root cause rather than just suppress symptoms.'
+			logo: '/images/fhc/logo-nordic-laboratories.png',
+			name: 'Nordic Laboratories',
+			desc: 'Gut microbiome, DNA and functional panels'
 		},
 		{
-			icon: 'check',
-			title: 'No More Missing Information',
-			body: 'No more fragmented lab results or forgotten symptoms. Your complete health history, biomarker trends, and intake answers are unified into one comprehensive patient view.'
+			logo: '/images/fhc/logo-mira.svg',
+			name: 'MIRA',
+			desc: 'Home hormone testing'
 		},
 		{
-			icon: 'book',
-			title: 'Peer-Reviewed Clinical Evidence',
-			body: 'Every therapeutic recommendation is cross-referenced with peer-reviewed functional medicine literature and clinical research with full citation transparency.'
-		},
-		{
-			icon: 'lock',
-			title: 'Private, Patient-Owned Health Vault',
-			body: 'Your health history, symptom logs, and biomarker data remain private, encrypted, and strictly under your control.'
+			logo: '/images/fhc/logo-precision-analytical-dutch.svg',
+			name: 'Precision Analytical',
+			desc: 'DUTCH sex & adrenal hormone testing'
 		}
+	];
+
+	const whyUs = [
+		{ n: '01', title: 'Root-cause focus', body: 'We dig to the root cause of your symptoms and help you understand your body.' },
+		{ n: '02', title: 'Whole-body view', body: 'A functional approach that factors in thyroid, blood sugar, cortisol, cholesterol, your life situation and more.' },
+		{ n: '03', title: 'Advanced diagnostics', body: 'Extensive testing, and you choose the depth of personalisation: blood, DNA, sex and adrenal hormones, gut microbiome and more.' },
+		{ n: '04', title: 'A plan built for you', body: "Customised to your body's needs: nutrition, lifestyle, stress management and supplements." },
+		{ n: '05', title: 'At your pace', body: 'Step-by-step guidance, adjusted to what works for you.' },
+		{ n: '06', title: 'Ongoing support', body: 'Regular check-ins, with your plan adjusted as your body responds.' },
+		{ n: '07', title: 'Online, wherever you are', body: 'Video consultations plus detailed protocols, handouts and educational videos.' },
+		{ n: '08', title: 'Evidence-based', body: 'Thorough and current — we continually keep up with the latest research.' }
 	];
 
 	const steps = [
+		{ n: 1, title: 'Free intro call', body: 'A free 15-minute introduction call to get to know each other.' },
+		{ n: 2, title: 'In-depth intake', body: 'Your symptoms, health goals, medical and family history — and our program recommendation.' },
+		{ n: 3, title: 'Education', body: 'Access to our hormone and metabolic health education.' },
+		{ n: 4, title: 'Metabolic insights', body: 'Personalised metabolic health recommendations based on your CGM (continuous glucose monitor) data.' },
+		{ n: 5, title: 'Results & protocol', body: 'Your advanced test results explained, with a personalised protocol.' },
+		{ n: 6, title: 'Follow-up sessions', body: 'Bi-weekly or monthly follow-ups, depending on what you need.' },
+		{ n: 7, title: 'Re-testing', body: 'Re-testing where required, to track your progress.' },
+		{ n: 8, title: 'Wrap-up', body: 'A closing session with recommendations for the road ahead.' }
+	];
+
+	const includedAll = [
+		'Free 15-min intro call',
+		'Monthly consultation',
+		'Hormone health foundations',
+		'Personalised metabolic health program',
+		'Blood test results analysis & recommendations',
+		'Personalised nutrition, lifestyle & supplement recommendations',
+		'Hormonal support recommendations to discuss with your doctor'
+	];
+
+	const programs = [
 		{
-			step: '01',
-			title: 'Browse & Choose Your Specialist',
-			desc: 'Explore verified functional medicine practitioners by clinical focus — gut health, hormonal balance, autoimmune support, or metabolic health.'
+			name: 'Foundational Health',
+			tagline: 'Hormone & metabolic foundations',
+			price: '€150',
+			intake: '+ €295 one-time intake',
+			consult: '45-min monthly consultation',
+			included: includedAll,
+			addons: [] as { label: string; price: string }[],
+			note: 'No functional or DNA tests — a strong foundation built on your blood work and symptoms.',
+			cta: 'Start Foundational Health',
+			highlight: false
 		},
 		{
-			step: '02',
-			title: 'Share Your Complete Health Story',
-			desc: 'Complete in-depth functional health questionnaires, map your symptom timeline, and securely upload past lab panels into your confidential portal.'
+			name: 'Complete',
+			tagline: 'Add functional gut & hormone testing',
+			price: '€200',
+			intake: '+ €295 one-time intake',
+			consult: '45-min monthly consultation',
+			included: includedAll,
+			addons: [
+				{ label: 'GI-MAP gut microbiome test', price: '€530' },
+				{ label: 'DUTCH Plus hormone test', price: '€430' }
+			],
+			note: null,
+			cta: 'Start Complete',
+			highlight: false
 		},
 		{
-			step: '03',
-			title: 'Receive Your Informed Care Plan',
-			desc: 'Your practitioner arrives at your consultation deeply informed with all dots connected, delivering an actionable, personalized care roadmap.'
+			name: 'Premium Longevity',
+			tagline: 'Functional + DNA testing for longevity',
+			price: '€245',
+			intake: '+ €295 one-time intake',
+			consult: '60-min monthly consultation',
+			included: includedAll,
+			addons: [
+				{ label: 'GI-MAP gut microbiome test', price: '€530' },
+				{ label: 'DUTCH Plus hormone test', price: '€430' },
+				{ label: '1 DNA test', price: '€220' },
+				{ label: '2 DNA tests', price: '€330' },
+				{ label: '3 DNA tests', price: '€380' }
+			],
+			note: null,
+			cta: 'Start Premium Longevity',
+			highlight: true
 		}
 	];
+
+	// TODO (handoff README "still to be supplied"): real client testimonials.
+	// Ship the literal placeholder rather than inventing quotes.
+	const testimonialPlaceholder = {
+		quote: 'CLIENT TESTIMONIAL — 2–3 sentences about her experience and results',
+		name: '[First name]',
+		meta: '[age / country]'
+	};
 </script>
 
-<Seo title="Functional Health Collab — Real Answers for Your Health, Grounded in Science & Nature" {description} path="/" />
+<Seo
+	title="Functional Health Collaborative | Personalised Perimenopause and Menopause Care"
+	{description}
+	path="/"
+/>
 <svelte:head>{@html jsonLdScript(orgJsonLd)}</svelte:head>
 
-<!-- ══ CLIENT-FOCUSED HERO SECTION: Nature & Leaves Botanical Canopy ══ -->
-<section class="hero-section">
-	<div class="leaf-ambient">
-		<LeafField count={28} />
-	</div>
-
-	<div class="container hero-container">
-		<div class="hero-content">
-			<!-- Clean leaf badge with bare SVG logo (no boxes, no backgrounds) -->
-			<div class="nature-badge">
-				<span class="logo-mark"><Sprig size={18} /></span>
-				<span>Personalized Functional Health For You</span>
-			</div>
-
-			<h1 class="hero-title">
-				Feel like yourself again. Care guided by <span class="highlight-nature">nature</span>, proven by <span class="highlight-science">science</span>.
-			</h1>
-
-			<p class="hero-description">
-				Partner with dedicated functional medicine practitioners who investigate root causes instead of rushing you.
-				Behind the scenes, your practitioner is equipped with deep clinical intelligence that connects your full health timeline, labs, and peer-reviewed medical literature — delivering personalized care with zero missing information.
-			</p>
-
+<!-- HERO -->
+<section id="top" class="hero">
+	<div class="container hero-inner">
+		<div class="hero-copy">
+			<p class="label">Perimenopause &amp; menopause care · Online</p>
+			<h1>Personalised hormone, metabolic, gut and longevity care for women in midlife.</h1>
+			<p class="sub">Because your biology is unique, your health plan should be too.</p>
 			<div class="hero-actions">
-				<a class="btn-nature-primary" href="/practitioners">
-					<span>Find Your Practitioner</span>
-					<Icon name="chevron" size={14} />
-				</a>
-				<a class="btn-nature-secondary" href="/signup">
-					<span>Sign Up as a Client</span>
-				</a>
-			</div>
-
-			<div class="hero-trust-bar">
-				<div class="trust-item">
-					<Icon name="users" size={15} />
-					<span>100% Human Care</span>
-				</div>
-				<div class="trust-divider"></div>
-				<div class="trust-item">
-					<Icon name="check" size={15} />
-					<span>No Missing Information</span>
-				</div>
-				<div class="trust-divider"></div>
-				<div class="trust-item">
-					<Icon name="book" size={14} />
-					<span>Peer-Reviewed Citations</span>
-				</div>
-				<div class="trust-divider"></div>
-				<div class="trust-item">
-					<Icon name="lock" size={14} />
-					<span>Private Encrypted Vault</span>
-				</div>
+				<a href="#book" class="btn-primary">Book your free 15-min intro call</a>
+				<a href="#programs" class="btn-secondary">View programs</a>
 			</div>
 		</div>
+		<div class="hero-photo">
+			<img src="/images/fhc/hero-group.jpg" alt="Women's health experts of Functional Health Collaborative" />
+		</div>
+	</div>
+</section>
 
-		<!-- Botanical & Evidence Knowledge Graph SVG Illustration -->
-		<div class="hero-visual" aria-hidden="true">
-			<div class="visual-card">
-				<svg class="botanical-svg" viewBox="0 0 460 380" fill="none" xmlns="http://www.w3.org/2000/svg">
-					<defs>
-						<linearGradient id="stemGrad" x1="0%" y1="100%" x2="100%" y2="0%">
-							<stop offset="0%" stop-color="#2d6a4f" />
-							<stop offset="100%" stop-color="#52b788" />
-						</linearGradient>
-						<linearGradient id="leafGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-							<stop offset="0%" stop-color="#74c69d" stop-opacity="0.35" />
-							<stop offset="100%" stop-color="#2d6a4f" stop-opacity="0.1" />
-						</linearGradient>
-						<filter id="softGlow" x="-20%" y="-20%" width="140%" height="140%">
-							<feGaussianBlur stdDeviation="8" result="blur" />
-							<feComposite in="SourceGraphic" in2="blur" operator="over" />
-						</filter>
-					</defs>
+<!-- OUR APPROACH -->
+<section id="approach" class="section">
+	<div class="container approach-grid">
+		<div class="approach-head">
+			<p class="label">Our approach</p>
+			<h2>Science-based care for the whole of you</h2>
+		</div>
+		<div class="approach-body">
+			<p>
+				We are a telehealth practice specialising in individualised hormone, gut and metabolic
+				health care for women navigating perimenopause and menopause. Our protocols are rooted
+				in science and functional medicine, giving you an evidence-based approach that covers
+				every system in your body.
+			</p>
+		</div>
+	</div>
+</section>
 
-					<!-- Ambient Botanical Glow -->
-					<circle cx="230" cy="190" r="140" fill="#2d6a4f" fill-opacity="0.08" filter="url(#softGlow)" />
-					<circle cx="230" cy="190" r="90" fill="#74c69d" fill-opacity="0.06" />
-
-					<!-- Knowledge Graph Traversal Lines -->
-					<g opacity="0.45" stroke="#74c69d" stroke-width="1.2" stroke-dasharray="3 3">
-						<line x1="120" y1="100" x2="230" y2="170" />
-						<line x1="340" y1="90" x2="230" y2="170" />
-						<line x1="90" y1="260" x2="230" y2="170" />
-						<line x1="370" y1="250" x2="230" y2="170" />
-						<line x1="120" y1="100" x2="340" y2="90" />
-						<line x1="90" y1="260" x2="370" y2="250" />
-					</g>
-
-					<!-- Central Living Botanical Stem -->
-					<path d="M230 350 C230 260, 220 200, 230 80" stroke="url(#stemGrad)" stroke-width="3.5" stroke-linecap="round" />
-					<path d="M228 270 C190 250, 160 210, 150 170" stroke="url(#stemGrad)" stroke-width="2.5" stroke-linecap="round" />
-					<path d="M230 210 C270 190, 310 160, 320 120" stroke="url(#stemGrad)" stroke-width="2.5" stroke-linecap="round" />
-					<path d="M229 140 C195 120, 175 90, 170 60" stroke="url(#stemGrad)" stroke-width="2" stroke-linecap="round" />
-
-					<!-- Botanical Leaves with Organic Fill -->
-					<path d="M150 170 C130 140, 140 100, 180 110 C190 145, 175 165, 150 170 Z" fill="url(#leafGrad)" stroke="#52b788" stroke-width="1.5" />
-					<path d="M320 120 C350 95, 350 60, 310 65 C295 95, 305 115, 320 120 Z" fill="url(#leafGrad)" stroke="#52b788" stroke-width="1.5" />
-					<path d="M170 60 C150 40, 160 15, 190 20 C200 45, 190 55, 170 60 Z" fill="url(#leafGrad)" stroke="#52b788" stroke-width="1.5" />
-					<path d="M230 80 C240 50, 265 40, 260 70 C250 85, 238 82, 230 80 Z" fill="url(#leafGrad)" stroke="#74c69d" stroke-width="1.5" />
-
-					<!-- Evidence Nodes for Clients -->
-					<g transform="translate(60, 75)">
-						<rect width="130" height="42" rx="10" fill="#143023" stroke="#52b788" stroke-width="1.2" />
-						<circle cx="22" cy="21" r="10" fill="#2d6a4f" />
-						<path d="M18 21 L21 24 L27 18" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-						<text x="38" y="19" fill="#e8f4ec" font-size="11" font-weight="650" font-family="system-ui">Clinical Research</text>
-						<text x="38" y="31" fill="#74c69d" font-size="9" font-family="system-ui">Peer-Reviewed Evidence</text>
-					</g>
-
-					<g transform="translate(275, 70)">
-						<rect width="145" height="42" rx="10" fill="#143023" stroke="#52b788" stroke-width="1.2" />
-						<circle cx="22" cy="21" r="10" fill="#2d6a4f" />
-						<path d="M22 15 C19 18, 18 23, 22 27 C26 23, 25 18, 22 15 Z" fill="#74c69d" />
-						<text x="38" y="19" fill="#e8f4ec" font-size="11" font-weight="650" font-family="system-ui">Clinical Protocols</text>
-						<text x="38" y="31" fill="#74c69d" font-size="9" font-family="system-ui">Peer-Reviewed Studies</text>
-					</g>
-
-					<g transform="translate(40, 235)">
-						<rect width="140" height="42" rx="10" fill="#143023" stroke="#52b788" stroke-width="1.2" />
-						<circle cx="22" cy="21" r="10" fill="#2d6a4f" />
-						<circle cx="22" cy="21" r="5" stroke="#74c69d" stroke-width="1.5" />
-						<text x="38" y="19" fill="#e8f4ec" font-size="11" font-weight="650" font-family="system-ui">Complete Labs</text>
-						<text x="38" y="31" fill="#74c69d" font-size="9" font-family="system-ui">Biomarker Trajectories</text>
-					</g>
-
-					<g transform="translate(290, 230)">
-						<rect width="140" height="42" rx="10" fill="#143023" stroke="#52b788" stroke-width="1.2" />
-						<circle cx="22" cy="21" r="10" fill="#52b788" />
-						<path d="M18 21 L21 24 L27 18" stroke="#081c15" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-						<text x="38" y="19" fill="#e8f4ec" font-size="11" font-weight="650" font-family="system-ui">Informed Care Plan</text>
-						<text x="38" y="31" fill="#74c69d" font-size="9" font-family="system-ui">Personalized For You</text>
-					</g>
-
-					<!-- Central Grounded Stamp -->
-					<g transform="translate(160, 160)">
-						<rect width="140" height="30" rx="15" fill="#52b788" />
-						<text x="70" y="19" fill="#0d2318" font-size="11" font-weight="750" text-anchor="middle" font-family="system-ui">Clinical Intelligence</text>
-					</g>
-				</svg>
+<!-- WHAT WE SOLVE FOR -->
+<section class="section">
+	<div class="container">
+		<div class="solve-panel">
+			<div class="solve-stat">
+				<p class="stat-number">100+</p>
+				<p class="stat-caption">possible symptoms linked to hormonal shifts in midlife</p>
+			</div>
+			<div class="solve-copy">
+				<h2>What we solve for</h2>
+				<p>
+					Hormonal shifts affect every system in the body and can show up as more than 100
+					different symptoms, touching women's wellbeing in every part of their lives. Our goal
+					is to help you understand your unique physiology — and to give you the guidance and
+					tools to reach your health goals, supporting your wellbeing today and in the future.
+				</p>
 			</div>
 		</div>
 	</div>
 </section>
 
-<!-- ══ SECTION 1: WHAT WE HELP CLIENTS SOLVE ══ -->
-<section class="focus-section">
-	<div class="container">
-		<div class="section-header text-center">
-			<div class="sub-badge">Areas of Care</div>
-			<h2>Real answers for complex, lingering health challenges</h2>
-			<p>When conventional medicine says "your labs look normal" but you still feel exhausted, functional health uncovers the hidden imbalances.</p>
+<!-- WHO WE ARE -->
+<section id="about" class="section section-grey">
+	<div class="container who-grid">
+		<div class="team-portraits">
+			{#each team as member (member.name)}
+				<figure>
+					<img src={member.img} alt="Portrait of {member.name}" />
+					<figcaption>
+						<span class="member-name">{member.name}</span>
+						<span class="member-title">{member.title}</span>
+					</figcaption>
+				</figure>
+			{/each}
 		</div>
-
-		<div class="focus-grid">
-			{#each healthFocusAreas as fa (fa.title)}
-				<div class="focus-card" use:reveal>
-					<div class="focus-icon-wrap">
-						{#if fa.icon === 'leaf'}
-							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="focus-svg">
-								<path d="M11 20A7 7 0 0 1 4 13C4 8.5 7 5 11 3c4 2 7 5.5 7 10a7 7 0 0 1-7 7z" stroke-width="1.8"/>
-								<path d="M11 5v14" stroke-width="1.8" stroke-linecap="round"/>
-							</svg>
-						{:else if fa.icon === 'sparkles'}
-							<Icon name="sparkles" size={22} />
-						{:else if fa.icon === 'shield'}
-							<Icon name="shield-check" size={22} />
-						{:else}
-							<Icon name="watch" size={22} />
-						{/if}
+		<div class="who-copy">
+			<p class="label">Who we are</p>
+			<h2>A team of women's health experts</h2>
+			<p>
+				We specialise in hormone, metabolic and gut health. Alongside holistic Eastern health
+				training, our education combines evidence-based approaches in gut health, nutrition,
+				metabolic and hormone health.
+			</p>
+			<p>
+				We partner with leading advanced testing laboratories and build truly personalised
+				health plans based on the latest scientific research.
+			</p>
+			<!-- TODO: "Meet the team" links to the future /about page with full team profiles -->
+			<a href="#about" class="link-arrow">Meet the team →</a>
+		</div>
+		<div class="testing-partners">
+			<p class="partners-label">Our testing partners</p>
+			<div class="partners-list">
+				{#each testingPartners as tp (tp.name)}
+					<div class="partner-row">
+						<img src={tp.logo} alt="{tp.name} logo" />
+						<div>
+							<p class="partner-name">{tp.name}</p>
+							<p class="partner-desc">{tp.desc}</p>
+						</div>
 					</div>
-					<h3>{fa.title}</h3>
-					<p>{fa.desc}</p>
-				</div>
-			{/each}
-		</div>
-	</div>
-</section>
-
-<!-- ══ SECTION 2: THE CLIENT CARE JOURNEY ══ -->
-<section id="how-it-works" class="flow-section">
-	<div class="container">
-		<div class="section-header text-center">
-			<div class="sub-badge">Your Journey</div>
-			<h2>How it works for you as a client</h2>
-			<p>A structured, supportive path from your first consultation to lasting wellness.</p>
-		</div>
-
-		<div class="steps-grid">
-			{#each steps as s (s.step)}
-				<div class="step-card" use:reveal>
-					<div class="step-num">{s.step}</div>
-					<h3>{s.title}</h3>
-					<p>{s.desc}</p>
-					<div class="step-line"></div>
-				</div>
-			{/each}
-		</div>
-	</div>
-</section>
-
-<!-- ══ SECTION 3: FEATURED PRACTITIONERS FOR CLIENTS ══ -->
-<section class="practitioners-section">
-	<div class="container">
-		<div class="practitioners-header">
-			<div>
-				<div class="sub-badge">Verified Specialists</div>
-				<h2>Meet practitioners accepting new clients</h2>
-				<p>Choose a dedicated functional medicine specialist aligned with your health focus.</p>
-			</div>
-			<a class="view-all-link" href="/practitioners">
-				<span>Explore Full Directory</span>
-				<Icon name="chevron" size={14} />
-			</a>
-		</div>
-
-		{#if available.length > 0}
-			<div class="practitioners-grid">
-				{#each available.slice(0, 3) as p (p.id)}
-					<article class="practitioner-card" use:reveal>
-						<div class="p-card-top">
-							<div class="p-avatar" style={p.photo_path ? `background-image:url(${p.photo_path})` : ''}>
-								{#if !p.photo_path}
-									<span>{p.name?.[0] ?? '?'}</span>
-								{/if}
-							</div>
-							<div class="p-meta">
-								<span class="p-status">
-									<span class="status-dot"></span>
-									Accepting new clients
-								</span>
-								<h3 class="p-name">{p.name}</h3>
-								<div class="p-experience">
-									<Icon name="calendar" size={12} />
-									<span>{p.years_experience != null ? `${p.years_experience} yrs experience` : 'Verified practitioner'}</span>
-								</div>
-							</div>
-						</div>
-
-						<p class="p-bio">
-							{p.bio || 'Dedicated to personalized root-cause coaching combining nutrition, lifestyle modifications, and evidence-grounded medicine.'}
-						</p>
-
-						<div class="p-specialties">
-							{#each (p.specialties ?? []).slice(0, 3) as s (s)}
-								<span class="specialty-pill">{s}</span>
-							{/each}
-						</div>
-
-						<div class="p-card-footer">
-							<a class="btn-consult-card" href="/coach/{p.id}">
-								<span>View Profile & Book Consult</span>
-								<Icon name="chevron" size={13} />
-							</a>
-						</div>
-					</article>
 				{/each}
 			</div>
-
-			<div class="directory-jump-box">
-				<p>Looking for a specific health condition, test interpretation, or modality?</p>
-				<a class="btn-explore-directory" href="/practitioners">
-					<Icon name="search" size={15} />
-					<span>Search All {practitioners.length} Practitioners</span>
-				</a>
-			</div>
-		{:else}
-			<div class="empty-practitioners-box">
-				<Icon name="users" size={32} />
-				<p>Our practitioner roster is actively updating. Browse the directory to connect with available providers.</p>
-				<a class="btn-nature-primary" href="/practitioners">Explore Directory</a>
-			</div>
-		{/if}
+		</div>
 	</div>
 </section>
 
-<!-- ══ SECTION 4: THE 4 PILLARS OF EVIDENCE & NATURE ══ -->
-<section class="pillars-section">
+<!-- WHY WOMEN CHOOSE US -->
+<section class="section section-burgundy">
 	<div class="container">
-		<div class="section-header text-center">
-			<div class="sub-badge">Why It Works</div>
-			<h2>Why clients trust Functional Health Collab</h2>
-			<p>High-touch human care from practitioners who are deeply informed, cross-referencing your complete history with validated clinical literature.</p>
+		<div class="section-head">
+			<p class="label label-copper">Why women choose us</p>
+			<h2 class="on-burgundy">Thorough, personal and on your side</h2>
 		</div>
-
-		<div class="pillars-grid">
-			{#each pillars as p (p.title)}
-				<div class="pillar-box" use:reveal>
-					<div class="pillar-icon-wrap">
-						{#if p.icon === 'leaf'}
-							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="p-ico">
-								<path d="M11 20A7 7 0 0 1 4 13C4 8.5 7 5 11 3c4 2 7 5.5 7 10a7 7 0 0 1-7 7z" stroke-width="1.8"/>
-								<path d="M11 5v14" stroke-width="1.8" stroke-linecap="round"/>
-							</svg>
-						{:else if p.icon === 'book'}
-							<Icon name="book" size={22} />
-						{:else if p.icon === 'check'}
-							<Icon name="check" size={22} />
-						{:else}
-							<Icon name="lock" size={22} />
-						{/if}
-					</div>
-					<h3>{p.title}</h3>
-					<p>{p.body}</p>
+		<div class="why-grid">
+			{#each whyUs as w (w.n)}
+				<div class="why-card">
+					<p class="why-num">{w.n}</p>
+					<h3>{w.title}</h3>
+					<p>{w.body}</p>
 				</div>
 			{/each}
 		</div>
 	</div>
 </section>
 
-<!-- ══ SECTION 5: CLIENT TESTIMONIAL / COMMITMENT ══ -->
-<section class="commitment-section">
-	<div class="container commitment-inner">
-		<div class="quote-mark">“</div>
-		<blockquote>
-			Finally, someone who connected the dots between my gut issues, my chronic fatigue, and my sleep. Having a practitioner who listens and backs up every single dietary change with real clinical research gave me my life back.
-		</blockquote>
-		<div class="client-author">
-			<strong>Jessica M.</strong>
-			<span>Client with Autoimmune & Microbiome Focus</span>
+<!-- HOW TO WORK WITH US -->
+<section id="how" class="section section-grey">
+	<div class="container">
+		<div class="section-head">
+			<p class="label">How to work with us</p>
+			<h2>Your journey, step by step</h2>
+		</div>
+		<ol class="steps-grid">
+			{#each steps as s (s.n)}
+				<li class="step-card">
+					<span class="step-badge" class:first={s.n === 1}>{s.n}</span>
+					<h3>{s.title}</h3>
+					<p>{s.body}</p>
+				</li>
+			{/each}
+		</ol>
+	</div>
+</section>
+
+<!-- PROGRAMS -->
+<section id="programs" class="section">
+	<div class="container">
+		<div class="section-head">
+			<p class="label">Programs</p>
+			<h2>Choose your program</h2>
+		</div>
+		<div class="programs-grid">
+			{#each programs as p (p.name)}
+				<div class="program-card" class:highlight={p.highlight}>
+					<div class="program-head">
+						<div class="program-title-row">
+							<h3>{p.name}</h3>
+							{#if p.highlight}<span class="badge">Most complete</span>{/if}
+						</div>
+						<p class="program-tagline">{p.tagline}</p>
+					</div>
+					<div class="program-price">
+						<p><span class="price">{p.price}</span><span class="per">/ month</span></p>
+						<p class="intake">{p.intake}</p>
+					</div>
+					<ul class="program-included">
+						{#each p.included as item (item)}
+							<li>
+								<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--pub-burgundy)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+								<span>{item}</span>
+							</li>
+						{/each}
+					</ul>
+					<div class="program-footer">
+						{#if p.addons.length}
+							<p class="addons-label">Optional add-on tests · paid separately</p>
+							<ul class="addons-list">
+								{#each p.addons as a (a.label)}
+									<li>
+										<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--pub-copper)" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 6v12M6 12h12" /></svg>
+										<span class="grow">{a.label}</span>
+										<span class="addon-price">{a.price}</span>
+									</li>
+								{/each}
+							</ul>
+						{:else if p.note}
+							<p class="program-note">{p.note}</p>
+						{/if}
+					</div>
+					<a href="#book" class="program-cta" class:filled={p.highlight}>{p.cta}</a>
+				</div>
+			{/each}
+		</div>
+		<div class="programs-aside">
+			<p><strong>How the programs differ:</strong> Complete and Premium Longevity differ in how many functional and DNA tests you choose to include. Test costs are paid separately; the higher monthly fee covers the extra time for analysing your results and building your recommendations.</p>
+			<p><strong>Not included but required:</strong> a continuous glucose monitor (CGM) and a comprehensive blood panel. Supplements are also not included in the price.</p>
 		</div>
 	</div>
 </section>
 
-<!-- ══ CLOSING CTA BAND FOR CLIENTS ══ -->
-<section class="cta-nature-band">
-	<div class="leaf-ambient">
-		<LeafField count={20} />
+<!-- TESTIMONIALS -->
+<section class="section section-grey">
+	<div class="container">
+		<div class="section-head">
+			<p class="label">Client stories</p>
+			<h2>What women say</h2>
+		</div>
+		<!-- TODO (handoff README "still to be supplied"): 3 real testimonials -->
+		<div class="testimonials-grid">
+			{#each Array(3) as _, i (i)}
+				<figure class="testimonial-card">
+					<svg width="32" height="24" viewBox="0 0 32 24" aria-hidden="true"><path d="M0 24V14C0 6 4 1 12 0l1 4C8 5 6 8 6 12h6v12H0zm18 0V14c0-8 4-13 12-14l1 4c-5 1-7 4-7 8h6v12H18z" fill="var(--pub-copper)" /></svg>
+					<blockquote>{testimonialPlaceholder.quote}</blockquote>
+					<figcaption><strong>{testimonialPlaceholder.name}</strong>, {testimonialPlaceholder.meta}</figcaption>
+				</figure>
+			{/each}
+		</div>
 	</div>
-	<div class="container cta-band-content">
-		<h2>Take the first step toward lasting vitality.</h2>
-		<p>Connect with a practitioner who takes the time to listen, investigate root causes, and cite every recommendation.</p>
-		<div class="cta-band-buttons">
-			<a class="btn-cta-main" href="/practitioners">
-				<Icon name="search" size={16} />
-				<span>Find Your Practitioner</span>
-			</a>
-			<a class="btn-cta-sub" href="/signup">
-				<span>Sign Up as a Client</span>
-			</a>
+</section>
+
+<!-- READY TO START -->
+<section id="book" class="section">
+	<div class="container">
+		<div class="cta-panel">
+			<h2>Ready to start?</h2>
+			<p>Schedule your free 15-minute introduction call. We'll listen to your story and help you find the program that fits.</p>
+			<!-- TODO (handoff README "still to be supplied"): real booking link -->
+			<a href="#book" class="cta-button">Book your free intro call</a>
+			<p class="cta-footnote">100% online · Available in English, Dutch, Slovak, French, German, Italian and Finnish</p>
 		</div>
 	</div>
 </section>
 
 <style>
-	/* ── Nature & Botanical Palette ──────────────────────────────────── */
-	:global(:root) {
-		--nature-forest: #1b4332;
-		--nature-dark: #081c15;
-		--nature-emerald: #2d6a4f;
-		--nature-leaf: #40916c;
-		--nature-mint: #52b788;
-		--nature-pale: #74c69d;
-		--nature-wash: #d8f3dc;
-		--nature-soft: #f4f8f4;
-		--nature-cream: #fafbf8;
+	:global(.public-shell) :global(section) {
+		scroll-margin-top: 4rem;
 	}
 
-	/* ── Hero Section (100% Client Focused) ─────────────────────────── */
-	.hero-section {
-		position: relative;
-		background: linear-gradient(155deg, #0d2318 0%, #173827 45%, #0f2b1d 100%);
-		color: #ffffff;
-		overflow: hidden;
-		padding: var(--space-7) 0 calc(var(--space-7) + 1.2rem);
-	}
-	.leaf-ambient {
-		position: absolute;
-		inset: 0;
-		pointer-events: none;
-		z-index: 1;
-		--leaf-color: rgba(116, 198, 157, 0.45);
-	}
-	.hero-container {
-		position: relative;
-		z-index: 2;
-		display: grid;
-		grid-template-columns: 1.15fr 0.85fr;
-		gap: var(--space-7);
-		align-items: center;
-	}
-	.hero-content {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-4);
-	}
-	.nature-badge {
-		display: inline-flex;
-		align-items: center;
-		gap: .6rem;
-		padding: .35rem .85rem;
-		background: rgba(45, 106, 79, 0.35);
-		border: 1px solid rgba(82, 183, 136, 0.45);
-		border-radius: 99px;
-		color: #d8f3dc;
-		font-size: var(--text-xs);
-		font-weight: 650;
-		width: fit-content;
-		backdrop-filter: blur(8px);
-	}
-	/* Logo mark has ZERO boxes, borders, or backgrounds */
-	.logo-mark {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		background: none;
-		border: none;
-		box-shadow: none;
-		color: #74c69d;
-	}
-	.hero-title {
-		font-size: clamp(2.2rem, 4.2vw, 3.4rem);
-		font-weight: 800;
-		line-height: 1.1;
-		letter-spacing: -.03em;
-		color: #ffffff;
-		margin: 0;
-	}
-	.highlight-nature {
-		color: #74c69d;
-		text-decoration: underline;
-		text-decoration-color: rgba(82, 183, 136, 0.5);
-		text-underline-offset: 4px;
-	}
-	.highlight-science {
-		color: #d8f3dc;
-	}
-	.hero-description {
-		font-size: var(--text-lg);
-		line-height: 1.55;
-		color: #d8f3dc;
-		opacity: 0.92;
-		max-width: 36rem;
-		margin: 0;
-	}
-	.hero-actions {
-		display: flex;
-		align-items: center;
-		gap: var(--space-4);
-		flex-wrap: wrap;
-		margin-top: .5rem;
-	}
-	.btn-nature-primary {
-		display: inline-flex;
-		align-items: center;
-		gap: .55rem;
-		background: #52b788;
-		color: #081c15;
-		padding: .75rem 1.6rem;
-		border-radius: 12px;
-		font-weight: 750;
-		font-size: var(--text-base);
-		text-decoration: none;
-		box-shadow: 0 4px 14px rgba(45, 106, 79, 0.4);
-		transition: all .2s var(--ease);
-	}
-	.btn-nature-primary:hover {
-		background: #74c69d;
-		transform: translateY(-2px);
-		box-shadow: 0 6px 20px rgba(82, 183, 136, 0.5);
-	}
-	.btn-nature-secondary {
-		display: inline-flex;
-		align-items: center;
-		gap: .5rem;
-		background: rgba(255, 255, 255, 0.08);
-		color: #ffffff;
-		padding: .75rem 1.4rem;
-		border-radius: 12px;
-		font-weight: 650;
-		font-size: var(--text-base);
-		text-decoration: none;
-		border: 1px solid rgba(255, 255, 255, 0.25);
-		transition: all .2s var(--ease);
-	}
-	.btn-nature-secondary:hover {
-		background: rgba(255, 255, 255, 0.16);
-		border-color: rgba(255, 255, 255, 0.4);
-	}
-	.hero-trust-bar {
-		display: flex;
-		align-items: center;
-		gap: var(--space-4);
-		flex-wrap: wrap;
-		margin-top: var(--space-3);
-		padding-top: var(--space-3);
-		border-top: 1px solid rgba(255, 255, 255, 0.15);
-		color: #d8f3dc;
-		font-size: var(--text-xs);
+	.label {
+		margin: 0 0 .5rem;
+		font-size: .85rem;
 		font-weight: 600;
-	}
-	.trust-item {
-		display: flex;
-		align-items: center;
-		gap: .4rem;
-	}
-	.trust-item :global(svg) {
-		color: #52b788;
-	}
-	.trust-divider {
-		width: 4px;
-		height: 4px;
-		border-radius: 50%;
-		background: rgba(255, 255, 255, 0.3);
-	}
-	.hero-visual {
-		display: flex;
-		justify-content: center;
-		align-items: center;
-	}
-	.visual-card {
-		position: relative;
-		width: 100%;
-		max-width: 460px;
-		background: rgba(20, 48, 35, 0.6);
-		border: 1px solid rgba(82, 183, 136, 0.35);
-		border-radius: 24px;
-		padding: 1.25rem;
-		backdrop-filter: blur(16px);
-		box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
-	}
-	.botanical-svg {
-		width: 100%;
-		height: auto;
-		display: block;
-	}
-
-	/* ── Shared Section Typography ───────────────────────────────────── */
-	.section-header {
-		margin-bottom: var(--space-6);
-	}
-	.section-header.text-center {
-		text-align: center;
-		max-width: 42rem;
-		margin-left: auto;
-		margin-right: auto;
-	}
-	.section-header h2 {
-		font-size: clamp(1.8rem, 3vw, 2.5rem);
-		font-weight: 800;
-		color: #1b4332;
-		letter-spacing: -.02em;
-		margin-top: .4rem;
-	}
-	.section-header p {
-		font-size: var(--text-base);
-		color: #4a5568;
-		line-height: 1.6;
-		margin-top: .5rem;
-	}
-	.sub-badge {
-		display: inline-block;
-		font-size: var(--text-xs);
-		font-weight: 750;
+		letter-spacing: .12em;
 		text-transform: uppercase;
-		letter-spacing: .08em;
-		color: #2d6a4f;
-		background: #e8f4ec;
-		padding: .25rem .75rem;
-		border-radius: 99px;
+		color: var(--pub-burgundy);
 	}
+	.label-copper { color: var(--pub-copper); }
 
-	/* ── Focus Areas (What We Help Clients With) ─────────────────────── */
-	.focus-section {
-		padding: var(--space-7) 0;
-		background: #ffffff;
-		border-bottom: 1px solid #e9ecef;
-	}
-	.focus-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
-		gap: var(--space-5);
-	}
-	.focus-card {
-		background: #fbfdfb;
-		border: 1px solid rgba(45, 106, 79, 0.15);
-		border-radius: 18px;
-		padding: var(--space-5);
-		display: flex;
-		flex-direction: column;
-		gap: .6rem;
-		transition: transform .2s var(--ease), box-shadow .2s var(--ease);
-	}
-	.focus-card:hover {
-		transform: translateY(-3px);
-		box-shadow: 0 10px 25px rgba(45, 106, 79, 0.08);
-		border-color: #52b788;
-	}
-	.focus-icon-wrap {
-		width: 2.8rem;
-		height: 2.8rem;
-		border-radius: 12px;
-		background: #e8f4ec;
-		color: #2d6a4f;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-	.focus-svg {
-		width: 1.4rem;
-		height: 1.4rem;
-	}
-	.focus-card h3 {
-		font-size: var(--text-lg);
-		font-weight: 750;
-		color: #1b4332;
+	h1, h2, h3 {
 		margin: 0;
-	}
-	.focus-card p {
-		font-size: var(--text-sm);
-		color: #4a5568;
-		line-height: 1.55;
-		margin: 0;
-	}
-
-	/* ── Flow Section (How It Works for Clients) ─────────────────────── */
-	.flow-section {
-		padding: var(--space-7) 0;
-		background: #fbfdfb;
-		border-bottom: 1px solid #e9ecef;
-	}
-	.steps-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
-		gap: var(--space-5);
-	}
-	.step-card {
-		position: relative;
-		background: #ffffff;
-		border: 1px solid rgba(45, 106, 79, 0.15);
-		border-radius: 18px;
-		padding: var(--space-5);
-		display: flex;
-		flex-direction: column;
-		gap: .6rem;
-		transition: transform .2s var(--ease), box-shadow .2s var(--ease);
-	}
-	.step-card:hover {
-		transform: translateY(-3px);
-		box-shadow: 0 10px 25px rgba(45, 106, 79, 0.08);
-		border-color: #52b788;
-	}
-	.step-num {
-		font-size: var(--text-2xl);
-		font-weight: 850;
-		color: #52b788;
-		line-height: 1;
-	}
-	.step-card h3 {
-		font-size: var(--text-lg);
-		font-weight: 750;
-		color: #1b4332;
-		margin: 0;
-	}
-	.step-card p {
-		font-size: var(--text-sm);
-		color: #4a5568;
-		line-height: 1.55;
-		margin: 0;
-	}
-	.step-line {
-		position: absolute;
-		bottom: 0;
-		left: var(--space-5);
-		right: var(--space-5);
-		height: 3px;
-		background: linear-gradient(90deg, #52b788, transparent);
-		border-radius: 2px;
-		opacity: 0.6;
-	}
-
-	/* ── Featured Practitioners Section ──────────────────────────────── */
-	.practitioners-section {
-		padding: var(--space-7) 0;
-		background: #f7faf7;
-	}
-	.practitioners-header {
-		display: flex;
-		align-items: flex-end;
-		justify-content: space-between;
-		gap: var(--space-4);
-		margin-bottom: var(--space-6);
-		flex-wrap: wrap;
-	}
-	.practitioners-header h2 {
-		font-size: clamp(1.8rem, 3vw, 2.4rem);
-		font-weight: 800;
-		color: #1b4332;
-		letter-spacing: -.02em;
-		margin: .4rem 0 0;
-	}
-	.practitioners-header p {
-		font-size: var(--text-base);
-		color: #52796f;
-		margin: .3rem 0 0;
-	}
-	.view-all-link {
-		display: inline-flex;
-		align-items: center;
-		gap: .4rem;
-		font-weight: 750;
-		font-size: var(--text-sm);
-		color: #2d6a4f;
-		text-decoration: none;
-		padding: .5rem .9rem;
-		border-radius: 8px;
-		background: #e8f4ec;
-		transition: all .15s ease;
-	}
-	.view-all-link:hover {
-		background: #2d6a4f;
-		color: #ffffff;
-	}
-	.practitioners-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
-		gap: var(--space-5);
-	}
-	.practitioner-card {
-		background: #ffffff;
-		border: 1px solid rgba(45, 106, 79, 0.18);
-		border-radius: 18px;
-		padding: var(--space-5);
-		display: flex;
-		flex-direction: column;
-		gap: .8rem;
-		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.03);
-		transition: all .2s var(--ease);
-	}
-	.practitioner-card:hover {
-		transform: translateY(-4px);
-		box-shadow: 0 12px 30px rgba(45, 106, 79, 0.1);
-		border-color: #52b788;
-	}
-	.p-card-top {
-		display: flex;
-		gap: var(--space-4);
-		align-items: center;
-	}
-	.p-avatar {
-		width: 4.2rem;
-		height: 4.2rem;
-		border-radius: 50%;
-		background: #e8f4ec;
-		border: 2px solid #52b788;
-		background-size: cover;
-		background-position: center;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		flex-shrink: 0;
-	}
-	.p-avatar span {
-		font-size: 1.6rem;
-		font-weight: 800;
-		color: #2d6a4f;
-	}
-	.p-meta {
-		display: flex;
-		flex-direction: column;
-		gap: .2rem;
-	}
-	.p-status {
-		display: inline-flex;
-		align-items: center;
-		gap: .35rem;
-		font-size: var(--text-xs);
-		font-weight: 650;
-		color: #2d6a4f;
-	}
-	.status-dot {
-		width: 6px;
-		height: 6px;
-		border-radius: 50%;
-		background: #2d6a4f;
-		animation: pulse 2s infinite;
-	}
-	@keyframes pulse {
-		0%, 100% { opacity: 1; transform: scale(1); }
-		50% { opacity: .5; transform: scale(1.2); }
-	}
-	.p-name {
-		font-size: 1.25rem;
-		font-weight: 750;
-		color: #1b4332;
-		margin: 0;
-	}
-	.p-experience {
-		display: flex;
-		align-items: center;
-		gap: .3rem;
-		font-size: var(--text-xs);
-		color: #6c757d;
-	}
-	.p-bio {
-		font-size: var(--text-sm);
-		color: #495057;
-		line-height: 1.55;
-		margin: 0;
-		display: -webkit-box;
-		-webkit-line-clamp: 2;
-		line-clamp: 2;
-		-webkit-box-orient: vertical;
-		overflow: hidden;
-	}
-	.p-specialties {
-		display: flex;
-		flex-wrap: wrap;
-		gap: .4rem;
-	}
-	.specialty-pill {
-		font-size: var(--text-xs);
 		font-weight: 600;
-		color: #1b4332;
-		background: #e8f4ec;
-		padding: .25rem .65rem;
-		border-radius: 6px;
+		letter-spacing: -.015em;
+		color: var(--pub-navy);
 	}
-	.p-card-footer {
-		margin-top: auto;
-		padding-top: var(--space-3);
-		border-top: 1px solid rgba(45, 106, 79, 0.1);
-	}
-	.btn-consult-card {
-		display: inline-flex;
-		align-items: center;
-		justify-content: space-between;
-		width: 100%;
-		padding: .6rem .9rem;
-		background: #2d6a4f;
-		color: #ffffff;
-		border-radius: 10px;
-		font-size: var(--text-sm);
-		font-weight: 700;
-		text-decoration: none;
-		transition: background .15s ease;
-	}
-	.btn-consult-card:hover {
-		background: #1b4332;
-	}
-	.directory-jump-box {
-		margin-top: var(--space-6);
-		padding: var(--space-5);
-		background: #ffffff;
-		border: 1px dashed rgba(45, 106, 79, 0.3);
-		border-radius: 16px;
+	h1 { font-size: clamp(2.25rem, 4.4vw, 3.4rem); line-height: 1.06; letter-spacing: -.02em; }
+	h2 { font-size: clamp(1.9rem, 3.4vw, 2.6rem); line-height: 1.12; }
+	h3 { font-size: 1.2rem; }
+
+	.section { padding: var(--space-7) 0; background: var(--pub-bg); }
+	.section-grey { background: var(--pub-warm-grey); }
+	.section-burgundy { background: var(--pub-burgundy); }
+	.section-head { max-width: 42rem; margin-bottom: var(--space-6); display: flex; flex-direction: column; gap: .5rem; }
+	.on-burgundy { color: #ffffff; }
+
+	/* Hero */
+	.hero { background: var(--pub-header-bg); }
+	.hero-inner {
+		padding: 5.5rem 0 6rem;
 		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: var(--space-4);
 		flex-wrap: wrap;
+		gap: var(--space-7);
+		align-items: stretch;
 	}
-	.directory-jump-box p {
-		margin: 0;
-		font-size: var(--text-base);
-		color: #2d3748;
+	.hero-copy { flex: 1 1 26rem; display: flex; flex-direction: column; gap: var(--space-4); justify-content: center; }
+	.hero-copy .sub { margin: 0; font-size: 1.3rem; line-height: 1.5; color: var(--pub-text); max-width: 34rem; }
+	.hero-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: .5rem; }
+	.hero-photo { flex: 1 1 32rem; min-height: 20rem; position: relative; }
+	.hero-photo img {
+		position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+		border-radius: 28px; border: 3px solid var(--pub-copper); box-shadow: 0 8px 28px rgba(0,0,76,0.12);
+	}
+
+	.btn-primary, .btn-secondary, .cta-button, .program-cta, .link-arrow {
 		font-weight: 600;
 	}
-	.btn-explore-directory {
-		display: inline-flex;
-		align-items: center;
-		gap: .5rem;
-		background: #2d6a4f;
-		color: #ffffff;
-		padding: .65rem 1.25rem;
-		border-radius: 10px;
-		font-weight: 700;
-		font-size: var(--text-sm);
-		text-decoration: none;
-		transition: background .15s ease;
+	.btn-primary, .btn-secondary {
+		display: inline-flex; align-items: center; min-height: 52px; padding: 0 1.75rem;
+		border-radius: 999px; font-size: 1.05rem; text-decoration: none;
 	}
-	.btn-explore-directory:hover {
-		background: #1b4332;
-	}
-	.empty-practitioners-box {
-		text-align: center;
-		padding: var(--space-7) var(--space-4);
-		background: #ffffff;
-		border-radius: 16px;
-		color: #52796f;
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: var(--space-4);
-	}
+	.btn-primary { background: var(--pub-copper); color: var(--pub-navy); }
+	.btn-secondary { border: 1.5px solid var(--pub-navy); color: var(--pub-navy); }
 
-	/* ── Pillars Section (Evidence & Nature) ─────────────────────────── */
-	.pillars-section {
-		padding: var(--space-7) 0;
-		background: #ffffff;
-		border-top: 1px solid #e9ecef;
-		border-bottom: 1px solid #e9ecef;
-	}
-	.pillars-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
-		gap: var(--space-5);
-	}
-	.pillar-box {
-		background: #fbfdfb;
-		border: 1px solid rgba(45, 106, 79, 0.15);
-		border-radius: 16px;
-		padding: var(--space-5);
-		display: flex;
-		flex-direction: column;
-		gap: .7rem;
-		transition: transform .2s var(--ease);
-	}
-	.pillar-box:hover {
-		transform: translateY(-2px);
-		border-color: #52b788;
-	}
-	.pillar-icon-wrap {
-		width: 2.8rem;
-		height: 2.8rem;
-		border-radius: 12px;
-		background: #e8f4ec;
-		color: #2d6a4f;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-	.p-ico {
-		width: 1.4rem;
-		height: 1.4rem;
-	}
-	.pillar-box h3 {
-		font-size: var(--text-lg);
-		font-weight: 750;
-		color: #1b4332;
-		margin: 0;
-	}
-	.pillar-box p {
-		font-size: var(--text-sm);
-		color: #4a5568;
-		line-height: 1.55;
-		margin: 0;
-	}
+	/* Our approach */
+	.approach-grid { display: flex; flex-wrap: wrap; gap: var(--space-6); padding: var(--space-6) 0; }
+	.approach-head { flex: 1 1 18rem; }
+	.approach-body { flex: 999 1 32rem; }
+	.approach-body p { margin: 0; font-size: 1.25rem; line-height: 1.6; }
 
-	/* ── Client Testimonial / Story Section ──────────────────────────── */
-	.commitment-section {
-		padding: var(--space-7) 0;
-		background: #f4f8f4;
-		border-bottom: 1px solid rgba(45, 106, 79, 0.12);
+	/* What we solve for */
+	.solve-panel {
+		background: var(--pub-burgundy); border-radius: 28px; padding: clamp(2rem, 5vw, 4rem);
+		display: flex; flex-wrap: wrap; gap: var(--space-6); align-items: center;
 	}
-	.commitment-inner {
-		max-width: 44rem;
-		margin: 0 auto;
-		text-align: center;
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: var(--space-4);
-	}
-	.quote-mark {
-		font-size: 4rem;
-		line-height: 1;
-		font-family: Georgia, serif;
-		color: #52b788;
-	}
-	.commitment-inner blockquote {
-		margin: 0;
-		font-size: clamp(1.15rem, 2vw, 1.35rem);
-		line-height: 1.6;
-		color: #1b4332;
-		font-style: italic;
-		font-weight: 550;
-	}
-	.client-author {
-		display: flex;
-		flex-direction: column;
-		gap: .15rem;
-		font-size: var(--text-sm);
-	}
-	.client-author strong {
-		color: #1b4332;
-	}
-	.client-author span {
-		color: #52796f;
-	}
+	.solve-stat { flex: 1 1 16rem; display: flex; flex-direction: column; gap: .5rem; }
+	.stat-number { margin: 0; font-family: var(--pub-font-heading); font-weight: 700; font-size: clamp(4rem, 8vw, 6.5rem); line-height: 1; color: var(--pub-copper); }
+	.stat-caption { margin: 0; font-size: 1.1rem; color: var(--pub-warm-grey); }
+	.solve-copy { flex: 999 1 30rem; display: flex; flex-direction: column; gap: var(--space-4); }
+	.solve-copy h2 { color: #ffffff; }
+	.solve-copy p { margin: 0; font-size: 1.1rem; line-height: 1.65; color: var(--pub-warm-grey); }
 
-	/* ── Closing CTA Band (100% Client Focused) ──────────────────────── */
-	.cta-nature-band {
-		position: relative;
-		background: linear-gradient(145deg, #132a1f 0%, #1b4332 60%, #0d2218 100%);
-		color: #ffffff;
-		padding: var(--space-7) 0;
-		overflow: hidden;
-		text-align: center;
-	}
-	.cta-band-content {
-		position: relative;
-		z-index: 2;
-		max-width: 42rem;
-		margin: 0 auto;
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: var(--space-3);
-	}
-	.cta-band-content h2 {
-		font-size: clamp(2rem, 3.4vw, 2.6rem);
-		font-weight: 800;
-		margin: 0;
-		color: #ffffff;
-		line-height: 1.15;
-	}
-	.cta-band-content p {
-		font-size: var(--text-lg);
-		color: #d8f3dc;
-		margin: 0;
-		line-height: 1.5;
-	}
-	.cta-band-buttons {
-		display: flex;
-		gap: var(--space-4);
-		flex-wrap: wrap;
-		justify-content: center;
-		margin-top: var(--space-4);
-	}
-	.btn-cta-main {
-		display: inline-flex;
-		align-items: center;
-		gap: .5rem;
-		background: #52b788;
-		color: #081c15;
-		padding: .8rem 1.8rem;
-		border-radius: 12px;
-		font-weight: 800;
-		font-size: var(--text-base);
-		text-decoration: none;
-		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-		transition: all .2s var(--ease);
-	}
-	.btn-cta-main:hover {
-		background: #74c69d;
-		transform: translateY(-2px);
-	}
-	.btn-cta-sub {
-		display: inline-flex;
-		align-items: center;
-		background: rgba(255, 255, 255, 0.08);
-		color: #ffffff;
-		padding: .8rem 1.5rem;
-		border-radius: 12px;
-		font-weight: 650;
-		font-size: var(--text-base);
-		text-decoration: none;
-		border: 1px solid rgba(255, 255, 255, 0.25);
-		transition: all .2s var(--ease);
-	}
-	.btn-cta-sub:hover {
-		background: rgba(255, 255, 255, 0.16);
-	}
+	/* Who we are */
+	.who-grid { display: grid; grid-template-columns: 1fr; gap: var(--space-7); padding: var(--space-6) 0; }
+	.team-portraits { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: var(--space-5); }
+	.team-portraits figure { margin: 0; display: flex; flex-direction: column; gap: .85rem; }
+	.team-portraits img { display: block; width: 100%; aspect-ratio: 4 / 5; object-fit: cover; border-radius: 24px; }
+	.member-name { display: block; font-family: var(--pub-font-heading); font-weight: 600; font-size: 1.3rem; color: var(--pub-navy); }
+	.member-title { display: block; font-size: .9rem; color: var(--pub-text-muted); }
+	.who-copy { display: flex; flex-direction: column; gap: var(--space-4); max-width: 42rem; }
+	.who-copy p { margin: 0; font-size: 1.1rem; line-height: 1.65; }
+	.link-arrow { display: inline-flex; align-items: center; min-height: 2.75rem; text-decoration: none; color: var(--pub-burgundy); }
+	.testing-partners { background: var(--pub-card-bg); border-radius: 24px; padding: var(--space-6); display: flex; flex-direction: column; gap: var(--space-4); max-width: 26rem; }
+	.partners-label { margin: 0; font-size: .85rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--pub-text-muted); }
+	.partners-list { display: flex; flex-direction: column; }
+	.partner-row { padding: 1rem 0; border-bottom: 1px solid var(--pub-warm-grey); display: flex; align-items: center; gap: var(--space-4); }
+	.partner-row:last-child { border-bottom: none; }
+	.partner-row img { width: 6.5rem; height: 3.5rem; flex-shrink: 0; object-fit: contain; object-position: left center; }
+	.partner-name { margin: 0; font-family: var(--pub-font-heading); font-weight: 600; font-size: 1.25rem; color: var(--pub-navy); }
+	.partner-desc { margin: 0; font-size: .9rem; color: var(--pub-text-muted); }
 
-	/* ── Responsive Adaptations ──────────────────────────────────────── */
-	@media (max-width: 960px) {
-		.hero-container {
-			grid-template-columns: 1fr;
-			gap: var(--space-6);
-		}
-		.hero-visual {
-			order: -1;
-		}
+	/* Why women choose us */
+	.why-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(15.5rem, 1fr)); gap: var(--space-5); }
+	.why-card { border: 1px solid rgba(255,255,255,0.22); background: rgba(255,255,255,0.06); border-radius: 20px; padding: var(--space-5); display: flex; flex-direction: column; gap: .6rem; }
+	.why-num { margin: 0; font-family: var(--pub-font-heading); font-weight: 700; font-size: .9rem; color: var(--pub-copper); }
+	.why-card h3 { color: #ffffff; font-size: 1.2rem; line-height: 1.3; }
+	.why-card p { margin: 0; font-size: 1rem; color: #f3e6ea; }
+
+	/* How to work with us */
+	.steps-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: var(--space-5); }
+	.step-card { background: var(--pub-card-bg); border-radius: 20px; padding: var(--space-5); display: flex; flex-direction: column; gap: .75rem; }
+	.step-badge { display: inline-flex; align-items: center; justify-content: center; width: 2.5rem; height: 2.5rem; border-radius: 999px; background: var(--pub-navy); color: #ffffff; font-weight: 700; }
+	.step-badge.first { background: var(--pub-copper); color: var(--pub-navy); }
+	.step-card p { margin: 0; font-size: 1rem; }
+
+	/* Programs */
+	.programs-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(18.5rem, 1fr)); gap: var(--space-5); align-items: stretch; margin-bottom: var(--space-5); }
+	.program-card { border: 1px solid var(--pub-warm-grey); border-radius: 24px; padding: 2.25rem 2rem; display: flex; flex-direction: column; gap: var(--space-5); background: var(--pub-card-bg); }
+	.program-card.highlight { border: 2px solid var(--pub-copper); background: #fbf5ef; }
+	.program-title-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; }
+	.program-title-row h3 { font-size: 1.6rem; }
+	.badge { padding: .25rem .75rem; border-radius: 999px; background: var(--pub-copper); color: var(--pub-navy); font-size: .8rem; font-weight: 600; }
+	.program-tagline { margin: .3rem 0 0; font-size: .9rem; color: var(--pub-text-muted); }
+	.program-price p { margin: 0; }
+	.price { font-family: var(--pub-font-heading); font-weight: 700; font-size: 3rem; color: var(--pub-navy); line-height: 1; }
+	.per { font-size: .9rem; color: var(--pub-text-muted); margin-left: .5rem; }
+	.intake { font-size: .9rem; color: var(--pub-text-muted); margin-top: .3rem !important; }
+	.program-included { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .75rem; font-size: 1rem; }
+	.program-included li { display: flex; gap: .6rem; align-items: flex-start; }
+	.program-included svg { flex-shrink: 0; margin-top: .2rem; }
+	.program-footer { flex-grow: 1; border-top: 1px solid var(--pub-warm-grey); padding-top: 1.25rem; display: flex; flex-direction: column; gap: .75rem; }
+	.addons-label { margin: 0; font-size: .8rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--pub-text-muted); }
+	.addons-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .6rem; font-size: 1rem; }
+	.addons-list li { display: flex; gap: .6rem; align-items: flex-start; }
+	.addons-list .grow { flex-grow: 1; }
+	.addon-price { font-weight: 600; color: var(--pub-navy); white-space: nowrap; }
+	.program-note { margin: 0; font-size: .9rem; color: var(--pub-text-muted); }
+	.program-cta { display: flex; align-items: center; justify-content: center; min-height: 52px; border-radius: 999px; border: 1.5px solid var(--pub-navy); color: var(--pub-navy); text-decoration: none; }
+	.program-cta.filled { background: var(--pub-copper); border: none; }
+	.programs-aside { background: var(--pub-warm-grey); border-radius: 20px; padding: 1.5rem 1.75rem; display: flex; flex-direction: column; gap: .6rem; font-size: 1rem; }
+	.programs-aside p { margin: 0; }
+	.programs-aside strong { color: var(--pub-navy); }
+
+	/* Testimonials */
+	.testimonials-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(17.5rem, 1fr)); gap: var(--space-5); }
+	.testimonial-card { margin: 0; background: var(--pub-card-bg); border-radius: 24px; padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-4); }
+	.testimonial-card blockquote { margin: 0; font-size: 1.1rem; line-height: 1.6; color: var(--pub-navy); flex-grow: 1; font-style: italic; }
+	.testimonial-card figcaption { font-size: .9rem; color: var(--pub-text-muted); }
+	.testimonial-card figcaption strong { color: var(--pub-navy); }
+
+	/* Ready to start */
+	.cta-panel {
+		background: var(--pub-burgundy); border-radius: 28px; padding: clamp(2.5rem, 6vw, 4.5rem);
+		display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--space-4);
 	}
-	@media (max-width: 640px) {
-		.hero-section {
-			padding: var(--space-5) 0 var(--space-6);
-		}
-		.hero-actions {
-			flex-direction: column;
-			align-items: stretch;
-		}
-		.btn-nature-primary, .btn-nature-secondary {
-			justify-content: center;
-		}
-		.directory-jump-box {
-			flex-direction: column;
-			align-items: stretch;
-		}
-		.btn-explore-directory {
-			justify-content: center;
-		}
-		.cta-band-buttons {
-			flex-direction: column;
-			align-items: stretch;
-			width: 100%;
-		}
-		.btn-cta-main, .btn-cta-sub {
-			justify-content: center;
-		}
+	.cta-panel h2 { color: #ffffff; max-width: 46rem; }
+	.cta-panel p { margin: 0; font-size: 1.2rem; color: var(--pub-warm-grey); max-width: 38rem; }
+	.cta-button { display: inline-flex; align-items: center; min-height: 56px; padding: 0 2rem; border-radius: 999px; background: #ffffff; color: var(--pub-navy); text-decoration: none; font-weight: 700; font-size: 1.1rem; margin-top: .25rem; }
+	.cta-footnote { font-size: .9rem; color: var(--pub-warm-grey); }
+
+	@media (max-width: 760px) {
+		.hero-inner { flex-direction: column; }
+		.who-grid { gap: var(--space-5); }
+		.testing-partners { max-width: none; }
 	}
 </style>

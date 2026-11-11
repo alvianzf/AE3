@@ -1,71 +1,58 @@
 <script lang="ts">
-	import Sprig from './Sprig.svelte';
-
-	// specs/v8 §8.2/§8.5 — the "necessary pages" a visitor needs to find
-	// but that don't belong in the primary nav (legal/compliance pages,
-	// plus pricing/FAQ/contact) live here instead of crowding PublicNav.
-	const groups = [
-		{
-			title: 'Functional Health Collab',
-			links: [
-				{ href: '/practitioners', label: 'Find a practitioner' },
-				{ href: '/join', label: 'For practitioners' },
-				{ href: '/pricing', label: 'Pricing' },
-				{ href: '/faq', label: 'FAQ' },
-				{ href: '/contact', label: 'Contact' }
-			]
-		},
-		{
-			title: 'Legal',
-			links: [
-				{ href: '/privacy', label: 'Privacy Policy' },
-				{ href: '/terms', label: 'Terms of Service' },
-				{ href: '/cookies', label: 'Cookies' }
-			]
-		}
+	// FHC rebrand: one-page marketing site, so the footer nav mirrors the
+	// homepage anchors (not the old marketplace route list). Legal pages
+	// (/privacy, /terms) are kept since the disclaimer links to them.
+	const links = [
+		{ href: '#approach', label: 'Our approach' },
+		{ href: '#how', label: 'How it works' },
+		{ href: '#programs', label: 'Programs' },
+		{ href: '#about', label: 'About us' }
 	];
+
+	// TODO: contact email still to be supplied (handoff README "still to be supplied")
+	const contactEmail: string | null = null;
 </script>
 
 <footer class="site-footer">
 	<div class="container inner">
 		<div class="brand">
-			<Sprig size={20} />
-			<span>Functional Health Collab</span>
+			<span class="wordmark">Functional Health Collaborative</span>
+			<p class="tagline">Personalised Perimenopause and Menopause Care</p>
 		</div>
-		{#each groups as g (g.title)}
-			<nav aria-label={g.title}>
-				<h3>{g.title}</h3>
-				<ul>
-					{#each g.links as l (l.href)}<li><a href={l.href}>{l.label}</a></li>{/each}
-				</ul>
-			</nav>
-		{/each}
+		<nav class="link-row" aria-label="Footer">
+			{#each links as l (l.href)}<a href={l.href}>{l.label}</a>{/each}
+			{#if contactEmail}
+				<a href="mailto:{contactEmail}">{contactEmail}</a>
+			{:else}
+				<span class="todo">[email]</span>
+			{/if}
+		</nav>
 	</div>
 	<p class="disclaimer container">
-		Functional Health Collab is a decision-support tool for licensed practitioners. It is not
-		a medical device and does not provide medical advice directly to
-		clients — see our <a href="/terms">Terms of Service</a> for the full
-		disclaimer.
+		Our services are complementary and work alongside — not in place of — your GP or medical
+		specialist. We do not diagnose or treat medical conditions. Always consult your doctor
+		before making changes to medication. See our <a href="/terms">Terms of Service</a> for the
+		full disclaimer.
 	</p>
+	<p class="copyright container">© 2026 Functional Health Collaborative · <a href="/privacy">Privacy policy</a> · <a href="/terms">Terms</a></p>
 </footer>
 
 <style>
 	.site-footer {
-		border-top: 1px solid rgba(45, 106, 79, 0.15);
 		margin-top: var(--space-7);
-		background: #f4f6f0;
+		background: var(--pub-navy);
+		color: #ffffff;
 	}
-	.inner { display: flex; flex-wrap: wrap; gap: var(--space-6); padding: var(--space-6) var(--space-5); }
-	.brand {
-		display: flex; align-items: center; gap: .6rem;
-		font-weight: 700; color: #1b4332; flex: 1 1 10rem;
-		background: none; border: none; box-shadow: none;
-	}
-	.brand :global(svg) { color: #2d6a4f; }
-	nav h3 { font-size: var(--text-xs); letter-spacing: .06em; color: #52796f; margin-bottom: .6rem; text-transform: uppercase; font-weight: 700; }
-	nav ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .45rem; }
-	nav a { color: #2d3748; text-decoration: none; font-size: var(--text-sm); font-weight: 500; transition: color .15s ease; }
-	nav a:hover { color: #2d6a4f; }
-	.disclaimer { padding: 0 var(--space-5) var(--space-5); color: #52796f; font-size: var(--text-xs); max-width: 60rem; line-height: 1.6; }
-	.disclaimer a { color: #2d6a4f; text-decoration: underline; }
+	.inner { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--space-6); padding: var(--space-6) var(--space-5) var(--space-5); }
+	.brand { display: flex; flex-direction: column; gap: .5rem; max-width: 22rem; }
+	.wordmark { font-family: var(--pub-font-heading); font-weight: 700; font-size: 1.3rem; color: #ffffff; }
+	.tagline { margin: 0; font-size: .9rem; color: #cfcfe3; }
+	.link-row { display: flex; flex-wrap: wrap; gap: .5rem 1.75rem; align-items: center; font-size: .9rem; font-weight: 500; }
+	.link-row a, .link-row .todo { color: #ffffff; text-decoration: none; }
+	.link-row a:hover { text-decoration: underline; }
+	.link-row .todo { color: #cfcfe3; font-style: italic; }
+	.disclaimer { padding: 0 var(--space-5) var(--space-3); color: #cfcfe3; font-size: .8rem; max-width: 54rem; line-height: 1.6; }
+	.disclaimer a { color: #ffffff; text-decoration: underline; }
+	.copyright { padding: 0 var(--space-5) var(--space-5); color: #cfcfe3; font-size: .8rem; }
+	.copyright a { color: #cfcfe3; text-decoration: underline; }
 </style>

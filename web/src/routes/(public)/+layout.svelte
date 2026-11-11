@@ -4,6 +4,14 @@
 	let { children } = $props();
 </script>
 
+<svelte:head>
+	<link rel="preconnect" href="https://fonts.googleapis.com" />
+	<link
+		rel="stylesheet"
+		href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Figtree:wght@400;500;600&display=swap"
+	/>
+</svelte:head>
+
 <div class="public-shell">
 	<PublicNav />
 	<main>
@@ -14,27 +22,28 @@
 
 <style>
 	:global(:root) {
-		--pub-forest-dark: #1b4332;
-		--pub-forest-deep: #0f2b1d;
-		--pub-emerald: #2d6a4f;
-		--pub-sage-vibrant: #52b788;
-		--pub-sage: #74c69d;
-		--pub-sage-light: #d8f3dc;
-		--pub-linen: #fbfcf9;
-		--pub-sage-tint: #f4f8f4;
+		--pub-navy: #00004c;
+		--pub-burgundy: #7a1f3d;
+		--pub-copper: #d79351;
+		--pub-warm-grey: #e6e4dd;
+		--pub-header-bg: #d8d0c5;
+		--pub-bg: #f4f2ed;
+		--pub-text: #1c1c33;
+		--pub-text-muted: #4a4a5e;
 		--pub-card-bg: #ffffff;
-		--pub-border: rgba(45, 106, 79, 0.14);
-		--pub-border-strong: rgba(45, 106, 79, 0.28);
-		--pub-text: #1b4332;
-		--pub-text-muted: #52796f;
+		--pub-font-heading: 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif;
+		--pub-font-body: 'Figtree', ui-sans-serif, system-ui, sans-serif;
 	}
 
 	.public-shell {
 		min-height: 100vh;
 		display: flex;
 		flex-direction: column;
-		background: #fbfcf9;
-		color: #1b4332;
+		background: var(--pub-bg);
+		color: var(--pub-text);
+		font-family: var(--pub-font-body);
+		font-size: 17px;
+		line-height: 1.6;
 	}
 
 	main {
@@ -42,26 +51,32 @@
 		min-height: 70dvh;
 	}
 
+	:global(.public-shell h1),
+	:global(.public-shell h2),
+	:global(.public-shell h3) {
+		font-family: var(--pub-font-heading);
+	}
+
 	/* Consistent link colors and interactive resets across all public pages */
 	:global(.public-shell a) {
-		color: #2d6a4f;
+		color: var(--pub-burgundy);
 	}
 	:global(.public-shell a:hover) {
-		color: #1b4332;
+		color: var(--pub-navy);
 	}
 
 	/* Consistent card panels across public auth/form pages */
 	:global(.public-shell .card-panel) {
-		background: #ffffff;
-		border: 1px solid rgba(45, 106, 79, 0.14);
+		background: var(--pub-card-bg);
+		border: 1px solid var(--pub-warm-grey);
 		border-radius: 16px;
-		box-shadow: 0 4px 24px rgba(27, 67, 50, 0.06);
+		box-shadow: 0 4px 24px rgba(0, 0, 76, 0.06);
 		overflow: hidden;
 	}
 	:global(.public-shell .card-panel .ph) {
 		padding: var(--space-4) var(--space-5);
-		border-bottom: 1px solid rgba(45, 106, 79, 0.1);
-		background: #fbfcf9;
+		border-bottom: 1px solid var(--pub-warm-grey);
+		background: var(--pub-bg);
 	}
 	:global(.public-shell .card-panel .ph h2) {
 		display: flex;
@@ -69,30 +84,30 @@
 		gap: .6rem;
 		font-size: var(--text-lg);
 		font-weight: 750;
-		color: #1b4332;
+		color: var(--pub-navy);
 		margin: 0;
 	}
 	:global(.public-shell .card-panel .ph h2 :global(svg)) {
-		color: #2d6a4f;
+		color: var(--pub-burgundy);
 	}
 	:global(.public-shell .card-panel .pb) {
 		padding: var(--space-5);
 	}
 
-	/* Primary button overrides for public pages to ensure crisp botanical styling */
+	/* Primary button overrides for public pages: pill shape, copper fill, navy text */
 	:global(.public-shell .btn.filled),
 	:global(.public-shell button[type="submit"]) {
-		background: #2d6a4f !important;
-		color: #ffffff !important;
+		background: var(--pub-copper) !important;
+		color: var(--pub-navy) !important;
 		border: none !important;
-		border-radius: 10px !important;
-		font-weight: 750 !important;
-		box-shadow: 0 2px 8px rgba(45, 106, 79, 0.2) !important;
+		border-radius: 999px !important;
+		font-weight: 600 !important;
+		box-shadow: none !important;
 		transition: background var(--duration-fast), transform var(--duration-fast) !important;
 	}
 	:global(.public-shell .btn.filled:hover),
 	:global(.public-shell button[type="submit"]:hover) {
-		background: #1b4332 !important;
+		background: #c98540 !important;
 		transform: translateY(-1px) !important;
 	}
 </style>
