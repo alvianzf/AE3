@@ -4,6 +4,7 @@
 	import Seo from '$lib/components/Seo.svelte';
 	import { jsonLdScript } from '$lib/seo';
 	import { goToSection, consumePendingScroll } from '$lib/scrollToSection';
+	import Icon from '$lib/components/Icon.svelte';
 
 	// Same-page section links, kept as JS scroll (not #hash hrefs) for
 	// consistency with the nav/footer — see $lib/scrollToSection. On this
@@ -13,6 +14,16 @@
 	}
 
 	onMount(consumePendingScroll);
+
+	// Back-to-top floating button: only worth showing once the visitor has
+	// actually scrolled past the hero.
+	let showBackToTop = $state(false);
+	onMount(() => {
+		const onScroll = () => { showBackToTop = window.scrollY > 600; };
+		onScroll();
+		window.addEventListener('scroll', onScroll, { passive: true });
+		return () => window.removeEventListener('scroll', onScroll);
+	});
 
 	// SEO/OG description is the hero copy verbatim, not a paraphrase — keeps
 	// the search snippet and link-preview text in sync with what the page
@@ -391,6 +402,12 @@
 	</div>
 </section>
 
+{#if showBackToTop}
+	<button class="back-to-top" onclick={() => nav('top')} aria-label="Back to top">
+		<Icon name="chevron-up" size={20} />
+	</button>
+{/if}
+
 <style>
 	:global(.public-shell) :global(section) {
 		scroll-margin-top: 4rem;
@@ -446,9 +463,12 @@
 	.btn-primary, .btn-secondary {
 		display: inline-flex; align-items: center; justify-content: center; min-height: 52px; padding: 0 1.75rem;
 		border-radius: 999px; font-size: 1.0625rem; text-decoration: none;
+		transition: background var(--duration-fast), border-color var(--duration-fast), transform var(--duration-fast);
 	}
 	.btn-primary { background: var(--pub-copper); color: var(--pub-navy); }
+	.btn-primary:hover { background: #c98540; transform: translateY(-1px); }
 	.btn-secondary { border: 1.5px solid var(--pub-navy); color: var(--pub-navy); }
+	.btn-secondary:hover { background: rgba(0, 0, 76, .06); transform: translateY(-1px); }
 
 	/* Our approach */
 	.approach-grid { display: flex; flex-wrap: wrap; gap: var(--space-6); padding: var(--space-6) 0; }
@@ -523,8 +543,14 @@
 	.addons-list .grow { flex-grow: 1; }
 	.addon-price { font-weight: 600; color: var(--pub-navy); white-space: nowrap; }
 	.program-note { margin: 0; font-size: .9rem; color: var(--pub-text-muted); }
-	.program-cta { display: flex; align-items: center; justify-content: center; min-height: 52px; border-radius: 999px; border: 1.5px solid var(--pub-navy); color: var(--pub-navy); text-decoration: none; }
+	.program-cta {
+		display: flex; align-items: center; justify-content: center; min-height: 52px; border-radius: 999px;
+		border: 1.5px solid var(--pub-navy); color: var(--pub-navy); text-decoration: none;
+		transition: background var(--duration-fast), transform var(--duration-fast);
+	}
+	.program-cta:hover { background: rgba(0, 0, 76, .06); transform: translateY(-1px); }
 	.program-cta.filled { background: var(--pub-copper); border: none; }
+	.program-cta.filled:hover { background: #c98540; }
 	.programs-aside { background: var(--pub-warm-grey); border-radius: 20px; padding: 1.5rem 1.75rem; display: flex; flex-direction: column; gap: .6rem; font-size: 1rem; }
 	.programs-aside p { margin: 0; }
 	.programs-aside strong { color: var(--pub-navy); }
@@ -543,10 +569,27 @@
 	}
 	.cta-panel h2 { color: #ffffff; max-width: 46rem; }
 	.cta-panel p { margin: 0; font-size: 1.2rem; color: var(--pub-warm-grey); max-width: 38rem; }
-	.cta-button { display: inline-flex; align-items: center; justify-content: center; min-height: 56px; padding: 0 2rem; border-radius: 999px; background: #ffffff; color: var(--pub-navy); text-decoration: none; font-weight: 700; font-size: 1.125rem; margin-top: .25rem; }
+	.cta-button {
+		display: inline-flex; align-items: center; justify-content: center; min-height: 56px; padding: 0 2rem;
+		border-radius: 999px; background: #ffffff; color: var(--pub-navy); text-decoration: none;
+		font-weight: 700; font-size: 1.125rem; margin-top: .25rem;
+		transition: background var(--duration-fast), transform var(--duration-fast);
+	}
+	.cta-button:hover { background: #f0ede6; transform: translateY(-1px); }
 	.cta-footnote { font-size: .9rem; color: var(--pub-warm-grey); }
 
+	.back-to-top {
+		position: fixed; right: 1.5rem; bottom: 1.5rem; z-index: 30;
+		display: flex; align-items: center; justify-content: center;
+		width: 2.75rem; height: 2.75rem; border-radius: 999px; border: none;
+		background: var(--pub-navy); color: #ffffff; cursor: pointer;
+		box-shadow: 0 4px 16px rgba(0, 0, 76, .25);
+		transition: background var(--duration-fast), transform var(--duration-fast);
+	}
+	.back-to-top:hover { background: var(--pub-burgundy); transform: translateY(-2px); }
+
 	@media (max-width: 760px) {
+		.back-to-top { right: 1rem; bottom: 1rem; width: 2.5rem; height: 2.5rem; }
 		.hero-inner { flex-direction: column; }
 		.who-grid { gap: var(--space-5); }
 		.testing-partners { max-width: none; }

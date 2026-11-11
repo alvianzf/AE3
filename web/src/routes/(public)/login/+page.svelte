@@ -4,7 +4,7 @@
 	import { LANDING } from '$lib/session';
 	import TextField from '$lib/components/TextField.svelte';
 	import Button from '$lib/components/Button.svelte';
-	import Sprig from '$lib/components/Sprig.svelte';
+	import BrandMark from '$lib/components/BrandMark.svelte';
 	import Seo from '$lib/components/Seo.svelte';
 
 	let email = $state('');
@@ -32,7 +32,7 @@
 <div class="container wrap">
 	<section class="card-panel">
 		<div class="ph">
-			<h2><Sprig size={20} /> Member Sign In</h2>
+			<h2><BrandMark size={20} /> Member Sign In</h2>
 		</div>
 		<form class="pb" onsubmit={submit}>
 			<TextField label="Email address" type="email" bind:value={email} placeholder="you@example.com" required />
@@ -41,7 +41,6 @@
 			<Button type="submit" loading={submitting}>Sign In</Button>
 			<div class="auth-hints">
 				<p class="hint">Looking for care? <a href="/signup">Create a client account</a></p>
-				<p class="hint">Practicing clinician? <a href="/join">Apply as a practitioner</a></p>
 			</div>
 		</form>
 	</section>

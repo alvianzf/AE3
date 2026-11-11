@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import Icon from './Icon.svelte';
+	import BrandMark from './BrandMark.svelte';
 	import { goToSection } from '$lib/scrollToSection';
 
 	// Single-practice marketing nav (FHC rebrand): the old nav routed to
@@ -24,10 +25,7 @@
 <header class="topbar">
 	<div class="inner container">
 		<a href="/" class="brand">
-			<svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true" class="mark">
-				<circle cx="12" cy="16" r="9" fill="none" stroke="var(--pub-navy)" stroke-width="2.2" />
-				<circle cx="20" cy="16" r="9" fill="none" stroke="var(--pub-copper)" stroke-width="2.2" />
-			</svg>
+			<span class="mark"><BrandMark size={32} /></span>
 			<span class="lockup">
 				<span class="wordmark">Functional Health Collaborative</span>
 				<span class="tagline">Personalised Perimenopause and Menopause Care</span>
