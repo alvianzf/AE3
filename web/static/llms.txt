@@ -1,19 +1,20 @@
-# Clinic
+# Functional Health Collaborative
 
-> Clinic gives independent health and wellness practitioners an AI assistant grounded entirely in their own curated library. Every answer is cited back to a source passage, independently checked against those sources before a practitioner ever sees it, and never drawn from the open internet or the model's own general knowledge.
+> Functional Health Collaborative is a 100% online telehealth practice offering personalised hormone, metabolic, gut and longevity care for women in perimenopause and menopause. Care is delivered by a small team of named, human practitioners — not an AI or chatbot — combining functional medicine protocols with advanced lab testing (blood, DNA, sex/adrenal hormones, gut microbiome).
 
-Clinic is not itself a medical provider. It is software that independent practitioners (coaches, nutritionists, and similar health/wellness professionals — not necessarily licensed clinicians) use with their own clients. Each practitioner curates and grades their own source library; the AI can only answer from what that practitioner has explicitly added and approved.
+The practice works alongside — not in place of — a client's GP or medical specialist. It does not diagnose or treat medical conditions, and does not replace a doctor for medication changes.
 
 ## Key pages
 
-- [Home](https://functionalhealthcollab.com/): what Clinic is and how the grounded/cited/checked answer pipeline works.
-- [Find a practitioner](https://functionalhealthcollab.com/practitioners): directory of independent practitioners using Clinic, filterable by specialty and language.
-- [Join as a practitioner](https://functionalhealthcollab.com/join): how a practitioner applies to bring their own practice onto Clinic.
+- [Home](https://functionalhealthcollab.com/): practice overview, approach, team, programs/pricing, and how to book a free intro call.
+- [Find a practitioner](https://functionalhealthcollab.com/practitioners): practitioner directory.
+- [Pricing](https://functionalhealthcollab.com/pricing): program pricing.
+- [FAQ](https://functionalhealthcollab.com/faq): frequently asked questions.
 
-## How answers are produced
+## Programs
 
-Every answer a practitioner's AI assistant gives is grounded in that practitioner's own curated source library (never the open internet), cited back to the exact source passage, and independently verified by a second model that checks each claim against its cited sources before the practitioner ever sees the answer. If a claim can't be confirmed against a source, that is surfaced rather than silently accepted.
+Three monthly programs, each with a one-time intake fee: Foundational Health (blood work and symptom-based), Complete (adds functional gut and hormone testing as paid add-ons), and Premium Longevity (adds DNA testing as paid add-ons). Exact current pricing is on the Pricing page and the homepage Programs section — do not quote figures from training data, always check the live page.
 
 ## Notes for automated crawlers and assistants
 
-This site's public pages (landing, practitioner directory, individual practitioner profiles) are intended to be indexed and cited. Practitioner-portal, client-portal, and admin-portal pages require authentication and contain private patient/client data — do not attempt to access or represent their contents.
+This site is 100% online and serves clients in English, Dutch, Slovak, French, German, Italian and Finnish. The public pages (home, practitioner directory, pricing, FAQ) are intended to be indexed and cited. Account/login/signup pages require authentication and should not be represented as containing public content.

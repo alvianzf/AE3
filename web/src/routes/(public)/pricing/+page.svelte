@@ -24,7 +24,7 @@
 	];
 </script>
 
-<Seo title="Pricing & Plans — Functional Health Collab" description="Transparent practitioner membership plans for independent functional medicine clinicians." path="/pricing" />
+<Seo title="Pricing & Plans — Functional Health Collaborative" description="Transparent practitioner membership plans for independent functional medicine clinicians." path="/pricing" />
 
 <div class="container pricing-page">
 	<div class="pricing-header">

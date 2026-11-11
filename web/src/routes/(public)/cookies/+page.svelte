@@ -2,7 +2,7 @@
 	import Seo from '$lib/components/Seo.svelte';
 </script>
 
-<Seo title="Cookie Policy — Functional Health Collab" description="What Functional Health Collab stores in your browser, and why." path="/cookies" />
+<Seo title="Cookie Policy — Functional Health Collaborative" description="What Functional Health Collaborative stores in your browser, and why." path="/cookies" />
 
 <div class="container page">
 	<h1>Cookie Policy</h1>
@@ -11,7 +11,7 @@
 		banner under the ePrivacy directive is a real determination a lawyer should make, not assumed here either way.
 	</p>
 	<p>
-		Functional Health Collab sets exactly one cookie: <code>fhc_session</code>, a signed,
+		Functional Health Collaborative sets exactly one cookie: <code>fhc_session</code>, a signed,
 		<code>httponly</code> session token that keeps you logged in. It
 		carries no advertising or analytics payload, is never read by any
 		third party, and is strictly necessary for the site to function — you

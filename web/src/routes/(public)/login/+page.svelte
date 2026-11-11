@@ -27,7 +27,7 @@
 	}
 </script>
 
-<Seo title="Log in — Functional Health Collab" description="Log in to your Functional Health Collab account." path="/login" noindex />
+<Seo title="Log in — Functional Health Collaborative" description="Log in to your Functional Health Collaborative account." path="/login" noindex />
 
 <div class="container wrap">
 	<section class="card-panel">

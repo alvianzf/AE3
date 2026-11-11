@@ -27,7 +27,7 @@
 	}
 </script>
 
-<Seo title="Your account — Functional Health Collab" description="Manage your Functional Health Collab account." path="/account" noindex />
+<Seo title="Your account — Functional Health Collaborative" description="Manage your Functional Health Collaborative account." path="/account" noindex />
 
 <div class="container wrap">
 	<section class="card-panel">
