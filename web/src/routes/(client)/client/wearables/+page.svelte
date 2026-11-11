@@ -1,5 +1,5 @@
 <script lang="ts">
-	import Sprig from '$lib/components/Sprig.svelte';
+	import BrandMark from '$lib/components/BrandMark.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 </script>
 
@@ -13,7 +13,7 @@
 	     doesn't — so until the real data pull ships, this page says so plainly
 	     instead of offering the flow. -->
 	<div class="soon">
-		<Sprig size={24} />
+		<BrandMark size={24} />
 		<h3>Coming soon</h3>
 		<p class="hint">
 			Wearable syncing isn't available yet. When it launches, you'll be able to

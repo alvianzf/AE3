@@ -4,7 +4,7 @@
 	import Seo from '$lib/components/Seo.svelte';
 	import TextField from '$lib/components/TextField.svelte';
 	import Button from '$lib/components/Button.svelte';
-	import Sprig from '$lib/components/Sprig.svelte';
+	import BrandMark from '$lib/components/BrandMark.svelte';
 
 	let name = $state('');
 	let email = $state('');
@@ -31,7 +31,7 @@
 <div class="container contact-page">
 	<div class="contact-header">
 		<div class="badge-wrap">
-			<span class="logo-mark"><Sprig size={18} /></span>
+			<span class="logo-mark"><BrandMark size={18} /></span>
 			<span>Get in Touch</span>
 		</div>
 		<h1>Contact our team</h1>
