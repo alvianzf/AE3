@@ -1,53 +1,74 @@
 <script lang="ts">
 	import Seo from '$lib/components/Seo.svelte';
-	import Sprig from '$lib/components/Sprig.svelte';
+	import BrandMark from '$lib/components/BrandMark.svelte';
+	import { jsonLdScript } from '$lib/seo';
 
+	// Grounded entirely in the homepage's own verified content (approach,
+	// programs/pricing, how-it-works steps, testing partners, footer
+	// disclaimer) — not invented. Replaces the old copy, which described a
+	// different, now-retired product (an AI clinical-intelligence platform
+	// for a multi-practitioner marketplace).
 	const faqs = [
 		{
-			q: 'Do clients interact directly with an AI or chatbot?',
-			a: 'No. Clients never interact with an AI, bot, or automated agent. Functional Health Collaborative is a clinical intelligence platform used exclusively by your human practitioner. It operates behind the scenes to synthesize your health timeline, questionnaires, and lab biomarkers against peer-reviewed clinical research. Every consultation, decision, and personalized care plan comes directly from your licensed human practitioner.'
+			q: 'What does Functional Health Collaborative do?',
+			a: 'We are a 100% online telehealth practice specialising in personalised hormone, metabolic, gut and longevity care for women in perimenopause and menopause. Our protocols are rooted in science and functional medicine, covering every system in your body — not just symptom relief.'
 		},
 		{
-			q: 'How are client protocols created and implemented?',
-			a: 'Each client receives an individualized protocol designed specifically for their unique biology, lab results, and health history. The platform never prescribes or auto-implements treatments. Your human practitioner decides what therapies to include, how to prioritize them into phases, and exactly when each stage is implemented.'
+			q: 'Is this a replacement for my doctor?',
+			a: 'No. We work alongside — not in place of — your GP or medical specialist. We do not diagnose or treat medical conditions, and you should always consult your doctor before making changes to medication.'
 		},
 		{
-			q: 'What does "practitioner augmentation" mean?',
-			a: 'Functional medicine involves immense complexity — dozens of lab biomarkers, intricate symptom timelines, and vast clinical research. Functional Health Collaborative equips practitioners with deep synthesis tools so no patient detail or critical lab trend is ever lost in paperwork. Your practitioner arrives at your consultation deeply informed and fully prepared.'
+			q: 'How does the process work?',
+			a: "It starts with a free 15-minute intro call, followed by an in-depth intake covering your symptoms, goals, and history. From there you get hormone and metabolic health education, personalised insights from a continuous glucose monitor (CGM), your test results explained with a protocol, regular follow-up sessions, re-testing where needed, and a wrap-up session with recommendations for the road ahead."
 		},
 		{
-			q: 'How does evidence citation and anti-hallucination work?',
-			a: 'Every therapeutic recommendation and protocol is drawn strictly from curated functional medicine literature, peer-reviewed journals, and clinical reference textbooks. An automated verification engine cross-examines citations against actual source passages before your provider sees them, ensuring zero open-web hallucinations.'
+			q: 'What programs do you offer, and what do they cost?',
+			a: 'Three monthly programs, each with a one-time €295 intake fee: Foundational Health (€150/month) builds on your blood work and symptoms with no functional or DNA tests; Complete (€200/month) adds optional functional gut and hormone testing; Premium Longevity (€245/month) adds optional DNA testing on top of that. Add-on tests are paid separately — see the Programs section on the homepage for current pricing.'
 		},
 		{
-			q: 'What happens to my data as a client?',
-			a: 'Your health records, lab markers, and questionnaire answers live in an encrypted, isolated space dedicated to your practitioner. Your personal health information is never pooled with other practices, sold, or used for commercial advertising.'
+			q: 'What testing do you use?',
+			a: 'We partner with Nordic Laboratories (gut microbiome, DNA and functional panels), MIRA (home hormone testing), and Precision Analytical (DUTCH sex and adrenal hormone testing) to build truly personalised health plans based on the latest scientific research.'
 		},
 		{
-			q: 'How do practitioners get approved to join?',
-			a: 'Every practitioner must apply and submit their credentials, clinical licenses, or functional health certifications. Our clinical team reviews each application before granting access to active client management.'
+			q: 'What do I need to provide myself?',
+			a: "A continuous glucose monitor (CGM) and a comprehensive blood panel are required but not included in the program price, and supplements are not included either."
 		},
 		{
-			q: 'Is Functional Health Collaborative a substitute for medical advice?',
-			a: 'No. Functional Health Collaborative is a clinical decision-support and synthesis system for licensed practitioners. It does not provide direct medical advice to clients, and all clinical judgment remains solely with the treating clinician.'
+			q: 'Is this available where I live?',
+			a: 'Yes — the practice is 100% online and available in English, Dutch, Slovak, French, German, Italian and Finnish.'
+		},
+		{
+			q: 'How do I get started?',
+			a: 'Book your free 15-minute intro call from the homepage. We’ll listen to your story and help you find the program that fits.'
 		}
 	];
+
+	const faqJsonLd = {
+		'@context': 'https://schema.org',
+		'@type': 'FAQPage',
+		mainEntity: faqs.map((f) => ({
+			'@type': 'Question',
+			name: f.q,
+			acceptedAnswer: { '@type': 'Answer', text: f.a }
+		}))
+	};
 </script>
 
 <Seo
 	title="Frequently Asked Questions — Functional Health Collaborative"
-	description="Answers to common questions about functional medicine consultations, practitioner augmentation, evidence citations, and data privacy."
+	description="Answers to common questions about our perimenopause and menopause care programs, pricing, testing partners, and how to get started."
 	path="/faq"
 />
+<svelte:head>{@html jsonLdScript(faqJsonLd)}</svelte:head>
 
 <div class="container faq-page">
 	<div class="faq-header">
 		<div class="badge-wrap">
-			<span class="logo-mark"><Sprig size={18} /></span>
-			<span>Client & Practitioner FAQ</span>
+			<BrandMark size={18} />
+			<span>FAQ</span>
 		</div>
 		<h1>Frequently Asked Questions</h1>
-		<p class="lede">Everything you need to know about our functional health network, clinical evidence standards, and client privacy.</p>
+		<p class="lede">Everything you need to know about our programs, testing partners, and how to get started.</p>
 	</div>
 
 	<div class="faq-list">
@@ -77,29 +98,25 @@
 		display: inline-flex;
 		align-items: center;
 		gap: .5rem;
-		background: #e8f4ec;
-		color: #1b4332;
-		border: 1px solid rgba(45, 106, 79, 0.2);
+		background: var(--pub-warm-grey);
+		color: var(--pub-navy);
 		padding: .35rem .85rem;
 		border-radius: 999px;
-		font-size: var(--text-xs);
-		font-weight: 750;
+		font-size: .8rem;
+		font-weight: 600;
 		margin-bottom: var(--space-4);
 	}
-	.logo-mark {
-		display: inline-flex;
-		color: #2d6a4f;
-	}
 	.faq-header h1 {
+		font-family: var(--pub-font-heading);
 		font-size: clamp(2rem, 3.2vw, 2.75rem);
-		font-weight: 850;
-		color: #1b4332;
-		letter-spacing: -.025em;
+		font-weight: 600;
+		color: var(--pub-navy);
+		letter-spacing: -.02em;
 		margin: 0;
 	}
 	.lede {
-		color: #52796f;
-		font-size: var(--text-base);
+		color: var(--pub-text-muted);
+		font-size: 1.05rem;
 		max-width: 34rem;
 		margin: var(--space-3) auto 0;
 		line-height: 1.6;
@@ -109,23 +126,23 @@
 		gap: var(--space-4);
 	}
 	.faq-card {
-		background: #ffffff;
-		border: 1px solid rgba(45, 106, 79, 0.14);
-		border-radius: 14px;
+		background: var(--pub-card-bg);
+		border: 1px solid var(--pub-warm-grey);
+		border-radius: 16px;
 		padding: var(--space-5);
-		box-shadow: 0 4px 16px rgba(27, 67, 50, 0.03);
 	}
 	.faq-card h3 {
-		font-size: var(--text-base);
-		font-weight: 800;
-		color: #1b4332;
+		font-family: var(--pub-font-heading);
+		font-size: 1.1rem;
+		font-weight: 600;
+		color: var(--pub-navy);
 		margin: 0 0 .5rem;
 		line-height: 1.4;
 	}
 	.faq-card p {
 		margin: 0;
-		color: #3e5a4d;
-		font-size: var(--text-sm);
+		color: var(--pub-text);
+		font-size: .95rem;
 		line-height: 1.6;
 	}
 </style>
