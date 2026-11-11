@@ -60,7 +60,7 @@
 	}
 </script>
 
-<Seo title="Create Client Account — Functional Health Collab" description="Create your confidential client account and connect with your functional health practitioner." path="/signup" noindex />
+<Seo title="Create Client Account — Functional Health Collaborative" description="Create your confidential client account and connect with your functional health practitioner." path="/signup" noindex />
 
 <div class="container wrap">
 	<section class="card-panel">

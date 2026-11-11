@@ -47,7 +47,7 @@
 </script>
 
 <Seo
-	title="Find a Functional Medicine Practitioner — Functional Health Collab"
+	title="Find a Functional Medicine Practitioner — Functional Health Collaborative"
 	description="Browse independent functional medicine practitioners backed by comprehensive clinical intelligence — filter by focus area, language, and client availability."
 	path="/practitioners"
 />

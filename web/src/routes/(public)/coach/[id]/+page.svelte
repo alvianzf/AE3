@@ -16,7 +16,7 @@
 	const description = $derived(
 		p.bio?.trim()
 			? p.bio.slice(0, 200)
-			: `${p.name} on Functional Health Collab — verified functional medicine practitioner backed by synthesized clinical intelligence.`
+			: `${p.name} on Functional Health Collaborative — verified functional medicine practitioner backed by synthesized clinical intelligence.`
 	);
 
 	const personJsonLd = $derived({

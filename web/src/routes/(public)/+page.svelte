@@ -51,15 +51,6 @@
 	const description =
 		'Personalised hormone, metabolic, gut and longevity care for women in midlife. Because your biology is unique, your health plan should be too.';
 
-	const orgJsonLd = {
-		'@context': 'https://schema.org',
-		'@type': 'MedicalBusiness',
-		name: 'Functional Health Collaborative',
-		url: PUBLIC_SITE_URL,
-		description,
-		logo: `${PUBLIC_SITE_URL}/favicon.svg`
-	};
-
 	const team = [
 		{
 			img: 'portrait-alex-ginsburg',
@@ -77,6 +68,28 @@
 			title: 'Functional Hormone & Metabolic Health Practitioner'
 		}
 	];
+
+	// GEO: named practitioners and real language/specialty facts (all
+	// verified against this page's own content) give AI answer engines
+	// something concrete to cite — not a guess, not invented copy.
+	const orgJsonLd = {
+		'@context': 'https://schema.org',
+		'@type': 'MedicalBusiness',
+		name: 'Functional Health Collaborative',
+		url: PUBLIC_SITE_URL,
+		description,
+		logo: `${PUBLIC_SITE_URL}/favicon.svg`,
+		image: `${PUBLIC_SITE_URL}/og-image.png`,
+		medicalSpecialty: ['Gynecologic', 'Endocrine'],
+		availableService: 'Telehealth',
+		areaServed: 'Worldwide',
+		availableLanguage: ['English', 'Dutch', 'Slovak', 'French', 'German', 'Italian', 'Finnish'],
+		employee: team.map((m) => ({
+			'@type': 'Person',
+			name: m.name,
+			jobTitle: m.title
+		}))
+	};
 
 	const testingPartners = [
 		{

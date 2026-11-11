@@ -5,7 +5,7 @@
 	const faqs = [
 		{
 			q: 'Do clients interact directly with an AI or chatbot?',
-			a: 'No. Clients never interact with an AI, bot, or automated agent. Functional Health Collab is a clinical intelligence platform used exclusively by your human practitioner. It operates behind the scenes to synthesize your health timeline, questionnaires, and lab biomarkers against peer-reviewed clinical research. Every consultation, decision, and personalized care plan comes directly from your licensed human practitioner.'
+			a: 'No. Clients never interact with an AI, bot, or automated agent. Functional Health Collaborative is a clinical intelligence platform used exclusively by your human practitioner. It operates behind the scenes to synthesize your health timeline, questionnaires, and lab biomarkers against peer-reviewed clinical research. Every consultation, decision, and personalized care plan comes directly from your licensed human practitioner.'
 		},
 		{
 			q: 'How are client protocols created and implemented?',
@@ -13,7 +13,7 @@
 		},
 		{
 			q: 'What does "practitioner augmentation" mean?',
-			a: 'Functional medicine involves immense complexity — dozens of lab biomarkers, intricate symptom timelines, and vast clinical research. Functional Health Collab equips practitioners with deep synthesis tools so no patient detail or critical lab trend is ever lost in paperwork. Your practitioner arrives at your consultation deeply informed and fully prepared.'
+			a: 'Functional medicine involves immense complexity — dozens of lab biomarkers, intricate symptom timelines, and vast clinical research. Functional Health Collaborative equips practitioners with deep synthesis tools so no patient detail or critical lab trend is ever lost in paperwork. Your practitioner arrives at your consultation deeply informed and fully prepared.'
 		},
 		{
 			q: 'How does evidence citation and anti-hallucination work?',
@@ -28,14 +28,14 @@
 			a: 'Every practitioner must apply and submit their credentials, clinical licenses, or functional health certifications. Our clinical team reviews each application before granting access to active client management.'
 		},
 		{
-			q: 'Is Functional Health Collab a substitute for medical advice?',
-			a: 'No. Functional Health Collab is a clinical decision-support and synthesis system for licensed practitioners. It does not provide direct medical advice to clients, and all clinical judgment remains solely with the treating clinician.'
+			q: 'Is Functional Health Collaborative a substitute for medical advice?',
+			a: 'No. Functional Health Collaborative is a clinical decision-support and synthesis system for licensed practitioners. It does not provide direct medical advice to clients, and all clinical judgment remains solely with the treating clinician.'
 		}
 	];
 </script>
 
 <Seo
-	title="Frequently Asked Questions — Functional Health Collab"
+	title="Frequently Asked Questions — Functional Health Collaborative"
 	description="Answers to common questions about functional medicine consultations, practitioner augmentation, evidence citations, and data privacy."
 	path="/faq"
 />
