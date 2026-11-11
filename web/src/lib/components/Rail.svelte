@@ -2,7 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { post } from '$lib/api';
-	import Sprig from './Sprig.svelte';
+	import BrandMark from './BrandMark.svelte';
 	import Icon from './Icon.svelte';
 	import LeafField from './LeafField.svelte';
 
@@ -123,8 +123,8 @@
 <nav class="rail" aria-label="Main navigation">
 	<!-- specs/v13 — the falling-leaves motif is a requirement of the rail. -->
 	<div class="rail-leaves"><LeafField count={12} /></div>
-	<a href="/" class="mark" aria-label="Functional Health Collab home">
-		<span class="logo"><Sprig size={18} /></span><span class="brand">Functional Health</span>
+	<a href="/" class="mark" aria-label="Functional Health Collaborative home">
+		<span class="logo"><BrandMark size={20} variant="light" /></span><span class="brand">Functional Health</span>
 	</a>
 
 	{#if onCommandPalette}
@@ -237,7 +237,7 @@
 		<!-- Drawer Header -->
 		<div class="drawer-header">
 			<a href="/" class="drawer-brand" onclick={closeDrawer}>
-				<span class="logo"><Sprig size={18} /></span>
+				<span class="logo"><BrandMark size={20} variant="light" /></span>
 				<span class="brand-text">Functional Health</span>
 			</a>
 			<button

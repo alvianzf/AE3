@@ -6,7 +6,7 @@
 	import TextField from '$lib/components/TextField.svelte';
 	import Select from '$lib/components/Select.svelte';
 	import Button from '$lib/components/Button.svelte';
-	import Sprig from '$lib/components/Sprig.svelte';
+	import BrandMark from '$lib/components/BrandMark.svelte';
 	import Seo from '$lib/components/Seo.svelte';
 
 	let name = $state('');
@@ -65,7 +65,7 @@
 <div class="container wrap">
 	<section class="card-panel">
 		<div class="ph">
-			<h2><Sprig size={20} /> Create Your Client Account</h2>
+			<h2><BrandMark size={20} /> Create Your Client Account</h2>
 		</div>
 		<form class="pb" onsubmit={submit}>
 			{#if loadingPractitioners}

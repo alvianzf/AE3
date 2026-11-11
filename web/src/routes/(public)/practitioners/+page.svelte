@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
 	import { get } from '$lib/api';
-	import Sprig from '$lib/components/Sprig.svelte';
+	import BrandMark from '$lib/components/BrandMark.svelte';
 	import Chip from '$lib/components/Chip.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import Seo from '$lib/components/Seo.svelte';
@@ -61,7 +61,7 @@
 	<div class="container dir-hero-inner">
 		<!-- Bare SVG logo without any box or background -->
 		<div class="dir-badge">
-			<span class="logo-mark"><Sprig size={20} /></span>
+			<span class="logo-mark"><BrandMark size={20} /></span>
 			<span>Verified Practitioner Directory</span>
 		</div>
 		<h1>Find the right practitioner, on your terms.</h1>

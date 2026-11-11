@@ -4,13 +4,8 @@
 	let { children } = $props();
 </script>
 
-<svelte:head>
-	<link rel="preconnect" href="https://fonts.googleapis.com" />
-	<link
-		rel="stylesheet"
-		href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Figtree:wght@400;500;600&display=swap"
-	/>
-</svelte:head>
+<!-- Bricolage Grotesque + Figtree now load from the root layout (every
+     route needs them since the portals share this theme too), not here. -->
 
 <div class="public-shell">
 	<PublicNav />

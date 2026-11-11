@@ -3,7 +3,7 @@
 	import { toast } from '$lib/stores/toast';
 	import TextField from '$lib/components/TextField.svelte';
 	import Button from '$lib/components/Button.svelte';
-	import Sprig from '$lib/components/Sprig.svelte';
+	import BrandMark from '$lib/components/BrandMark.svelte';
 	import Seo from '$lib/components/Seo.svelte';
 
 	let { data } = $props();
@@ -31,7 +31,7 @@
 
 <div class="container wrap">
 	<section class="card-panel">
-		<div class="ph"><h2><Sprig /> Your account</h2></div>
+		<div class="ph"><h2><BrandMark /> Your account</h2></div>
 		<div class="pb">
 			{#if !data.session}
 				<p class="hint">You need to <a href="/login">log in</a> to manage your account.</p>

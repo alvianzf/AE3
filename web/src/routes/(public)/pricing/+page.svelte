@@ -1,7 +1,7 @@
 <script lang="ts">
 	import Seo from '$lib/components/Seo.svelte';
 	import Icon from '$lib/components/Icon.svelte';
-	import Sprig from '$lib/components/Sprig.svelte';
+	import BrandMark from '$lib/components/BrandMark.svelte';
 
 	// specs/v8 §8.2 — flagged explicitly in the spec itself: the exact
 	// dollar figure lives in Stripe (app/config.py's stripe_price_id_pro),
@@ -29,7 +29,7 @@
 <div class="container pricing-page">
 	<div class="pricing-header">
 		<div class="badge-wrap">
-			<span class="logo-mark"><Sprig size={18} /></span>
+			<span class="logo-mark"><BrandMark size={18} /></span>
 			<span>Practitioner Memberships</span>
 		</div>
 		<h1>Simple, transparent membership for your practice</h1>

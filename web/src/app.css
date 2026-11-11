@@ -153,15 +153,20 @@ p { margin: 0; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 svg { flex: 0 0 auto; }
 
-/* ── Portal themes (specs/v12–v13). Each authenticated portal layout wraps its
-   contents in `.portal.portal-<role>`; tokens defined here only exist inside
-   that wrapper, so public pages keep the :root values above. `.portal` holds the
-   shared "app" neutrals + component hooks (--field-*, --tabs-*, ...); the
-   per-role class supplies the palette: accent, rail color, canvas tint. */
+/* ── Portal themes (specs/v12–v13, retheme per the FHC rebrand). Each
+   authenticated portal layout wraps its contents in `.portal.portal-<role>`;
+   tokens defined here only exist inside that wrapper, so public pages keep
+   the :root values above. `.portal` holds the shared "app" neutrals +
+   component hooks (--field-*, --tabs-*, ...); one shared FHC palette
+   (navy/burgundy/copper, Bricolage Grotesque + Figtree) now replaces the
+   three unrelated hues (magenta/teal/indigo) each portal used to have, so
+   the dashboards read as the same product as the public site. Per-role
+   classes differ only in the rail's background depth (navy/burgundy/
+   copper-black) for at-a-glance wayfinding — not a different brand. */
 .portal {
-  --panel: #ffffff; --panel-2: #f9fafb;
-  --line: #e8eaee; --line-2: #d3d8e0;
-  --ink: #0f172a; --ink-2: #334155; --muted: #64748b;
+  --panel: #ffffff; --panel-2: #f9f8f4;
+  --line: #e6e4dd; --line-2: #d9d4c8;
+  --ink: #1c1c33; --ink-2: #4a4a5e; --muted: #6b6b80;
   /* Radical modern elevation & surface tokens */
   --portal-surface-border: color-mix(in srgb, var(--line) 75%, rgba(255, 255, 255, 0.85));
   --portal-island-shadow: 0 0 0 1px rgba(255, 255, 255, 0.6) inset, 0 1px 3px rgba(0, 0, 0, 0.03), 0 16px 40px -8px rgba(16, 24, 40, 0.08), 0 32px 70px -16px rgba(16, 24, 40, 0.12);
@@ -172,7 +177,7 @@ svg { flex: 0 0 auto; }
   --ok: #059669; --ok-soft: #ecfdf5;
   --warn: #d97706; --warn-soft: #fffbeb;
   --danger: #dc2626; --danger-soft: #fef2f2;
-  --rail-w: 15rem; --rail-ink: #f1f5f9;
+  --rail-w: 15rem; --rail-ink: #f4f2ed;
   --sheet-inset: .75rem; --sheet-radius: 24px;
   --weight-bold: 650;
   /* Component hooks: the shared components read these with their original
@@ -190,28 +195,31 @@ svg { flex: 0 0 auto; }
   --tile-val: 1.75rem; --tile-hover: translateY(-2px); --shadow-tile: var(--shadow);
   --table-r: 16px; --table-bg: var(--panel); --table-head-bg: var(--panel-2); --table-ring: 0 0 0 1px var(--line), var(--shadow);
   --empty-ico-bg: var(--accent-soft); --empty-ico-border: transparent; --empty-ico-ink: var(--accent-ink);
-  --chip-neutral-bg: #f1f5f9; --chip-neutral-ink: var(--ink-2); --chip-neutral-border: transparent;
+  --chip-neutral-bg: #f1efe9; --chip-neutral-ink: var(--ink-2); --chip-neutral-border: transparent;
   --field-focus: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
   color: var(--ink);
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Figtree', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+.portal h1, .portal h2, .portal h3, .portal h4 {
+  font-family: 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif;
 }
 .portal-client {
-  --accent: #d946ef; --accent-ink: #c026d3; --accent-soft: #fdf4ff;
-  --bg: #fcf8fb; --track: #fae8ff;
-  --rail-bg: #180816; --rail-indicator: #f472b6;
-  --canvas-radial: radial-gradient(circle at 10% 8%, rgba(217, 70, 239, 0.08) 0%, transparent 45%), radial-gradient(circle at 90% 92%, rgba(192, 38, 211, 0.06) 0%, transparent 42%);
+  --accent: #00004c; --accent-ink: #000033; --accent-soft: #e8e8f0;
+  --bg: #f4f2ed; --track: #e6e4dd;
+  --rail-bg: #1c0f06; --rail-indicator: #d79351;
+  --canvas-radial: radial-gradient(circle at 10% 8%, rgba(0, 0, 76, 0.07) 0%, transparent 45%), radial-gradient(circle at 90% 92%, rgba(215, 147, 81, 0.08) 0%, transparent 42%);
 }
 .portal-practitioner {
-  --accent: #0d9488; --accent-ink: #0f766e; --accent-soft: #f0fdfa;
-  --bg: #f7faf9; --track: #ccfbf1;
-  --rail-bg: #061716; --rail-indicator: #2dd4bf;
-  --canvas-radial: radial-gradient(circle at 10% 8%, rgba(13, 148, 136, 0.08) 0%, transparent 45%), radial-gradient(circle at 90% 92%, rgba(15, 118, 110, 0.06) 0%, transparent 42%);
+  --accent: #00004c; --accent-ink: #000033; --accent-soft: #e8e8f0;
+  --bg: #f4f2ed; --track: #e6e4dd;
+  --rail-bg: #1f0a12; --rail-indicator: #d79351;
+  --canvas-radial: radial-gradient(circle at 10% 8%, rgba(0, 0, 76, 0.07) 0%, transparent 45%), radial-gradient(circle at 90% 92%, rgba(122, 31, 61, 0.08) 0%, transparent 42%);
 }
 .portal-admin {
-  --accent: #6366f1; --accent-ink: #4f46e5; --accent-soft: #eef2ff;
-  --bg: #f8fafc; --track: #e0e7ff;
-  --rail-bg: #0a0d1f; --rail-indicator: #818cf8;
-  --canvas-radial: radial-gradient(circle at 10% 8%, rgba(99, 102, 241, 0.09) 0%, transparent 45%), radial-gradient(circle at 90% 92%, rgba(79, 70, 229, 0.07) 0%, transparent 42%);
+  --accent: #00004c; --accent-ink: #000033; --accent-soft: #e8e8f0;
+  --bg: #f4f2ed; --track: #e6e4dd;
+  --rail-bg: #05051f; --rail-indicator: #d79351;
+  --canvas-radial: radial-gradient(circle at 10% 8%, rgba(0, 0, 76, 0.09) 0%, transparent 45%), radial-gradient(circle at 90% 92%, rgba(0, 0, 76, 0.07) 0%, transparent 42%);
 }
 
 /* ── The shell every portal page uses: a full-height rail, and page content as
