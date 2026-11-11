@@ -430,8 +430,8 @@
 		font-weight: 600;
 	}
 	.btn-primary, .btn-secondary {
-		display: inline-flex; align-items: center; min-height: 52px; padding: 0 1.75rem;
-		border-radius: 999px; font-size: 1.05rem; text-decoration: none;
+		display: inline-flex; align-items: center; justify-content: center; min-height: 52px; padding: 0 1.75rem;
+		border-radius: 999px; font-size: 1.0625rem; text-decoration: none;
 	}
 	.btn-primary { background: var(--pub-copper); color: var(--pub-navy); }
 	.btn-secondary { border: 1.5px solid var(--pub-navy); color: var(--pub-navy); }
@@ -529,7 +529,7 @@
 	}
 	.cta-panel h2 { color: #ffffff; max-width: 46rem; }
 	.cta-panel p { margin: 0; font-size: 1.2rem; color: var(--pub-warm-grey); max-width: 38rem; }
-	.cta-button { display: inline-flex; align-items: center; min-height: 56px; padding: 0 2rem; border-radius: 999px; background: #ffffff; color: var(--pub-navy); text-decoration: none; font-weight: 700; font-size: 1.1rem; margin-top: .25rem; }
+	.cta-button { display: inline-flex; align-items: center; justify-content: center; min-height: 56px; padding: 0 2rem; border-radius: 999px; background: #ffffff; color: var(--pub-navy); text-decoration: none; font-weight: 700; font-size: 1.125rem; margin-top: .25rem; }
 	.cta-footnote { font-size: .9rem; color: var(--pub-warm-grey); }
 
 	@media (max-width: 760px) {

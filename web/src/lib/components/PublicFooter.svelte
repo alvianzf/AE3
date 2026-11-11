@@ -47,7 +47,7 @@
 	.brand { display: flex; flex-direction: column; gap: .5rem; max-width: 22rem; }
 	.wordmark { font-family: var(--pub-font-heading); font-weight: 700; font-size: 1.3rem; color: #ffffff; }
 	.tagline { margin: 0; font-size: .9rem; color: #cfcfe3; }
-	.link-row { display: flex; flex-wrap: wrap; gap: .5rem 1.75rem; align-items: center; font-size: .9rem; font-weight: 500; }
+	.link-row { display: flex; flex-wrap: wrap; gap: .5rem 1.75rem; align-items: center; font-size: .9375rem; font-weight: 500; }
 	.link-row a, .link-row .todo { color: #ffffff; text-decoration: none; }
 	.link-row a:hover { text-decoration: underline; }
 	.link-row .todo { color: #cfcfe3; font-style: italic; }

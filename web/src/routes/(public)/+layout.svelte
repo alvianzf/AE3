@@ -94,9 +94,18 @@
 		padding: var(--space-5);
 	}
 
-	/* Primary button overrides for public pages: pill shape, copper fill, navy text */
+	/* Primary button overrides for public pages: pill shape, copper fill, navy
+	   text, min-height 52px per the style guide's primary-button spec.
+	   (Not !important on sizing so a narrower context — e.g. the nav CTA —
+	   can still override to a smaller min-height/padding.) */
 	:global(.public-shell .btn.filled),
 	:global(.public-shell button[type="submit"]) {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 52px;
+		padding: 0 28px;
+		font-size: 1.0625rem;
 		background: var(--pub-copper) !important;
 		color: var(--pub-navy) !important;
 		border: none !important;
