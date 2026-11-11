@@ -25,6 +25,26 @@
 		return () => window.removeEventListener('scroll', onScroll);
 	});
 
+	// Responsive images: the hero (2576x1449 source) and the three portraits
+	// are the only large assets on the page, generated at a few widths as
+	// both WebP and JPEG (scripts/ or build-time tooling isn't wired up for
+	// this yet, so these were pre-generated once into static/images/fhc —
+	// see FHC-HOMEPAGE-SPEC.md). srcset/sizes already adapt to device
+	// viewport+DPR natively; `connectionAware` below additionally forces the
+	// smallest variant under Save-Data or a 2G-class connection, which
+	// srcset alone doesn't account for.
+	function srcset(base: string, widths: number[], ext: 'jpg' | 'webp') {
+		return widths.map((w) => `/images/fhc/${base}-${w}w.${ext} ${w}w`).join(', ');
+	}
+	const heroWidths = [480, 800, 1200, 1600];
+	const portraitWidths = [320, 480, 800];
+
+	let dataSaver = $state(false);
+	onMount(() => {
+		const conn = (navigator as any).connection;
+		dataSaver = !!conn && (conn.saveData || ['slow-2g', '2g'].includes(conn.effectiveType));
+	});
+
 	// SEO/OG description is the hero copy verbatim, not a paraphrase — keeps
 	// the search snippet and link-preview text in sync with what the page
 	// actually says above the fold.
@@ -42,17 +62,17 @@
 
 	const team = [
 		{
-			img: '/images/fhc/portrait-alex-ginsburg.jpg',
+			img: 'portrait-alex-ginsburg',
 			name: 'Alex Ginsburg, MCO, FNLP',
 			title: 'Certified Functional Nutritionist'
 		},
 		{
-			img: '/images/fhc/portrait-jana.jpg',
+			img: 'portrait-jana',
 			name: 'Jana Baçova, IMH-C',
 			title: 'Functional Hormone & Metabolic Health Practitioner'
 		},
 		{
-			img: '/images/fhc/portrait-kreetta-ryodi.jpg',
+			img: 'portrait-kreetta-ryodi',
 			name: 'Kreetta Ryödi, IMH-C',
 			title: 'Functional Hormone & Metabolic Health Practitioner'
 		}
@@ -185,7 +205,21 @@
 			</div>
 		</div>
 		<div class="hero-photo">
-			<img src="/images/fhc/hero-group.jpg" alt="Women's health experts of Functional Health Collaborative" />
+			<!-- Always native srcset/sizes here (no JS branching): the browser
+			     starts fetching this eager, above-the-fold image before
+			     hydration runs, so a post-mount data-saver swap would just
+			     race it into a second request instead of preventing one. -->
+			<picture>
+				<source type="image/webp" srcset={srcset('hero-group', heroWidths, 'webp')} sizes="(max-width: 760px) 100vw, 50vw" />
+				<img
+					src="/images/fhc/hero-group-1200w.jpg"
+					srcset={srcset('hero-group', heroWidths, 'jpg')}
+					sizes="(max-width: 760px) 100vw, 50vw"
+					alt="Women's health experts of Functional Health Collaborative"
+					fetchpriority="high"
+					decoding="async"
+				/>
+			</picture>
 		</div>
 	</div>
 </section>
@@ -235,7 +269,21 @@
 		<div class="team-portraits">
 			{#each team as member (member.name)}
 				<figure>
-					<img src={member.img} alt="Portrait of {member.name}" />
+					{#if dataSaver}
+						<img src="/images/fhc/{member.img}-320w.jpg" alt="Portrait of {member.name}" loading="lazy" decoding="async" />
+					{:else}
+						<picture>
+							<source type="image/webp" srcset={srcset(member.img, portraitWidths, 'webp')} sizes="(max-width: 480px) 90vw, (max-width: 900px) 45vw, 300px" />
+							<img
+								src="/images/fhc/{member.img}-480w.jpg"
+								srcset={srcset(member.img, portraitWidths, 'jpg')}
+								sizes="(max-width: 480px) 90vw, (max-width: 900px) 45vw, 300px"
+								alt="Portrait of {member.name}"
+								loading="lazy"
+								decoding="async"
+							/>
+						</picture>
+					{/if}
 					<figcaption>
 						<span class="member-name">{member.name}</span>
 						<span class="member-title">{member.title}</span>
@@ -263,7 +311,7 @@
 			<div class="partners-list">
 				{#each testingPartners as tp (tp.name)}
 					<div class="partner-row">
-						<img src={tp.logo} alt="{tp.name} logo" />
+						<img src={tp.logo} alt="{tp.name} logo" loading="lazy" decoding="async" />
 						<div>
 							<p class="partner-name">{tp.name}</p>
 							<p class="partner-desc">{tp.desc}</p>
