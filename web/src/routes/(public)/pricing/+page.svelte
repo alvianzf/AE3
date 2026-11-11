@@ -52,7 +52,6 @@
 					</li>
 				{/each}
 			</ul>
-			<a class="btn-plan-outline" href="/join">Apply as a Practitioner</a>
 		</div>
 
 		<!-- Pro Plan -->
@@ -71,7 +70,6 @@
 					</li>
 				{/each}
 			</ul>
-			<a class="btn-plan-filled" href="/join">Apply & Get Started</a>
 		</div>
 	</div>
 
@@ -200,45 +198,6 @@
 	}
 	.featured-check {
 		color: #52b788;
-	}
-	.btn-plan-outline {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		background: #ffffff;
-		color: #1b4332;
-		border: 1.5px solid rgba(45, 106, 79, 0.3);
-		padding: .7rem 1.25rem;
-		border-radius: 10px;
-		text-decoration: none;
-		font-size: var(--text-sm);
-		font-weight: 750;
-		transition: all .15s ease;
-		text-align: center;
-	}
-	.btn-plan-outline:hover {
-		background: #f4f8f4;
-		border-color: #2d6a4f;
-	}
-	.btn-plan-filled {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		background: #2d6a4f;
-		color: #ffffff;
-		border: none;
-		padding: .75rem 1.25rem;
-		border-radius: 10px;
-		text-decoration: none;
-		font-size: var(--text-sm);
-		font-weight: 750;
-		box-shadow: 0 4px 14px rgba(45, 106, 79, 0.25);
-		transition: all .15s ease;
-		text-align: center;
-	}
-	.btn-plan-filled:hover {
-		background: #1b4332;
-		transform: translateY(-1px);
 	}
 	.pricing-footnote {
 		text-align: center;

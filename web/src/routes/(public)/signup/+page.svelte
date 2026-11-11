@@ -93,7 +93,6 @@
 			{/if}
 			<div class="auth-hints">
 				<p class="hint">Already have an account? <a href="/login">Log in</a></p>
-				<p class="hint">Practitioner? <a href="/join">Apply to practice</a></p>
 			</div>
 		</form>
 	</section>

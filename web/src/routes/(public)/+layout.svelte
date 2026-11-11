@@ -108,6 +108,7 @@
 		font-size: 1.0625rem;
 		background: var(--pub-copper) !important;
 		color: var(--pub-navy) !important;
+		text-decoration: none !important;
 		border: none !important;
 		border-radius: 999px !important;
 		font-weight: 600 !important;
