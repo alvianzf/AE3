@@ -579,7 +579,6 @@
 		background: var(--panel-2);
 		color: var(--ink);
 		font-weight: 600;
-		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 	}
 
 	/* Agent Data Table */
@@ -911,7 +910,6 @@
 		background: var(--panel-2);
 		color: var(--ink);
 		font-weight: 600;
-		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 	}
 
 	/* SYSTEM USAGE GRID */

@@ -587,7 +587,6 @@
 		padding: 0.4rem 0.65rem;
 		border-radius: var(--r-sm, 6px);
 		font-size: 0.75rem;
-		box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
 		border: 1px solid rgba(255, 255, 255, 0.12);
 		z-index: 10;
 		min-width: 110px;

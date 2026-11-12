@@ -277,7 +277,6 @@ svg { flex: 0 0 auto; }
 .list-row.on {
   background: var(--accent-soft);
   border-color: color-mix(in srgb, var(--accent) 30%, transparent);
-  box-shadow: 0 2px 6px color-mix(in srgb, var(--accent) 12%, transparent);
 }
 .list-row.on::before {
   content: ''; position: absolute; left: 0; top: .5rem; bottom: .5rem; width: 3px;
@@ -300,7 +299,6 @@ svg { flex: 0 0 auto; }
   background: color-mix(in srgb, var(--bg) 82%, rgba(255, 255, 255, 0.75));
   backdrop-filter: blur(20px) saturate(180%); -webkit-backdrop-filter: blur(20px) saturate(180%);
   border-bottom: 1px solid color-mix(in srgb, var(--line) 65%, transparent);
-  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.03);
 }
 .detail-head h1 { font-size: 1.6rem; font-weight: 750; letter-spacing: -.03em; color: var(--ink); }
 .detail-head p { color: var(--muted); font-size: var(--text-sm); margin-top: .15rem; font-weight: 450; }
@@ -310,7 +308,6 @@ svg { flex: 0 0 auto; }
   display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
   width: 2.85rem; height: 2.85rem; border-radius: 16px; color: #fff;
   background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent-ink) 85%, #000));
-  box-shadow: 0 8px 20px -4px color-mix(in srgb, var(--accent) 45%, transparent), 0 0 0 1px rgba(255, 255, 255, 0.3) inset;
 }
 /* Bare text-like controls in page content: boxed, matching TextField. */
 .detail-pane :is(input:is([type='text'], [type='search'], [type='email'], [type='password'], [type='number'], [type='url'], [type='tel'], [type='date'], :not([type])), select, textarea) {
