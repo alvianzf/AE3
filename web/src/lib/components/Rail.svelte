@@ -369,7 +369,7 @@
 	li a:hover { background: rgba(255, 255, 255, .06); color: #fff; }
 	li a.on {
 		background: linear-gradient(90deg, color-mix(in srgb, var(--rail-indicator) 24%, transparent), rgba(255, 255, 255, .06));
-		color: #fff; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08);
+		color: #fff;
 	}
 	li a.on::before {
 		content: ''; position: absolute; left: -.5rem; top: .45rem; bottom: .45rem; width: 3px;
@@ -435,7 +435,6 @@
 			-webkit-backdrop-filter: blur(20px) saturate(160%);
 			border-top: 1px solid rgba(255, 255, 255, .12);
 			z-index: 50;
-			box-shadow: 0 -4px 20px rgba(0, 0, 0, .3);
 		}
 		.mobile-bottom-list {
 			display: grid;
@@ -556,7 +555,6 @@
 			overscroll-behavior: contain;
 			transform: translateX(-100%);
 			transition: transform .28s cubic-bezier(.16, 1, .3, 1);
-			box-shadow: 14px 0 40px rgba(0, 0, 0, .5);
 			border-right: 1px solid rgba(255, 255, 255, .1);
 			isolation: isolate;
 			padding-bottom: env(safe-area-inset-bottom, 0);
@@ -738,7 +736,6 @@
 		.drawer-item.on {
 			background: linear-gradient(90deg, color-mix(in srgb, var(--rail-indicator) 24%, transparent), rgba(255, 255, 255, .06));
 			color: #fff;
-			box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08);
 			font-weight: 600;
 		}
 		.drawer-item.on::before {

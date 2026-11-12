@@ -82,7 +82,6 @@
 	}
 	.row:hover:not(.disabled-row) {
 		border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
-		box-shadow: 0 6px 20px rgba(16, 24, 40, .07);
 		transform: translateY(-1px);
 	}
 	.row.disabled-row { opacity: .75; cursor: default; background: var(--panel-2); }

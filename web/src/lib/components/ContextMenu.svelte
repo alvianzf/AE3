@@ -41,7 +41,6 @@
 		position: fixed;
 		padding: .35rem; border: 1px solid var(--line); border-radius: 12px;
 		background: var(--panel);
-		box-shadow: 0 10px 30px rgba(0, 0, 0, .14), 0 2px 6px rgba(0, 0, 0, .08);
 		min-width: 13rem;
 		display: flex; flex-direction: column; gap: 2px; z-index: 1000;
 		animation: fadeIn .12s var(--ease) both;

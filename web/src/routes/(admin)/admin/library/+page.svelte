@@ -4555,7 +4555,6 @@
 		backdrop-filter: blur(24px) saturate(180%);
 		-webkit-backdrop-filter: blur(24px) saturate(180%);
 		border-bottom: 1px solid color-mix(in srgb, var(--line) 75%, transparent);
-		box-shadow: 0 4px 20px -2px rgba(16, 24, 40, 0.04);
 	}
 	.tb-actions {
 		display: flex;
@@ -4576,7 +4575,6 @@
 		color: var(--ink-2);
 		cursor: pointer;
 		transition: all .18s var(--ease);
-		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
 	}
 	.back-nav-btn:hover {
 		background: var(--panel-2);
@@ -4593,7 +4591,6 @@
 		border-radius: 12px;
 		padding: 3px;
 		gap: 3px;
-		box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.03);
 	}
 	.ws-btn {
 		display: inline-flex;
@@ -4616,7 +4613,6 @@
 	.ws-btn.active {
 		color: var(--accent-ink);
 		background: var(--panel);
-		box-shadow: 0 2px 6px rgba(16, 24, 40, 0.08);
 	}
 	.tb-view-toggle {
 		display: flex;
@@ -4626,7 +4622,6 @@
 		background: color-mix(in srgb, var(--line) 40%, var(--panel-2));
 		padding: 3px;
 		gap: 3px;
-		box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.03);
 	}
 	.tb-view-toggle button {
 		display: flex;
@@ -4645,7 +4640,6 @@
 	.tb-view-toggle button.on {
 		color: var(--accent-ink);
 		background: var(--panel);
-		box-shadow: 0 2px 6px rgba(16, 24, 40, 0.08);
 	}
 	.tb-search {
 		display: flex;
@@ -4658,11 +4652,10 @@
 		padding: .45rem .95rem;
 		min-width: 16rem;
 		transition: all .2s var(--ease);
-		box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.02);
 	}
 	.tb-search:focus-within {
 		border-color: var(--accent);
-		box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent), 0 2px 8px rgba(16, 24, 40, 0.05);
+		box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
 		background: var(--panel);
 		color: var(--accent);
 	}
@@ -4742,7 +4735,6 @@
 		margin: .4rem var(--space-6) 0;
 		border: 1px solid var(--line);
 		border-radius: 14px;
-		box-shadow: 0 2px 8px rgba(16, 24, 40, 0.04);
 		backdrop-filter: blur(12px);
 	}
 	.status-action {
@@ -4943,7 +4935,6 @@
 		border-radius: 18px;
 		position: relative;
 		transition: all .2s var(--ease);
-		box-shadow: 0 1px 3px rgba(16, 24, 40, 0.03);
 	}
 	.icon-grid.size-medium .icon-tile {
 		padding: .7rem .6rem .75rem;
@@ -4958,13 +4949,12 @@
 	.icon-tile:hover {
 		background: color-mix(in srgb, var(--panel) 98%, white);
 		border-color: var(--line-2);
-		box-shadow: 0 12px 28px -6px rgba(16, 24, 40, 0.1), 0 2px 6px rgba(16, 24, 40, 0.04);
 		transform: translateY(-3px);
 	}
 	.icon-tile.on, .icon-tile.selected {
 		background: var(--accent-soft);
 		border-color: var(--accent);
-		box-shadow: 0 0 0 2px var(--accent), 0 8px 24px -4px color-mix(in srgb, var(--accent) 30%, transparent);
+		box-shadow: 0 0 0 2px var(--accent);
 	}
 	.icon-tile.selected .tile-label { color: var(--accent-ink); }
 	.tile-select-check {
@@ -5111,17 +5101,14 @@
 	.folder-art {
 		background: color-mix(in srgb, #38bdf8 14%, var(--panel-2));
 		color: #0284c7;
-		box-shadow: 0 4px 14px rgba(2, 132, 199, 0.12);
 	}
 	.tag-art {
 		background: color-mix(in srgb, #8b5cf6 14%, var(--panel-2));
 		color: #7c3aed;
-		box-shadow: 0 4px 14px rgba(124, 58, 237, 0.12);
 	}
 	.doc-art {
 		background: color-mix(in srgb, var(--accent) 12%, var(--panel-2));
 		color: var(--accent-ink);
-		box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 14%, transparent);
 	}
 	.tile-label {
 		font-size: var(--text-sm);
@@ -5284,7 +5271,6 @@
 		background: color-mix(in srgb, var(--accent) 18%, transparent);
 		border: 1.5px solid var(--accent);
 		border-radius: 4px;
-		box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 25%, transparent);
 	}
 	.finder-content.marquee-active {
 		user-select: none;
@@ -5413,7 +5399,6 @@
 		padding: 0;
 		text-decoration: none;
 		transition: all .15s ease;
-		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
 	}
 	.icon-btn:hover {
 		border-color: var(--accent);

@@ -766,7 +766,6 @@
 		flex: none; width: 2.6rem; height: 2.6rem;
 		display: flex; flex-direction: column; align-items: center; justify-content: center;
 		border-radius: .65rem; background: var(--panel);
-		box-shadow: 0 1px 2px rgba(0, 0, 0, .08), inset 0 0 0 1px var(--line-2);
 	}
 	.cal-day { font-size: 1.3rem; font-weight: 800; line-height: 1; color: var(--accent); }
 	.cal-month {
@@ -801,7 +800,6 @@
 		padding: var(--space-4);
 		display: grid;
 		gap: var(--space-3);
-		box-shadow: 0 4px 16px rgba(0, 0, 0, .04);
 	}
 	.briefing-head {
 		display: flex;
