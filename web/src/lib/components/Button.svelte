@@ -34,7 +34,7 @@
 <style>
 	.btn {
 		display: inline-flex; align-items: center; justify-content: center; gap: .45rem;
-		min-height: var(--tap-min); padding: .55rem 1rem; border-radius: var(--r);
+		min-height: var(--tap-min); padding: .55rem 1rem; border-radius: var(--btn-r, var(--r));
 		font-size: var(--text-sm); font-weight: 650; letter-spacing: -.005em;
 		border: 1px solid transparent; cursor: pointer; text-decoration: none;
 		transition: background .16s var(--ease), color .16s var(--ease), border-color .16s var(--ease), transform .1s var(--ease);
