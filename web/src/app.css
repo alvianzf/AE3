@@ -167,18 +167,23 @@ svg { flex: 0 0 auto; }
   --panel: #ffffff; --panel-2: #f9f8f4;
   --line: #e6e4dd; --line-2: #d9d4c8;
   --ink: #1c1c33; --ink-2: #4a4a5e; --muted: #6b6b80;
-  /* Radical modern elevation & surface tokens */
+  /* Flat, direct instruction: no shadows anywhere in the portals. --shadow/
+     --shadow-lg become a zero, fully-transparent shadow rather than being
+     deleted or set to the `none` keyword — several tokens below splice
+     them into a comma-separated box-shadow list (e.g. --table-ring), and
+     `none` is only valid as a box-shadow value's *entirety*, not as one
+     layer in a list; a literal invisible layer stays valid everywhere
+     while rendering nothing. Borders (--line) still carry separation. */
   --portal-surface-border: color-mix(in srgb, var(--line) 75%, rgba(255, 255, 255, 0.85));
-  --portal-island-shadow: 0 0 0 1px rgba(255, 255, 255, 0.6) inset, 0 1px 3px rgba(0, 0, 0, 0.03), 0 16px 40px -8px rgba(16, 24, 40, 0.08), 0 32px 70px -16px rgba(16, 24, 40, 0.12);
+  --portal-island-shadow: none;
   --glass-blur: blur(16px); --glass-border: var(--line); --glass-sheen: rgba(255, 255, 255, 0.4);
-  /* Shape, not just color: the landing page is soft and rounded throughout
-     (20-28px card/panel radius, fully pill buttons) — the dashboards used
-     to be a flatter, tighter system (10/16px, rectangular buttons). Rounds
-     every surface up to match; --btn-r is new (pill, 999px) since Button.svelte
+  /* Shape: the landing page is soft and rounded throughout (20-28px card/
+     panel radius, fully pill buttons) — the dashboards used to be a
+     flatter, tighter system (10/16px, rectangular buttons). Rounds every
+     surface up to match; --btn-r is new (pill, 999px) since Button.svelte
      previously had no radius token of its own and just used --r directly. */
   --r: 12px; --r-lg: 22px; --btn-r: 999px;
-  --shadow: 0 1px 2px rgba(0, 0, 76, .05), 0 2px 6px rgba(0, 0, 76, .05);
-  --shadow-lg: 0 20px 48px -8px rgba(0, 0, 76, .14), 0 4px 12px rgba(0, 0, 76, .06);
+  --shadow: 0 0 #0000; --shadow-lg: 0 0 #0000;
   --ok: #059669; --ok-soft: #ecfdf5;
   --warn: #d97706; --warn-soft: #fffbeb;
   --danger: #dc2626; --danger-soft: #fef2f2;
@@ -189,15 +194,15 @@ svg { flex: 0 0 auto; }
      look as the fallback, so public pages are unchanged. */
   --field-frame: 1px solid var(--line-2); --field-line: 1px solid var(--line-2);
   --field-r: var(--r); --field-bg: var(--panel); --field-pad: .55rem .85rem;
-  --field-shadow: 0 1px 2px rgba(0, 0, 76, .03);
+  --field-shadow: none;
   --btn-fill-image: linear-gradient(180deg, color-mix(in srgb, var(--accent) 92%, #fff), var(--accent));
   --btn-fill-hover-image: linear-gradient(180deg, var(--accent), var(--accent-ink));
   --btn-outline-bg: var(--panel); --btn-outline-ink: var(--ink-2); --btn-outline-border: var(--line-2);
   --tabs-bg: var(--track); --tabs-pad: 4px; --tabs-r: 999px; --tabs-line: none;
-  --tab-pad: .45rem .95rem; --tab-r: 999px; --tab-on-bg: var(--panel); --tab-on-ink: var(--ink); --tab-on-shadow: 0 2px 8px rgba(0, 0, 76, 0.08); --tab-on-line: transparent;
+  --tab-pad: .45rem .95rem; --tab-r: 999px; --tab-on-bg: var(--panel); --tab-on-ink: var(--ink); --tab-on-shadow: none; --tab-on-line: transparent;
   --tabs-display: inline-flex;
   --tile-r: 22px; --tile-ico-r: 16px; --tile-ico: 2.75rem; --tile-ico-bg: var(--accent-soft); --tile-ico-bg-warn: var(--warn-soft);
-  --tile-val: 1.75rem; --tile-hover: translateY(-2px); --shadow-tile: var(--shadow);
+  --tile-val: 1.75rem; --tile-hover: translateY(-2px); --shadow-tile: none;
   --table-r: 20px; --table-bg: var(--panel); --table-head-bg: var(--panel-2); --table-ring: 0 0 0 1px var(--line), var(--shadow);
   --empty-ico-bg: var(--accent-soft); --empty-ico-border: transparent; --empty-ico-ink: var(--accent-ink);
   --chip-neutral-bg: #f1efe9; --chip-neutral-ink: var(--ink-2); --chip-neutral-border: transparent;
