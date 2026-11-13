@@ -63,7 +63,8 @@ def form_search_query(question: str, patient: PatientContext) -> tuple[str, dict
 
 def seed(question: str, patient: PatientContext, min_grade: int,
         top_k: int | None = None, weights: dict[str, int] | None = None,
-        accessible_private_ids: set[str] | None = None) -> SeedResult:
+        accessible_private_ids: set[str] | None = None,
+        folder: str = "", topic: str = "") -> SeedResult:
     """`weights` is a practitioner's own per-document grade override
     (vault.get_source_weights()) — applied here, in Python, rather than
     as a Cypher WHERE clause (store.seed_chunks_by_vector/_fulltext
@@ -71,7 +72,12 @@ def seed(question: str, patient: PatientContext, min_grade: int,
     practitioner explicitly up-weighted above min_grade can still seed
     the traversal even if the shared admin grade alone would have
     excluded it, matching fetch_hop_neighbors' same weight-aware check
-    at every later hop."""
+    at every later hop.
+
+    `folder`/`topic` is a practitioner-chosen library scope
+    (store.in_scope()) — a hard filter, same as min_grade: a source
+    outside the chosen folder/tag never becomes a seed, so it can't
+    reach the answer by any traversal path either."""
     top_k = top_k or cfg.traversal_seed_top_k
     weights = weights or {}
     accessible_private_ids = accessible_private_ids or set()
@@ -91,6 +97,7 @@ def seed(question: str, patient: PatientContext, min_grade: int,
         cid for cid, r in records.items()
         if weights.get(r.get("document_id"), r.get("grade", 0)) >= min_grade
         and (not r.get("is_private") or r.get("document_id") in accessible_private_ids)
+        and store.in_scope(r, folder, topic)
     ]
     records = {cid: records[cid] for cid in chunk_ids}
 

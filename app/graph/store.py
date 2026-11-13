@@ -452,6 +452,26 @@ def normalize_folder_path(path: str) -> str:
     return "/".join(seg for seg in segments if seg)
 
 
+def in_scope(record: dict, folder: str = "", topic: str = "") -> bool:
+    """A practitioner-chosen library/folder scope — a hard filter, same
+    guarantee the grade threshold already has: enforced at seed time
+    (retrieval/seed_search.py) and at every traversal hop
+    (fetch_hop_neighbors below), never as a ranking preference. `folder`
+    matches the folder itself or any subfolder (same STARTS WITH-on-'/'
+    convention as delete_folder/rename_folder); `topic` must be one of
+    the record's exact tags, same `in doc.topics` check list_documents()
+    already uses. Only meaningful for a Chunk-shaped record — callers
+    skip this for Entity candidates, which carry no document scope of
+    their own (same reasoning the grade check already documents)."""
+    if folder:
+        fp = record.get("folder_path") or ""
+        if fp != folder and not fp.startswith(f"{folder}/"):
+            return False
+    if topic and topic not in (record.get("topics") or []):
+        return False
+    return True
+
+
 def get_document(document_id: str) -> dict | None:
     with session() as s:
         rec = s.run(
@@ -1044,7 +1064,9 @@ def seed_chunks_by_vector(embedding: list[float], top_k: int) -> list[dict]:
             RETURN c.id AS id, c.text AS text, c.chunk_index AS chunk_index,
                    c.page_start AS page_start, c.page_end AS page_end,
                    doc.id AS document_id, doc.title AS document_title,
-                   doc.grade AS grade, coalesce(doc.is_private, false) AS is_private, score
+                   doc.grade AS grade, coalesce(doc.is_private, false) AS is_private,
+                   coalesce(doc.folder_path, '') AS folder_path,
+                   coalesce(doc.topics, []) AS topics, score
             ORDER BY score DESC
             """,
             embedding=embedding, top_k=top_k,
@@ -1064,7 +1086,9 @@ def seed_chunks_by_fulltext(query: str, top_k: int) -> list[dict]:
             RETURN c.id AS id, c.text AS text, c.chunk_index AS chunk_index,
                    c.page_start AS page_start, c.page_end AS page_end,
                    doc.id AS document_id, doc.title AS document_title,
-                   doc.grade AS grade, coalesce(doc.is_private, false) AS is_private, score
+                   doc.grade AS grade, coalesce(doc.is_private, false) AS is_private,
+                   coalesce(doc.folder_path, '') AS folder_path,
+                   coalesce(doc.topics, []) AS topics, score
             ORDER BY score DESC LIMIT $top_k
             """,
             search_query=_escape_lucene(query), top_k=top_k,
@@ -1126,7 +1150,8 @@ def entities_mentioned_by_chunks(chunk_ids: list[str]) -> list[dict]:
 def fetch_hop_neighbors(frontier_ids: list[str], visited_ids: set[str],
                         min_grade: int, limit: int,
                         weights: dict[str, int] | None = None,
-                        accessible_private_ids: set[str] | None = None) -> list[dict]:
+                        accessible_private_ids: set[str] | None = None,
+                        folder: str = "", topic: str = "") -> list[dict]:
     """Unvisited neighbors of the current frontier, one hop out, in any
     direction and via any relationship type (MENTIONS, NEXT_CHUNK,
     HAS_CHUNK's reverse, or any typed entity-entity relationship the
@@ -1148,6 +1173,12 @@ def fetch_hop_neighbors(frontier_ids: list[str], visited_ids: set[str],
     practitioner explicitly down-weighted below their own threshold
     could still reach the answer via a hop that only checked the shared
     grade.
+
+    `folder`/`topic` is a practitioner-chosen library scope (in_scope()
+    above) — a hard filter re-applied at this hop for the same reason
+    `weights`/`accessible_private_ids` are: a source excluded from the
+    seed could otherwise re-enter two hops later via a neighbor edge
+    that only this function checks.
     """
     if not frontier_ids:
         return []
@@ -1166,7 +1197,9 @@ def fetch_hop_neighbors(frontier_ids: list[str], visited_ids: set[str],
                    neighbor.text AS text, neighbor.chunk_index AS chunk_index,
                    neighbor.page_start AS page_start, neighbor.page_end AS page_end,
                    doc.id AS document_id, doc.title AS document_title, doc.grade AS grade,
-                   coalesce(doc.is_private, false) AS is_private
+                   coalesce(doc.is_private, false) AS is_private,
+                   coalesce(doc.folder_path, '') AS folder_path,
+                   coalesce(doc.topics, []) AS topics
             LIMIT $limit
             """,
             frontier_ids=frontier_ids, visited_ids=list(visited_ids), limit=limit,
@@ -1177,12 +1210,13 @@ def fetch_hop_neighbors(frontier_ids: list[str], visited_ids: set[str],
     # docstring for (specs/v6.9/01) — missing this at even one hop would
     # make "private" a leak, not a real boundary. Entities pass through
     # un-filtered here, same as the grade check: an Entity by itself
-    # carries no document to be private about.
+    # carries no document to be private about, or to be in scope of.
     return [
         c for c in candidates
         if "Entity" in c["labels"] or (
             c.get("grade") is not None
             and weights.get(c.get("document_id"), c["grade"]) >= min_grade
             and (not c.get("is_private") or c.get("document_id") in accessible_private_ids)
+            and in_scope(c, folder, topic)
         )
     ]

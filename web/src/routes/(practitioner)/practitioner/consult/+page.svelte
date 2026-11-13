@@ -109,6 +109,7 @@
 	}
 
 	onMount(async () => {
+		loadScopes();
 		const qClient = page.url.searchParams.get('client');
 		const qSession = page.url.searchParams.get('session');
 		// No auto-picking the first client in the list — landing here should
@@ -179,6 +180,25 @@
 	// traversal, no Neo4j round-trip — fast, less thorough. Alongside each
 	// other, not a replacement (app/retrieval/general_lookup.py).
 	let retrievalMode = $state<string>('deep_research');
+	// A hard library scope (app/graph/store.py's in_scope()) — when set,
+	// a source outside the chosen folder/tag is invisible to every
+	// retrieval path, so "" (no scope) must stay the default: the whole
+	// library at or above the grade bar, unchanged from before this
+	// existed.
+	let scopeFolders = $state<string[]>([]);
+	let scopeTopics = $state<string[]>([]);
+	let scopeFolder = $state('');
+	let scopeTopic = $state('');
+	async function loadScopes() {
+		try {
+			const { folders, topics } = await get(fetch, '/me/knowledge/scopes');
+			scopeFolders = folders;
+			scopeTopics = topics;
+		} catch {
+			scopeFolders = [];
+			scopeTopics = [];
+		}
+	}
 	let asking = $state(false);
 	// The question currently in flight, shown as its own chat bubble
 	// immediately (GPT/Claude both echo the user's message before the
@@ -342,7 +362,7 @@
 			// bindings below), so clientId/sessionId can't change out from
 			// under this request — no separate "which client was this for"
 			// tracking needed the way a mid-flight switch would otherwise require.
-			for await (const ev of streamConsult(clientId, askedQuestion, sessionId, abortController.signal, retrievalMode as RetrievalMode)) {
+			for await (const ev of streamConsult(clientId, askedQuestion, sessionId, abortController.signal, retrievalMode as RetrievalMode, scopeFolder, scopeTopic)) {
 				lastEventAt = Date.now();
 				if (ev.event === 'agent_start') {
 					steps = [...steps, { agent: ev.agent, status: 'running' }];
@@ -681,6 +701,16 @@
 						onclick={() => (retrievalMode = 'general_lookup')} title="One fast similarity lookup — less thorough"
 					><Icon name="bolt" size={14} /> General lookup</button>
 				</div>
+				<div class="scope-picker" role="group" aria-label="Library scope">
+					<select bind:value={scopeFolder} disabled={asking} title="Restrict every retrieval path to this library folder — a hard filter, same as the grade threshold.">
+						<option value="">All folders</option>
+						{#each scopeFolders as f}<option value={f}>{f}</option>{/each}
+					</select>
+					<select bind:value={scopeTopic} disabled={asking} title="Restrict every retrieval path to this tag — a hard filter, same as the grade threshold.">
+						<option value="">All tags</option>
+						{#each scopeTopics as t}<option value={t}>{t}</option>{/each}
+					</select>
+				</div>
 			</div>
 			<div class="composer-row input-row">
 				<TextField label="Question" type="textarea" bind:value={question} required disabled={!clientId} placeholder="Message…" />
@@ -1005,6 +1035,13 @@
 	}
 	.mode-toggle button.on { background: var(--accent); color: #fff; }
 	.mode-toggle button:disabled { opacity: .6; cursor: not-allowed; }
+
+	.scope-picker { display: inline-flex; gap: .4rem; }
+	.scope-picker select {
+		border: 1px solid var(--line-2); border-radius: var(--r); background: var(--panel);
+		padding: .35rem .6rem; font: inherit; font-size: var(--text-sm); color: var(--text);
+	}
+	.scope-picker select:disabled { opacity: .6; cursor: not-allowed; }
 
 	@media (max-width: 860px) {
 		.chat-shell { grid-template-columns: 1fr; height: auto; gap: var(--space-3); }

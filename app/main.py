@@ -645,6 +645,7 @@ def _run_ingest(
             document_id=result["id"], document_title=result["title"],
             grade=result["grade"],
             chunks=[{"id": f"{result['id']}:{i}", **p} for i, p in enumerate(passages)],
+            folder_path=result.get("folder_path", ""), topics=result.get("topics", []),
         )
     except Exception:
         logging.exception("pgvector mirror failed for %s (Neo4j write already succeeded)",
@@ -1831,6 +1832,7 @@ def move_source(source_id: str, body: FolderUpdate,
     source = store.set_folder(source_id, body.folder_path)
     if source is None:
         raise HTTPException(404, "no such source")
+    pgvector_store.update_metadata(source_id, source["folder_path"], source.get("topics") or [])
     return source
 
 
@@ -1847,6 +1849,7 @@ def set_source_topics(source_id: str, body: TopicsUpdate,
     source = store.set_topics(source_id, body.topics)
     if source is None:
         raise HTTPException(404, "no such source")
+    pgvector_store.update_metadata(source_id, source["folder_path"], source.get("topics") or [])
     return source
 
 
@@ -2755,6 +2758,22 @@ def me_knowledge(session: dict = Depends(auth.require_pro_practitioner)) -> list
     return cards
 
 
+@app.get("/api/me/knowledge/scopes")
+def me_knowledge_scopes(session: dict = Depends(auth.require_pro_practitioner)) -> dict:
+    """Folders and tags this practitioner can actually scope a consult
+    to (MeConsult.folder/.topic) — derived from the same visible
+    catalogue me_knowledge() above already computes, not store.facets()
+    (admin-only, and unfiltered by privacy), so a practitioner is never
+    offered a folder/tag whose only documents are someone else's
+    private library."""
+    accessible_private = core_store.get_accessible_document_ids(session["id"])
+    cards = store.catalogue(1)
+    cards = [c for c in cards if not c.get("is_private") or c["id"] in accessible_private]
+    folders = sorted({c["folder_path"] for c in cards if c.get("folder_path")})
+    topics = sorted({t for c in cards for t in (c.get("topics") or [])})
+    return {"folders": folders, "topics": topics}
+
+
 class SourceWeightIn(BaseModel):
     weight: int
 
@@ -2909,6 +2928,13 @@ class MeConsult(BaseModel):
     # a practitioner opts in per question, alongside deep_research, not
     # replacing it.
     retrieval_mode: str = "deep_research"
+    # A hard library scope (store.in_scope()) — when set, a source
+    # outside the chosen folder or tag is invisible to every retrieval
+    # path, the same absolute guarantee min_grade already has. Empty
+    # string (the default) means no scope: the whole library at or
+    # above the grade bar, unchanged from before this existed.
+    folder: str = ""
+    topic: str = ""
 
 
 @app.post("/api/me/consult")
@@ -3022,7 +3048,8 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
                 yield _sse({"event": "agent_start", "agent": "lookup"})
                 t0 = time.monotonic()
                 traversal = general_lookup.lookup(question, patient, body.min_grade,
-                                                  accessible_private_ids=accessible_private)
+                                                  accessible_private_ids=accessible_private,
+                                                  folder=body.folder, topic=body.topic)
                 _track(traversal.usage)
                 yield _sse(_timed_done({"event": "agent_done", "agent": "lookup", **traversal.usage,
                            "accumulated": len(traversal.accumulated)}, t0))
@@ -3037,7 +3064,8 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
                 yield _sse({"event": "agent_start", "agent": "seed_search"})
                 t0 = time.monotonic()
                 seed_result = seed_search.seed(question, patient, body.min_grade, weights=weights,
-                                               accessible_private_ids=accessible_private)
+                                               accessible_private_ids=accessible_private,
+                                               folder=body.folder, topic=body.topic)
                 _track(seed_result.usage)
                 yield _sse(_timed_done({"event": "agent_done", "agent": "seed_search", **seed_result.usage}, t0))
                 search_query_repr = seed_result.search_query
@@ -3045,7 +3073,8 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
                 yield _sse({"event": "agent_start", "agent": "traversal"})
                 t0 = time.monotonic()
                 retriever = GraphTraversalRetriever(min_grade=body.min_grade, weights=weights,
-                                                    accessible_private_ids=accessible_private)
+                                                    accessible_private_ids=accessible_private,
+                                                    folder=body.folder, topic=body.topic)
                 traversal = None
                 # A broad question can legitimately run every hop up to
                 # max_depth, each a full LLM round-trip — retrieve_streaming()
@@ -3145,10 +3174,11 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
                        "message": "Something went wrong while answering. Try again shortly."})
             return
 
+        scope_note = f", scope folder={body.folder!r} topic={body.topic!r}" if (body.folder or body.topic) else ""
         vault.log(
             practitioner_id, "practitioner", "question asked",
             f"{body.question[:120]} — {len(traversal.accumulated)} nodes accumulated, "
-            f"traversal stopped: {traversal.stopped_reason}, grade ≥{body.min_grade}",
+            f"traversal stopped: {traversal.stopped_reason}, grade ≥{body.min_grade}{scope_note}",
             body.client_id,
         )
         cited_k = {int(n) for n in re.findall(r"K(\d+)", answer_text)}
@@ -3158,6 +3188,8 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
             "answer": answer_text,
             "matched": bool(traversal.accumulated),
             "min_grade": body.min_grade,
+            "folder": body.folder,
+            "topic": body.topic,
             "check": verdict,
             "revised": revised,
             "total_input_tokens": total_input_tokens,

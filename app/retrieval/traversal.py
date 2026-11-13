@@ -149,7 +149,8 @@ class GraphTraversalRetriever:
                 max_candidates_per_hop: int | None = None,
                 judge_fn: JudgeFn | None = None,
                 weights: dict[str, int] | None = None,
-                accessible_private_ids: set[str] | None = None):
+                accessible_private_ids: set[str] | None = None,
+                folder: str = "", topic: str = ""):
         self.min_grade = cfg.min_grade if min_grade is None else min_grade
         self.max_depth = cfg.traversal_max_depth if max_depth is None else max_depth
         self.max_candidates_per_hop = (
@@ -168,6 +169,13 @@ class GraphTraversalRetriever:
         # filtering could otherwise pull a private Chunk back in two hops
         # deep.
         self.accessible_private_ids = accessible_private_ids or set()
+        # A practitioner-chosen library scope (store.in_scope()) —
+        # threaded through to every hop's store.fetch_hop_neighbors()
+        # call the same way `weights` is, so a source outside the
+        # chosen folder/tag can't re-enter via a later hop just because
+        # that hop only checked the seed's own filtering.
+        self.folder = folder
+        self.topic = topic
         # Injectable so the stopping/pruning logic can be verified with a
         # deterministic fake judge_fn, independent of any real LLM call —
         # see tests/test_traversal.py.
@@ -211,7 +219,8 @@ class GraphTraversalRetriever:
 
             candidates = store.fetch_hop_neighbors(
                 frontier, visited, self.min_grade, self.max_candidates_per_hop,
-                weights=self.weights, accessible_private_ids=self.accessible_private_ids)
+                weights=self.weights, accessible_private_ids=self.accessible_private_ids,
+                folder=self.folder, topic=self.topic)
             if not candidates:
                 stopped_reason = "no_new_candidates"
                 break

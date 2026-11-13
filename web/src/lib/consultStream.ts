@@ -38,7 +38,9 @@ export async function* streamConsult(
 	question: string,
 	sessionId?: string,
 	signal?: AbortSignal,
-	retrievalMode: RetrievalMode = 'deep_research'
+	retrievalMode: RetrievalMode = 'deep_research',
+	folder = '',
+	topic = ''
 ): AsyncGenerator<ConsultEvent> {
 	// `signal` lets the caller stop reading (e.g. on navigating away) so the
 	// browser closes the connection — the backend's StreamingResponse then
@@ -55,7 +57,9 @@ export async function* streamConsult(
 			client_id: clientId,
 			question,
 			session_id: sessionId || undefined,
-			retrieval_mode: retrievalMode
+			retrieval_mode: retrievalMode,
+			folder: folder || undefined,
+			topic: topic || undefined
 		}),
 		signal
 	});
