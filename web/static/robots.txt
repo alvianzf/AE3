@@ -23,3 +23,4 @@ User-agent: CCBot
 Disallow:
 
 Sitemap: https://functionalhealthcollab.com/sitemap.xml
+Sitemap: https://functionalhealthcollab.com/sitemap_index.xml
