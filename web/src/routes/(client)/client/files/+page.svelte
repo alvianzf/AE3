@@ -11,6 +11,7 @@
 	let uploading = $state(false);
 	let uploadProgress = $state<{ sent: number; total: number } | null>(null);
 	let fileInput = $state<HTMLInputElement>();
+	let chosenName = $state('');
 
 	async function upload() {
 		const f = fileInput?.files?.[0];
@@ -24,6 +25,7 @@
 			await chunkedUpload('/me/files', f, {}, (p) => (uploadProgress = p));
 			toast('File uploaded.');
 			if (fileInput) fileInput.value = '';
+			chosenName = '';
 			await invalidateAll();
 		} catch (err: any) {
 			toast(err.message, 'alert');
@@ -43,8 +45,18 @@
 <div class="pane-row"><div class="detail-pane"><div class="detail-head"><div class="head-title"><span class="head-ico"><Icon name="folder" size={16} /></span><h1>Your files</h1></div></div>
 	<div class="uploader">
 		<div class="uploader-row">
-			<input type="file" bind:this={fileInput} />
-			<Button onclick={upload} loading={uploading}><Icon name="plus" size={15} />Upload</Button>
+			<!-- A bare <input type="file"> renders as the browser's own unstyled
+			     "Choose File" button next to its own filename text, clashing
+			     with every other themed control on the page. Visually hiding
+			     it and driving it from a styled button + our own filename
+			     text is the standard accessible way to restyle a file
+			     input — the native picker still opens, nothing about
+			     selection behavior changes. -->
+			<input type="file" bind:this={fileInput} class="file-input" id="file-upload-input"
+				onchange={() => (chosenName = fileInput?.files?.[0]?.name ?? '')} />
+			<Button variant="outlined" onclick={() => fileInput?.click()}><Icon name="folder" size={15} />Choose file</Button>
+			<span class="chosen-name">{chosenName || 'No file chosen'}</span>
+			<Button onclick={upload} loading={uploading} disabled={!chosenName}><Icon name="plus" size={15} />Upload</Button>
 		</div>
 		<p class="hint">Up to 200 MB.</p>
 		{#if uploadProgress}
@@ -71,7 +83,11 @@
 <style>
 	.uploader { display: grid; gap: .5rem; margin-bottom: var(--space-4); }
 	.uploader-row { display: flex; gap: var(--space-3); align-items: center; flex-wrap: wrap; }
-	.uploader-row input[type="file"] { min-width: 0; max-width: 100%; flex: 1 1 12rem; }
+	.file-input {
+		position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+		overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+	}
+	.chosen-name { color: var(--muted); font-size: var(--text-sm); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 10rem; }
 	.upload-progress {
 		display: flex; align-items: center; gap: var(--space-3);
 		background: var(--panel-2); border-radius: 99px; padding: .35rem .35rem .35rem .1rem;

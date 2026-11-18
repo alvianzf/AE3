@@ -38,6 +38,18 @@ def ensure_schema() -> None:
         # explicit :Folder, unioned).
         s.run("CREATE CONSTRAINT folder_path IF NOT EXISTS "
               "FOR (n:Folder) REQUIRE n.path IS UNIQUE")
+        # Registers the owner_practitioner_id property-key token up front
+        # (specs/v6.9/01's private-document ownership) — without this,
+        # Neo4j logs "property key does not exist" on every query that
+        # reads it (store.py's _CARD) until the first private document is
+        # ever ingested, since a null property value is never stored and
+        # the token otherwise doesn't exist until then. Confirmed live:
+        # the feature itself works end-to-end (ingest_document sets it,
+        # get_document/delete_own_source/promote_own_staged read it back
+        # correctly) — this is just to silence the noise, not a
+        # functional fix.
+        s.run("CREATE INDEX document_owner_practitioner_id IF NOT EXISTS "
+              "FOR (n:Document) ON (n.owner_practitioner_id)")
 
         # Vector index for seed search (retrieval/seed_search.py).
         # cfg.embedding_dimensions must match Qwen3-Embedding-8B's real

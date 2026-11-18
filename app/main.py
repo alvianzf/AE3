@@ -16,6 +16,7 @@ import mimetypes
 import os
 import re
 import resource
+import secrets
 import shutil
 import sys
 import threading
@@ -27,7 +28,7 @@ from pathlib import Path
 
 import openai
 import neo4j.exceptions
-from fastapi import Depends, FastAPI, Form, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
@@ -1797,6 +1798,73 @@ def download_source(source_id: str, _caller: dict = Depends(auth.require_admin_o
     )
 
 
+def _source_pdf_path(source_id: str) -> Path:
+    """The on-disk original for a source, only if it's a real PDF with an
+    archived copy — reused by both image-listing endpoints below so they
+    404 the same way download_source() already does, instead of each
+    re-deriving the same checks."""
+    source = store.get_document(source_id)
+    if source is None:
+        raise HTTPException(404, "no such source")
+    name = source.get("original_name")
+    if not name or not name.lower().endswith(".pdf"):
+        raise HTTPException(404, "this source has no PDF original to pull images from")
+    path = originals.path(source_id, name)
+    if path is None:
+        raise HTTPException(404, "no original file was kept for this source")
+    return path
+
+
+@app.get("/api/sources/{source_id}/images")
+def list_source_images(source_id: str,
+                       _caller: dict = Depends(auth.require_admin_or_pro_practitioner)) -> list[dict]:
+    """Chart/figure images embedded in a source PDF's pages — e.g. the
+    gauge charts on a lab report — for the Consult Draft Editor's "insert
+    from source" picker. Reuses pypdf (already a dependency for text
+    extraction, app/main.py's _extract_pages) rather than adding a PDF
+    rasterizer: a lab report's charts are themselves embedded raster
+    images in the page content, not vector-drawn, so pulling them out
+    directly needs no full-page rendering."""
+    _check_private_access(source_id, _caller)
+    path = _source_pdf_path(source_id)
+    from pypdf import PdfReader
+
+    images = []
+    for page_index, page in enumerate(PdfReader(str(path)).pages):
+        for image_index, img in enumerate(page.images):
+            images.append({
+                "id": f"{page_index}:{image_index}",
+                "page": page_index + 1,
+                "name": img.name,
+            })
+    return images
+
+
+@app.get("/api/sources/{source_id}/images/{image_id}")
+def get_source_image(source_id: str, image_id: str,
+                     _caller: dict = Depends(auth.require_admin_or_pro_practitioner)):
+    """One embedded image's bytes, by the id list_source_images() handed
+    out (f"{page_index}:{image_index}") — re-extracted on each request
+    rather than cached, since a lab-report PDF's page count is small and
+    this is a practitioner-initiated, infrequent action, not a hot path."""
+    _check_private_access(source_id, _caller)
+    path = _source_pdf_path(source_id)
+    try:
+        page_index, image_index = (int(part) for part in image_id.split(":", 1))
+    except ValueError:
+        raise HTTPException(400, "malformed image id")
+    from pypdf import PdfReader
+
+    pages = PdfReader(str(path)).pages
+    if not (0 <= page_index < len(pages)):
+        raise HTTPException(404, "no such page")
+    page_images = pages[page_index].images
+    if not (0 <= image_index < len(page_images)):
+        raise HTTPException(404, "no such image")
+    img = page_images[image_index]
+    return Response(content=img.data, media_type=_media_type(img.name))
+
+
 class GradeUpdate(BaseModel):
     grade: int
 
@@ -2059,6 +2127,19 @@ def _save_photo(practitioner_id: str, file: UploadFile, raw: bytes) -> str:
     if ext is None:
         raise HTTPException(400, "Photo must be a JPEG, PNG, GIF, or WebP image.")
     dest = Path(cfg.photos_path) / f"{practitioner_id}{ext}"
+    dest.write_bytes(raw)
+    return f"/photos/{dest.name}"
+
+
+def _save_logo(practitioner_id: str, raw: bytes) -> str:
+    """Same validation as _save_photo, distinct filename — a practitioner's
+    letterhead logo and their profile photo are two separate uploads."""
+    if len(raw) > _MAX_PHOTO_BYTES:
+        raise HTTPException(400, "Logo must be under 5 MB.")
+    ext = _sniff_image_ext(raw)
+    if ext is None:
+        raise HTTPException(400, "Logo must be a JPEG, PNG, GIF, or WebP image.")
+    dest = Path(cfg.photos_path) / f"{practitioner_id}_logo{ext}"
     dest.write_bytes(raw)
     return f"/photos/{dest.name}"
 
@@ -2599,6 +2680,7 @@ def admin_reactivate_client(
 class QuestionnaireIn(BaseModel):
     title: str
     questions: list[dict]
+    kind: str = "followup"
 
 
 @app.get("/api/admin/questionnaires")
@@ -2627,7 +2709,11 @@ def admin_get_questionnaire(questionnaire_id: str,
 @app.post("/api/admin/questionnaires")
 def admin_create_questionnaire(body: QuestionnaireIn,
                                admin: dict = Depends(auth.require_admin)) -> dict:
-    return core_store.create_questionnaire(body.title, body.questions, admin["id"])
+    try:
+        return core_store.create_questionnaire(
+            body.title, body.questions, admin["id"], kind=body.kind)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
 
 
 @app.post("/api/admin/questionnaires/{questionnaire_id}")
@@ -2635,9 +2721,11 @@ def admin_edit_questionnaire(questionnaire_id: str, body: QuestionnaireIn,
                              admin: dict = Depends(auth.require_admin)) -> dict:
     try:
         return core_store.edit_questionnaire(
-            questionnaire_id, body.title, body.questions, admin["id"])
-    except ValueError:
-        raise HTTPException(404, "no such questionnaire")
+            questionnaire_id, body.title, body.questions, admin["id"], kind=body.kind)
+    except ValueError as exc:
+        if "unknown questionnaire:" in str(exc):
+            raise HTTPException(404, "no such questionnaire") from exc
+        raise HTTPException(400, str(exc)) from exc
 
 
 @app.post("/api/admin/questionnaires/{questionnaire_id}/activate")
@@ -2700,6 +2788,10 @@ async def me_update_profile(request: Request,
         if photo is not None and getattr(photo, "filename", ""):
             raw = await photo.read()
             fields["photo_path"] = _save_photo(practitioner_id, photo, raw)
+        logo = form.get("logo")
+        if logo is not None and getattr(logo, "filename", ""):
+            raw = await logo.read()
+            fields["logo_path"] = _save_logo(practitioner_id, raw)
     else:
         body = await request.json()
         fields = {k: v for k, v in body.items() if k in allowed}
@@ -2718,8 +2810,8 @@ def me_contacts(status: str = "",
 
 @app.get("/api/me/notifications")
 def me_notifications(session: dict = Depends(auth.require_practitioner)) -> dict:
-    new_contacts = len(core_store.list_contact_submissions(
-        practitioner_id=session["id"], status="new"))
+    new_contacts = core_store.count_contact_submissions(
+        practitioner_id=session["id"], status="new")
     practitioner = core_store.get_practitioner(session["id"])
     unviewed_intake = (
         vault.count_unviewed_intake(session["id"]) if practitioner["plan"] == "pro" else 0
@@ -2734,8 +2826,7 @@ class ContactStatusUpdate(BaseModel):
 @app.patch("/api/me/contacts/{submission_id}")
 def me_update_contact(submission_id: str, body: ContactStatusUpdate,
                       session: dict = Depends(auth.require_practitioner)) -> dict:
-    owned = core_store.list_contact_submissions(practitioner_id=session["id"])
-    if not any(s["id"] == submission_id for s in owned):
+    if core_store.get_contact_submission(submission_id, practitioner_id=session["id"]) is None:
         raise HTTPException(404, "no such submission")
     try:
         return core_store.update_contact_status(submission_id, body.status)
@@ -2832,8 +2923,12 @@ def me_get_questionnaire(
 def me_create_questionnaire(
     body: QuestionnaireIn, session: dict = Depends(auth.require_pro_practitioner),
 ) -> dict:
-    return core_store.create_questionnaire(
-        body.title, body.questions, session["id"], practitioner_id=session["id"])
+    try:
+        return core_store.create_questionnaire(
+            body.title, body.questions, session["id"],
+            practitioner_id=session["id"], kind=body.kind)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @app.post("/api/me/questionnaires/{questionnaire_id}/edit")
@@ -2842,8 +2937,11 @@ def me_edit_questionnaire(
     session: dict = Depends(auth.require_pro_practitioner),
 ) -> dict:
     _own_questionnaire_or_404(session["id"], questionnaire_id)
-    return core_store.edit_questionnaire(
-        questionnaire_id, body.title, body.questions, session["id"])
+    try:
+        return core_store.edit_questionnaire(
+            questionnaire_id, body.title, body.questions, session["id"], kind=body.kind)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @app.post("/api/me/questionnaires/{questionnaire_id}/activate")
@@ -2860,6 +2958,216 @@ def me_deactivate_questionnaire(
 ) -> dict:
     _own_questionnaire_or_404(session["id"], questionnaire_id)
     return core_store.set_questionnaire_active(questionnaire_id, False)
+
+
+# --- Client Intake Links: practitioner side (generate, list) -------------------
+
+class IntakeLinkIn(BaseModel):
+    client_id: str | None = None
+
+
+@app.post("/api/me/questionnaires/{questionnaire_id}/links")
+def me_create_intake_link(
+    questionnaire_id: str, body: IntakeLinkIn,
+    session: dict = Depends(auth.require_pro_practitioner),
+) -> dict:
+    """Generates a one-time Client Intake Link for this questionnaire.
+    `client_id` must be omitted for an 'initial'-kind questionnaire (no
+    client exists yet — submitting the link creates one) and is required
+    for 'followup' (the link is bound to that client from the start)."""
+    practitioner_id = session["id"]
+    questionnaire = _own_or_admin_default_questionnaire_or_404(practitioner_id, questionnaire_id)
+    if questionnaire["kind"] == "initial":
+        if body.client_id:
+            raise HTTPException(400, "an 'initial' questionnaire's link isn't tied to a client")
+    else:
+        if not body.client_id:
+            raise HTTPException(400, "client_id is required for a follow-up questionnaire")
+        if vault.get_client(practitioner_id, body.client_id) is None:
+            raise HTTPException(404, "no such client")
+    token = secrets.token_urlsafe(32)
+    core_store.add_intake_link_directory_entry(token, practitioner_id)
+    link = vault.create_intake_link(
+        practitioner_id, token, "questionnaire", questionnaire_id,
+        questionnaire["version"], body.client_id)
+    return {**link, "url": f"/intake/{token}"}
+
+
+@app.post("/api/me/clients/{client_id}/upload-links")
+def me_create_upload_link(
+    client_id: str, session: dict = Depends(auth.require_pro_practitioner),
+) -> dict:
+    """A one-time link with no questionnaire attached — just a place for
+    an existing client to send test-result files."""
+    practitioner_id = session["id"]
+    if vault.get_client(practitioner_id, client_id) is None:
+        raise HTTPException(404, "no such client")
+    token = secrets.token_urlsafe(32)
+    core_store.add_intake_link_directory_entry(token, practitioner_id)
+    link = vault.create_intake_link(practitioner_id, token, "upload", client_id=client_id)
+    return {**link, "url": f"/intake/{token}"}
+
+
+@app.get("/api/me/clients/{client_id}/links")
+def me_list_intake_links(
+    client_id: str, session: dict = Depends(auth.require_pro_practitioner),
+) -> list[dict]:
+    practitioner_id = session["id"]
+    if vault.get_client(practitioner_id, client_id) is None:
+        raise HTTPException(404, "no such client")
+    return vault.list_intake_links(practitioner_id, client_id)
+
+
+# --- Client Intake Links: public, token-gated (no login, no session) -----------
+
+def _active_intake_link(token: str) -> tuple[str, dict]:
+    """Resolves and validates a Client Intake Link token for every public
+    route below. 404 if the token itself is unknown; 410 — not 404 — once
+    it's been submitted, so the client-facing page can say "already
+    submitted" instead of "not found"."""
+    entry = core_store.get_intake_link_directory_entry(token)
+    if entry is None:
+        raise HTTPException(404, "no such intake link")
+    practitioner_id = entry["practitioner_id"]
+    link = vault.get_intake_link(practitioner_id, token)
+    if link is None:
+        raise HTTPException(404, "no such intake link")
+    if link["status"] == "submitted":
+        raise HTTPException(410, "this link has already been submitted")
+    return practitioner_id, link
+
+
+@app.get("/api/intake/{token}")
+def get_intake(token: str) -> dict:
+    practitioner_id, link = _active_intake_link(token)
+    practitioner = _public(core_store.get_practitioner(practitioner_id) or {})
+    result = {
+        "kind": link["kind"],
+        "draft_answers": link["draft_answers"],
+        "practitioner_name": practitioner.get("name", ""),
+        "practitioner_logo_path": practitioner.get("logo_path"),
+    }
+    if link["kind"] == "questionnaire":
+        questionnaire = core_store.get_questionnaire(link["questionnaire_id"])
+        if questionnaire is None:
+            raise HTTPException(404, "the questionnaire for this link no longer exists")
+        result["questionnaire"] = questionnaire
+    return result
+
+
+class IntakeDraftIn(BaseModel):
+    answers: dict
+
+
+@app.put("/api/intake/{token}")
+def put_intake_draft(token: str, body: IntakeDraftIn) -> dict:
+    practitioner_id, _link = _active_intake_link(token)
+    vault.save_intake_draft(practitioner_id, token, body.answers)
+    return {"saved": True}
+
+
+class IntakeSubmitIn(BaseModel):
+    answers: dict = {}
+
+
+@app.post("/api/intake/{token}/submit")
+def submit_intake(token: str, body: IntakeSubmitIn) -> dict:
+    practitioner_id, link = _active_intake_link(token)
+
+    if link["kind"] == "upload":
+        vault.submit_intake_link(practitioner_id, token, link["client_id"])
+        return {"submitted": True, "client_id": link["client_id"]}
+
+    questionnaire = core_store.get_questionnaire(link["questionnaire_id"])
+    if questionnaire is None:
+        raise HTTPException(404, "the questionnaire for this link no longer exists")
+    answers = body.answers
+
+    if questionnaire["kind"] == "initial":
+        questions_by_map = {q.get("maps_to"): q for q in questionnaire["questions"] if q.get("maps_to")}
+        name_q, email_q = questions_by_map.get("client_name"), questions_by_map.get("client_email")
+        name = (answers.get(name_q["id"]) or "").strip() if name_q else ""
+        email = (answers.get(email_q["id"]) or "").strip() if email_q else ""
+        if not name or not email:
+            raise HTTPException(400, "name and email are required to submit this form")
+        if core_store.get_client_directory_entry(email) is not None:
+            # Same account-takeover concern client_signup already guards
+            # against — never silently attach a new submission to an
+            # existing client just because the email matches.
+            raise HTTPException(
+                409, "An account with that email already exists. Please contact your practitioner directly.")
+        dob_q, country_q = questions_by_map.get("client_dob"), questions_by_map.get("client_country")
+        dob = (answers.get(dob_q["id"]) or None) if dob_q else None
+        country = (answers.get(country_q["id"]) or None) if country_q else None
+        client = vault.create_client(
+            practitioner_id, name, email,
+            password_hash=auth.hash_password(str(uuid.uuid4())),
+            dob=dob, country=country, password_set=False,
+        )
+        core_store.add_client_directory_entry(email, practitioner_id, client["id"])
+        client_id = client["id"]
+    else:
+        client_id = link["client_id"]
+
+    vault.save_questionnaire_response(
+        practitioner_id, client_id, questionnaire["id"], questionnaire["version"], answers)
+    vault.submit_intake_link(practitioner_id, token, client_id)
+    vault.log(practitioner_id, "client", "intake questionnaire submitted",
+              questionnaire["title"], client_id)
+    return {"submitted": True, "client_id": client_id}
+
+
+@app.post("/api/intake/{token}/upload")
+async def intake_upload_file(token: str, file: UploadFile) -> dict:
+    """Direct, single-request upload for anything under
+    _MAX_CLIENT_FILE_BYTES — for a larger file use the chunked routes
+    below, the same split me_upload_file/me_file_upload_* already offer
+    a logged-in client."""
+    practitioner_id, link = _active_intake_link(token)
+    if link["kind"] != "upload":
+        raise HTTPException(400, "this link has no file upload to make")
+    raw = await file.read()
+    if len(raw) > _MAX_CLIENT_FILE_BYTES:
+        raise HTTPException(
+            400,
+            f"File must be under {_MAX_CLIENT_FILE_BYTES // (1024 * 1024)} MB "
+            "via direct upload — use the chunked upload for a larger file.")
+    filename = file.filename or "upload"
+    return _save_uploaded_file(
+        practitioner_id, link["client_id"], filename, file.content_type or "", raw)
+
+
+class IntakeUploadInit(BaseModel):
+    filename: str
+    total_size: int
+    content_type: str = ""
+
+
+@app.post("/api/intake/{token}/upload/init")
+def intake_upload_init(token: str, body: IntakeUploadInit) -> dict:
+    _, link = _active_intake_link(token)
+    if link["kind"] != "upload":
+        raise HTTPException(400, "this link has no file upload to make")
+    return uploads.start(body.total_size, {
+        "filename": body.filename, "content_type": body.content_type,
+    })
+
+
+@app.post("/api/intake/{token}/upload/{upload_id}/chunk")
+async def intake_upload_chunk(token: str, upload_id: str, chunk: UploadFile) -> dict:
+    _active_intake_link(token)
+    return await uploads.append_chunk(upload_id, chunk)
+
+
+@app.post("/api/intake/{token}/upload/{upload_id}/complete")
+def intake_upload_complete(token: str, upload_id: str) -> dict:
+    practitioner_id, link = _active_intake_link(token)
+    path, meta = uploads.finish(upload_id)
+    try:
+        return _save_uploaded_file(
+            practitioner_id, link["client_id"], meta["filename"], meta["content_type"], path)
+    finally:
+        uploads.cleanup(upload_id)
 
 
 # --- Practitioner portal: Pro clients + consultation -----------------------------
@@ -3346,6 +3654,122 @@ def me_save_document(client_id: str, session_id: str, kind: str, body: DocumentI
             practitioner_id, session_id, client_id, kind, body.content, body.status)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
+
+
+class DocumentDraftIn(BaseModel):
+    instruction: str | None = None
+
+
+@app.post("/api/me/clients/{client_id}/sessions/{session_id}/documents/{kind}/draft")
+def me_draft_document(client_id: str, session_id: str, kind: str, body: DocumentDraftIn,
+                      session: dict = Depends(auth.require_pro_practitioner)):
+    """Streams an AI-drafted clinician_note/client_report the same way
+    POST /api/me/consult streams a chat answer: an agent_start/agent_done
+    pair, then one terminal `result` event or an `error` event in its
+    place — never a bare 200 with a silently dropped stream.
+
+    Deliberately does NOT call vault.save_document itself: the draft text
+    still has raw [K1]-style markers, and every other write path to
+    session_documents (manual edits, Finalize) persists the TipTap
+    editor's resolved HTML, citations already turned into real
+    data-doc-id/data-locator spans. The client resolves those markers
+    against `sources` below and saves through the normal PUT endpoint,
+    so there's exactly one place content ever lands in that table in a
+    different shape than what the editor itself produced."""
+    practitioner_id = session["id"]
+    if kind not in vault.DOCUMENT_KINDS:
+        raise HTTPException(400, f"kind must be one of {vault.DOCUMENT_KINDS}")
+    _owned_session(practitioner_id, client_id, session_id)
+    full_session = vault.get_session(practitioner_id, session_id)
+    turns = full_session.get("turns", []) if full_session else []
+    prior = vault.get_document(practitioner_id, session_id, kind)
+    prior_content = prior["content"] if prior else None
+    patient = get_patient_context(practitioner_id, client_id)
+    patient_context_text = patient.as_query_text() if patient else ""
+
+    def _sse(event: dict) -> str:
+        return f"data: {json.dumps(event)}\n\n"
+
+    def stream():
+        try:
+            yield _sse({"event": "agent_start", "agent": "reasoner"})
+            t0 = time.monotonic()
+            text, usage, sources = reasoner.generate_session_document(
+                kind, turns, prior_content, body.instruction)
+            yield _sse({"event": "agent_done", "agent": "reasoner",
+                       "duration_s": round(time.monotonic() - t0, 2), **usage})
+
+            # Same LLM-as-judge pass chat answers already get
+            # (app/reasoning/llm_checker.py) before a drafted document
+            # reaches the editor — a sentence it can't ground in the
+            # flattened source list or the patient context is cut, not
+            # shipped alongside a warning the practitioner might miss.
+            yield _sse({"event": "agent_start", "agent": "checker"})
+            t0 = time.monotonic()
+            reasoned = reasoner.ReasonedAnswer(
+                text=text, usage=usage,
+                citations=[{"text": s.get("snippet") or s.get("title", "")} for s in sources])
+            verdict = llm_checker.check(kind, reasoned, patient_context_text)
+            yield _sse({"event": "agent_done", "agent": "checker",
+                       "duration_s": round(time.monotonic() - t0, 2), **verdict["usage"]})
+            if verdict["unsupported"]:
+                text = _strip_unsupported(text, verdict["unsupported"])
+        except openai.APIError:
+            yield _sse({"event": "error",
+                       "message": "The AI service is temporarily unavailable. Try again shortly."})
+            return
+        except Exception:
+            logging.exception("document draft stream failed for practitioner %s", practitioner_id)
+            yield _sse({"event": "error",
+                       "message": "Something went wrong while drafting. Try again shortly."})
+            return
+        # Re-labeled K1..Kn against generate_session_document()'s own
+        # flattened, globally-renumbered list — a source's original
+        # `label` here is still whatever turn-local K-number it carried
+        # before flattening, which no longer matches the [K1] markers in
+        # `text`, so it must lose, not win, the dict-merge below.
+        yield _sse({"event": "result", "text": text, "check": verdict,
+                   "sources": [{**s, "label": f"K{i + 1}"} for i, s in enumerate(sources)]})
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
+
+
+@app.post("/api/me/clients/{client_id}/sessions/{session_id}/assets")
+async def me_upload_session_asset(client_id: str, session_id: str, file: UploadFile,
+                                  session: dict = Depends(auth.require_pro_practitioner)) -> dict:
+    """An image pasted, dropped, or cropped into a session document —
+    stored privately (vault_files, the same per-practitioner byte store
+    client files already use), never a public static mount, since a
+    lab-chart crop is clinical content like any other."""
+    practitioner_id = session["id"]
+    _owned_session(practitioner_id, client_id, session_id)
+    raw = await file.read()
+    if len(raw) > _MAX_PHOTO_BYTES:
+        raise HTTPException(400, "Image must be under 5 MB.")
+    ext = _sniff_image_ext(raw)
+    if ext is None:
+        raise HTTPException(400, "Image must be a JPEG, PNG, GIF, or WebP image.")
+    asset_id = str(uuid.uuid4())
+    filename = f"asset{ext}"
+    if not vault_files.save(practitioner_id, asset_id, raw, filename):
+        raise HTTPException(500, "could not store the image")
+    vault.save_asset(practitioner_id, session_id, client_id, asset_id, filename)
+    return {"id": asset_id, "url": f"/api/me/clients/{client_id}/sessions/{session_id}/assets/{asset_id}"}
+
+
+@app.get("/api/me/clients/{client_id}/sessions/{session_id}/assets/{asset_id}")
+def me_get_session_asset(client_id: str, session_id: str, asset_id: str,
+                         session: dict = Depends(auth.require_pro_practitioner)) -> FileResponse:
+    practitioner_id = session["id"]
+    _owned_session(practitioner_id, client_id, session_id)
+    row = vault.get_asset(practitioner_id, session_id, asset_id)
+    if row is None:
+        raise HTTPException(404, "no such image")
+    path = vault_files.path(practitioner_id, asset_id, row["filename"])
+    if path is None:
+        raise HTTPException(404, "the image is no longer on disk")
+    return FileResponse(path, media_type=_media_type(row["filename"]),
+                        headers={"X-Content-Type-Options": "nosniff"})
 
 
 @app.post("/api/me/clients/{client_id}/sessions/{session_id}/summary")

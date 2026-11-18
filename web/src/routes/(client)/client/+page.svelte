@@ -3,24 +3,30 @@
 
 	let { data } = $props();
 
+	// `actionable` decides what a not-done item's pill says: the
+	// questionnaire is genuinely something the client needs to go do, but
+	// an empty record/files list isn't on the client to fix — it's just
+	// waiting on the practitioner, so "Action needed" there is a false
+	// alarm with no actual action for the client to take (found live:
+	// read as confusing/alarming by multiple reviewers).
 	const items = $derived([
 		{
 			href: '/client/questionnaire', icon: 'clipboard',
 			title: data.response ? 'Questionnaire submitted' : 'Intake questionnaire waiting',
 			body: data.response ? 'Your practitioner has received your answers.' : 'Your practitioner uses this to understand your health history.',
-			action: data.response ? 'Review answers' : 'Fill questionnaire', done: !!data.response
+			action: data.response ? 'Review answers' : 'Fill questionnaire', done: !!data.response, actionable: true
 		},
 		{
 			href: '/client/record', icon: 'user-card',
 			title: data.entries?.length ? `${data.entries.length} health record entries` : 'No health record entries yet',
 			body: 'Only you and your practitioner can view your entries.',
-			action: 'View record', done: !!data.entries?.length
+			action: 'View record', done: !!data.entries?.length, actionable: false
 		},
 		{
 			href: '/client/files', icon: 'folder',
-			title: data.files?.length ? `${data.files.length} documents shared with you` : 'No documents shared yet',
-			body: 'Clinical documents, protocols and lab reviews shared with you.',
-			action: 'View files', done: !!data.files?.length
+			title: data.files?.length ? `${data.files.length} files uploaded` : 'No files uploaded yet',
+			body: 'Share clinical documents, protocols or lab results with your practitioner.',
+			action: 'Upload files', done: !!data.files?.length, actionable: false
 		}
 	]);
 </script>
@@ -34,7 +40,7 @@
 				<span class="head-ico"><Icon name="home" size={18} /></span>
 				<div>
 					<h1>{data.session?.name ? `Hello, ${data.session.name.split(' ')[0]}` : 'Your Care'}</h1>
-					<p>Questionnaires, health records, and shared care documents</p>
+					<p>Questionnaires, health records, and files you share with your practitioner</p>
 				</div>
 			</div>
 		</div>
@@ -48,8 +54,10 @@
 							<strong>{it.title}</strong>
 							{#if it.done}
 								<span class="status-pill ok">Completed</span>
-							{:else}
+							{:else if it.actionable}
 								<span class="status-pill pending">Action needed</span>
+							{:else}
+								<span class="status-pill neutral">Nothing yet</span>
 							{/if}
 						</div>
 						<span class="hint">{it.body}</span>

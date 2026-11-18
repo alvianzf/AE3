@@ -85,7 +85,13 @@ class ConsultAiSummaryTests(unittest.TestCase):
         history_data = vault.get_patient_history_up_to(
             self.practitioner_id, self.client_id, t_now
         )
-        summary = reasoner.generate_consult_intake_summary(history_data, t_now)
+        # Deliberately the deterministic formatter directly, not
+        # generate_consult_intake_summary() — that wrapper makes a real LLM
+        # call and only falls back to this function on error, so asserting
+        # an exact phrase against it is asserting against free-form prose
+        # that varies run to run ("500mg" vs "500 mg" BID, etc.). This is
+        # the actual deterministic, template-based path the test name means.
+        summary = reasoner.format_deterministic_consult_summary(history_data, t_now)
 
         self.assertIn("## Patient Overview", summary)
         self.assertIn("Jane Doe", summary)

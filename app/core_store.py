@@ -103,12 +103,28 @@ def ensure_schema() -> None:
             ALTER TABLE practitioners ADD COLUMN IF NOT EXISTS
                 accepting_new_clients BOOLEAN NOT NULL DEFAULT FALSE;
 
+            -- Consult Draft Editor — a practitioner's own letterhead logo,
+            -- shown at the top of every clinician note / client report they
+            -- produce. Nullable: most practitioners won't set one right away.
+            ALTER TABLE practitioners ADD COLUMN IF NOT EXISTS
+                logo_path TEXT;
+
             -- Routing only: which vault schema a client's login belongs
             -- to. No clinical content — that lives in the vault itself.
             CREATE TABLE IF NOT EXISTS client_directory (
                 email TEXT PRIMARY KEY,
                 practitioner_id TEXT NOT NULL,
                 client_id TEXT NOT NULL
+            );
+
+            -- Same routing-pointer role as client_directory above: a
+            -- Client Intake Links token alone doesn't say which
+            -- practitioner's vault schema holds the actual link row
+            -- (draft answers, status) — this table is the one place that
+            -- cross-schema lookup can happen. No clinical content here either.
+            CREATE TABLE IF NOT EXISTS intake_link_directory (
+                token TEXT PRIMARY KEY,
+                practitioner_id TEXT NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS contact_form_submissions (
@@ -150,6 +166,20 @@ def ensure_schema() -> None:
             );
             CREATE INDEX IF NOT EXISTS questions_by_questionnaire
                 ON questionnaire_questions(questionnaire_id, ordinal);
+
+            -- Client Intake Links — 'initial' (no client record exists yet;
+            -- submitting one creates it) vs 'followup' (tied to an existing
+            -- client). Defaults to 'followup' since every questionnaire
+            -- before this existed was answered by an already-signed-up client.
+            ALTER TABLE questionnaires ADD COLUMN IF NOT EXISTS
+                kind TEXT NOT NULL DEFAULT 'followup';
+            -- Which new-client field (if any) this question's answer fills
+            -- in on submission of an 'initial'-kind questionnaire — NULL for
+            -- every ordinary question. Lets the backend read the client's
+            -- name/email straight off a designated answer instead of
+            -- guessing from free-text prompts.
+            ALTER TABLE questionnaire_questions ADD COLUMN IF NOT EXISTS
+                maps_to TEXT;
 
             -- One row per directory/coach-detail-page render.
             CREATE TABLE IF NOT EXISTS profile_view_events (
@@ -617,7 +647,8 @@ def set_can_upload_library(practitioner_id: str, allowed: bool) -> dict | None:
 
 def update_practitioner_profile(practitioner_id: str, **fields) -> dict | None:
     allowed = {"name", "bio", "specialties", "languages", "years_experience",
-               "consultation_price_cents", "photo_path", "accepting_new_clients"}
+               "consultation_price_cents", "photo_path", "accepting_new_clients",
+               "logo_path"}
     unknown = set(fields) - allowed
     if unknown:
         raise ValueError(f"unknown profile field(s): {', '.join(sorted(unknown))}")
@@ -745,6 +776,41 @@ def list_contact_submissions(
     return [dict(r) for r in rows]
 
 
+def count_contact_submissions(
+    practitioner_id: str | None = None, status: str | None = None,
+) -> int:
+    """Same filters as list_contact_submissions, but a count(*) instead of
+    fetching every row — used by the notifications badge, which only ever
+    needs a number, not each submission's name/email/message text."""
+    where, params = [], []
+    if practitioner_id:
+        where.append("practitioner_id = %s")
+        params.append(practitioner_id)
+    if status:
+        where.append("status = %s")
+        params.append(status)
+    clause = f"WHERE {' AND '.join(where)}" if where else ""
+    with core_connection() as conn:
+        return conn.execute(
+            f"SELECT count(*) AS n FROM contact_form_submissions {clause}",
+            params,
+        ).fetchone()["n"]
+
+
+def get_contact_submission(submission_id: str, practitioner_id: str | None = None) -> dict | None:
+    """One submission by id — for an ownership check, which doesn't need
+    every one of a practitioner's submissions fetched just to confirm this
+    id is among them."""
+    query = "SELECT * FROM contact_form_submissions WHERE id = %s"
+    params: tuple = (submission_id,)
+    if practitioner_id is not None:
+        query += " AND practitioner_id = %s"
+        params = (submission_id, practitioner_id)
+    with core_connection() as conn:
+        row = conn.execute(query, params).fetchone()
+    return dict(row) if row else None
+
+
 def update_contact_status(submission_id: str, status: str) -> dict | None:
     if status not in ("new", "contacted", "closed"):
         raise ValueError(f"unknown status: {status}")
@@ -817,26 +883,93 @@ def practitioner_stats(practitioner_id: str) -> dict:
 
 # --- Questionnaires (versioned) -----------------------------------------------
 
-QUESTION_TYPES = ("text", "number", "date", "choice", "multi_choice")
+# "info" renders its prompt as plain instructional text and captures no
+# answer (the real example form's disclaimers and consent paragraph).
+# "repeater" is a question with its own sub-fields, answered as a list of
+# rows — addable/removable (Medications) when its options carry no fixed
+# row labels, or a pre-seeded fixed grid (Typical Workday) when they do.
+QUESTION_TYPES = ("text", "number", "date", "choice", "multi_choice", "info", "repeater")
+QUESTIONNAIRE_KINDS = ("initial", "followup")
+# Which new-client field a question's answer maps to, for an 'initial'-kind
+# questionnaire's submission — see questionnaire_questions.maps_to above.
+MAPS_TO_FIELDS = ("client_name", "client_email", "client_dob", "client_country")
+
+
+def _encode_options(q: dict) -> str:
+    """`options_json` holds whatever shape this question's input_type
+    actually needs — a plain list of choices (every question created
+    before `allow_other`/`repeater` existed, and still every ordinary
+    choice/multi_choice one), `{"choices", "allow_other"}` for a choice/
+    multi_choice with "Other, please specify" on, or `{"columns",
+    "fixed_rows"}` for a repeater's sub-field definition."""
+    if q["input_type"] == "repeater":
+        return json.dumps({"columns": q.get("columns", []), "fixed_rows": q.get("fixed_rows")})
+    options = q.get("options", [])
+    if q.get("allow_other"):
+        return json.dumps({"choices": options, "allow_other": True})
+    return json.dumps(options)
 
 
 def _decode_question(row: dict) -> dict:
+    """The inverse of _encode_options, branching the same way by
+    input_type so an old caller that only ever read `options` as a plain
+    array keeps working unchanged for every type but repeater."""
     d = dict(row)
-    d["options"] = json.loads(d.pop("options_json"))
+    parsed = json.loads(d.pop("options_json"))
+    if d["input_type"] == "repeater":
+        parsed = parsed if isinstance(parsed, dict) else {}
+        d["options"] = []
+        d["allow_other"] = False
+        d["columns"] = parsed.get("columns", [])
+        d["fixed_rows"] = parsed.get("fixed_rows")
+    elif isinstance(parsed, dict):
+        d["options"] = parsed.get("choices", [])
+        d["allow_other"] = bool(parsed.get("allow_other"))
+        d["columns"] = []
+        d["fixed_rows"] = None
+    else:
+        d["options"] = parsed if isinstance(parsed, list) else []
+        d["allow_other"] = False
+        d["columns"] = []
+        d["fixed_rows"] = None
     return d
 
 
 def _insert_questionnaire(
     title: str, version: int, created_by: str, questions: list[dict],
-    practitioner_id: str | None = None,
+    practitioner_id: str | None = None, kind: str = "followup",
 ) -> str:
     """Insert a new questionnaire version and deactivate every other one in
     the same scope — one active questionnaire per practitioner_id (NULL
     being the admin-curated global default), not one active questionnaire
     globally."""
+    if kind not in QUESTIONNAIRE_KINDS:
+        raise ValueError(f"unknown questionnaire kind: {kind}")
     for q in questions:
         if q["input_type"] not in QUESTION_TYPES:
             raise ValueError(f"unknown question type: {q['input_type']}")
+        maps_to = q.get("maps_to")
+        if maps_to is not None and maps_to not in MAPS_TO_FIELDS:
+            raise ValueError(f"unknown maps_to field: {maps_to}")
+        if q["input_type"] == "repeater":
+            columns = q.get("columns", [])
+            if not isinstance(columns, list) or not all(isinstance(c, str) for c in columns):
+                raise ValueError("a repeater question's columns must be a list of strings")
+            fixed_rows = q.get("fixed_rows")
+            if fixed_rows is not None and (
+                not isinstance(fixed_rows, list) or not all(isinstance(r, str) for r in fixed_rows)
+            ):
+                raise ValueError("a repeater question's fixed_rows must be a list of strings or omitted")
+    if kind == "initial":
+        # A Client Intake Link for this questionnaire creates the client
+        # record from its answers (app/main.py's intake-submit route) —
+        # it needs a designated name and email question to read those
+        # from, exactly one of each, not a best guess off free-text prompts.
+        mapped = [q.get("maps_to") for q in questions if q.get("maps_to")]
+        if mapped.count("client_name") != 1 or mapped.count("client_email") != 1:
+            raise ValueError(
+                "an 'initial' questionnaire needs exactly one question "
+                "mapped to client_name and one mapped to client_email")
     questionnaire_id = str(uuid.uuid4())
     with core_connection() as conn:
         conn.execute(
@@ -846,49 +979,51 @@ def _insert_questionnaire(
         )
         conn.execute(
             "INSERT INTO questionnaires (id, title, version, is_active, "
-            "created_by, created_at, practitioner_id) "
-            "VALUES (%s, %s, %s, TRUE, %s, %s, %s)",
-            (questionnaire_id, title, version, created_by, _now(), practitioner_id),
+            "created_by, created_at, practitioner_id, kind) "
+            "VALUES (%s, %s, %s, TRUE, %s, %s, %s, %s)",
+            (questionnaire_id, title, version, created_by, _now(), practitioner_id, kind),
         )
         for ordinal, q in enumerate(questions):
             conn.execute(
                 "INSERT INTO questionnaire_questions (id, questionnaire_id, "
-                "ordinal, prompt, input_type, options_json, theme) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                "ordinal, prompt, input_type, options_json, theme, maps_to) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                 (str(uuid.uuid4()), questionnaire_id, ordinal, q["prompt"],
-                 q["input_type"], json.dumps(q.get("options", [])),
-                 q.get("theme") or "General"),
+                 q["input_type"], _encode_options(q),
+                 q.get("theme") or "General", q.get("maps_to")),
             )
     return questionnaire_id
 
 
 def create_questionnaire(
     title: str, questions: list[dict], created_by: str,
-    practitioner_id: str | None = None,
+    practitioner_id: str | None = None, kind: str = "followup",
 ) -> dict:
     questionnaire_id = _insert_questionnaire(
-        title, 1, created_by, questions, practitioner_id)
+        title, 1, created_by, questions, practitioner_id, kind)
     log(created_by, "questionnaire created", questionnaire_id)
     return get_questionnaire(questionnaire_id)
 
 
 def edit_questionnaire(
     questionnaire_id: str, title: str, questions: list[dict], created_by: str,
+    kind: str | None = None,
 ) -> dict:
     """Create a new version rather than mutate the one clients already
     answered against; _insert_questionnaire flips the old version's
     is_active off as part of the single-active-version invariant. The new
     version stays in the same practitioner_id scope as the version it
-    replaces."""
+    replaces, and keeps the same kind unless a new one is given."""
     with core_connection() as conn:
         old = conn.execute(
-            "SELECT version, practitioner_id FROM questionnaires WHERE id = %s",
+            "SELECT version, practitioner_id, kind FROM questionnaires WHERE id = %s",
             (questionnaire_id,),
         ).fetchone()
     if old is None:
         raise ValueError(f"unknown questionnaire: {questionnaire_id}")
     new_id = _insert_questionnaire(
-        title, old["version"] + 1, created_by, questions, old["practitioner_id"])
+        title, old["version"] + 1, created_by, questions, old["practitioner_id"],
+        kind if kind is not None else old["kind"])
     log(created_by, "questionnaire edited", f"{questionnaire_id} -> {new_id}")
     return get_questionnaire(new_id)
 
@@ -1001,6 +1136,24 @@ def get_client_directory_entry(email: str) -> dict | None:
     with core_connection() as conn:
         row = conn.execute(
             "SELECT * FROM client_directory WHERE email = %s", (email,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+# --- Intake link directory (routing pointer only) -----------------------------
+
+def add_intake_link_directory_entry(token: str, practitioner_id: str) -> None:
+    with core_connection() as conn:
+        conn.execute(
+            "INSERT INTO intake_link_directory (token, practitioner_id) VALUES (%s, %s)",
+            (token, practitioner_id),
+        )
+
+
+def get_intake_link_directory_entry(token: str) -> dict | None:
+    with core_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM intake_link_directory WHERE token = %s", (token,)
         ).fetchone()
     return dict(row) if row else None
 

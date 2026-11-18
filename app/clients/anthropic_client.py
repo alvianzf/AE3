@@ -21,6 +21,17 @@ cfg = get_config()
 
 _CHAT_TIMEOUT_SECONDS = 90.0  # same budget as llm_client.LLMClient
 
+# A health check must fail fast, not hang — same reasoning as
+# llm_client.LLMClient.ping() (which scopes its own probe down from the
+# generation-call timeout to this). Without it, ping() below inherited
+# the 90s _CHAT_TIMEOUT_SECONDS from self._client, so a slow/unresponsive
+# Anthropic endpoint made /api/health (and /api/admin/system-usage,
+# which calls health() internally) hang for up to 90s per role with no
+# error — on the admin Settings page (the only page whose load() awaits
+# both of those), that's a page that appears to just hang/stay blank
+# rather than fail visibly.
+_PING_TIMEOUT_SECONDS = 8.0  # same budget as llm_client.LLMClient
+
 # Real per-model output-token ceilings — found live: app/retrieval/
 # traversal.py's relevance judge calls chat_json(max_tokens=100_000) for
 # Role.ANSWER_ENGINE, which maps to Haiku 4.5 here; Anthropic rejected it
@@ -116,15 +127,24 @@ class AnthropicLLMClient:
     def chat_text(self, system: str, prompt: str, max_tokens: int = 100_000,
                  extra_body: dict | None = None) -> tuple[str, dict]:
         """Free-text call. Thinking is left at its model default (adaptive
-        on Opus 5/Sonnet 5) rather than forced off — unlike chat_json
+        on Opus 5/Sonnet 5) only for Role.REASONER — unlike chat_json
         above, there's no forced tool_choice to conflict with, and this is
-        exactly the kind of call (Role.REASONER's final answer) where
-        letting the model think pays for itself in quality."""
+        exactly the kind of call (Role.REASONER's final answer /
+        generate_session_document) where letting the model think pays for
+        itself in quality. Every other chat_text caller (Role.CHECKER/
+        Role.READER restating already-known data, not forming a new
+        judgment) passes extra_body=NO_THINKING same as chat_json's
+        callers do — honored here by role rather than silently dropped,
+        so it isn't paying Sonnet 5's adaptive-thinking latency for a call
+        that doesn't benefit from it, the same waste llm_client.NO_THINKING
+        exists to avoid on the Nebius side."""
+        kwargs = {} if self.role.value == "reasoner" else {"thinking": {"type": "disabled"}}
         response = self._client.messages.create(
             model=self.model,
             max_tokens=self._clamp(max_tokens),
             system=_cacheable_system(system),
             messages=[{"role": "user", "content": prompt}],
+            **kwargs,
         )
         text = "".join(b.text for b in response.content if b.type == "text").strip()
         usage = self._usage(response)
@@ -145,7 +165,8 @@ class AnthropicLLMClient:
         """Validate credentials without spending tokens — same reasoning
         as llm_client.LLMClient.ping(): list models rather than retrieve
         the role's specific one."""
-        models = {m.id for m in self._client.models.list()}
+        scoped = self._client.with_options(timeout=_PING_TIMEOUT_SECONDS)
+        models = {m.id for m in scoped.models.list()}
         if self.model not in models:
             raise ValueError(f"{self.model} ({self.role.value}) not found in the provider's model catalog")
 

@@ -32,8 +32,6 @@
 			{#each links as l (l.id)}<a href="/" onclick={(e) => { e.preventDefault(); nav(l.id); }}>{l.label}</a>{/each}
 			{#if contactEmail}
 				<a href="mailto:{contactEmail}">{contactEmail}</a>
-			{:else}
-				<span class="todo">[email]</span>
 			{/if}
 		</nav>
 	</div>
@@ -57,9 +55,8 @@
 	.wordmark { font-family: var(--pub-font-heading); font-weight: 700; font-size: 1.3rem; color: #ffffff; }
 	.tagline { margin: 0; font-size: .9rem; color: #cfcfe3; }
 	.link-row { display: flex; flex-wrap: wrap; gap: .5rem 1.75rem; align-items: center; font-size: .9375rem; font-weight: 500; }
-	.link-row a, .link-row .todo { color: #ffffff; text-decoration: none; }
+	.link-row a { color: #ffffff; text-decoration: none; }
 	.link-row a:hover { text-decoration: underline; }
-	.link-row .todo { color: #cfcfe3; font-style: italic; }
 	.disclaimer { padding: 0 var(--space-5) var(--space-3); color: #cfcfe3; font-size: .8rem; max-width: 54rem; line-height: 1.6; }
 	.disclaimer a { color: #ffffff; text-decoration: underline; }
 	.copyright { padding: 0 var(--space-5) var(--space-5); color: #cfcfe3; font-size: .8rem; }

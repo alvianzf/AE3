@@ -11,8 +11,37 @@
 	import Icon from '$lib/components/Icon.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import { renderAnswerHtml } from '$lib/markdown';
+	import DocumentPane from '$lib/components/consult/DocumentPane.svelte';
 
 	let { data } = $props();
+
+	// Consult Draft Editor — the document pane's own client/session state.
+	// `activePane` only matters below 980px, where the 3-column grid
+	// collapses to one visible pane at a time (CSS, @media block below).
+	let activePane = $state<'sessions' | 'chat' | 'doc'>('chat');
+	let docKind = $state<'clinician_note' | 'client_report'>('clinician_note');
+	const EMPTY_DOCUMENTS = { clinician_note: null, client_report: null };
+	let documents = $state<Record<string, any>>({ ...EMPTY_DOCUMENTS });
+
+	// A citation or AI-drafted paragraph in the document can point back at
+	// a specific chat turn only when the exact source it cites appears in
+	// exactly one turn's own sources — a document synthesizes every turn's
+	// sources into one flattened list (app/reasoning/reasoner.py's
+	// _flatten_turn_sources), so a citation doesn't always map to a single
+	// turn; this is a best-effort match, not a guarantee.
+	function flashTurn(documentId: string | null, locator: string) {
+		if (!documentId) return;
+		const matches = turns
+			.map((t, i) => ({ i, hit: (t.sources ?? []).some((s: any) => s.document_id === documentId && s.locator === locator) }))
+			.filter((m) => m.hit);
+		if (matches.length !== 1) return;
+		const el = document.querySelector(`[data-turn="${matches[0].i}"]`);
+		if (!el) return;
+		el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+		el.classList.add('flash');
+		setTimeout(() => el.classList.remove('flash'), 900);
+		if (window.matchMedia('(max-width: 980px)').matches) activePane = 'chat';
+	}
 	let clientId = $state('');
 	let clientSearch = $state('');
 	const filteredClients = $derived(
@@ -36,6 +65,28 @@
 	let loadingSummary = $state(false);
 	let briefingOpen = $state(true);
 
+	// The briefing call is a real LLM round-trip and can run 15-35s+ for a
+	// client with a lot of history — a static spinner with no feedback for
+	// that long reads as "hung" to anyone testing it (found live). These two
+	// timers swap the loading copy at 8s and 20s so it's obvious the wait is
+	// expected, not broken. Cleared on completion (success or error) and on
+	// unmount so they never fire against a gone/replaced session.
+	let briefingStage = $state(0);
+	let briefingTimer1: ReturnType<typeof setTimeout> | undefined;
+	let briefingTimer2: ReturnType<typeof setTimeout> | undefined;
+	function clearBriefingTimers() {
+		clearTimeout(briefingTimer1);
+		clearTimeout(briefingTimer2);
+		briefingTimer1 = undefined;
+		briefingTimer2 = undefined;
+	}
+	const BRIEFING_MESSAGES = [
+		'Synthesizing patient profile and consultation history up to this consultation point.',
+		'Still working — a long consultation history can take a bit longer to synthesize.',
+		"Still going. Longer histories take longer, but this hasn't failed — hang tight."
+	];
+	onDestroy(clearBriefingTimers);
+
 	// GPT/Claude-style history rail: every past consultation for the
 	// currently selected client, clickable to reload it into the thread.
 	let sessions = $state<any[]>([]);
@@ -58,8 +109,18 @@
 	}
 
 	async function initSession(id: string) {
-		if (!id || asking) return;
+		// Reentrancy guard: without it, selecting a client (which
+		// auto-starts a session) racing a manual "New session" click — or
+		// just a doubled click — fires two concurrent /sessions/init calls
+		// that land at nearly the same timestamp, leaving two near-
+		// identical in_progress sessions behind. loadingSummary alone isn't
+		// enough since it's also read reactively elsewhere; this flag is
+		// purely a call-in-flight latch.
+		if (!id || asking || loadingSummary) return;
 		loadingSummary = true;
+		briefingStage = 0;
+		briefingTimer1 = setTimeout(() => (briefingStage = 1), 8000);
+		briefingTimer2 = setTimeout(() => (briefingStage = 2), 20000);
 		initialSummary = null;
 		sessionId = '';
 		turns = [];
@@ -69,10 +130,12 @@
 			initialSummary = res.initial_summary ?? null;
 			briefingOpen = true;
 			turns = [];
+			documents = { ...EMPTY_DOCUMENTS };
 			await loadSessions(id);
 		} catch (err: any) {
 			toast(err?.message || 'Could not start consultation session.', 'alert');
 		} finally {
+			clearBriefingTimers();
 			loadingSummary = false;
 		}
 	}
@@ -89,6 +152,7 @@
 			// live-asked turns below track ask vs. answer separately, but that
 			// distinction isn't in the database, so both map to the same value here.
 			turns = (s.turns ?? []).map((t: any) => ({ asked_at: t.created_at, answered_at: t.created_at, ...t }));
+			documents = s.documents ?? { ...EMPTY_DOCUMENTS };
 		} catch {
 			toast('Could not load that conversation.', 'alert');
 		} finally {
@@ -124,6 +188,11 @@
 		} else if (qClient) {
 			await initSession(qClient);
 		}
+		// Deep-link from the client detail page's document list
+		// (?pane=doc&kind=clinician_note) straight into the document pane.
+		if (page.url.searchParams.get('pane') === 'doc') activePane = 'doc';
+		const qKind = page.url.searchParams.get('kind');
+		if (qKind === 'clinician_note' || qKind === 'client_report') docKind = qKind;
 	});
 
 	// A client switch always starts a new conversation — carrying the old
@@ -511,8 +580,14 @@
 	{/if}
 {/snippet}
 
+<div class="pane-tabs">
+	<button type="button" class:on={activePane === 'sessions'} onclick={() => (activePane = 'sessions')}>Sessions</button>
+	<button type="button" class:on={activePane === 'chat'} onclick={() => (activePane = 'chat')}>Chat</button>
+	<button type="button" class:on={activePane === 'doc'} onclick={() => (activePane = 'doc')} disabled={!sessionId}>Document</button>
+</div>
+
 <div class="chat-shell">
-	<aside class="sidebar">
+	<aside class="cpane sidebar" class:active={activePane === 'sessions'}>
 		<div class="sidebar-block">
 			<div class="block-head"><Icon name="users" size={15} /><strong>Clients</strong></div>
 			<div class="search-field">
@@ -533,7 +608,7 @@
 		<div class="sidebar-block history-block">
 			<div class="history-head">
 				<div class="block-head"><Icon name="history" size={15} /><strong>History</strong></div>
-				<button type="button" class="newchat" onclick={newChat} disabled={asking || !clientId} title="New session">
+				<button type="button" class="newchat" onclick={newChat} disabled={asking || !clientId || loadingSummary} title="New session">
 					<Icon name="new-chat" size={15} />
 					New session
 				</button>
@@ -579,7 +654,7 @@
 		{/if}
 	</aside>
 
-	<section class="chat-main">
+	<section class="cpane chat-main" class:active={activePane === 'chat'}>
 		<div class="chat-thread" bind:this={threadEl}>
 			{#if loadingHistory}
 				<p class="hint empty">Loading this consultation…</p>
@@ -595,7 +670,7 @@
 						<Spinner size={18} />
 						<div class="briefing-loading-text">
 							<strong>Generating Opening Clinical Briefing…</strong>
-							<span>Synthesizing patient profile and consultation history up to this consultation point.</span>
+							<span>{BRIEFING_MESSAGES[briefingStage]}</span>
 						</div>
 					</div>
 				{:else if initialSummary}
@@ -637,7 +712,7 @@
 				{/if}
 
 				{#each turns as t, i (t.session_id ? `${t.session_id}-${i}` : i)}
-					<div class="turn">
+					<div class="turn" data-turn={i}>
 						<div class="bubble bubble-q">
 							<p class="question">{t.question}</p>
 							<div class="meta">
@@ -718,13 +793,31 @@
 			</div>
 		</form>
 	</section>
+
+	<aside class="cpane doc" class:active={activePane === 'doc'}>
+		{#if sessionId}
+			<DocumentPane
+				{clientId} {sessionId} bind:kind={docKind} {documents} {turns}
+				logoUrl={data.profile?.logo_path ?? null}
+				practitionerName={data.profile?.name ?? ''}
+				practitionerLocation={(data.profile?.specialties ?? []).join(', ')}
+				onFlashTurn={flashTurn}
+			/>
+		{:else}
+			<div class="doc-empty"><p class="hint">Start a consultation to draft a document.</p></div>
+		{/if}
+	</aside>
 </div>
 
 <style>
+	/* Consult Draft Editor: a third column, the document pane, alongside
+	   the pre-existing sidebar + chat. 230px / flexible / 420px, same
+	   min-width:0 discipline as the two columns already had. */
 	.chat-shell {
-		display: grid; grid-template-columns: 18rem minmax(0, 1fr); gap: var(--space-5);
+		display: grid; grid-template-columns: 230px minmax(0, 1fr) minmax(0, 420px); gap: var(--space-5);
 		height: calc(100dvh - var(--space-6) * 2);
 	}
+	.pane-tabs { display: none; }
 
 	/* ── Sidebar ─────────────────────────────────────────────────────── */
 	/* min-width: 0 on every grid/flex item below is load-bearing, not
@@ -813,6 +906,16 @@
 		background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r-lg);
 	}
 	.chat-thread { flex: 1 1 auto; overflow-y: auto; padding: var(--space-5); display: grid; gap: var(--space-4); align-content: start; }
+
+	/* ── Document pane (Consult Draft Editor) ───────────────────────────── */
+	.doc {
+		display: flex; flex-direction: column; min-height: 0; min-width: 0;
+		background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden;
+	}
+	.doc-empty { display: flex; align-items: center; justify-content: center; height: 100%; padding: var(--space-5); }
+	/* The citation ↔ chat-turn interaction's visible half — a brief
+	   highlight so the practitioner can tell which turn a click landed on. */
+	.turn:global(.flash) { background: var(--accent-soft); border-radius: var(--r-lg); transition: background var(--dur) var(--ease); }
 	.empty { text-align: center; margin-top: var(--space-6); }
 	.empty-state {
 		display: flex; flex-direction: column; align-items: center; gap: .4rem;
@@ -1043,12 +1146,32 @@
 	}
 	.scope-picker select:disabled { opacity: .6; cursor: not-allowed; }
 
-	@media (max-width: 860px) {
-		.chat-shell { grid-template-columns: 1fr; height: auto; gap: var(--space-3); }
-		.sidebar { grid-template-rows: none; gap: var(--space-3); }
+	/* Below 980px there's only room for one of the three panes at a time —
+	   a Sessions/Chat/Document tab row switches which `.cpane` is
+	   visible, and the sidebar becomes a slide-over rather than its own
+	   stacked block, confirmed against the design mockup
+	   (https://claude.ai/artifact/8xtmfkBF3k4PEsQ8GyWz8G) before this was built. */
+	@media (max-width: 980px) {
+		.pane-tabs {
+			display: flex; gap: .3rem; margin-bottom: var(--space-3);
+			border: 1px solid var(--line-2); border-radius: var(--r); padding: .15rem; background: var(--panel);
+		}
+		.pane-tabs button {
+			flex: 1; border: none; background: none; padding: .4rem .6rem; border-radius: var(--r);
+			font: inherit; font-size: var(--text-sm); font-weight: 650; color: var(--muted); cursor: pointer;
+		}
+		.pane-tabs button.on { background: var(--accent); color: #fff; }
+		.pane-tabs button:disabled { opacity: .5; cursor: not-allowed; }
+
+		.chat-shell { grid-template-columns: 1fr; height: 75dvh; min-height: 480px; gap: 0; position: relative; }
+		.cpane { display: none; }
+		.cpane.active { display: flex; }
+		.cpane.sidebar.active {
+			display: grid; position: fixed; left: var(--space-4); right: 4rem; top: 4.5rem; bottom: var(--space-4);
+			z-index: 20; box-shadow: var(--shadow-2, 0 12px 28px rgba(0, 0, 0, .18));
+		}
 		.clientlist { max-height: 8.5rem; }
 		.historylist { max-height: 8.5rem; }
-		.chat-main { height: 75dvh; min-height: 480px; }
 		.composer { padding: var(--space-2) var(--space-3) var(--space-3); }
 		.composer-row { flex-wrap: wrap; }
 	}

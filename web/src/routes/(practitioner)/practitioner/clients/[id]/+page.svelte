@@ -14,6 +14,34 @@
 		return `${PUBLIC_API_BASE}/api/me/clients/${data.client.id}/files/${f.id}`;
 	}
 
+	let uploadLinkUrl = $state('');
+	let creatingUploadLink = $state(false);
+	async function createUploadLink() {
+		creatingUploadLink = true;
+		try {
+			const result = await post(fetch, `/me/clients/${data.client.id}/upload-links`, {});
+			uploadLinkUrl = `${window.location.origin}${result.url}`;
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		} finally {
+			creatingUploadLink = false;
+		}
+	}
+	async function copyUploadLink() {
+		await navigator.clipboard.writeText(uploadLinkUrl);
+		toast('Link copied.');
+	}
+
+	// session_documents rows have no `filename` — this list used to fall
+	// back to the raw `kind` string. The Consult Draft Editor makes these
+	// rows real and user-facing, so the fallback is replaced outright
+	// with a proper label, a draft/final pill, and a deep link back into
+	// the document pane that produced it.
+	const DOCUMENT_KIND_LABELS: Record<string, string> = {
+		clinician_note: 'Clinician Note',
+		client_report: 'Client Report'
+	};
+
 	// The consult pipeline's patient context (app/patient/context.py) has
 	// always read conditions/medications/labs — nothing ever wrote them
 	// until now (found live, 2026-09-14: every real client's recent_labs
@@ -110,6 +138,26 @@
 
 	<div class="rail-layout">
 		<div class="rail">
+			<div class="rail-section"><h2>Intake Links</h2>
+				<Button variant="outlined" onclick={createUploadLink} loading={creatingUploadLink}>Get upload link</Button>
+				{#if uploadLinkUrl}
+					<p class="hint link-text">{uploadLinkUrl} <button type="button" class="copy-btn" onclick={copyUploadLink}>Copy</button></p>
+				{/if}
+				{#if !data.links?.length}
+					<p class="hint">No links sent yet.</p>
+				{:else}
+					<ul class="list doc-list">
+						{#each data.links as l (l.token)}
+							<li>
+								{l.kind === 'upload' ? 'Upload link' : 'Questionnaire link'}
+								<span class="pill" class:final={l.status === 'submitted'}>{l.status === 'submitted' ? 'Submitted' : 'Open'}</span>
+								<span class="hint">{l.created_at ?? ''}</span>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			</div>
+
 			<div class="rail-section"><h2>Files</h2>
 				{#if !data.files?.length}
 					<p class="hint">No files uploaded yet.</p>
@@ -126,8 +174,16 @@
 				{#if !data.documents?.length}
 					<p class="hint">No documents yet.</p>
 				{:else}
-					<ul class="list">
-						{#each data.documents as d (d.id)}<li>{d.filename ?? d.kind}</li>{/each}
+					<ul class="list doc-list">
+						{#each data.documents as d (d.id)}
+							<li>
+								<a href="/practitioner/consult?client={data.client.id}&session={d.session_id}&pane=doc&kind={d.kind}">
+									{DOCUMENT_KIND_LABELS[d.kind] ?? d.kind}
+								</a>
+								<span class="pill" class:final={d.status === 'final'}>{d.status === 'final' ? 'Final' : 'Draft'}</span>
+								<span class="hint">{d.session_title ?? ''} · {d.updated_at ?? ''}</span>
+							</li>
+						{/each}
 					</ul>
 				{/if}
 			</div>
@@ -185,6 +241,15 @@
 	.rail-section { margin-bottom: var(--space-5); }
 	.rail-section h2 { font-size: var(--text-sm); font-weight: 650; letter-spacing: .04em; color: var(--muted); margin-bottom: var(--space-2); }
 	.list { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
+	.doc-list li { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; }
+	.doc-list a { font-weight: 600; }
+	.doc-list .pill {
+		display: inline-flex; padding: 1px 7px; border-radius: 99px; font-size: 10px; font-weight: 700;
+		text-transform: uppercase; letter-spacing: .03em; background: var(--warn-soft); color: var(--warn);
+	}
+	.doc-list .pill.final { background: var(--accent-soft); color: var(--accent-ink); }
+	.link-text { word-break: break-all; display: flex; align-items: center; gap: .5rem; margin-top: var(--space-2); }
+	.copy-btn { border: none; background: var(--panel-2); border-radius: var(--r); padding: .2rem .6rem; font-size: var(--text-xs); font-weight: 650; cursor: pointer; flex: none; }
 	.session { display: grid; gap: .35rem; }
 	.sr { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
 	.summary { margin: 0; padding: var(--space-3); background: var(--panel-2); border-radius: var(--r); font-size: var(--text-sm); white-space: pre-wrap; }

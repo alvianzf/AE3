@@ -112,15 +112,27 @@ def require_practitioner(request: Request) -> dict:
     return session
 
 
-def require_pro_practitioner(session: dict = Depends(require_practitioner)) -> dict:
+def require_pro_practitioner(request: Request) -> dict:
+    # Takes Request and does its own session+fetch rather than depending on
+    # require_practitioner (its own separate core_store.get_practitioner call)
+    # followed by a second one here — this dependency gates ~40 routes, so
+    # that was a redundant DB round trip on every one of them (found in
+    # review; same reasoning require_admin_or_upload_permitted_practitioner
+    # below already applies to its own chunked-upload check). Duplicates
+    # require_practitioner's suspended check against the one fetched row.
+    session = current_session(request)
+    if session is None or session["role"] != "practitioner":
+        raise HTTPException(status_code=401, detail="Practitioner login required.")
     practitioner = core_store.get_practitioner(session["id"])
+    if practitioner is None or practitioner["status"] == "suspended":
+        raise HTTPException(status_code=401, detail="Practitioner login required.")
     # status must be 'approved' too, not just not-suspended: require_practitioner
     # deliberately still lets 'pending'/'rejected' log in (to see their own
     # status), but Pro features — real clients, real consults — must wait for
     # admin review. Found missing: a pending or rejected applicant who reached
     # 'pro' via checkout (billing.upgrade also guards this now) could otherwise
     # use the full consult pipeline before ever being approved.
-    if practitioner is None or practitioner["status"] != "approved" or \
+    if practitioner["status"] != "approved" or \
             practitioner["plan"] != "pro" or \
             practitioner.get("stripe_status") in ("past_due", "blocked"):
         raise HTTPException(status_code=403, detail="A Pro plan in good standing is required.")
@@ -140,7 +152,7 @@ def require_admin_or_pro_practitioner(request: Request) -> dict:
     if session is not None and session["role"] == "admin":
         return require_admin(request)
     if session is not None and session["role"] == "practitioner":
-        return require_pro_practitioner(require_practitioner(request))
+        return require_pro_practitioner(request)
     raise HTTPException(status_code=401, detail="Admin or practitioner login required.")
 
 

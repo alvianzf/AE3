@@ -27,6 +27,8 @@
 	let languageInput = $state('');
 	let photoFile = $state<File | null>(null);
 	let photoPreview = $state('');
+	let logoFile = $state<File | null>(null);
+	let logoPreview = $state('');
 	let saving = $state(false);
 
 	$effect(() => {
@@ -68,6 +70,13 @@
 		photoPreview = URL.createObjectURL(file);
 	}
 
+	function onLogoChange(e: Event) {
+		const file = (e.target as HTMLInputElement).files?.[0];
+		if (!file) return;
+		logoFile = file;
+		logoPreview = URL.createObjectURL(file);
+	}
+
 	async function save(e: Event) {
 		e.preventDefault();
 		saving = true;
@@ -81,9 +90,11 @@
 			form.set('specialties', JSON.stringify(specialties));
 			form.set('languages', JSON.stringify(languages));
 			if (photoFile) form.set('photo', photoFile);
+			if (logoFile) form.set('logo', logoFile);
 			await api(fetch, '/me/profile', { method: 'PUT', body: form });
 			toast('Profile updated.');
 			photoFile = null;
+			logoFile = null;
 			await invalidateAll();
 		} catch (err: any) {
 			toast(err.message, 'alert');
@@ -107,6 +118,19 @@
 					<input type="file" accept="image/jpeg,image/png,image/gif,image/webp" onchange={onPhotoChange} hidden />
 				</label>
 				<p class="hint">JPEG, PNG, GIF, or WebP. Up to 5 MB.</p>
+			</div>
+		</div>
+
+		<div class="logo-row">
+			<div class="logo-well" style={(logoPreview || p?.logo_path) ? `background-image:url(${logoPreview || p?.logo_path})` : ''}>
+				{#if !logoPreview && !p?.logo_path}<span class="logo-placeholder">No logo</span>{/if}
+			</div>
+			<div>
+				<label class="upload-btn">
+					{p?.logo_path || logoPreview ? 'Change logo' : 'Upload logo'}
+					<input type="file" accept="image/jpeg,image/png,image/gif,image/webp" onchange={onLogoChange} hidden />
+				</label>
+				<p class="hint">Shown at the top of every clinician note and client report you produce. PNG with transparency works best.</p>
 			</div>
 		</div>
 
@@ -159,6 +183,13 @@
 		display: flex; align-items: center; justify-content: center;
 	}
 	.photo span { font-size: 1.6rem; font-weight: 700; color: var(--accent-ink); }
+	.logo-row { display: flex; align-items: center; gap: var(--space-4); }
+	.logo-well {
+		width: 7.5rem; height: 4.5rem; border-radius: var(--r); flex: none;
+		background: var(--panel-2); background-size: contain; background-position: center; background-repeat: no-repeat;
+		border: 1px dashed var(--line-2); display: flex; align-items: center; justify-content: center;
+	}
+	.logo-placeholder { font-size: var(--text-xs); color: var(--muted); }
 	.upload-btn {
 		display: inline-flex; border: 1px solid var(--line-2); border-radius: var(--r); padding: .45rem 1rem;
 		font-size: var(--text-sm); font-weight: 650; cursor: pointer; background: var(--panel);

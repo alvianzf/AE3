@@ -10,3 +10,4 @@ web/.svelte-kit/
 web/node_modules/
 .claude/worktrees/
 .DS_Store
+vps

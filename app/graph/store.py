@@ -262,8 +262,7 @@ def ingest_document(
                 """,
                 id=document_id, rows=entity_rows,
             )
-        for rel in (relationships or []):
-            upsert_relationship(rel["head"], rel["rel_type"], rel["tail"], s)
+        _upsert_relationships(relationships or [], s)
 
         if original:
             content, name, media_type = original
@@ -279,8 +278,9 @@ def ingest_document(
                     "doc.original_media_type = $media_type, doc.original_bytes = $size",
                     id=document_id, name=name, media_type=media_type, size=size,
                 )
+    pages = f", {page_count} page{'s' if page_count != 1 else ''}" if page_count else ""
     log("admin", "ingest",
-        f"{title} — {total} passages, {page_count or 0} pages, grade {grade}")
+        f"{title} — {total} passage{'s' if total != 1 else ''}{pages}, grade {grade}")
     return get_document(document_id)
 
 
@@ -309,8 +309,7 @@ def link_document(document_id: str, entities_per_passage: list[list[dict]],
                 """,
                 id=document_id, rows=entity_rows,
             )
-        for rel in relationships:
-            upsert_relationship(rel["head"], rel["rel_type"], rel["tail"], s)
+        _upsert_relationships(relationships, s)
     return len(entity_rows) + len(relationships)
 
 
@@ -401,6 +400,35 @@ def upsert_relationship(head_name: str, rel_type: str, tail_name: str, s=None) -
     finally:
         if close:
             s.close()
+
+
+def _upsert_relationships(relationships: list[dict], s) -> None:
+    """Writes every (head, rel_type, tail) triple ingest_document()/
+    link_document() were extracted, grouped into one UNWIND query per
+    distinct sanitized rel_type rather than one round-trip per
+    relationship (upsert_relationship() called in a loop) — a document
+    with dozens of extracted relationships used to pay one query per
+    relationship for no reason; a relationship type still can't be
+    query-parameterized (sanitize_relationship_type's docstring), so the
+    type itself is still interpolated, just once per group instead of
+    once per relationship."""
+    by_type: dict[str, list[dict]] = {}
+    for rel in relationships:
+        rtype = sanitize_relationship_type(rel["rel_type"])
+        by_type.setdefault(rtype, []).append(
+            {"head": canon(rel["head"]), "tail": canon(rel["tail"])})
+    for rtype, rows in by_type.items():
+        s.run(
+            f"""
+            UNWIND $rows AS row
+            MERGE (h:Entity {{name: row.head}})
+              ON CREATE SET h.id = randomUUID(), h.type = 'Unknown'
+            MERGE (t:Entity {{name: row.tail}})
+              ON CREATE SET t.id = randomUUID(), t.type = 'Unknown'
+            MERGE (h)-[:{rtype}]->(t)
+            """,
+            rows=rows,
+        )
 
 
 # --- Admin surface: read/manage documents -----------------------------------
@@ -638,12 +666,23 @@ def document_text(document_id: str) -> dict | None:
     return {**card, "passages": rows}
 
 
+def _label(doc: dict | None, document_id: str) -> str:
+    """Human-readable stand-in for a document in an audit log entry — its
+    title, the way the rest of the app (Library, the source detail page)
+    always shows a document, never the raw id. Falls back to the id only
+    for the edge case where the document is already gone (found live:
+    the Postgres-style "MATCH found nothing" no-op)."""
+    title = doc and doc.get("title")
+    return f"'{title}'" if title else document_id
+
+
 def set_grade(document_id: str, grade: int) -> dict | None:
     with session() as s:
         s.run("MATCH (doc:Document {id: $id}) SET doc.grade = $grade",
               id=document_id, grade=grade)
-    log("admin", "regrade", f"{document_id} → grade {grade}")
-    return get_document(document_id)
+    result = get_document(document_id)
+    log("admin", "regrade", f"{_label(result, document_id)} → grade {grade}")
+    return result
 
 
 def set_topics(document_id: str, topics: list[str]) -> dict | None:
@@ -657,8 +696,9 @@ def set_topics(document_id: str, topics: list[str]) -> dict | None:
     with session() as s:
         s.run("MATCH (doc:Document {id: $id}) SET doc.topics = $topics",
               id=document_id, topics=cleaned)
-    log("admin", "set topics", f"{document_id} → {cleaned}")
-    return get_document(document_id)
+    result = get_document(document_id)
+    log("admin", "set topics", f"{_label(result, document_id)} → {cleaned}")
+    return result
 
 
 def set_folder(document_id: str, folder_path: str) -> dict | None:
@@ -669,8 +709,9 @@ def set_folder(document_id: str, folder_path: str) -> dict | None:
     with session() as s:
         s.run("MATCH (doc:Document {id: $id}) SET doc.folder_path = $folder_path",
               id=document_id, folder_path=normalized)
-    log("admin", "move to folder", f"{document_id} → '{normalized}'")
-    return get_document(document_id)
+    result = get_document(document_id)
+    log("admin", "move to folder", f"{_label(result, document_id)} → '{normalized}'")
+    return result
 
 
 def rename_folder(old_path: str, new_path: str) -> int:
@@ -728,7 +769,7 @@ def set_doc_type(document_id: str, doc_type: str) -> dict | None:
     # recording "set doc_type" entries for edits that provably did
     # nothing.
     if result is not None:
-        log("admin", "set doc_type", f"{document_id} → '{doc_type}'")
+        log("admin", "set doc_type", f"{_label(result, document_id)} → '{doc_type}'")
     return result
 
 
@@ -746,7 +787,7 @@ def set_uploaded_by(document_id: str, uploaded_by: str) -> dict | None:
               id=document_id, uploaded_by=uploaded_by.strip())
     result = get_document(document_id)
     if result is not None:
-        log("admin", "set uploaded_by", f"{document_id} → '{uploaded_by.strip()}'")
+        log("admin", "set uploaded_by", f"{_label(result, document_id)} → '{uploaded_by.strip()}'")
     return result
 
 
@@ -757,8 +798,9 @@ def set_private(document_id: str, is_private: bool) -> dict | None:
     with session() as s:
         s.run("MATCH (doc:Document {id: $id}) SET doc.is_private = $is_private",
               id=document_id, is_private=is_private)
-    log("admin", "set private" if is_private else "set public", document_id)
-    return get_document(document_id)
+    result = get_document(document_id)
+    log("admin", "set private" if is_private else "set public", _label(result, document_id))
+    return result
 
 
 def document_ids_under_folder(folder_path: str) -> list[str]:
@@ -797,6 +839,7 @@ def set_folder_private(folder_path: str, is_private: bool) -> list[str]:
 
 
 def delete_document(document_id: str) -> None:
+    label = _label(get_document(document_id), document_id)
     with session() as s:
         s.run(
             """
@@ -807,7 +850,7 @@ def delete_document(document_id: str) -> None:
             id=document_id,
         )
     originals.delete(document_id)
-    log("admin", "delete", document_id)
+    log("admin", "delete", label)
 
 
 def catalogue(min_grade: int) -> list[dict]:

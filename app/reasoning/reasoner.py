@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass
 
 from ..clients.llm_client import Role, get_client
@@ -138,7 +139,14 @@ SUMMARY_SYSTEM = (
 
 
 def summarize_session(transcript: str) -> str:
-    text, _usage = get_client(Role.REASONER).chat_text(
+    # Role.CHECKER, not Role.REASONER: same shape as the fix to
+    # generate_consult_intake_summary below — this is a short clinical-
+    # record note (3-4 sentences restating what was asked/advised), not
+    # the citation-grounded, anti-fabrication-constrained answer that
+    # actually justifies Reasoner's top-tier model. Quality-sensitive but
+    # not THE answer, and it runs once per session, so it belongs on the
+    # Reader/Checker tier (see llm_client.py's _ANTHROPIC_MODELS comment).
+    text, _usage = get_client(Role.CHECKER).chat_text(
         SUMMARY_SYSTEM, transcript, max_tokens=100_000, extra_body=_NO_THINKING)
     return text
 
@@ -224,7 +232,17 @@ def format_deterministic_consult_summary(history_data: dict, consultation_point:
         for s in prior_sessions:
             s_date = s["started_at"][:10] if s.get("started_at") else "Date unrecorded"
             s_title = s.get("title") or "Consultation"
-            s_summary = s.get("summary") or s.get("initial_summary") or f"{s.get('turns', 0)} turn(s) recorded"
+            # Deliberately never falls back to s["initial_summary"] here: that
+            # field is itself a full opening briefing which, for THAT session,
+            # already recursed through all of its own prior sessions. Doing so
+            # would re-embed the entire trajectory on every new session and
+            # compound without bound (each summary quoting every summary
+            # before it). A real "session_summary" entry is already short
+            # (written by the Summariser); only it goes through, hard-capped
+            # as a second line of defense.
+            s_summary = s.get("summary") or f"{s.get('turns', 0)} turn(s) recorded"
+            if len(s_summary) > 400:
+                s_summary = s_summary[:400].rstrip() + "…"
             lines.append(f"- **{s_date} — {s_title}**: {s_summary}")
     else:
         lines.append("No prior consultation sessions recorded before this consultation point.")
@@ -260,7 +278,15 @@ def generate_consult_intake_summary(history_data: dict, consultation_point: str)
         f"Draft summary baseline:\n{fallback}"
     )
     try:
-        text, _usage = get_client(Role.REASONER).chat_text(
+        # Role.CHECKER, not Role.REASONER: this is restating already-known
+        # structured record data as prose, not synthesizing a citation-
+        # grounded clinical answer under the anti-fabrication rules that
+        # actually justify Reasoner's top-tier model (Opus 5 / Qwen3-235B).
+        # It's the same "quality-sensitive, low-volume, but not THE answer"
+        # shape the Reader/Checker roles are already costed for — and it
+        # runs once per new consultation session, every time, so the tier
+        # gap compounds fast. See llm_client.py's _ANTHROPIC_MODELS comment.
+        text, _usage = get_client(Role.CHECKER).chat_text(
             CONSULT_INTAKE_SYSTEM, prompt, max_tokens=100_000, extra_body=_NO_THINKING
         )
         if text and text.strip():
@@ -268,3 +294,180 @@ def generate_consult_intake_summary(history_data: dict, consultation_point: str)
     except Exception as exc:
         logging.getLogger(__name__).warning("Consult intake summary LLM call failed, using fallback: %s", exc)
     return fallback
+
+
+# --- Consult Draft Editor: clinician note / client report drafting -----------
+
+# Shared by both prompts below rather than stated twice — the same
+# anti-fabrication discipline REASONER_SYSTEM already enforces for chat
+# answers (never fill a gap from general knowledge, never leave an
+# unfilled placeholder), restated for a document that may be relied on
+# with only light review, or none at all, before it reaches a medical
+# record or a client.
+_ANTI_FABRICATION_RULES = (
+    "- Never state a specific value — a dose, a date, a measurement, a lab "
+    "result — that was not actually given to you below. If a section would "
+    "normally include one and none was given, say plainly that it wasn't "
+    "specified rather than writing a plausible-sounding placeholder.\n"
+    "- Never fill a gap from general clinical knowledge or what's usually true "
+    "in medicine. If the consultation and sources below don't cover something, "
+    "leave it out rather than reasoning your way to it.\n"
+    "- Cite the specific source behind a clinical point inline as [K1], [K2], "
+    "referring only to the numbered sources list given to you — never invent a "
+    "number beyond that list's length, and never cite a source for something it "
+    "doesn't actually support.\n"
+)
+
+CLINICIAN_NOTE_SYSTEM = (
+    "You are a clinician drafting your own clinical note immediately after a "
+    "consultation, for your own records and for any colleague who reads it later.\n\n"
+    "Structure the note in Markdown with exactly these section headings, in order:\n"
+    "## Subjective\n"
+    "What the patient reported, in their own terms — symptoms, concerns, history "
+    "as told to you. State 'None recorded' if nothing was reported.\n\n"
+    "## Objective\n"
+    "What you observed, measured, or reviewed — lab results, exam findings, "
+    "documented history. State 'None recorded' if nothing was reviewed.\n\n"
+    "## Assessment\n"
+    "What the Subjective and Objective findings mean clinically — your "
+    "interpretation, not a repeat of the findings.\n\n"
+    "## Plan\n"
+    "The concrete actions that follow — treatment, monitoring, follow-up.\n\n"
+    "Rules:\n"
+    "- Attribute every statement correctly: 'the patient reported' for what they "
+    "said, 'noted' or the specific measurement for what you observed — never "
+    "blur the two.\n"
+    f"{_ANTI_FABRICATION_RULES}"
+    "- Terse, professional clinical prose. No pleasantries, no restating the "
+    "question, no padding.\n"
+    "- If an existing draft is given, revise or extend it rather than starting "
+    "over, unless told otherwise.\n"
+    "- If the practitioner gives a specific instruction, follow it exactly even "
+    "where it overrides the general structure above."
+)
+
+CLIENT_REPORT_SYSTEM = (
+    "You are a practitioner writing a plain-language summary directly to your "
+    "client after a consultation — they are the reader, not another clinician.\n\n"
+    "Structure the report in Markdown with exactly these section headings, in order:\n"
+    "## Overview\n"
+    "A short, warm paragraph summarizing the visit.\n\n"
+    "## What we covered\n"
+    "The main points discussed, in plain language — no clinical jargon or "
+    "abbreviations the client wouldn't recognize.\n\n"
+    "## What's changed since last time\n"
+    "Only include this section if a prior session exists; otherwise omit it "
+    "entirely, heading included.\n\n"
+    "## Your plan\n"
+    "What the client should actually do next, written as direct guidance to them.\n\n"
+    "Rules:\n"
+    "- Second person throughout ('you', 'your') — this is addressed directly to "
+    "the client.\n"
+    "- Omit anything not meant for the client to read directly: a practitioner's "
+    "internal differential reasoning, doubts, hedges, or notes to self. Translate "
+    "the clinical significance into guidance for the client — don't simplify the "
+    "practitioner's private reasoning into plainer words and include it anyway.\n"
+    f"{_ANTI_FABRICATION_RULES}"
+    "- Plain language only — explain or omit any term a non-clinician wouldn't know.\n"
+    "- If an existing draft is given, revise or extend it rather than starting "
+    "over, unless told otherwise.\n"
+    "- If the practitioner gives a specific instruction, follow it exactly even "
+    "where it overrides the general structure above."
+)
+
+_DOCUMENT_SYSTEM = {
+    "clinician_note": CLINICIAN_NOTE_SYSTEM,
+    "client_report": CLIENT_REPORT_SYSTEM,
+}
+
+# Same bracket-group shape renderAnswerHtml (web/src/lib/markdown.ts)
+# turns into clickable citation buttons.
+_CITE_GROUP = re.compile(r"\[([SK]\d+(?:\s*,\s*[SK]?\d+)*)\]")
+
+
+def _remap_citations(text: str, label_map: dict[str, str]) -> str:
+    """Rewrites a turn's own [K1]-style markers to the flattened, globally
+    renumbered labels _flatten_and_remap() below assigns — the claim-to-
+    source link survives flattening instead of being stripped, so the
+    drafting model sees exactly which source backed which sentence,
+    rather than having to re-guess it from a plain source list."""
+    def repl(m: re.Match) -> str:
+        last_prefix = "K"
+        parts = []
+        for raw in m.group(1).split(","):
+            mm = re.match(r"^\s*([SK])?(\d+)\s*$", raw)
+            if not mm:
+                continue
+            prefix = mm.group(1) or last_prefix
+            last_prefix = prefix
+            new_label = label_map.get(f"{prefix}{mm.group(2)}")
+            if new_label:
+                parts.append(new_label)
+        return f"[{', '.join(parts)}]" if parts else ""
+    return _CITE_GROUP.sub(repl, text)
+
+
+def _flatten_and_remap(turns: list[dict]) -> tuple[list[dict], list[str]]:
+    """One deduplicated, globally-renumbered source list across every
+    turn given, plus each turn's own answer text with its citation
+    markers rewritten to match — avoids both the per-turn K1/K2 labels
+    colliding across turns that each had their own independent
+    numbering, and losing the original claim-to-source attribution that
+    simply deleting those markers would."""
+    flat: list[dict] = []
+    key_to_label: dict[tuple, str] = {}
+    remapped_answers: list[str] = []
+    for t in turns:
+        label_map: dict[str, str] = {}
+        for s in t.get("sources") or []:
+            key = (s.get("document_id"), s.get("locator"), s.get("title"))
+            new_label = key_to_label.get(key)
+            if new_label is None:
+                new_label = f"K{len(flat) + 1}"
+                key_to_label[key] = new_label
+                flat.append(s)
+            if s.get("label"):
+                label_map[s["label"]] = new_label
+        remapped_answers.append(_remap_citations(t.get("answer", ""), label_map))
+    return flat, remapped_answers
+
+
+def generate_session_document(
+    kind: str, turns: list[dict], prior_document: str | None = None,
+    instruction: str | None = None,
+) -> tuple[str, dict, list[dict]]:
+    """Drafts a clinician_note or client_report from this session's consult
+    turns. No deterministic fallback, unlike generate_consult_intake_summary
+    above — there's no sane non-LLM substitute for freeform drafting, so
+    (like summarize_session) this lets openai.APIError propagate to the
+    caller's route rather than swallowing it.
+
+    Returns (markdown_text, usage, sources) — `sources` is the flattened,
+    renumbered list the [K1]/[K2] markers in `markdown_text` refer to, in
+    the same shape as a chat turn's own `sources` (label/title/locator/
+    document_id/snippet), so the caller can build the same citation-title
+    map web/src/lib/markdown.ts's renderAnswerHtml() already uses for chat.
+    """
+    sources, remapped_answers = _flatten_and_remap(turns)
+    source_block = "\n\n".join(
+        f"[K{i + 1}] {s.get('title', 'unknown')} — {s.get('snippet', '')}"
+        for i, s in enumerate(sources)
+    ) or "(no sources were cited in this consultation yet)"
+    convo_block = "\n\n".join(
+        f"Q: {t.get('question', '')}\nA: {a}"
+        for t, a in zip(turns, remapped_answers)
+    ) or "(no turns recorded in this consultation yet)"
+    prior_block = (
+        f"\n\nExisting draft to revise or extend:\n{prior_document}" if prior_document else ""
+    )
+    instruction_block = (
+        f"\n\nSpecific instruction from the practitioner: {instruction}" if instruction else ""
+    )
+    prompt = (
+        f"Consultation so far:\n{convo_block}\n\n"
+        f"Numbered sources behind that consultation:\n{source_block}"
+        f"{prior_block}{instruction_block}"
+    )
+    text, usage = get_client(Role.REASONER).chat_text(
+        _DOCUMENT_SYSTEM[kind], prompt, max_tokens=100_000, extra_body=_NO_THINKING)
+    return text, usage, sources

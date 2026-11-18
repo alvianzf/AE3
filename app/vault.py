@@ -123,6 +123,13 @@ _SCHEMA_DDL = """
             ALTER TABLE sessions ADD COLUMN IF NOT EXISTS initial_summary TEXT;
             CREATE INDEX IF NOT EXISTS sessions_by_client
                 ON sessions(client_id, started_at);
+            -- list_recent_sessions() orders by started_at across every
+            -- client with no WHERE clause (the dashboard's cross-client
+            -- recent-consultations widget) — the (client_id, started_at)
+            -- index above can't back that scan since it isn't filtered by
+            -- client_id, so this needs its own index on started_at alone.
+            CREATE INDEX IF NOT EXISTS sessions_by_started_at
+                ON sessions(started_at);
             -- One clinician note + one client report per session, each with
             -- its own draft/final state — these are separate documents, not
             -- alternate views of the same text.
@@ -138,6 +145,19 @@ _SCHEMA_DDL = """
             );
             CREATE INDEX IF NOT EXISTS documents_by_client
                 ON session_documents(client_id, updated_at);
+            -- An image pasted, dropped, or cropped into a session document —
+            -- its own table, not a column on session_documents, since one
+            -- document can hold several and a document's content only needs
+            -- to reference them by id (Consult Draft Editor).
+            CREATE TABLE IF NOT EXISTS session_assets (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                client_id TEXT NOT NULL,
+                filename TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS assets_by_session
+                ON session_assets(session_id);
             -- A clinician's freeform note per intake theme for a client —
             -- separate from the client's own questionnaire answers.
             CREATE TABLE IF NOT EXISTS intake_notes (
@@ -176,6 +196,27 @@ _SCHEMA_DDL = """
             );
             CREATE INDEX IF NOT EXISTS responses_by_client
                 ON questionnaire_responses(client_id, submitted_at);
+            -- Client Intake Links — the actual link state (draft answers,
+            -- one-way submitted flip) lives here in the vault, since it's
+            -- clinical-adjacent data; app/core_store.py's
+            -- intake_link_directory is only the token -> practitioner_id
+            -- routing pointer that finds this row in the first place.
+            -- client_id is NULL for an 'initial'-kind link until submission
+            -- creates the client (see _owned_session's sibling check for
+            -- intake links, app/main.py).
+            CREATE TABLE IF NOT EXISTS intake_links (
+                token TEXT PRIMARY KEY,
+                kind TEXT NOT NULL,
+                questionnaire_id TEXT,
+                questionnaire_version INTEGER,
+                client_id TEXT,
+                draft_answers_json TEXT NOT NULL DEFAULT '{}',
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at TEXT NOT NULL,
+                submitted_at TEXT
+            );
+            CREATE INDEX IF NOT EXISTS intake_links_by_client
+                ON intake_links(client_id, created_at);
             CREATE TABLE IF NOT EXISTS uploaded_files (
                 id TEXT PRIMARY KEY,
                 client_id TEXT NOT NULL,
@@ -575,9 +616,15 @@ def get_patient_history_up_to(practitioner_id: str, client_id: str, consultation
             (client_id, consultation_point),
         ).fetchone()
 
+        # Deliberately NOT s.initial_summary: that column is itself a full
+        # opening briefing which, for a prior session, already recursed
+        # through everything before it. Embedding it here would re-embed the
+        # entire trajectory on every new session and compound without bound.
+        # The short "summary" (written once by the Summariser, if ever run)
+        # is the only prior-session text that belongs in this history.
         prior_sessions = conn.execute(
             """
-            SELECT s.id, s.title, s.started_at, s.status, s.initial_summary,
+            SELECT s.id, s.title, s.started_at, s.status,
                    (SELECT count(*) FROM session_turns t WHERE t.session_id = s.id) AS turns,
                    (SELECT e.content FROM record_entries e
                        WHERE e.session_id = s.id AND e.kind = 'session_summary'
@@ -732,6 +779,70 @@ def save_questionnaire_response(
             row,
         )
     return {**row, "answers": answers}
+
+
+def create_intake_link(
+    practitioner_id: str, token: str, kind: str, questionnaire_id: str | None = None,
+    questionnaire_version: int | None = None, client_id: str | None = None,
+) -> dict:
+    row = {"token": token, "kind": kind, "questionnaire_id": questionnaire_id,
+           "questionnaire_version": questionnaire_version, "client_id": client_id,
+           "draft_answers_json": "{}", "status": "active", "created_at": _now(),
+           "submitted_at": None}
+    with vault_connection(practitioner_id) as conn:
+        conn.execute(
+            "INSERT INTO intake_links (token, kind, questionnaire_id, "
+            "questionnaire_version, client_id, draft_answers_json, status, "
+            "created_at, submitted_at) VALUES (%(token)s, %(kind)s, "
+            "%(questionnaire_id)s, %(questionnaire_version)s, %(client_id)s, "
+            "%(draft_answers_json)s, %(status)s, %(created_at)s, %(submitted_at)s)",
+            row,
+        )
+    return get_intake_link(practitioner_id, token)
+
+
+def get_intake_link(practitioner_id: str, token: str) -> dict | None:
+    with vault_connection(practitioner_id) as conn:
+        row = conn.execute(
+            "SELECT * FROM intake_links WHERE token = %s", (token,)
+        ).fetchone()
+    if row is None:
+        return None
+    data = dict(row)
+    data["draft_answers"] = json.loads(data.pop("draft_answers_json") or "{}")
+    return data
+
+
+def save_intake_draft(practitioner_id: str, token: str, answers: dict) -> None:
+    """Never touches `status` — an autosave can't resurrect or submit a
+    link, it only ever updates an already-active one."""
+    with vault_connection(practitioner_id) as conn:
+        conn.execute(
+            "UPDATE intake_links SET draft_answers_json = %s "
+            "WHERE token = %s AND status = 'active'",
+            (json.dumps(answers), token),
+        )
+
+
+def submit_intake_link(practitioner_id: str, token: str, client_id: str) -> None:
+    """The one-way flip that makes a link one-time. `client_id` is passed
+    in rather than assumed already set on the row, since an 'initial'-kind
+    link only gets one once the client record is created from its answers."""
+    with vault_connection(practitioner_id) as conn:
+        conn.execute(
+            "UPDATE intake_links SET status = 'submitted', submitted_at = %s, "
+            "client_id = %s WHERE token = %s",
+            (_now(), client_id, token),
+        )
+
+
+def list_intake_links(practitioner_id: str, client_id: str) -> list[dict]:
+    with vault_connection(practitioner_id) as conn:
+        rows = conn.execute(
+            "SELECT * FROM intake_links WHERE client_id = %s ORDER BY created_at DESC",
+            (client_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def get_questionnaire_response(practitioner_id: str, client_id: str) -> dict | None:
@@ -951,6 +1062,36 @@ def list_documents(practitioner_id: str, client_id: str) -> list[dict]:
             "JOIN sessions s ON s.id = d.session_id "
             "WHERE d.client_id = %s ORDER BY d.updated_at DESC",
             (client_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def save_asset(practitioner_id: str, session_id: str, client_id: str, asset_id: str, filename: str) -> dict:
+    row = {"id": asset_id, "session_id": session_id, "client_id": client_id,
+           "filename": filename, "created_at": _now()}
+    with vault_connection(practitioner_id) as conn:
+        conn.execute(
+            "INSERT INTO session_assets (id, session_id, client_id, filename, created_at) "
+            "VALUES (%(id)s, %(session_id)s, %(client_id)s, %(filename)s, %(created_at)s)",
+            row,
+        )
+    return row
+
+
+def get_asset(practitioner_id: str, session_id: str, asset_id: str) -> dict | None:
+    with vault_connection(practitioner_id) as conn:
+        row = conn.execute(
+            "SELECT * FROM session_assets WHERE session_id = %s AND id = %s",
+            (session_id, asset_id),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def list_assets(practitioner_id: str, session_id: str) -> list[dict]:
+    with vault_connection(practitioner_id) as conn:
+        rows = conn.execute(
+            "SELECT * FROM session_assets WHERE session_id = %s ORDER BY created_at",
+            (session_id,),
         ).fetchall()
     return [dict(r) for r in rows]
 

@@ -28,12 +28,21 @@
 		"vite": "^8.0.16"
 	},
 	"dependencies": {
+		"@floating-ui/dom": "^1.8.0",
+		"@tiptap/core": "^3.34.0",
+		"@tiptap/extension-bubble-menu": "^3.34.0",
+		"@tiptap/extension-floating-menu": "^3.34.0",
+		"@tiptap/extension-image": "^3.34.0",
+		"@tiptap/pm": "^3.34.0",
+		"@tiptap/starter-kit": "^3.34.0",
+		"cropperjs": "^2.3.1",
 		"d3-drag": "^3.0.1",
 		"d3-force": "^3.0.1",
 		"d3-selection": "^3.0.1",
 		"d3-transition": "^3.0.2",
 		"d3-zoom": "^3.0.1",
 		"dompurify": "^3.4.15",
-		"marked": "^18.0.13"
+		"marked": "^18.0.13",
+		"svelte-tiptap": "^3.0.2"
 	}
 }

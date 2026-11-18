@@ -499,7 +499,14 @@ def suggest_entity_merges(names: list[str]) -> list[dict]:
     groups for store.merge_entities()."""
     if len(names) < 2:
         return []
-    result, _usage = get_client(Role.GRAPH_BUILDER).chat_json(
+    # Role.CHECKER, not Role.GRAPH_BUILDER: unlike extract_graph() above,
+    # this isn't a per-passage, ingest-time-volume call — it's one batched
+    # call over the whole entity index, triggered manually from the admin
+    # consolidate-maintenance action. Low volume, and getting it wrong
+    # (per MERGE_SYSTEM's own warning) corrupts the graph by claiming two
+    # distinct clinical entities are the same thing — exactly the
+    # quality-sensitive/low-volume shape Checker's tier is costed for.
+    result, _usage = get_client(Role.CHECKER).chat_json(
         MERGE_SYSTEM, "Entity names in use:\n" + "\n".join(f"- {n}" for n in sorted(names)),
         MERGE_SCHEMA, extra_body=NO_THINKING,
     )
