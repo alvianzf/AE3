@@ -483,9 +483,16 @@ def register(app: FastAPI) -> None:
         if session["role"] == "admin":
             admin = core_store.get_admin(session["id"])
             tour_completed = bool(admin and admin.get("tour_completed"))
-            # specs/v8 §4.2 — drives the portal switcher in the top bar;
-            # only an admin with a live, set link gets one.
-            has_practitioner_view = bool(admin and admin.get("linked_practitioner_id"))
+            # specs/v8 §4.2 — drives the portal switcher in the Rail. Used
+            # to require a live linked_practitioner_id (a second, separate
+            # practitioner record an admin could switch into); now that
+            # require_practitioner/require_pro_practitioner accept an admin
+            # session directly under its own id, every active admin can act
+            # as a practitioner, so every active admin gets the switcher —
+            # found live: an admin with no linked_practitioner_id had no way
+            # to even discover /practitioner existed, despite it already
+            # working once they got there.
+            has_practitioner_view = bool(admin)
             name = admin.get("name") if admin else None
         elif session["role"] == "practitioner":
             practitioner = core_store.get_practitioner(session["id"])
