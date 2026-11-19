@@ -539,6 +539,34 @@ def create_practitioner_pending(
     return get_practitioner(practitioner_id)
 
 
+def get_or_create_admin_practitioner_profile(admin_id: str, name: str) -> dict:
+    """An admin acting as a practitioner directly (app/auth.py's
+    require_practitioner/require_pro_practitioner — no separate linked
+    practitioner account) still needs a real `practitioners` row under
+    its own id: every route that calls get_practitioner(session["id"])
+    elsewhere (not just the auth gate, which already bypasses the plan
+    check) expects one back, not None. Auto-provisioned once, 'approved'/
+    'pro' from the start since an admin needs no separate approval step —
+    idempotent (ON CONFLICT DO NOTHING) so a second call from another
+    request racing the first is harmless. password_hash is a random,
+    never-verified value: this row is never logged into on its own, only
+    reached via the admin's own session. email is deliberately NOT the
+    admin's real email (which already has a UNIQUE row of its own in
+    `admins`, and could even collide with a real practitioner's email,
+    since `practitioners.email` is also UNIQUE) — a synthetic, admin_id-
+    derived address keyed to this row only, guaranteed collision-free."""
+    with core_connection() as conn:
+        conn.execute(
+            "INSERT INTO practitioners (id, email, password_hash, name, "
+            "status, plan, created_at, approved_at) "
+            "VALUES (%s, %s, %s, %s, 'approved', 'pro', %s, %s) "
+            "ON CONFLICT (id) DO NOTHING",
+            (admin_id, f"admin-{admin_id}@internal.local", uuid.uuid4().hex,
+             name, _now(), _now()),
+        )
+    return get_practitioner(admin_id)
+
+
 def get_practitioner(practitioner_id: str) -> dict | None:
     with core_connection() as conn:
         row = conn.execute(

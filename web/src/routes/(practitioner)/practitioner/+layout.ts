@@ -14,6 +14,11 @@ export async function load({ fetch }) {
 		get(fetch, '/me/profile').catch(() => null),
 		get(fetch, '/me/notifications').catch(() => ({ new_contacts: 0, unviewed_intake: 0 }))
 	]);
-	if (!session || session.role !== 'practitioner') throw redirect(303, '/login');
+	// An admin account acts as a practitioner directly under its own
+	// identity (app/auth.py's require_practitioner/require_pro_practitioner
+	// — no separate linked practitioner account, no Pro/approval gate),
+	// so this layout has to accept that session shape too, not just a
+	// literal practitioner login.
+	if (!session || (session.role !== 'practitioner' && session.role !== 'admin')) throw redirect(303, '/login');
 	return { session, profile, notifications };
 }

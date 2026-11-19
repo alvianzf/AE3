@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 import time
 from collections import defaultdict
+from threading import Lock
 
 import bcrypt
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -96,7 +97,66 @@ def require_superadmin(session: dict = Depends(require_admin)) -> dict:
     return session
 
 
+# Which admin ids have already had vault.ensure_schema() run for them this
+# process's lifetime — ensure_schema's CREATE ... IF NOT EXISTS DDL is
+# idempotent but still a real round trip, and require_practitioner/
+# require_pro_practitioner run on ~40 routes; this in-memory guard (same
+# shape as _failed_logins below) means an admin acting as a practitioner
+# pays that cost once per worker process, not once per request.
+#
+# The lock matters, not just the set: a practitioner portal page load
+# fires several requests in parallel (+layout.ts's own Promise.all, plus
+# the browser's usual concurrent fetches), so the very first time an
+# admin visits, multiple threads hit this block before any of them has
+# added the id to _admin_vaults_ensured. Found live: Postgres's own
+# CREATE SCHEMA IF NOT EXISTS isn't safe under that kind of true
+# concurrency (a documented PG race, not a bug in ensure_schema itself)
+# — two threads can both pass the existence check and then both try to
+# create it, and the loser gets a raw UniqueViolation on pg_namespace
+# instead of a clean no-op. A per-id lock serializes first-time
+# provisioning without adding any DB-level locking to vault.py/db.py,
+# which plenty of other, already-serialized call sites also use.
+_admin_vault_locks: defaultdict[str, Lock] = defaultdict(Lock)
+_admin_vaults_ensured: set[str] = set()
+
+
+def _admin_session_or_none(request: Request) -> dict | None:
+    """An admin account acts as a practitioner directly, under its own id —
+    no separate linked practitioner record, no plan/approval gate (an
+    admin is already the highest trust level this app has). Every
+    practitioner/Pro-practitioner route downstream only ever reads
+    session["id"] to pick which vault schema to use (grep-confirmed, no
+    route re-checks session["role"]), so handing back the admin's own id
+    in that shape is all the rest of the app needs — paired with the
+    lazy ensure_schema() call below so that vault actually exists.
+    Explicitly NOT the same thing as the act_as_practitioner swap further
+    down — that logs you in AS a different, separate practitioner account
+    (its own existing clients/history); this is "the admin IS the
+    practitioner," same identity, own vault."""
+    session = current_session(request)
+    if session is None or session["role"] != "admin":
+        return None
+    admin = core_store.get_admin(session["id"])
+    if admin is None or not admin["is_active"]:
+        return None
+    if session["id"] not in _admin_vaults_ensured:
+        with _admin_vault_locks[session["id"]]:
+            if session["id"] not in _admin_vaults_ensured:  # re-check: lost the race, not the work
+                from . import vault  # deferred: vault.py may not exist at module import time
+                vault.ensure_schema(session["id"])
+                # Every route that calls core_store.get_practitioner(session["id"])
+                # directly (not just this gate, which already bypasses the plan
+                # check) needs a real row back, not None — see that function's
+                # own docstring.
+                core_store.get_or_create_admin_practitioner_profile(session["id"], admin["name"])
+                _admin_vaults_ensured.add(session["id"])
+    return session
+
+
 def require_practitioner(request: Request) -> dict:
+    admin_session = _admin_session_or_none(request)
+    if admin_session is not None:
+        return admin_session
     session = current_session(request)
     if session is None or session["role"] != "practitioner":
         raise HTTPException(status_code=401, detail="Practitioner login required.")
@@ -120,6 +180,9 @@ def require_pro_practitioner(request: Request) -> dict:
     # review; same reasoning require_admin_or_upload_permitted_practitioner
     # below already applies to its own chunked-upload check). Duplicates
     # require_practitioner's suspended check against the one fetched row.
+    admin_session = _admin_session_or_none(request)
+    if admin_session is not None:
+        return admin_session
     session = current_session(request)
     if session is None or session["role"] != "practitioner":
         raise HTTPException(status_code=401, detail="Practitioner login required.")
