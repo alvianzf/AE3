@@ -241,6 +241,7 @@
 					{/if}
 				{:else}
 					<button class="edit" onclick={() => openEdit(q)}><Icon name="eye" size={14} />View</button>
+					<button class="edit" onclick={() => openLink(q)}><Icon name="send" size={14} />Get link</button>
 				{/if}
 			</td>
 		{/snippet}

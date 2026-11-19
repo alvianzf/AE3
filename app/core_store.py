@@ -998,13 +998,18 @@ def _insert_questionnaire(
             raise ValueError(
                 "an 'initial' questionnaire needs exactly one question "
                 "mapped to client_name and one mapped to client_email")
+    # No longer deactivates every other questionnaire in scope — a
+    # practitioner can have as many active questionnaires (of either kind)
+    # at once as they want; link generation doesn't even look at is_active
+    # (app/main.py's me_create_intake_link works from any questionnaire by
+    # id), so there was never a functional reason to force exclusivity
+    # here, only a historical one-active-at-a-time UI convention that kept
+    # silently deactivating a practitioner's OTHER kind's questionnaire
+    # too. edit_questionnaire (below) still supersedes specifically the
+    # one old version it's replacing — that's a real versioning concern,
+    # not this.
     questionnaire_id = str(uuid.uuid4())
     with core_connection() as conn:
-        conn.execute(
-            "UPDATE questionnaires SET is_active = FALSE "
-            "WHERE practitioner_id IS NOT DISTINCT FROM %s",
-            (practitioner_id,),
-        )
         conn.execute(
             "INSERT INTO questionnaires (id, title, version, is_active, "
             "created_by, created_at, practitioner_id, kind) "
@@ -1038,13 +1043,17 @@ def edit_questionnaire(
     kind: str | None = None,
 ) -> dict:
     """Create a new version rather than mutate the one clients already
-    answered against; _insert_questionnaire flips the old version's
-    is_active off as part of the single-active-version invariant. The new
-    version stays in the same practitioner_id scope as the version it
+    answered against. The new version supersedes specifically the old
+    version of THIS questionnaire (deactivated below if it was active) —
+    that's a real versioning concern (v1 and v2 of the same questionnaire
+    both active at once makes no sense), not the broad "only one active
+    questionnaire at all" exclusivity _insert_questionnaire used to
+    enforce across every questionnaire in scope, which is gone now. The
+    new version stays in the same practitioner_id scope as the version it
     replaces, and keeps the same kind unless a new one is given."""
     with core_connection() as conn:
         old = conn.execute(
-            "SELECT version, practitioner_id, kind FROM questionnaires WHERE id = %s",
+            "SELECT version, practitioner_id, kind, is_active FROM questionnaires WHERE id = %s",
             (questionnaire_id,),
         ).fetchone()
     if old is None:
@@ -1052,28 +1061,27 @@ def edit_questionnaire(
     new_id = _insert_questionnaire(
         title, old["version"] + 1, created_by, questions, old["practitioner_id"],
         kind if kind is not None else old["kind"])
+    if old["is_active"]:
+        with core_connection() as conn:
+            conn.execute(
+                "UPDATE questionnaires SET is_active = FALSE WHERE id = %s",
+                (questionnaire_id,),
+            )
     log(created_by, "questionnaire edited", f"{questionnaire_id} -> {new_id}")
     return get_questionnaire(new_id)
 
 
 def set_questionnaire_active(questionnaire_id: str, active: bool) -> dict:
     """Explicit activate/deactivate, independent of creating a new version.
-    Activating deactivates every other questionnaire in the same
-    practitioner_id scope (reusing the same IS NOT DISTINCT FROM scoping as
-    _insert_questionnaire); deactivating just flips this one row off."""
+    No longer deactivates any other questionnaire — see _insert_questionnaire's
+    own comment; a practitioner can have as many active questionnaires as
+    they want at once."""
     with core_connection() as conn:
-        row = conn.execute(
-            "SELECT practitioner_id FROM questionnaires WHERE id = %s",
-            (questionnaire_id,),
+        exists = conn.execute(
+            "SELECT 1 FROM questionnaires WHERE id = %s", (questionnaire_id,)
         ).fetchone()
-        if row is None:
+        if exists is None:
             raise ValueError(f"unknown questionnaire: {questionnaire_id}")
-        if active:
-            conn.execute(
-                "UPDATE questionnaires SET is_active = FALSE "
-                "WHERE practitioner_id IS NOT DISTINCT FROM %s",
-                (row["practitioner_id"],),
-            )
         conn.execute(
             "UPDATE questionnaires SET is_active = %s WHERE id = %s",
             (active, questionnaire_id),
@@ -1083,19 +1091,29 @@ def set_questionnaire_active(questionnaire_id: str, active: bool) -> dict:
 
 def get_active_questionnaire(practitioner_id: str | None = None) -> dict | None:
     """A client sees their own practitioner's active questionnaire if one
-    exists, else falls back to the admin-curated global default."""
+    exists, else falls back to the admin-curated global default. This is
+    the older, already-logged-in client portal's fetch (GET /api/me/
+    questionnaire), from before 'initial'/'followup' existed — restricted
+    to 'followup' here since an already-registered client is never the
+    no-client-record-yet case an 'initial' questionnaire is for. A
+    practitioner can now have more than one active questionnaire of a
+    kind at once (no more forced single-active exclusivity), so this
+    picks the most recently created one deterministically rather than
+    whichever Postgres happens to return first."""
     with core_connection() as conn:
         row = None
         if practitioner_id is not None:
             row = conn.execute(
                 "SELECT id FROM questionnaires "
-                "WHERE practitioner_id = %s AND is_active = TRUE",
+                "WHERE practitioner_id = %s AND kind = 'followup' AND is_active = TRUE "
+                "ORDER BY created_at DESC LIMIT 1",
                 (practitioner_id,),
             ).fetchone()
         if row is None:
             row = conn.execute(
                 "SELECT id FROM questionnaires "
-                "WHERE practitioner_id IS NULL AND is_active = TRUE"
+                "WHERE practitioner_id IS NULL AND kind = 'followup' AND is_active = TRUE "
+                "ORDER BY created_at DESC LIMIT 1"
             ).fetchone()
     return get_questionnaire(row["id"]) if row else None
 
