@@ -54,6 +54,30 @@
 		return { key: crypto.randomUUID(), prompt: '', input_type: 'text', options: '', theme: 'General', mapsTo: '' };
 	}
 
+	function mappedQuestion(prompt: string, mapsTo: string, inputType: Question['input_type'] = 'text'): Question {
+		return { ...blankQuestion(), prompt, input_type: inputType, mapsTo };
+	}
+
+	// Same reasoning as the practitioner builder's own onKindChange: an
+	// 'initial' questionnaire needs exactly one client_name and one
+	// client_email question before it can save at all, so pre-fill the
+	// four client fields (still fully editable/removable) the moment this
+	// switches to 'initial', rather than make the practitioner discover
+	// the requirement by hitting the save error. Never clobbers real
+	// content — only fires when nothing's mapped yet.
+	function onKindChange() {
+		if (qKind !== 'initial') return;
+		if (questions.some((q) => q.mapsTo)) return;
+		const onlyBlank = questions.length === 1 && !questions[0].prompt.trim();
+		const starter = [
+			mappedQuestion('Full name', 'client_name'),
+			mappedQuestion('Email', 'client_email'),
+			mappedQuestion('Date of birth', 'client_dob', 'date'),
+			mappedQuestion('Country', 'client_country')
+		];
+		questions = onlyBlank ? starter : [...starter, ...questions];
+	}
+
 	function openCreate() {
 		editingId = null;
 		title = '';
@@ -172,7 +196,7 @@
 
 		<div class="field">
 			<label for="qn-kind">Who answers this, via a link</label>
-			<select id="qn-kind" bind:value={qKind}>
+			<select id="qn-kind" bind:value={qKind} onchange={onKindChange}>
 				<option value="followup">An existing client (follow-up)</option>
 				<option value="initial">Someone with no client record yet (new intake)</option>
 			</select>

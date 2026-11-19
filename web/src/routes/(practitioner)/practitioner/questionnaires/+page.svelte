@@ -68,6 +68,31 @@
 		};
 	}
 
+	function mappedQuestion(prompt: string, mapsTo: string, inputType: Question['input_type'] = 'text'): Question {
+		return { ...blankQuestion(), prompt, input_type: inputType, mapsTo };
+	}
+
+	// An 'initial' questionnaire needs exactly one client_name and one
+	// client_email question before it can even save — rather than make a
+	// practitioner discover that by hitting the save error, pre-fill the
+	// four client fields (still fully editable/removable) the moment they
+	// switch to this kind, same as a real intake form would start. Only
+	// when nothing's mapped yet — switching back and forth, or opening an
+	// existing questionnaire that already has its own mapped questions,
+	// must never clobber real content.
+	function onKindChange() {
+		if (qKind !== 'initial') return;
+		if (questions.some((q) => q.mapsTo)) return;
+		const onlyBlank = questions.length === 1 && !questions[0].prompt.trim();
+		const starter = [
+			mappedQuestion('Full name', 'client_name'),
+			mappedQuestion('Email', 'client_email'),
+			mappedQuestion('Date of birth', 'client_dob', 'date'),
+			mappedQuestion('Country', 'client_country')
+		];
+		questions = onlyBlank ? starter : [...starter, ...questions];
+	}
+
 	function openCreate() {
 		editingId = null;
 		viewOnly = false;
@@ -231,7 +256,7 @@
 
 		<div class="field">
 			<label for="qn-kind">Who answers this, via a link</label>
-			<select id="qn-kind" bind:value={qKind} disabled={viewOnly}>
+			<select id="qn-kind" bind:value={qKind} disabled={viewOnly} onchange={onKindChange}>
 				<option value="followup">An existing client (follow-up)</option>
 				<option value="initial">Someone with no client record yet (new intake)</option>
 			</select>
