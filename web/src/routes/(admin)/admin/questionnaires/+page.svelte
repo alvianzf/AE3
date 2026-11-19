@@ -13,6 +13,12 @@
 	// (web/src/routes/(client)/client/questionnaire/+page.svelte) already
 	// renders all five; this builder used to only ever write 'text'.
 	const QUESTION_TYPES = ['text', 'number', 'date', 'choice', 'multi_choice'] as const;
+	// Mirrors the practitioner builder's own MAPS_TO_FIELDS
+	// (web/src/routes/(practitioner)/practitioner/questionnaires) — only
+	// meaningful on an 'initial'-kind questionnaire, same backend contract
+	// (core_store._insert_questionnaire requires exactly one client_name
+	// and one client_email mapped question for that kind).
+	const MAPS_TO_FIELDS = ['', 'client_name', 'client_email', 'client_dob', 'client_country'] as const;
 
 	type Question = {
 		key: string; // local-only, for #each keying
@@ -20,10 +26,16 @@
 		input_type: (typeof QUESTION_TYPES)[number];
 		options: string; // comma-separated in the UI, split to an array on save
 		theme: string;
+		mapsTo: string;
 	};
 
 	let { data } = $props();
 	let open = $state(false);
+	// Which link kind this (site-wide default) questionnaire is for — same
+	// choice the practitioner builder already offers, backed by the same
+	// `kind` field; an admin default can be a new-client intake too, not
+	// just a follow-up.
+	let qKind = $state<'initial' | 'followup'>('followup');
 	// Set when editing an existing questionnaire; null means "New
 	// questionnaire". Editing always creates a new version rather than
 	// mutating in place (core_store.edit_questionnaire) — and, same as a
@@ -39,12 +51,13 @@
 	let submitting = $state(false);
 
 	function blankQuestion(): Question {
-		return { key: crypto.randomUUID(), prompt: '', input_type: 'text', options: '', theme: 'General' };
+		return { key: crypto.randomUUID(), prompt: '', input_type: 'text', options: '', theme: 'General', mapsTo: '' };
 	}
 
 	function openCreate() {
 		editingId = null;
 		title = '';
+		qKind = 'followup';
 		questions = [blankQuestion()];
 		open = true;
 	}
@@ -54,6 +67,7 @@
 			const q = await get(fetch, `/admin/questionnaires/${id}`);
 			editingId = id;
 			title = q.title;
+			qKind = q.kind === 'initial' ? 'initial' : 'followup';
 			// Round-trips every field the backend carries — input_type,
 			// options, theme — instead of flattening to prompt-only text,
 			// which used to silently downgrade an already-typed/themed
@@ -63,7 +77,8 @@
 				prompt: qq.prompt,
 				input_type: qq.input_type ?? 'text',
 				options: (qq.options ?? []).join(', '),
-				theme: qq.theme || 'General'
+				theme: qq.theme || 'General',
+				mapsTo: qq.maps_to || ''
 			}));
 			if (!questions.length) questions = [blankQuestion()];
 			open = true;
@@ -102,11 +117,13 @@
 				options:
 					q.input_type === 'choice' || q.input_type === 'multi_choice'
 						? q.options.split(',').map((o) => o.trim()).filter(Boolean)
-						: []
+						: [],
+				maps_to: qKind === 'initial' && q.mapsTo ? q.mapsTo : null
 			}));
 		try {
 			await post(fetch, editingId ? `/admin/questionnaires/${editingId}` : '/admin/questionnaires', {
 				title,
+				kind: qKind,
 				questions: payload
 			});
 			toast(editingId ? 'New version saved and made active.' : 'Questionnaire created.');
@@ -127,13 +144,14 @@
 		<Button variant="filled" onclick={openCreate}><Icon name="plus" size={15} />New questionnaire</Button>
 	{/snippet}
 	<DataTable
-		columns={[{ key: 'title', label: 'Title', sortable: true }, { key: 'owner', label: 'Owner' }, { key: 'version', label: 'Version' }, { key: 'is_active', label: 'Active' }, { key: 'actions', label: '' }]}
+		columns={[{ key: 'title', label: 'Title', sortable: true }, { key: 'owner', label: 'Owner' }, { key: 'kind', label: 'Kind' }, { key: 'version', label: 'Version' }, { key: 'is_active', label: 'Active' }, { key: 'actions', label: '' }]}
 		rows={data.questionnaires}
 		empty="No questionnaires yet."
 	>
 		{#snippet row(q: any)}
 			<td>{q.title}</td>
 			<td>{q.owner_name ? `Practitioner: ${q.owner_name}` : 'Admin default'}</td>
+			<td>{q.kind === 'initial' ? 'New client' : 'Follow-up'}</td>
 			<td>{q.version}</td>
 			<td>{#if q.is_active}<Chip tone="ok">Active</Chip>{:else}No{/if}</td>
 			<td class="actions">
@@ -151,6 +169,17 @@
 <Dialog bind:open title={editingId ? 'Edit questionnaire' : 'New questionnaire'} wide>
 	<form onsubmit={save} id="qn-form">
 		<TextField label="Title" bind:value={title} required />
+
+		<div class="field">
+			<label for="qn-kind">Who answers this, via a link</label>
+			<select id="qn-kind" bind:value={qKind}>
+				<option value="followup">An existing client (follow-up)</option>
+				<option value="initial">Someone with no client record yet (new intake)</option>
+			</select>
+		</div>
+		{#if qKind === 'initial'}
+			<p class="hint">Mark one question "Maps to → Client name" and one "Maps to → Client email" below — submitting a link for this questionnaire creates the client record from those two answers.</p>
+		{/if}
 
 		<div class="questions">
 			{#each questions as q, i (q.key)}
@@ -173,6 +202,16 @@
 					</div>
 					{#if q.input_type === 'choice' || q.input_type === 'multi_choice'}
 						<TextField label="Options" bind:value={q.options} hint="Comma-separated, e.g. Never, Sometimes, Often" />
+					{/if}
+					{#if qKind === 'initial'}
+						<div class="field">
+							<label for="maps-{q.key}">Maps to (new-client field)</label>
+							<select id="maps-{q.key}" bind:value={q.mapsTo}>
+								{#each MAPS_TO_FIELDS as f (f)}
+									<option value={f}>{f ? f.replace('client_', 'Client ') : '— none —'}</option>
+								{/each}
+							</select>
+						</div>
 					{/if}
 				</div>
 			{/each}

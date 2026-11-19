@@ -63,7 +63,8 @@
 <Tour steps={tourSteps} bind:active={tourActive} />
 
 <div class="app-shell portal portal-practitioner">
-	<Rail {items} onCommandPalette={openPalette} userLabel={data.profile?.name} />
+	<Rail {items} onCommandPalette={openPalette} userLabel={data.profile?.name}
+		showSwitcher={!!data.session?.acting_admin_id} switcherTo="admin" />
 	<main class="portal-main">
 		{@render children()}
 	</main>
