@@ -2,7 +2,6 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { post } from '$lib/api';
-	import { toast } from '$lib/stores/toast';
 	import BrandMark from './BrandMark.svelte';
 	import Icon from './Icon.svelte';
 	import LeafField from './LeafField.svelte';
@@ -117,23 +116,15 @@
 		goto('/login', { invalidateAll: true });
 	}
 
-	// The switcher used to be a plain <a href> straight to /practitioner or
-	// /admin — but the session cookie is still whatever role you actually
-	// logged in as, and every practitioner/admin route immediately redirects
-	// to /login if the role doesn't match. It looked like a link but never
-	// actually worked for an admin with a linked practitioner account
-	// (found live). These two backend routes swap the session cookie for
-	// the other identity first, then navigate for real.
-	async function switchPortal(e: Event) {
-		e.preventDefault();
+	// Plain navigation — an admin session now works directly on /practitioner
+	// under its own identity (app/auth.py's require_practitioner/
+	// require_pro_practitioner), no session swap needed at all. (An earlier
+	// version of this called a swap-to-a-different-identity endpoint first,
+	// which 400'd for any admin without a separate linked practitioner
+	// account — found live: the switcher link was visible but clicking it
+	// went nowhere.)
+	function switchPortal(e: Event) {
 		if (drawerOpen) closeDrawer();
-		const target = switcherTo === 'admin' ? '/admin' : '/practitioner';
-		try {
-			await post(fetch, switcherTo === 'admin' ? '/auth/return-to-admin' : '/auth/act-as-practitioner');
-			await goto(target, { invalidateAll: true });
-		} catch (err: any) {
-			toast(err?.message || 'Could not switch portal.', 'alert');
-		}
 	}
 </script>
 
