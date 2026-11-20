@@ -64,7 +64,7 @@
 
 <div class="app-shell portal portal-practitioner">
 	<Rail {items} onCommandPalette={openPalette} userLabel={data.profile?.name}
-		showSwitcher={!!data.session?.acting_admin_id} switcherTo="admin" />
+		showSwitcher={data.session?.role === 'admin'} switcherTo="admin" />
 	<main class="portal-main">
 		{@render children()}
 	</main>

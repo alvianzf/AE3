@@ -128,11 +128,9 @@ def _admin_session_or_none(request: Request) -> dict | None:
     session["id"] to pick which vault schema to use (grep-confirmed, no
     route re-checks session["role"]), so handing back the admin's own id
     in that shape is all the rest of the app needs — paired with the
-    lazy ensure_schema() call below so that vault actually exists.
-    Explicitly NOT the same thing as the act_as_practitioner swap further
-    down — that logs you in AS a different, separate practitioner account
-    (its own existing clients/history); this is "the admin IS the
-    practitioner," same identity, own vault."""
+    lazy ensure_schema() call below so that vault actually exists. No
+    session swap at all: the cookie's role stays "admin" the whole time,
+    this function just lets that role through the practitioner gates too."""
     session = current_session(request)
     if session is None or session["role"] != "admin":
         return None
@@ -378,53 +376,6 @@ def register(app: FastAPI) -> None:
 
         _record_login_failure(email)
         raise HTTPException(status_code=401, detail="Incorrect email or password.")
-
-    @app.post("/api/auth/act-as-practitioner")
-    async def act_as_practitioner(request: Request):
-        """The admin Rail's "Practitioner view" link has always pointed at
-        /practitioner, but that route's own layout immediately redirects
-        anything that isn't a real practitioner-role session straight back
-        to /login (found live — an admin with a linked_practitioner_id had
-        never actually been able to use the switcher; has_practitioner_view
-        only ever controlled whether the link rendered, not whether it did
-        anything). This is the piece that was missing: swap the session
-        cookie for a real practitioner-role one, so every existing
-        practitioner-only route/check (require_practitioner,
-        require_pro_practitioner, etc.) just works unmodified — no
-        duplicating a second copy of practitioner features into admin.
-        acting_admin_id round-trips back through this same session so
-        return_to_admin below can restore the original admin identity."""
-        session = current_session(request)
-        if session is None or session["role"] != "admin":
-            raise HTTPException(status_code=401, detail="Admin login required.")
-        admin = core_store.get_admin(session["id"])
-        if admin is None or not admin["is_active"]:
-            raise HTTPException(status_code=401, detail="Admin login required.")
-        practitioner_id = admin.get("linked_practitioner_id")
-        if not practitioner_id:
-            raise HTTPException(status_code=400, detail="No linked practitioner account.")
-        practitioner = core_store.get_practitioner(practitioner_id)
-        if practitioner is None or practitioner["status"] == "suspended":
-            raise HTTPException(status_code=400, detail="The linked practitioner account is unavailable.")
-        response = JSONResponse({"role": "practitioner", "id": practitioner_id})
-        _set_session_cookie(response, "practitioner", practitioner_id,
-                            acting_admin_id=admin["id"])
-        return response
-
-    @app.post("/api/auth/return-to-admin")
-    async def return_to_admin(request: Request):
-        """The other half of act_as_practitioner above — restores the
-        original admin session from acting_admin_id rather than requiring
-        a fresh login."""
-        session = current_session(request)
-        if session is None or session["role"] != "practitioner" or not session.get("acting_admin_id"):
-            raise HTTPException(status_code=400, detail="Not currently acting as a practitioner.")
-        admin = core_store.get_admin(session["acting_admin_id"])
-        if admin is None or not admin["is_active"]:
-            raise HTTPException(status_code=401, detail="Admin login required.")
-        response = JSONResponse({"role": "admin", "id": admin["id"], "admin_role": admin["role"]})
-        _set_session_cookie(response, "admin", admin["id"], admin_role=admin["role"])
-        return response
 
     @app.post("/api/auth/change-password")
     async def change_password(request: Request):
