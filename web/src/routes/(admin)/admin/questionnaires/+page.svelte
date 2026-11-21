@@ -9,9 +9,8 @@
 	import Chip from '$lib/components/Chip.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 
-	// core_store.QUESTION_TYPES (app/core_store.py) — the client portal
-	// (web/src/routes/(client)/client/questionnaire/+page.svelte) already
-	// renders all five; this builder used to only ever write 'text'.
+	// core_store.QUESTION_TYPES (app/core_store.py) supports all five —
+	// this builder used to only ever write 'text'.
 	const QUESTION_TYPES = ['text', 'number', 'date', 'choice', 'multi_choice'] as const;
 	// Mirrors the practitioner builder's own MAPS_TO_FIELDS
 	// (web/src/routes/(practitioner)/practitioner/questionnaires) — only

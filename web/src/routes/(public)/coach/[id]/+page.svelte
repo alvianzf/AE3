@@ -178,21 +178,21 @@
 			<div class="booking-header">
 				<span class="booking-badge">Direct Client Matching</span>
 				<h3>Consult with {p.name}</h3>
-				<p>Create your private account to connect with {p.name} and begin your personalized functional health plan.</p>
+				<p>Reach out to {p.name} directly to begin your personalized functional health plan — there's no account to create.</p>
 			</div>
 
-			<a class="btn-book-primary" href="/signup?practitioner={p.id}">
-				<span>Sign Up with {p.name}</span>
+			<a class="btn-book-primary" href="#inquiry-card">
+				<span>Message {p.name}</span>
 				<Icon name="chevron" size={14} />
 			</a>
 
 			<div class="booking-guarantee">
 				<Icon name="lock" size={13} />
-				<span>Private, encrypted health record vault</span>
+				<span>Private, confidential health consultation</span>
 			</div>
 		</div>
 
-		<div class="inquiry-card">
+		<div class="inquiry-card" id="inquiry-card">
 			<h3>Have a question first?</h3>
 			<p>Send a message directly to {p.name} before booking your intake consultation.</p>
 

@@ -6,7 +6,6 @@
 	let { data } = $props();
 	const q = $derived(data.questionnaire);
 
-	// Mirrors (client)/client/questionnaire/+page.svelte's answer shape —
 	// text/number/date/choice/multi_choice round-trip exactly the same way
 	// (vault.py stores answers_json as opaque JSON either way). A repeater
 	// answer is an array of row-objects keyed by column name; an "Other"

@@ -97,6 +97,20 @@
 		void saveDocument(next);
 	}
 
+	// Clients have no in-app view of their report — it's delivered by the
+	// practitioner pasting this into an email, so the copy needs to be
+	// plain text (no citation markup, no HTML tags) rather than the editor's HTML.
+	async function copyForEmail() {
+		const inst = storeGet(editor);
+		const text = inst.getText({ blockSeparator: '\n\n' });
+		try {
+			await navigator.clipboard.writeText(text);
+			toast('Copied — paste it into your email', 'ok');
+		} catch {
+			toast('Could not copy to clipboard', 'alert');
+		}
+	}
+
 	function onDocBodyClick(e: MouseEvent) {
 		const btn = (e.target as HTMLElement).closest('.cite') as HTMLElement | null;
 		if (!btn) return;
@@ -208,6 +222,9 @@
 		<span class="pill {documents[kind]?.status === 'final' ? 'final' : 'draft'}">
 			{documents[kind]?.status === 'final' ? 'Final' : 'Draft'}
 		</span>
+		{#if kind === 'client_report' && documents[kind]?.status === 'final'}
+			<button type="button" class="btn-sm" onclick={copyForEmail}>Copy for email</button>
+		{/if}
 		<button type="button" class="btn-sm" onclick={toggleFinalize}>
 			{documents[kind]?.status === 'final' ? 'Reopen as draft' : 'Finalize'}
 		</button>

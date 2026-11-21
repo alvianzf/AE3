@@ -1089,35 +1089,6 @@ def set_questionnaire_active(questionnaire_id: str, active: bool) -> dict:
     return get_questionnaire(questionnaire_id)
 
 
-def get_active_questionnaire(practitioner_id: str | None = None) -> dict | None:
-    """A client sees their own practitioner's active questionnaire if one
-    exists, else falls back to the admin-curated global default. This is
-    the older, already-logged-in client portal's fetch (GET /api/me/
-    questionnaire), from before 'initial'/'followup' existed — restricted
-    to 'followup' here since an already-registered client is never the
-    no-client-record-yet case an 'initial' questionnaire is for. A
-    practitioner can now have more than one active questionnaire of a
-    kind at once (no more forced single-active exclusivity), so this
-    picks the most recently created one deterministically rather than
-    whichever Postgres happens to return first."""
-    with core_connection() as conn:
-        row = None
-        if practitioner_id is not None:
-            row = conn.execute(
-                "SELECT id FROM questionnaires "
-                "WHERE practitioner_id = %s AND kind = 'followup' AND is_active = TRUE "
-                "ORDER BY created_at DESC LIMIT 1",
-                (practitioner_id,),
-            ).fetchone()
-        if row is None:
-            row = conn.execute(
-                "SELECT id FROM questionnaires "
-                "WHERE practitioner_id IS NULL AND kind = 'followup' AND is_active = TRUE "
-                "ORDER BY created_at DESC LIMIT 1"
-            ).fetchone()
-    return get_questionnaire(row["id"]) if row else None
-
-
 def get_questionnaire(questionnaire_id: str) -> dict | None:
     with core_connection() as conn:
         row = conn.execute(

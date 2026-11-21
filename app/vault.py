@@ -28,34 +28,6 @@ KINDS = ("lab", "history", "note", "session_summary", "condition", "medication",
 # has a documented heuristic fallback for them rather than requiring a
 # backfill migration before it can be used.
 
-WEARABLE_PROVIDERS = ("oura", "whoop", "garmin")
-
-# Fixture stand-in for a live vendor pull. v2 seeds representative sample
-# metrics on connect rather than calling out to Oura/Whoop/Garmin — see
-# specs/v2/06-client-portal.md ("what's not real yet"). Swapping this for a
-# real pull later is app/wearables.py's job, not this dict's.
-FIXTURE_WEARABLE_METRICS = {
-    "oura": [
-        ("sleep_score", 82),
-        ("hrv", 54),
-        ("resting_heart_rate", 58),
-        ("readiness_score", 76),
-    ],
-    "whoop": [
-        ("recovery_score", 68),
-        ("hrv", 49),
-        ("strain", 11.4),
-        ("sleep_performance", 79),
-    ],
-    "garmin": [
-        ("steps", 8420),
-        ("sleep_score", 74),
-        ("resting_heart_rate", 61),
-        ("stress_level", 32),
-    ],
-}
-
-
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -307,30 +279,6 @@ def get_client(practitioner_id: str, client_id: str) -> dict | None:
     return {**dict(row), "entries": [dict(e) for e in entries]}
 
 
-def set_client_password(
-    practitioner_id: str, client_id: str, password_hash: str, mark_set: bool = False,
-) -> None:
-    """Set/replace a client's password.
-
-    Used both when a Pro practitioner-created client (no password yet)
-    completes their own signup (mark_set=True — flips password_set so this
-    can't be done a second time by whoever merely knows the email), and for
-    an ordinary already-authenticated password change (mark_set=False —
-    leaves the flag as it already was).
-    """
-    with vault_connection(practitioner_id) as conn:
-        if mark_set:
-            conn.execute(
-                "UPDATE clients SET password_hash = %s, password_set = TRUE WHERE id = %s",
-                (password_hash, client_id),
-            )
-        else:
-            conn.execute(
-                "UPDATE clients SET password_hash = %s WHERE id = %s",
-                (password_hash, client_id),
-            )
-
-
 def get_client_by_email(practitioner_id: str, email: str) -> dict | None:
     with vault_connection(practitioner_id) as conn:
         row = conn.execute(
@@ -373,13 +321,6 @@ def set_client_active(practitioner_id: str, client_id: str, active: bool) -> dic
         )
         row = conn.execute("SELECT * FROM clients WHERE id = %s", (client_id,)).fetchone()
     return dict(row)
-
-
-def set_client_tour_completed(practitioner_id: str, client_id: str) -> None:
-    with vault_connection(practitioner_id) as conn:
-        conn.execute(
-            "UPDATE clients SET tour_completed = TRUE WHERE id = %s", (client_id,)
-        )
 
 
 def delete_client(practitioner_id: str, client_id: str) -> bool:
@@ -931,88 +872,6 @@ def get_uploaded_file(practitioner_id: str, file_id: str, client_id: str | None 
             row = conn.execute(
                 "SELECT * FROM uploaded_files WHERE id = %s", (file_id,)).fetchone()
     return dict(row) if row else None
-
-
-# --- Wearables ------------------------------------------------------------------
-
-def list_wearable_connections(practitioner_id: str, client_id: str) -> list[dict]:
-    with vault_connection(practitioner_id) as conn:
-        rows = conn.execute(
-            "SELECT provider, status, connected_at FROM wearable_connections "
-            "WHERE client_id = %s ORDER BY connected_at", (client_id,),
-        ).fetchall()
-    return [dict(r) for r in rows]
-
-
-def delete_wearable_connection(practitioner_id: str, client_id: str, provider: str) -> bool:
-    """Disconnect — drops the fixture data points too, not just the
-    connection row, so re-connecting starts clean."""
-    with vault_connection(practitioner_id) as conn:
-        exists = conn.execute(
-            "SELECT 1 FROM wearable_connections WHERE client_id = %s AND provider = %s",
-            (client_id, provider)).fetchone()
-        if not exists:
-            return False
-        conn.execute(
-            "DELETE FROM wearable_connections WHERE client_id = %s AND provider = %s",
-            (client_id, provider))
-        conn.execute(
-            "DELETE FROM wearable_data_points WHERE client_id = %s AND provider = %s",
-            (client_id, provider))
-    return True
-
-
-def create_wearable_connection(
-    practitioner_id: str, client_id: str, provider: str,
-) -> dict:
-    if provider not in WEARABLE_PROVIDERS:
-        raise ValueError(f"unknown wearable provider: {provider}")
-    row = {"id": str(uuid.uuid4()), "client_id": client_id, "provider": provider,
-           "status": "connected", "connected_at": _now()}
-    with vault_connection(practitioner_id) as conn:
-        conn.execute(
-            "INSERT INTO wearable_connections (id, client_id, provider, status,"
-            " connected_at) VALUES (%(id)s, %(client_id)s, %(provider)s, %(status)s,"
-            " %(connected_at)s)",
-            row,
-        )
-    return row
-
-
-def seed_fixture_wearable_data(
-    practitioner_id: str, client_id: str, provider: str,
-) -> list[dict]:
-    """Write fixture wearable_data_points for a newly connected provider.
-
-    This is the v2 stand-in for a live vendor pull (specs/v2/06-client-portal.md)
-    — not a real Oura/Whoop/Garmin API call.
-    """
-    if provider not in WEARABLE_PROVIDERS:
-        raise ValueError(f"unknown wearable provider: {provider}")
-    now = _now()
-    points = [
-        {"id": str(uuid.uuid4()), "client_id": client_id, "provider": provider,
-         "metric": metric, "value": value, "recorded_at": now}
-        for metric, value in FIXTURE_WEARABLE_METRICS[provider]
-    ]
-    with vault_connection(practitioner_id) as conn:
-        conn.executemany(
-            "INSERT INTO wearable_data_points (id, client_id, provider, metric,"
-            " value, recorded_at) VALUES (%(id)s, %(client_id)s, %(provider)s, %(metric)s,"
-            " %(value)s, %(recorded_at)s)",
-            points,
-        )
-    return points
-
-
-def list_wearable_data(practitioner_id: str, client_id: str) -> list[dict]:
-    with vault_connection(practitioner_id) as conn:
-        rows = conn.execute(
-            "SELECT * FROM wearable_data_points WHERE client_id = %s "
-            "ORDER BY recorded_at DESC",
-            (client_id,),
-        ).fetchall()
-    return [dict(r) for r in rows]
 
 
 # --- Session documents (clinician note / client report) -----------------------

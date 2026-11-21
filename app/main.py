@@ -34,7 +34,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel
 
-from . import auth, billing, core_store, db, originals, scraper, uploads, vault, vault_files, wearables
+from . import auth, billing, core_store, db, originals, scraper, uploads, vault, vault_files
 from .config import get_config
 from .clients import nebius_admin
 from .clients.llm_client import Role as LLMRole
@@ -218,7 +218,6 @@ async def _nosniff_photos(request: Request, call_next):
 _PROCESS_START = time.monotonic()
 auth.register(app)
 billing.register(app)
-wearables.register(app)
 
 
 # --- Ops ----------------------------------------------------------------------
@@ -2249,47 +2248,6 @@ def site_contact(body: SiteContactSubmission) -> dict:
     return {"ok": True}
 
 
-class ClientSignup(BaseModel):
-    name: str
-    email: str
-    password: str
-    practitioner_id: str | None = None
-
-
-@app.post("/api/clients")
-def client_signup(body: ClientSignup) -> dict:
-    auth.check_email_format(body.email)
-    auth.check_password_strength(body.password)
-    password_hash = auth.hash_password(body.password)
-    existing = core_store.get_client_directory_entry(body.email)
-    if existing is not None:
-        # A Pro practitioner pre-created this client (specs/v2/05-practitioner-
-        # portal.md); completing signup sets their password rather than
-        # creating a duplicate account. password_set gates this: it's only
-        # ever unset for a practitioner-created invite nobody has completed
-        # yet. Without this check, anyone who merely knows an existing
-        # client's email could silently reset their password — a real
-        # account-takeover path found in the v2.6 review.
-        client = vault.get_client(existing["practitioner_id"], existing["client_id"])
-        if client is None:
-            raise HTTPException(404, "invited client record is missing")
-        if client.get("password_set"):
-            raise HTTPException(
-                409, "An account with that email already exists. Please log in.")
-        vault.set_client_password(existing["practitioner_id"], client["id"],
-                                  password_hash, mark_set=True)
-        return {"id": client["id"], "practitioner_id": existing["practitioner_id"]}
-
-    if not body.practitioner_id:
-        raise HTTPException(400, "practitioner_id is required for a new client")
-    practitioner = core_store.get_practitioner(body.practitioner_id)
-    if practitioner is None or practitioner["plan"] != "pro":
-        raise HTTPException(400, "That practitioner cannot accept clients right now.")
-    client = vault.create_client(body.practitioner_id, body.name, body.email, password_hash)
-    core_store.add_client_directory_entry(body.email, body.practitioner_id, client["id"])
-    return {"id": client["id"], "practitioner_id": body.practitioner_id}
-
-
 # --- Superadmin: manage other admin accounts ------------------------------------
 
 class AdminCreate(BaseModel):
@@ -3894,79 +3852,6 @@ def me_delete_entry(client_id: str, entry_id: str,
     return {"deleted": entry_id}
 
 
-# A client can add to their own record too — self-reported labs/conditions/
-# etc. are marked with this prefix so the practitioner-facing panel and the
-# consult pipeline's context can tell them apart from what a practitioner
-# entered themselves (self-reported data carries less clinical certainty).
-# No schema change for this: record_entries has no author column, so the
-# marker lives in the content string itself, same technique already used
-# for legacy history/note entries (app/patient/context.py's "[kind] ..."
-# prefix).
-_PATIENT_REPORTED_PREFIX = "[patient-reported] "
-
-
-@app.get("/api/me/entries")
-def me_list_own_entries(session: dict = Depends(auth.require_client)) -> list[dict]:
-    # Only the client's own self-reported entries — not a practitioner's
-    # private clinical notes/conditions/medications about them. A SOAP-style
-    # note isn't necessarily meant to be shown back to the patient verbatim,
-    # so this is a real privacy boundary, not just a display filter.
-    entries = vault.list_entries(session["practitioner_id"], session["id"])
-    return [e for e in entries if e["content"].startswith(_PATIENT_REPORTED_PREFIX)]
-
-
-@app.post("/api/me/entries")
-def me_add_own_entry(body: RecordEntryIn, session: dict = Depends(auth.require_client)) -> dict:
-    if body.kind not in _RECORD_ENTRY_KINDS:
-        raise HTTPException(400, f"kind must be one of {_RECORD_ENTRY_KINDS}")
-    if not body.content.strip():
-        raise HTTPException(400, "content is required")
-    practitioner_id, client_id = session["practitioner_id"], session["id"]
-    entry = vault.add_entry(practitioner_id, client_id, body.kind,
-                            _PATIENT_REPORTED_PREFIX + body.content.strip())
-    vault.log(practitioner_id, "client", f"{body.kind} recorded by patient",
-              body.content[:120], client_id)
-    return entry
-
-
-@app.delete("/api/me/entries/{entry_id}")
-def me_delete_own_entry(entry_id: str, session: dict = Depends(auth.require_client)) -> dict:
-    practitioner_id, client_id = session["practitioner_id"], session["id"]
-    entries = vault.list_entries(practitioner_id, client_id)
-    entry = next((e for e in entries if e["id"] == entry_id), None)
-    if entry is None:
-        raise HTTPException(404, "no such entry")
-    # A client can only remove what they themselves added — not a
-    # practitioner-authored entry, even one about them.
-    if not entry["content"].startswith(_PATIENT_REPORTED_PREFIX):
-        raise HTTPException(403, "only entries you added yourself can be removed")
-    vault.delete_entry(practitioner_id, client_id, entry_id)
-    return {"deleted": entry_id}
-
-
-# --- Client portal -----------------------------------------------------------------
-
-@app.get("/api/me/questionnaire")
-def me_active_questionnaire(session: dict = Depends(auth.require_client)) -> dict | None:
-    return core_store.get_active_questionnaire(session["practitioner_id"])
-
-
-class QuestionnaireResponseIn(BaseModel):
-    questionnaire_id: str
-    questionnaire_version: int
-    answers: dict
-
-
-@app.post("/api/me/questionnaire")
-def me_submit_questionnaire(
-    body: QuestionnaireResponseIn, session: dict = Depends(auth.require_client),
-) -> dict:
-    return vault.save_questionnaire_response(
-        session["practitioner_id"], session["id"], body.questionnaire_id,
-        body.questionnaire_version, body.answers,
-    )
-
-
 def _save_uploaded_file(
     practitioner_id: str, client_id: str, filename: str, content_type: str,
     content: bytes | Path,
@@ -3987,75 +3872,10 @@ def _save_uploaded_file(
     )
 
 
-@app.post("/api/me/files")
-async def me_upload_file(
-    file: UploadFile, session: dict = Depends(auth.require_client),
-) -> dict:
-    """Upload a client file in one request. For anything that might exceed
-    _MAX_CLIENT_FILE_BYTES, use the chunked routes below instead (POST
-    /api/me/files/upload/init, .../chunk, .../complete), which accept up
-    to cfg.max_upload_bytes (200 MB) without buffering the whole file in
-    memory."""
-    raw = await file.read()
-    if len(raw) > _MAX_CLIENT_FILE_BYTES:
-        raise HTTPException(
-            400,
-            f"File must be under {_MAX_CLIENT_FILE_BYTES // (1024 * 1024)} MB "
-            "via direct upload — use the chunked upload for a larger file.")
-    filename = file.filename or "upload"
-    return _save_uploaded_file(
-        session["practitioner_id"], session["id"], filename, file.content_type or "", raw)
-
-
-class ClientFileUploadInit(BaseModel):
-    filename: str
-    total_size: int
-    content_type: str = ""
-
-
-@app.post("/api/me/files/upload/init")
-def me_file_upload_init(body: ClientFileUploadInit,
-                        session: dict = Depends(auth.require_client)) -> dict:
-    return uploads.start(body.total_size, {
-        "filename": body.filename, "content_type": body.content_type,
-    })
-
-
-@app.post("/api/me/files/upload/{upload_id}/chunk")
-async def me_file_upload_chunk(upload_id: str, chunk: UploadFile,
-                               session: dict = Depends(auth.require_client)) -> dict:
-    return await uploads.append_chunk(upload_id, chunk)
-
-
-@app.post("/api/me/files/upload/{upload_id}/complete")
-def me_file_upload_complete(upload_id: str,
-                            session: dict = Depends(auth.require_client)) -> dict:
-    path, meta = uploads.finish(upload_id)
-    try:
-        return _save_uploaded_file(
-            session["practitioner_id"], session["id"],
-            meta["filename"], meta["content_type"], path)
-    finally:
-        uploads.cleanup(upload_id)
-
-
-@app.get("/api/me/questionnaire/response")
-def me_questionnaire_response(session: dict = Depends(auth.require_client)) -> dict | None:
-    return vault.get_questionnaire_response(session["practitioner_id"], session["id"])
-
-
-@app.get("/api/me/files")
-def me_list_files(session: dict = Depends(auth.require_client)) -> list[dict]:
-    # storage_path is an internal filesystem path, not the client's business.
-    return [{k: v for k, v in f.items() if k != "storage_path"}
-            for f in vault.list_uploaded_files(session["practitioner_id"], session["id"])]
-
-
 def _serve_uploaded_file(practitioner_id: str, file_id: str, client_id: str | None) -> FileResponse:
-    """Shared by the client's own download route and the practitioner's
-    client-file route below — the upload path (POST /api/me/files) was fully
-    wired, but nothing ever served the bytes back to either side
-    (specs/v4/04-known-issues.md#h2)."""
+    """Shared by the practitioner's client-file route below and the intake-
+    upload routes above — the upload path was fully wired, but nothing ever
+    served the bytes back out (specs/v4/04-known-issues.md#h2)."""
     row = vault.get_uploaded_file(practitioner_id, file_id, client_id)
     if row is None:
         raise HTTPException(404, "no such file")
@@ -4074,11 +3894,6 @@ def _serve_uploaded_file(practitioner_id: str, file_id: str, client_id: str | No
         headers={"Content-Disposition": f'{disposition}; filename="{safe}"',
                  "X-Content-Type-Options": "nosniff"},
     )
-
-
-@app.get("/api/me/files/{file_id}")
-def me_download_file(file_id: str, session: dict = Depends(auth.require_client)) -> FileResponse:
-    return _serve_uploaded_file(session["practitioner_id"], file_id, session["id"])
 
 
 @app.get("/api/me/clients/{client_id}/files")

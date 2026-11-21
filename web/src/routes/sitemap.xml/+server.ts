@@ -7,7 +7,7 @@ import { PUBLIC_API_BASE, PUBLIC_API_BASE_BUILD, PUBLIC_SITE_URL } from '$env/st
 // already has (see that page's own comment on this tradeoff).
 export const prerender = true;
 
-const STATIC_PATHS = ['/', '/practitioners', '/join', '/login', '/signup'];
+const STATIC_PATHS = ['/', '/practitioners', '/join', '/login'];
 
 export async function GET() {
 	let practitionerIds: string[] = [];

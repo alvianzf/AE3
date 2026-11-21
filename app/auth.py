@@ -254,25 +254,6 @@ def require_admin_or_upload_permitted_practitioner(request: Request) -> dict:
     raise HTTPException(status_code=401, detail="Admin or practitioner login required.")
 
 
-def require_client(request: Request) -> dict:
-    session = current_session(request)
-    if session is None or session["role"] != "client":
-        raise HTTPException(status_code=401, detail="Client login required.")
-    # Live DB check on every request, not a cached session claim — same
-    # reasoning as require_admin/require_superadmin: a suspension (of the
-    # client directly, via app/vault.py's set_client_active, or of their
-    # practitioner) must take effect immediately rather than after the
-    # session cookie's own expiry.
-    practitioner = core_store.get_practitioner(session["practitioner_id"])
-    if practitioner is None or practitioner["status"] == "suspended":
-        raise HTTPException(status_code=401, detail="Client login required.")
-    from . import vault
-    client = vault.get_client(session["practitioner_id"], session["id"])
-    if client is None or not client["active"]:
-        raise HTTPException(status_code=401, detail="Client login required.")
-    return session
-
-
 def ensure_bootstrap_admin() -> None:
     if not (cfg.admin_bootstrap_email and cfg.admin_bootstrap_password):
         return
@@ -353,27 +334,12 @@ def register(app: FastAPI) -> None:
             _set_session_cookie(response, "practitioner", practitioner["id"])
             return response
 
-        directory_entry = core_store.get_client_directory_entry(email)
-        if directory_entry is not None:
-            # Deferred: app/vault.py may not exist yet when this module is
-            # imported (built in parallel), only needed on this branch.
-            from . import vault
-
-            client = vault.get_client(directory_entry["practitioner_id"], directory_entry["client_id"])
-            if client is not None and client["active"] and verify_password(password, client["password_hash"]):
-                # A client's own vault is sharded by practitioner (app/vault.py),
-                # so the session has to carry practitioner_id too, not just role
-                # and id — every client-scoped route needs it to know which
-                # vault file to open.
-                practitioner_id = directory_entry["practitioner_id"]
-                _clear_login_failures(email)
-                response = JSONResponse(
-                    {"role": "client", "id": client["id"],
-                     "practitioner_id": practitioner_id})
-                _set_session_cookie(response, "client", client["id"],
-                                    practitioner_id=practitioner_id)
-                return response
-
+        # Clients never log in at all — the product decision is that a
+        # client's only interaction with the app is a one-time /intake/
+        # [token] link (app/main.py's intake routes), never a persistent
+        # account. core_store.get_client_directory_entry/vault.get_client's
+        # password_hash still exist (intake submission creates a client
+        # record), but nothing reads that hash for login purposes anymore.
         _record_login_failure(email)
         raise HTTPException(status_code=401, detail="Incorrect email or password.")
 
@@ -397,13 +363,6 @@ def register(app: FastAPI) -> None:
         elif role == "practitioner":
             account = core_store.get_practitioner(session["id"])
             verify_and_set = lambda h: core_store.set_practitioner_password(session["id"], h)
-        elif role == "client":
-            # Deferred import — same reasoning as the login handler's client
-            # branch: app/vault.py may not exist at module load time.
-            from . import vault
-            account = vault.get_client(session["practitioner_id"], session["id"])
-            verify_and_set = lambda h: vault.set_client_password(
-                session["practitioner_id"], session["id"], h)
         else:
             raise HTTPException(status_code=400, detail="Unknown role.")
 
@@ -448,10 +407,6 @@ def register(app: FastAPI) -> None:
         elif session["role"] == "practitioner":
             practitioner = core_store.get_practitioner(session["id"])
             tour_completed = bool(practitioner and practitioner.get("tour_completed"))
-        elif session["role"] == "client":
-            from . import vault
-            client = vault.get_client(session["practitioner_id"], session["id"])
-            tour_completed = bool(client and client.get("tour_completed"))
         return {**session, "tour_completed": tour_completed, "has_practitioner_view": has_practitioner_view, "name": name}
 
     @app.post("/api/auth/tour-completed")
@@ -468,9 +423,6 @@ def register(app: FastAPI) -> None:
             core_store.set_admin_tour_completed(session["id"])
         elif session["role"] == "practitioner":
             core_store.set_practitioner_tour_completed(session["id"])
-        elif session["role"] == "client":
-            from . import vault
-            vault.set_client_tour_completed(session["practitioner_id"], session["id"])
         else:
             raise HTTPException(status_code=400, detail=f"unknown role: {session['role']}")
         return {"ok": True}

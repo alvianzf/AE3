@@ -40,7 +40,7 @@
 			{#if error}<p class="error">{error}</p>{/if}
 			<Button type="submit" loading={submitting}>Sign In</Button>
 			<div class="auth-hints">
-				<p class="hint">Looking for care? <a href="/signup">Create a client account</a></p>
+				<p class="hint">Looking for care? <a href="/practitioners">Browse practitioners</a></p>
 			</div>
 		</form>
 	</section>
