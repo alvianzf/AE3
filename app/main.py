@@ -8,6 +8,7 @@ accounts (app/auth.py) replace v1's single shared passphrase.
 from __future__ import annotations
 
 import asyncio
+import base64
 import html
 import io
 import json
@@ -3612,6 +3613,70 @@ def me_save_document(client_id: str, session_id: str, kind: str, body: DocumentI
             practitioner_id, session_id, client_id, kind, body.content, body.status)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
+
+
+_DOCUMENT_KIND_LABEL = {"clinician_note": "Clinician Note", "client_report": "Client Report"}
+
+
+@app.get("/api/me/clients/{client_id}/sessions/{session_id}/documents/{kind}/pdf")
+def me_download_document_pdf(client_id: str, session_id: str, kind: str,
+                             session: dict = Depends(auth.require_pro_practitioner)) -> Response:
+    """Clients have no in-app way to see a finalized report anymore — this
+    is how a practitioner gets it out to send by email. Renders the exact
+    TipTap HTML (not the lossy plain-text a clipboard copy would produce)
+    through the same headless-Chromium approach scraper.py already uses,
+    so this needs no new dependency."""
+    practitioner_id = session["id"]
+    _owned_session(practitioner_id, client_id, session_id)
+    doc = vault.get_document(practitioner_id, session_id, kind)
+    if doc is None:
+        raise HTTPException(404, "no such document")
+    client = vault.get_client(practitioner_id, client_id)
+    practitioner = core_store.get_practitioner(practitioner_id) or {}
+
+    logo_html = ""
+    logo_path = practitioner.get("logo_path")
+    if logo_path:
+        logo_file = Path(cfg.photos_path) / logo_path
+        if logo_file.is_file():
+            mime = mimetypes.guess_type(logo_file.name)[0] or "image/png"
+            encoded = base64.b64encode(logo_file.read_bytes()).decode("ascii")
+            logo_html = f'<img class="logo" src="data:{mime};base64,{encoded}">'
+
+    page_html = f"""<!doctype html><html><head><meta charset="utf-8"><style>
+        body {{ font-family: Georgia, serif; color: #1b1b1b; margin: 0; padding: 48px 56px; }}
+        .letterhead {{ display: flex; align-items: center; gap: 14px; border-bottom: 2px solid #2d6a4f;
+            padding-bottom: 14px; margin-bottom: 28px; }}
+        .logo {{ max-height: 48px; max-width: 160px; }}
+        .practitioner-name {{ font-size: 18px; font-weight: 700; color: #2d6a4f; }}
+        .practitioner-location {{ font-size: 13px; color: #555; }}
+        .doc-title {{ font-size: 14px; letter-spacing: .04em; text-transform: uppercase;
+            color: #888; margin-bottom: 20px; }}
+        .content {{ font-size: 15px; line-height: 1.6; }}
+        .content img {{ max-width: 100%; }}
+    </style></head><body>
+        <div class="letterhead">{logo_html}
+            <div><div class="practitioner-name">{html.escape(practitioner.get("name") or "")}</div>
+            <div class="practitioner-location">{html.escape(", ".join(practitioner.get("specialties") or []))}</div></div>
+        </div>
+        <div class="doc-title">{_DOCUMENT_KIND_LABEL.get(kind, kind)}{" for " + html.escape(client["name"]) if client and client.get("name") else ""}</div>
+        <div class="content">{doc["content"]}</div>
+    </body></html>"""
+
+    from playwright.sync_api import sync_playwright
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = browser.new_page()
+            page.set_content(page_html, wait_until="load")
+            pdf_bytes = page.pdf(format="A4", print_background=True,
+                                 margin={"top": "0", "bottom": "0", "left": "0", "right": "0"})
+        finally:
+            browser.close()
+
+    filename = f"{_DOCUMENT_KIND_LABEL.get(kind, kind).replace(' ', '-')}.pdf"
+    return Response(content=pdf_bytes, media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 class DocumentDraftIn(BaseModel):

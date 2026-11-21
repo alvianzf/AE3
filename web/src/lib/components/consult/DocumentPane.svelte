@@ -98,16 +98,29 @@
 	}
 
 	// Clients have no in-app view of their report — it's delivered by the
-	// practitioner pasting this into an email, so the copy needs to be
-	// plain text (no citation markup, no HTML tags) rather than the editor's HTML.
-	async function copyForEmail() {
-		const inst = storeGet(editor);
-		const text = inst.getText({ blockSeparator: '\n\n' });
+	// practitioner downloading this PDF and attaching/pasting it into an
+	// email. Rendered server-side from the saved HTML so formatting and
+	// any inserted images survive, unlike a plain-text clipboard copy.
+	let downloadingPdf = $state(false);
+	async function downloadPdf() {
+		downloadingPdf = true;
 		try {
-			await navigator.clipboard.writeText(text);
-			toast('Copied — paste it into your email', 'ok');
+			const res = await fetch(
+				`${PUBLIC_API_BASE}/api/me/clients/${clientId}/sessions/${sessionId}/documents/${kind}/pdf`,
+				{ credentials: 'include' }
+			);
+			if (!res.ok) throw new Error();
+			const blob = await res.blob();
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = `${KIND_LABEL[kind]}.pdf`;
+			a.click();
+			URL.revokeObjectURL(url);
 		} catch {
-			toast('Could not copy to clipboard', 'alert');
+			toast('Could not generate the PDF', 'alert');
+		} finally {
+			downloadingPdf = false;
 		}
 	}
 
@@ -223,7 +236,9 @@
 			{documents[kind]?.status === 'final' ? 'Final' : 'Draft'}
 		</span>
 		{#if kind === 'client_report' && documents[kind]?.status === 'final'}
-			<button type="button" class="btn-sm" onclick={copyForEmail}>Copy for email</button>
+			<button type="button" class="btn-sm" onclick={downloadPdf} disabled={downloadingPdf}>
+				{downloadingPdf ? 'Preparing…' : 'Download PDF'}
+			</button>
 		{/if}
 		<button type="button" class="btn-sm" onclick={toggleFinalize}>
 			{documents[kind]?.status === 'final' ? 'Reopen as draft' : 'Finalize'}
