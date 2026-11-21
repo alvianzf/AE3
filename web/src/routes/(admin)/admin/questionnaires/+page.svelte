@@ -6,7 +6,6 @@
 	import Dialog from '$lib/components/Dialog.svelte';
 	import TextField from '$lib/components/TextField.svelte';
 	import Button from '$lib/components/Button.svelte';
-	import Chip from '$lib/components/Chip.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 
 	// core_store.QUESTION_TYPES (app/core_store.py) supports all five —
@@ -37,13 +36,8 @@
 	let qKind = $state<'initial' | 'followup'>('followup');
 	// Set when editing an existing questionnaire; null means "New
 	// questionnaire". Editing always creates a new version rather than
-	// mutating in place (core_store.edit_questionnaire) — and, same as a
-	// fresh create, that new version immediately becomes the active one
-	// *within its own scope* (the admin default, or one practitioner's own
-	// set), replacing whatever was active in that scope before
-	// (core_store._insert_questionnaire's deactivation is now scoped by
-	// practitioner_id, not global — a practitioner's own questionnaires and
-	// the admin default deactivate independently of each other).
+	// mutating in place (core_store.edit_questionnaire); the new version
+	// is usable right away, same as a fresh create.
 	let editingId = $state<string | null>(null);
 	let title = $state('');
 	let questions = $state<Question[]>([]);
@@ -118,16 +112,6 @@
 		questions = questions.filter((q) => q.key !== key);
 	}
 
-	async function setActive(id: string, active: boolean) {
-		try {
-			await post(fetch, `/admin/questionnaires/${id}/${active ? 'activate' : 'deactivate'}`);
-			toast(active ? 'Questionnaire activated.' : 'Questionnaire deactivated.');
-			await invalidateAll();
-		} catch (err: any) {
-			toast(err.message, 'alert');
-		}
-	}
-
 	async function save(e: Event) {
 		e.preventDefault();
 		submitting = true;
@@ -149,7 +133,7 @@
 				kind: qKind,
 				questions: payload
 			});
-			toast(editingId ? 'New version saved and made active.' : 'Questionnaire created.');
+			toast(editingId ? 'New version saved.' : 'Questionnaire created.');
 			open = false;
 			await invalidateAll();
 		} catch (err: any) {
@@ -167,7 +151,7 @@
 		<Button variant="filled" onclick={openCreate}><Icon name="plus" size={15} />New questionnaire</Button>
 	{/snippet}
 	<DataTable
-		columns={[{ key: 'title', label: 'Title', sortable: true }, { key: 'owner', label: 'Owner' }, { key: 'kind', label: 'Kind' }, { key: 'version', label: 'Version' }, { key: 'is_active', label: 'Active' }, { key: 'actions', label: '' }]}
+		columns={[{ key: 'title', label: 'Title', sortable: true }, { key: 'owner', label: 'Owner' }, { key: 'kind', label: 'Kind' }, { key: 'version', label: 'Version' }, { key: 'actions', label: '' }]}
 		rows={data.questionnaires}
 		empty="No questionnaires yet."
 	>
@@ -176,14 +160,8 @@
 			<td>{q.owner_name ? `Practitioner: ${q.owner_name}` : 'Admin default'}</td>
 			<td>{q.kind === 'initial' ? 'New client' : 'Follow-up'}</td>
 			<td>{q.version}</td>
-			<td>{#if q.is_active}<Chip tone="ok">Active</Chip>{:else}No{/if}</td>
 			<td class="actions">
 				<button class="edit" onclick={() => openEdit(q.id)}><Icon name="edit" size={14} />Edit</button>
-				{#if q.is_active}
-					<Button variant="text" onclick={() => setActive(q.id, false)}><Icon name="pause" size={15} />Deactivate</Button>
-				{:else}
-					<Button variant="text" onclick={() => setActive(q.id, true)}><Icon name="play" size={15} />Activate</Button>
-				{/if}
 			</td>
 		{/snippet}
 	</DataTable>

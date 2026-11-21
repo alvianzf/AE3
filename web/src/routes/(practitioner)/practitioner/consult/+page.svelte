@@ -90,6 +90,16 @@
 	// GPT/Claude-style history rail: every past consultation for the
 	// currently selected client, clickable to reload it into the thread.
 	let sessions = $state<any[]>([]);
+	// No search over past sessions for a long-running client meant finding
+	// an old consult was pure scroll-and-skim (journey-audit finding #7).
+	// `sessions` is already fully loaded client-side, so this is a plain
+	// client-side filter, same pattern as clientSearch above.
+	let historySearch = $state('');
+	const filteredSessions = $derived(
+		sessions.filter((s: any) =>
+			(s.title ?? s.last_question ?? '').toLowerCase().includes(historySearch.trim().toLowerCase())
+		)
+	);
 	let loadingSessions = $state(false);
 	async function loadSessions(id: string) {
 		if (!id) {
@@ -613,8 +623,14 @@
 					New session
 				</button>
 			</div>
+			{#if sessions.length > 5}
+				<div class="search-field">
+					<Icon name="search" size={15} />
+					<input type="search" placeholder="Search sessions…" bind:value={historySearch} disabled={asking} />
+				</div>
+			{/if}
 			<ul class="historylist">
-				{#each sessions as s (s.id)}
+				{#each filteredSessions as s (s.id)}
 					<li>
 						<!-- Clicking a past session loads its full transcript and keeps
 						     its session_id, so the next "Ask" continues it rather than
@@ -632,7 +648,11 @@
 						</button>
 					</li>
 				{:else}
-					<li class="hint">{#if loadingSessions}<Spinner size={12} /> Loading…{:else}No consultations yet.{/if}</li>
+					<li class="hint">
+						{#if loadingSessions}<Spinner size={12} /> Loading…
+						{:else if sessions.length}No sessions match.
+						{:else}No consultations yet.{/if}
+					</li>
 				{/each}
 			</ul>
 		</div>

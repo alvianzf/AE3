@@ -1,9 +1,10 @@
 """Functional Health Collab — FastAPI app for the online practitioner platform.
 
-v2: a public website, an admin portal (practitioner management + the
-knowledge library, unchanged from v1), a practitioner portal (Basic profile
-only / Pro adds RAG + a client vault), and a client portal. Real per-role
-accounts (app/auth.py) replace v1's single shared passphrase.
+A public website, an admin portal (practitioner management + the knowledge
+library), and a practitioner portal (Basic profile only / Pro adds RAG + a
+client vault). Clients hold no account at all — their only interaction is a
+one-time /intake/{token} link (app/main.py's intake routes); real per-role
+accounts (app/auth.py) exist for admin and practitioner only.
 """
 from __future__ import annotations
 
@@ -205,11 +206,11 @@ app.add_middleware(GZipMiddleware, minimum_size=500)
 
 @app.middleware("http")
 async def _nosniff_photos(request: Request, call_next):
-    """/photos is a raw StaticFiles mount of unauthenticated, user-supplied
-    uploads (practitioner_signup has no auth) — nosniff stops a browser from
-    second-guessing the sniffed extension _save_photo already enforces at
-    upload time (specs/v4/04-known-issues.md#c7), matching the same header
-    /api/sources/{id}/original already sets for the same reason."""
+    """/photos is a raw StaticFiles mount of user-supplied uploads —
+    nosniff stops a browser from second-guessing the sniffed extension
+    _save_photo already enforces at upload time (specs/v4/04-known-issues.md#c7),
+    matching the same header /api/sources/{id}/original already sets for
+    the same reason."""
     response = await call_next(request)
     if request.url.path.startswith("/photos/"):
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -2105,10 +2106,9 @@ _MAX_PHOTO_BYTES = 5 * 1024 * 1024
 
 def _sniff_image_ext(raw: bytes) -> str | None:
     """Real file-format sniffing (magic bytes), not the client-supplied
-    filename's extension or content-type — practitioner_signup is
-    unauthenticated, so an .svg or .html "photo" saved under a trusted
-    extension and served back inline from the /photos static mount was a
-    stored-XSS vector (specs/v4/04-known-issues.md#c7)."""
+    filename's extension or content-type — an .svg or .html "photo" saved
+    under a trusted extension and served back inline from the /photos
+    static mount was a stored-XSS vector (specs/v4/04-known-issues.md#c7)."""
     if raw.startswith(b"\xff\xd8\xff"):
         return ".jpg"
     if raw.startswith(b"\x89PNG\r\n\x1a\n"):
@@ -2179,32 +2179,6 @@ def get_practitioner_public(practitioner_id: str) -> dict:
     if practitioner is None or practitioner["status"] != "approved":
         raise HTTPException(404, "no such practitioner")
     core_store.log_profile_view(practitioner_id)
-    return _public(practitioner)
-
-
-@app.post("/api/practitioners")
-async def practitioner_signup(
-    name: str = Form(...), email: str = Form(...), password: str = Form(...),
-    bio: str = Form(""), specialties: str = Form("[]"), languages: str = Form("[]"),
-    years_experience: int = Form(0), consultation_price_cents: int = Form(0),
-    photo: UploadFile | None = None,
-) -> dict:
-    auth.check_email_format(email)
-    if core_store.get_practitioner_by_email(email) is not None:
-        raise HTTPException(409, "An account with that email already exists.")
-    auth.check_password_strength(password)
-    practitioner = core_store.create_practitioner_pending(
-        email=email, password_hash=auth.hash_password(password), name=name,
-        bio=bio, specialties=json.loads(specialties or "[]"),
-        languages=json.loads(languages or "[]"),
-        years_experience=years_experience,
-        consultation_price_cents=consultation_price_cents,
-    )
-    if photo is not None and photo.filename:
-        raw = await photo.read()
-        photo_path = _save_photo(practitioner["id"], photo, raw)
-        practitioner = core_store.update_practitioner_profile(
-            practitioner["id"], photo_path=photo_path)
     return _public(practitioner)
 
 
@@ -2687,26 +2661,6 @@ def admin_edit_questionnaire(questionnaire_id: str, body: QuestionnaireIn,
         raise HTTPException(400, str(exc)) from exc
 
 
-@app.post("/api/admin/questionnaires/{questionnaire_id}/activate")
-def admin_activate_questionnaire(
-    questionnaire_id: str, _admin: dict = Depends(auth.require_admin),
-) -> dict:
-    try:
-        return core_store.set_questionnaire_active(questionnaire_id, True)
-    except ValueError:
-        raise HTTPException(404, "no such questionnaire")
-
-
-@app.post("/api/admin/questionnaires/{questionnaire_id}/deactivate")
-def admin_deactivate_questionnaire(
-    questionnaire_id: str, _admin: dict = Depends(auth.require_admin),
-) -> dict:
-    try:
-        return core_store.set_questionnaire_active(questionnaire_id, False)
-    except ValueError:
-        raise HTTPException(404, "no such questionnaire")
-
-
 # --- Practitioner portal ---------------------------------------------------------
 
 @app.get("/api/me/profile")
@@ -2842,9 +2796,8 @@ def me_set_source_weight(source_id: str, body: SourceWeightIn,
 def _own_questionnaire_or_404(practitioner_id: str, questionnaire_id: str) -> dict:
     """404 (not 403) if the questionnaire isn't this practitioner's own —
     don't confirm existence of another practitioner's questionnaire, or the
-    admin default. Used by edit/activate/deactivate — a practitioner can
-    view the admin default (see _own_or_admin_default_questionnaire_or_404)
-    but never modify it."""
+    admin default. Used by edit — a practitioner can view the admin default
+    (see _own_or_admin_default_questionnaire_or_404) but never modify it."""
     questionnaire = core_store.get_questionnaire(questionnaire_id)
     if questionnaire is None or questionnaire["practitioner_id"] != practitioner_id:
         raise HTTPException(404, "no such questionnaire")
@@ -2901,22 +2854,6 @@ def me_edit_questionnaire(
             questionnaire_id, body.title, body.questions, session["id"], kind=body.kind)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-
-
-@app.post("/api/me/questionnaires/{questionnaire_id}/activate")
-def me_activate_questionnaire(
-    questionnaire_id: str, session: dict = Depends(auth.require_pro_practitioner),
-) -> dict:
-    _own_questionnaire_or_404(session["id"], questionnaire_id)
-    return core_store.set_questionnaire_active(questionnaire_id, True)
-
-
-@app.post("/api/me/questionnaires/{questionnaire_id}/deactivate")
-def me_deactivate_questionnaire(
-    questionnaire_id: str, session: dict = Depends(auth.require_pro_practitioner),
-) -> dict:
-    _own_questionnaire_or_404(session["id"], questionnaire_id)
-    return core_store.set_questionnaire_active(questionnaire_id, False)
 
 
 # --- Client Intake Links: practitioner side (generate, list) -------------------

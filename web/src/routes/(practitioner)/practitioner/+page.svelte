@@ -44,7 +44,8 @@
 					<Button variant="filled" href="/practitioner/consult"><Icon name="message" size={15} />Start consult</Button>
 					<Button variant="outlined" href="/practitioner/clients"><Icon name="plus" size={15} />Add client</Button>
 				{:else}
-					<Button variant="filled" href="/practitioner/profile"><Icon name="settings" size={15} />Open profile</Button>
+					<Button variant="filled" href="/practitioner/upgrade"><Icon name="star" size={15} />Upgrade to Pro</Button>
+					<Button variant="outlined" href="/practitioner/profile"><Icon name="settings" size={15} />Open profile</Button>
 				{/if}
 			</div>
 		</div>

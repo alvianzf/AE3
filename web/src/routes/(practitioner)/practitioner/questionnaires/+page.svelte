@@ -6,7 +6,6 @@
 	import Dialog from '$lib/components/Dialog.svelte';
 	import TextField from '$lib/components/TextField.svelte';
 	import Button from '$lib/components/Button.svelte';
-	import Chip from '$lib/components/Chip.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 
 	// Mirrors the admin builder (../../../(admin)/admin/questionnaires) —
@@ -44,14 +43,12 @@
 	let qKind = $state<'initial' | 'followup'>('followup');
 	// Set when editing an existing questionnaire; null means "New
 	// questionnaire". Editing always creates a new version rather than
-	// mutating in place (core_store.edit_questionnaire) — the new version
-	// keeps the version it replaces' active state untouched, since
-	// activation is now a separate explicit action.
+	// mutating in place (core_store.edit_questionnaire).
 	let editingId = $state<string | null>(null);
 	// A practitioner can see the site default (GET /api/me/questionnaires
-	// now includes it, per direct request) but never modify it — edit/
-	// activate/deactivate all 404 on it server-side regardless, this just
-	// keeps the UI from offering actions that would fail.
+	// now includes it, per direct request) but never modify it — edit
+	// 404s on it server-side regardless, this just keeps the UI from
+	// offering an action that would fail.
 	let viewOnly = $state(false);
 	let title = $state('');
 	let questions = $state<Question[]>([]);
@@ -198,15 +195,6 @@
 		toast('Link copied.');
 	}
 
-	async function setActive(id: string, active: boolean) {
-		try {
-			await post(fetch, `/me/questionnaires/${id}/${active ? 'activate' : 'deactivate'}`);
-			toast(active ? 'Questionnaire activated.' : 'Questionnaire deactivated.');
-			await invalidateAll();
-		} catch (err: any) {
-			toast(err.message, 'alert');
-		}
-	}
 </script>
 
 <svelte:head><title>Questionnaires — Practitioner portal</title></svelte:head>
@@ -216,11 +204,11 @@
 		<Button variant="filled" onclick={openCreate}><Icon name="plus" size={15} />New questionnaire</Button>
 	{/snippet}
 	<p class="hint">
-		Your active questionnaire goes to your own clients instead of the site default. Deactivate
-		it any time to fall back to the default.
+		Any of your questionnaires can be sent to a client — use "Get link" on the one you want.
+		Your clients see the site default only until you create your own.
 	</p>
 	<DataTable
-		columns={[{ key: 'title', label: 'Title', sortable: true }, { key: 'owner', label: 'Owner' }, { key: 'kind', label: 'Kind' }, { key: 'version', label: 'Version' }, { key: 'is_active', label: 'Active' }, { key: 'actions', label: '' }]}
+		columns={[{ key: 'title', label: 'Title', sortable: true }, { key: 'owner', label: 'Owner' }, { key: 'kind', label: 'Kind' }, { key: 'version', label: 'Version' }, { key: 'actions', label: '' }]}
 		rows={data.questionnaires}
 		empty="You haven't created a questionnaire yet — your clients see the site default until you do."
 	>
@@ -229,16 +217,10 @@
 			<td>{isMine(q) ? 'Yours' : 'Site default'}</td>
 			<td>{q.kind === 'initial' ? 'New client' : 'Follow-up'}</td>
 			<td>{q.version}</td>
-			<td>{#if q.is_active}<Chip tone="ok">Active</Chip>{:else}No{/if}</td>
 			<td class="actions">
 				{#if isMine(q)}
 					<button class="edit" onclick={() => openEdit(q)}><Icon name="edit" size={14} />Edit</button>
 					<button class="edit" onclick={() => openLink(q)}><Icon name="send" size={14} />Get link</button>
-					{#if q.is_active}
-						<Button variant="text" onclick={() => setActive(q.id, false)}><Icon name="pause" size={15} />Deactivate</Button>
-					{:else}
-						<Button variant="text" onclick={() => setActive(q.id, true)}><Icon name="play" size={15} />Activate</Button>
-					{/if}
 				{:else}
 					<button class="edit" onclick={() => openEdit(q)}><Icon name="eye" size={14} />View</button>
 					<button class="edit" onclick={() => openLink(q)}><Icon name="send" size={14} />Get link</button>
@@ -315,7 +297,7 @@
 		{/if}
 
 		{#if editingId && !viewOnly}
-			<p class="hint">Saving creates a new version. Activate it from the list once you're ready for clients to see it.</p>
+			<p class="hint">Saving creates a new version, ready to use right away — generate a fresh "Get link" for it from the list.</p>
 		{/if}
 	</form>
 	{#snippet footer()}

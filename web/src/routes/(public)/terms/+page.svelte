@@ -29,11 +29,13 @@
 		an active subscription and can be downgraded if billing lapses.
 	</p>
 
-	<h2>Client accounts</h2>
+	<h2>Client data</h2>
 	<p>
-		A client account is created and managed in coordination with your practitioner. Your
-		data is visible only to that practitioner, never to any other
-		practitioner on the platform. Clients never interact with an autonomous AI.
+		Clients hold no account on Functional Health Collaborative and never log in. A
+		client provides information only through a one-time, practitioner-issued link,
+		without creating any credentials. That data is visible only to the practitioner
+		who issued the link, never to any other practitioner on the platform, and
+		clients never interact with an autonomous AI.
 	</p>
 
 	<h2>Acceptable use</h2>

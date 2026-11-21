@@ -55,10 +55,10 @@
 		note: 'Note',
 		history: 'History'
 	};
-	// A client can also add to their own record (POST /api/me/entries) —
-	// self-reported entries carry this marker (app/main.py) so it's clear
-	// here which ones a practitioner verified vs. what the patient said
-	// themselves.
+	// Legacy marker only — clients could once self-add record entries via
+	// POST /api/me/entries, but that route no longer exists (clients have
+	// no account to call it from). This only ever matches pre-removal rows;
+	// kept so those render correctly, not because the write path still exists.
 	const PATIENT_REPORTED_PREFIX = '[patient-reported] ';
 	function entryText(content: string) {
 		return content.startsWith(PATIENT_REPORTED_PREFIX)
@@ -111,6 +111,18 @@
 	// after a reload. Seed from data.sessions[*].summary (now returned by
 	// GET .../sessions, backed by record_entries.session_id) instead of
 	// only ever holding it in this component's own runtime state.
+	// The intake GET route (app/main.py me_get_intake) was always fetched
+	// here but never rendered — opening this page marked the questionnaire
+	// "viewed" (app/vault.py mark_intake_viewed) without ever showing the
+	// practitioner the answers that triggered that flag. This is that
+	// missing render (journey-audit finding #1).
+	function formatAnswer(q: any, value: any) {
+		if (q.input_type === 'multi_choice') {
+			return Array.isArray(value) && value.length ? value.join(', ') : '—';
+		}
+		return value === undefined || value === null || value === '' ? '—' : String(value);
+	}
+
 	let summarizing = $state<string | null>(null);
 	let summaries = $state<Record<string, string>>(
 		Object.fromEntries((data.sessions ?? []).filter((s: any) => s.summary).map((s: any) => [s.id, s.summary]))
@@ -135,6 +147,44 @@
 <div class="pane-row"><div class="detail-pane"><div class="detail-head"><div class="head-title"><span class="head-ico"><Icon name="user-card" size={16} /></span><h1>{data.client.name}</h1></div></div>
 	<p><strong>{data.client.name}</strong> — {data.client.email}</p>
 	<p class="hint">{data.client.country ?? 'Country not set'} · DOB {data.client.dob ?? 'not set'}</p>
+
+	{#if data.intake?.response}
+		<div class="rail-section intake-panel">
+			<h2>Questionnaire Response</h2>
+			<p class="hint">Submitted {data.intake.response.submitted_at?.slice(0, 10) ?? ''}</p>
+			<ul class="list intake-answers">
+				{#each (data.intake.questionnaire?.questions ?? []).filter((q: any) => q.input_type !== 'info') as q (q.id)}
+					<li class="intake-answer">
+						<div class="iq-prompt">{q.prompt}</div>
+						{#if q.input_type === 'repeater'}
+							{#if (data.intake.response.answers[q.id] ?? []).length}
+								<table class="iq-repeater">
+									<thead><tr>{#each q.columns as col}<th>{col}</th>{/each}</tr></thead>
+									<tbody>
+										{#each data.intake.response.answers[q.id] as row}
+											<tr>{#each q.columns as col}<td>{row[col] ?? '—'}</td>{/each}</tr>
+										{/each}
+									</tbody>
+								</table>
+							{:else}
+								<div class="iq-value">—</div>
+							{/if}
+						{:else}
+							<div class="iq-value">{formatAnswer(q, data.intake.response.answers[q.id])}</div>
+						{/if}
+					</li>
+				{/each}
+			</ul>
+			{#if Object.keys(data.intake.notes ?? {}).length}
+				<h3 class="iq-notes-h">Notes</h3>
+				<ul class="list">
+					{#each Object.entries(data.intake.notes) as [theme, note]}
+						<li><strong>{theme}:</strong> {note}</li>
+					{/each}
+				</ul>
+			{/if}
+		</div>
+	{/if}
 
 	<div class="rail-layout">
 		<div class="rail">
@@ -239,6 +289,15 @@
 
 <style>
 	.rail-section { margin-bottom: var(--space-5); }
+	.intake-panel { padding: var(--space-4); border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--panel-2); margin-bottom: var(--space-5); }
+	.intake-answers { margin-top: var(--space-3); }
+	.intake-answer { padding: var(--space-2) 0; border-bottom: 1px solid var(--line); }
+	.intake-answer:last-child { border-bottom: none; }
+	.iq-prompt { font-weight: 650; font-size: var(--text-sm); }
+	.iq-value { font-size: var(--text-sm); color: var(--ink-2); white-space: pre-wrap; }
+	.iq-notes-h { font-size: var(--text-sm); font-weight: 650; letter-spacing: .04em; color: var(--muted); margin: var(--space-4) 0 var(--space-2); }
+	.iq-repeater { width: 100%; border-collapse: collapse; margin-top: .3rem; font-size: var(--text-sm); }
+	.iq-repeater th, .iq-repeater td { text-align: left; padding: .3rem .5rem; border-bottom: 1px solid var(--line); }
 	.rail-section h2 { font-size: var(--text-sm); font-weight: 650; letter-spacing: .04em; color: var(--muted); margin-bottom: var(--space-2); }
 	.list { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
 	.doc-list li { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; }

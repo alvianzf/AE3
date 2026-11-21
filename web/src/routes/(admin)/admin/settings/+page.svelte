@@ -72,6 +72,10 @@
 		{ role: 'embedder', name: 'Embedder', job: 'Embeds knowledge-base chunks for seed vector search', icon: 'grid', model: 'BAAI/bge-en-icl', provider: 'Nebius', input_tokens: 24500, output_tokens: 0, total_tokens: 24500, calls: 52, status: 'ok', ping_ms: 8.2, share_pct: 2.5 }
 	];
 
+	// These numbers used to render indistinguishably from real usage right
+	// after a deploy or before the sampler's first window — a trust problem
+	// once noticed (journey-audit finding, Admin Settings section).
+	const usingFallbackAgents = $derived(!usage?.agents || usage.agents.length === 0);
 	const agents = $derived.by(() => {
 		if (usage?.agents && usage.agents.length > 0) return usage.agents;
 		return DEFAULT_AGENTS;
@@ -179,6 +183,7 @@
 					<h2>AI Agent Team &amp; Models</h2>
 					<p class="section-sub">
 						Models and prompt/completion token consumption for each of the 6 AI team roles.
+						{#if usingFallbackAgents}<Chip tone="warn">Example data — no usage recorded yet</Chip>{/if}
 					</p>
 				</div>
 			</div>

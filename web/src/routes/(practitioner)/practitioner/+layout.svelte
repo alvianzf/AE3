@@ -26,7 +26,11 @@
 		{ href: '/practitioner/contacts', label: 'Contacts', icon: 'mail' },
 		{ href: '/practitioner/knowledge', label: 'Library weights', icon: 'book', locked: !isPro },
 		{ href: '/practitioner/questionnaires', label: 'Questionnaires', icon: 'clipboard', locked: !isPro },
-		{ href: '/practitioner/profile', label: 'Profile', icon: 'settings' }
+		{ href: '/practitioner/profile', label: 'Profile', icon: 'settings' },
+		// A Basic practitioner's dashboard CTA pointed at Upgrade but this
+		// page was never in the nav, so navigating anywhere else meant
+		// first finding the URL by hand (journey-audit finding #9).
+		...(isPro ? [] : [{ href: '/practitioner/upgrade', label: 'Upgrade', icon: 'star' }])
 	]);
 	// Omni-search: Cmd/Ctrl+K also reaches a practitioner's own clients,
 	// not just the nav — fetched once, lazily, on first open.

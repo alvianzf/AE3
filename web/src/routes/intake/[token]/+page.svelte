@@ -2,6 +2,13 @@
 	import { put, post } from '$lib/api';
 	import { PUBLIC_API_BASE } from '$env/static/public';
 	import { toast } from '$lib/stores/toast';
+	import { chunkedUpload } from '$lib/chunkedUpload';
+
+	// Mirrors app/main.py's _MAX_CLIENT_FILE_BYTES — anything over this used
+	// to just fail with an error telling the client to "use the chunked
+	// upload", a path this page never actually offered (journey-audit
+	// finding #3). Above the line, route through chunkedUpload instead.
+	const DIRECT_UPLOAD_LIMIT = 20 * 1024 * 1024;
 
 	let { data } = $props();
 	const q = $derived(data.questionnaire);
@@ -144,14 +151,18 @@
 		uploading = true;
 		try {
 			for (const file of Array.from(files)) {
-				const form = new FormData();
-				form.set('file', file);
-				const res = await fetch(`${PUBLIC_API_BASE}/api/intake/${data.token}/upload`, {
-					method: 'POST',
-					credentials: 'include',
-					body: form
-				});
-				if (!res.ok) throw new Error('Could not upload ' + file.name + '.');
+				if (file.size > DIRECT_UPLOAD_LIMIT) {
+					await chunkedUpload(`/intake/${data.token}`, file);
+				} else {
+					const form = new FormData();
+					form.set('file', file);
+					const res = await fetch(`${PUBLIC_API_BASE}/api/intake/${data.token}/upload`, {
+						method: 'POST',
+						credentials: 'include',
+						body: form
+					});
+					if (!res.ok) throw new Error('Could not upload ' + file.name + '.');
+				}
 				uploadedFiles = [...uploadedFiles, file.name];
 			}
 		} catch (err: any) {
@@ -175,6 +186,16 @@
 </script>
 
 <svelte:head><title>{data.state === 'active' && q ? q.title : 'Intake'}</title></svelte:head>
+
+<svelte:window
+	onbeforeunload={(e) => {
+		// The autosave debounce (1.2s) means a close right after the last
+		// keystroke can beat it — warn rather than silently lose that
+		// answer (journey-audit finding #6).
+		if (saveState !== 'saving') return;
+		e.preventDefault();
+	}}
+/>
 
 <div class="shell">
 	{#if data.state === 'invalid'}

@@ -1071,24 +1071,6 @@ def edit_questionnaire(
     return get_questionnaire(new_id)
 
 
-def set_questionnaire_active(questionnaire_id: str, active: bool) -> dict:
-    """Explicit activate/deactivate, independent of creating a new version.
-    No longer deactivates any other questionnaire — see _insert_questionnaire's
-    own comment; a practitioner can have as many active questionnaires as
-    they want at once."""
-    with core_connection() as conn:
-        exists = conn.execute(
-            "SELECT 1 FROM questionnaires WHERE id = %s", (questionnaire_id,)
-        ).fetchone()
-        if exists is None:
-            raise ValueError(f"unknown questionnaire: {questionnaire_id}")
-        conn.execute(
-            "UPDATE questionnaires SET is_active = %s WHERE id = %s",
-            (active, questionnaire_id),
-        )
-    return get_questionnaire(questionnaire_id)
-
-
 def get_questionnaire(questionnaire_id: str) -> dict | None:
     with core_connection() as conn:
         row = conn.execute(
@@ -1111,8 +1093,8 @@ def list_questionnaires(
     every scope. With one: only that practitioner's own — never another
     practitioner's — plus the admin default too if include_admin_default
     (view-only on the caller's side; this function doesn't enforce that,
-    the route layer does by never wiring edit/activate/deactivate to a
-    questionnaire outside the caller's own scope)."""
+    the route layer does by never wiring edit to a questionnaire outside
+    the caller's own scope)."""
     with core_connection() as conn:
         if practitioner_id is None:
             rows = conn.execute(

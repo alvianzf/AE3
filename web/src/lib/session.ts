@@ -6,8 +6,7 @@ import { get } from './api';
 
 export const LANDING: Record<string, string> = {
 	admin: '/admin',
-	practitioner: '/practitioner',
-	client: '/client'
+	practitioner: '/practitioner'
 };
 
 export async function currentSession(fetchFn: typeof fetch = fetch) {
