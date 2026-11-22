@@ -294,6 +294,8 @@ def list_clients(practitioner_id: str) -> list[dict]:
             SELECT c.*,
                    (SELECT count(*) FROM sessions s WHERE s.client_id = c.id)
                        AS sessions,
+                   (SELECT max(s.started_at) FROM sessions s WHERE s.client_id = c.id)
+                       AS last_session_at,
                    (SELECT count(*) FROM record_entries e WHERE e.client_id = c.id)
                        AS entries,
                    EXISTS (

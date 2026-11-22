@@ -7,6 +7,7 @@
 	import TextField from '$lib/components/TextField.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import Icon from '$lib/components/Icon.svelte';
+	import QuestionnairePreview from '$lib/components/QuestionnairePreview.svelte';
 
 	// core_store.QUESTION_TYPES (app/core_store.py) supports all five —
 	// this builder used to only ever write 'text'.
@@ -29,6 +30,7 @@
 
 	let { data } = $props();
 	let open = $state(false);
+	let previewOpen = $state(false);
 	// Which link kind this (site-wide default) questionnaire is for — same
 	// choice the practitioner builder already offers, backed by the same
 	// `kind` field; an admin default can be a new-client intake too, not
@@ -112,6 +114,18 @@
 		questions = questions.filter((q) => q.key !== key);
 	}
 
+	// No backend change needed: _insert_questionnaire assigns `ordinal` by
+	// array position at save time, so reordering this local array before
+	// save is sufficient (ux-implementation-spec.md#6).
+	function moveQuestion(key: string, dir: -1 | 1) {
+		const i = questions.findIndex((q) => q.key === key);
+		const j = i + dir;
+		if (i === -1 || j < 0 || j >= questions.length) return;
+		const copy = [...questions];
+		[copy[i], copy[j]] = [copy[j], copy[i]];
+		questions = copy;
+	}
+
 	async function save(e: Event) {
 		e.preventDefault();
 		submitting = true;
@@ -187,6 +201,8 @@
 				<div class="question-row">
 					<div class="question-head">
 						<span class="num">{i + 1}</span>
+						<button type="button" class="move" onclick={() => moveQuestion(q.key, -1)} disabled={i === 0} aria-label="Move question up">&uarr;</button>
+						<button type="button" class="move" onclick={() => moveQuestion(q.key, 1)} disabled={i === questions.length - 1} aria-label="Move question down">&darr;</button>
 						<button type="button" class="remove" onclick={() => removeQuestion(q.key)} disabled={questions.length === 1} aria-label="Remove question">&times;</button>
 					</div>
 					<TextField label="Prompt" bind:value={q.prompt} required />
@@ -220,14 +236,17 @@
 		<Button type="button" variant="outlined" onclick={addQuestion}>+ Add question</Button>
 
 		{#if editingId}
-			<p class="hint">Saving creates a new version and makes it the active questionnaire — clients will answer this one from now on.</p>
+			<p class="hint">Saving creates a new version, ready to use right away.</p>
 		{/if}
 	</form>
 	{#snippet footer()}
+		<Button variant="outlined" onclick={() => (previewOpen = true)}>Preview</Button>
 		<Button variant="ghost" onclick={() => (open = false)}>Cancel</Button>
 		<Button onclick={save} loading={submitting}>{editingId ? 'Save new version' : 'Create'}</Button>
 	{/snippet}
 </Dialog>
+
+<QuestionnairePreview bind:open={previewOpen} title={title || 'Untitled questionnaire'} {questions} />
 
 <style>
 	.actions { display: flex; align-items: center; gap: .25rem; }
@@ -255,6 +274,11 @@
 	}
 	.remove:hover:not(:disabled) { color: var(--danger); }
 	.remove:disabled { opacity: .35; cursor: not-allowed; }
+	.move {
+		border: none; background: none; font-size: 1rem; line-height: 1; cursor: pointer; color: var(--muted); padding: 0 .15rem;
+	}
+	.move:hover:not(:disabled) { color: var(--ink); }
+	.move:disabled { opacity: .3; cursor: not-allowed; }
 	.question-fields { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
 	.field { display: flex; flex-direction: column; gap: .35rem; }
 	select {

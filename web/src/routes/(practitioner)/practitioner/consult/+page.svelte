@@ -20,6 +20,10 @@
 	// collapses to one visible pane at a time (CSS, @media block below).
 	let activePane = $state<'sessions' | 'chat' | 'doc'>('chat');
 	let docKind = $state<'clinician_note' | 'client_report'>('clinician_note');
+	// Temporarily widens the document pane while actively drafting a long
+	// client report (ux-implementation-spec.md#2) — toggled from inside
+	// DocumentPane itself.
+	let focusMode = $state(false);
 	const EMPTY_DOCUMENTS = { clinician_note: null, client_report: null };
 	let documents = $state<Record<string, any>>({ ...EMPTY_DOCUMENTS });
 
@@ -596,7 +600,7 @@
 	<button type="button" class:on={activePane === 'doc'} onclick={() => (activePane = 'doc')} disabled={!sessionId}>Document</button>
 </div>
 
-<div class="chat-shell">
+<div class="chat-shell" class:focus-mode={focusMode}>
 	<aside class="cpane sidebar" class:active={activePane === 'sessions'}>
 		<div class="sidebar-block">
 			<div class="block-head"><Icon name="users" size={15} /><strong>Clients</strong></div>
@@ -818,6 +822,7 @@
 		{#if sessionId}
 			<DocumentPane
 				{clientId} {sessionId} bind:kind={docKind} {documents} {turns}
+				bind:focusMode
 				logoUrl={data.profile?.logo_path ?? null}
 				practitionerName={data.profile?.name ?? ''}
 				practitionerLocation={(data.profile?.specialties ?? []).join(', ')}
@@ -836,6 +841,16 @@
 	.chat-shell {
 		display: grid; grid-template-columns: 230px minmax(0, 1fr) minmax(0, 420px); gap: var(--space-5);
 		height: calc(100dvh - var(--space-6) * 2);
+	}
+	/* Focus mode: sessions + chat collapse to make room for a long client
+	   report — kept in the DOM (not unmounted) so chat state survives
+	   toggling back out (ux-implementation-spec.md#2). */
+	.chat-shell.focus-mode {
+		grid-template-columns: 0px 0px minmax(0, 1fr);
+	}
+	.chat-shell.focus-mode > .sidebar,
+	.chat-shell.focus-mode > .chat-main {
+		overflow: hidden; opacity: 0; pointer-events: none;
 	}
 	.pane-tabs { display: none; }
 

@@ -10,13 +10,16 @@
 	const tourSteps = [
 		{ selector: '.search-trigger', title: 'Search everything', body: 'Press ⌘K (or Ctrl+K) anytime to jump straight to a document, practitioner, client, folder, or questionnaire.' },
 		{ selector: 'a[href="/admin/library"]', title: 'Library', body: 'Upload, organize, and browse the knowledge base — folders, tags, and a live graph view of how it all connects.' },
-		{ selector: 'a[href="/admin/users"]', title: 'Users', body: 'Review practitioner applications, and manage admin and client accounts.' }
+		{ selector: 'a[href="/admin/users"]', title: 'Users', body: 'Review practitioner applications and manage admin accounts.' }
 	];
 
 	const items = [
 		{ href: '/admin', label: 'Overview', icon: 'home', primary: true },
 		{ href: '/admin/library', label: 'Library', icon: 'book', primary: true },
 		{ href: '/admin/users', label: 'Users', icon: 'users', primary: true },
+		// Read-only cross-practitioner roster, not account management — kept
+		// out of "Users" for that reason (ux-implementation-spec.md#4).
+		{ href: '/admin/clients', label: 'Clients', icon: 'user-card' },
 		{ href: '/admin/questionnaires', label: 'Questionnaires', icon: 'clipboard' },
 		{ href: '/admin/audit', label: 'Audit history', icon: 'history' },
 		{ href: '/admin/settings', label: 'Settings', icon: 'settings' }
@@ -55,7 +58,7 @@
 			})),
 			...(clients ?? []).map((c: any) => ({
 				label: c.name, icon: 'user-card', group: 'Clients',
-				href: `/admin/users?tab=clients&q=${encodeURIComponent(c.name ?? '')}`
+				href: `/admin/clients?q=${encodeURIComponent(c.name ?? '')}`
 			})),
 			...(questionnaires ?? []).map((q: any) => ({
 				label: q.title, icon: 'clipboard', group: 'Questionnaires', href: `/admin/questionnaires`

@@ -3,6 +3,7 @@
 	import { PUBLIC_API_BASE } from '$env/static/public';
 	import { toast } from '$lib/stores/toast';
 	import { chunkedUpload } from '$lib/chunkedUpload';
+	import { groupIntoSections } from '$lib/questionnaireSections';
 
 	// Mirrors app/main.py's _MAX_CLIENT_FILE_BYTES — anything over this used
 	// to just fail with an error telling the client to "use the chunked
@@ -55,17 +56,7 @@
 		queueMicrotask(() => (isHydrating = false));
 	});
 
-	const sections = $derived.by(() => {
-		if (!q) return [];
-		const order: string[] = [];
-		const byTheme = new Map<string, any[]>();
-		for (const question of q.questions) {
-			const theme = question.theme || 'General';
-			if (!byTheme.has(theme)) { byTheme.set(theme, []); order.push(theme); }
-			byTheme.get(theme)!.push(question);
-		}
-		return order.map((theme) => ({ theme, questions: byTheme.get(theme)! }));
-	});
+	const sections = $derived(q ? groupIntoSections(q.questions) : []);
 	const showThemeHeadings = $derived(sections.length > 1);
 
 	function toggleMulti(id: string, option: string) {

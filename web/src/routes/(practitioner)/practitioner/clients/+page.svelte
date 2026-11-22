@@ -78,7 +78,7 @@
 		<Button variant="filled" onclick={() => (open = true)}><Icon name="plus" size={15} />Add client</Button>
 	{/snippet}
 	<DataTable
-		columns={[{ key: 'name', label: 'Name', sortable: true }, { key: 'email', label: 'Email', sortable: true }, { key: 'country', label: 'Country' }, { key: 'actions', label: '' }]}
+		columns={[{ key: 'name', label: 'Name', sortable: true }, { key: 'email', label: 'Email', sortable: true }, { key: 'country', label: 'Country' }, { key: 'last_session_at', label: 'Last session', sortable: true }, { key: 'actions', label: '' }]}
 		rows={data.clients}
 		empty="No clients yet — add your first one."
 	>
@@ -89,6 +89,7 @@
 			</td>
 			<td>{c.email}</td>
 			<td>{c.country ?? ''}</td>
+			<td>{(c.last_session_at as string | null)?.slice(0, 10) ?? 'Never'}</td>
 			<td><Button variant="text" onclick={() => { removeTarget = { id: c.id as string, name: c.name as string }; removeOpen = true; }}><Icon name="trash" size={15} />Remove</Button></td>
 		{/snippet}
 	</DataTable>

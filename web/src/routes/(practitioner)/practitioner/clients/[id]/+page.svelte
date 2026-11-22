@@ -7,8 +7,13 @@
 	import Select from '$lib/components/Select.svelte';
 	import TextField from '$lib/components/TextField.svelte';
 	import Chip from '$lib/components/Chip.svelte';
+	import Tabs from '$lib/components/Tabs.svelte';
 
 	let { data } = $props();
+	// Split out of one long scroll into tabs (ux-implementation-spec.md#1) —
+	// Overview (the Questionnaire Response) is what a practitioner should
+	// see first on opening a client.
+	let active = $state('overview');
 
 	function fileUrl(f: any) {
 		return `${PUBLIC_API_BASE}/api/me/clients/${data.client.id}/files/${f.id}`;
@@ -148,125 +153,135 @@
 	<p><strong>{data.client.name}</strong> — {data.client.email}</p>
 	<p class="hint">{data.client.country ?? 'Country not set'} · DOB {data.client.dob ?? 'not set'}</p>
 
-	{#if data.intake?.response}
-		<div class="rail-section intake-panel">
-			<h2>Questionnaire Response</h2>
-			<p class="hint">Submitted {data.intake.response.submitted_at?.slice(0, 10) ?? ''}</p>
-			<ul class="list intake-answers">
-				{#each (data.intake.questionnaire?.questions ?? []).filter((q: any) => q.input_type !== 'info') as q (q.id)}
-					<li class="intake-answer">
-						<div class="iq-prompt">{q.prompt}</div>
-						{#if q.input_type === 'repeater'}
-							{#if (data.intake.response.answers[q.id] ?? []).length}
-								<table class="iq-repeater">
-									<thead><tr>{#each q.columns as col}<th>{col}</th>{/each}</tr></thead>
-									<tbody>
-										{#each data.intake.response.answers[q.id] as row}
-											<tr>{#each q.columns as col}<td>{row[col] ?? '—'}</td>{/each}</tr>
-										{/each}
-									</tbody>
-								</table>
+	<div class="tabbar">
+		<Tabs bind:active tabs={[
+			{ id: 'overview', label: 'Overview' },
+			{ id: 'intake', label: 'Intake & Files' },
+			{ id: 'documents', label: 'Documents' },
+			{ id: 'record', label: 'Record' },
+			{ id: 'sessions', label: 'Sessions' }
+		]} />
+	</div>
+
+	{#if active === 'overview'}
+		{#if data.intake?.response}
+			<div class="rail-section intake-panel">
+				<h2>Questionnaire Response</h2>
+				<p class="hint">Submitted {data.intake.response.submitted_at?.slice(0, 10) ?? ''}</p>
+				<ul class="list intake-answers">
+					{#each (data.intake.questionnaire?.questions ?? []).filter((q: any) => q.input_type !== 'info') as q (q.id)}
+						<li class="intake-answer">
+							<div class="iq-prompt">{q.prompt}</div>
+							{#if q.input_type === 'repeater'}
+								{#if (data.intake.response.answers[q.id] ?? []).length}
+									<table class="iq-repeater">
+										<thead><tr>{#each q.columns as col}<th>{col}</th>{/each}</tr></thead>
+										<tbody>
+											{#each data.intake.response.answers[q.id] as row}
+												<tr>{#each q.columns as col}<td>{row[col] ?? '—'}</td>{/each}</tr>
+											{/each}
+										</tbody>
+									</table>
+								{:else}
+									<div class="iq-value">—</div>
+								{/if}
 							{:else}
-								<div class="iq-value">—</div>
+								<div class="iq-value">{formatAnswer(q, data.intake.response.answers[q.id])}</div>
 							{/if}
-						{:else}
-							<div class="iq-value">{formatAnswer(q, data.intake.response.answers[q.id])}</div>
-						{/if}
-					</li>
-				{/each}
-			</ul>
-			{#if Object.keys(data.intake.notes ?? {}).length}
-				<h3 class="iq-notes-h">Notes</h3>
-				<ul class="list">
-					{#each Object.entries(data.intake.notes) as [theme, note]}
-						<li><strong>{theme}:</strong> {note}</li>
+						</li>
+					{/each}
+				</ul>
+				{#if Object.keys(data.intake.notes ?? {}).length}
+					<h3 class="iq-notes-h">Notes</h3>
+					<ul class="list">
+						{#each Object.entries(data.intake.notes) as [theme, note]}
+							<li><strong>{theme}:</strong> {note}</li>
+						{/each}
+					</ul>
+				{/if}
+			</div>
+		{:else}
+			<p class="hint">No questionnaire response yet.</p>
+		{/if}
+	{:else if active === 'intake'}
+		<div class="rail-section"><h2>Intake Links</h2>
+			<Button variant="outlined" onclick={createUploadLink} loading={creatingUploadLink}>Get upload link</Button>
+			{#if uploadLinkUrl}
+				<p class="hint link-text">{uploadLinkUrl} <button type="button" class="copy-btn" onclick={copyUploadLink}>Copy</button></p>
+			{/if}
+			{#if !data.links?.length}
+				<p class="hint">No links sent yet.</p>
+			{:else}
+				<ul class="list doc-list">
+					{#each data.links as l (l.token)}
+						<li>
+							{l.kind === 'upload' ? 'Upload link' : 'Questionnaire link'}
+							<span class="pill" class:final={l.status === 'submitted'}>{l.status === 'submitted' ? 'Submitted' : 'Open'}</span>
+							<span class="hint">{l.created_at ?? ''}</span>
+						</li>
 					{/each}
 				</ul>
 			{/if}
 		</div>
-	{/if}
 
-	<div class="rail-layout">
-		<div class="rail">
-			<div class="rail-section"><h2>Intake Links</h2>
-				<Button variant="outlined" onclick={createUploadLink} loading={creatingUploadLink}>Get upload link</Button>
-				{#if uploadLinkUrl}
-					<p class="hint link-text">{uploadLinkUrl} <button type="button" class="copy-btn" onclick={copyUploadLink}>Copy</button></p>
-				{/if}
-				{#if !data.links?.length}
-					<p class="hint">No links sent yet.</p>
-				{:else}
-					<ul class="list doc-list">
-						{#each data.links as l (l.token)}
-							<li>
-								{l.kind === 'upload' ? 'Upload link' : 'Questionnaire link'}
-								<span class="pill" class:final={l.status === 'submitted'}>{l.status === 'submitted' ? 'Submitted' : 'Open'}</span>
-								<span class="hint">{l.created_at ?? ''}</span>
-							</li>
-						{/each}
-					</ul>
-				{/if}
-			</div>
-
-			<div class="rail-section"><h2>Files</h2>
-				{#if !data.files?.length}
-					<p class="hint">No files uploaded yet.</p>
-				{:else}
-					<ul class="list">
-						{#each data.files as f (f.id)}
-							<li><a href={fileUrl(f)} target="_blank" rel="noopener">{f.original_name}</a> <span class="hint">{f.uploaded_at ?? ''}</span></li>
-						{/each}
-					</ul>
-				{/if}
-			</div>
-
-			<div class="rail-section"><h2>Documents</h2>
-				{#if !data.documents?.length}
-					<p class="hint">No documents yet.</p>
-				{:else}
-					<ul class="list doc-list">
-						{#each data.documents as d (d.id)}
-							<li>
-								<a href="/practitioner/consult?client={data.client.id}&session={d.session_id}&pane=doc&kind={d.kind}">
-									{DOCUMENT_KIND_LABELS[d.kind] ?? d.kind}
-								</a>
-								<span class="pill" class:final={d.status === 'final'}>{d.status === 'final' ? 'Final' : 'Draft'}</span>
-								<span class="hint">{d.session_title ?? ''} · {d.updated_at ?? ''}</span>
-							</li>
-						{/each}
-					</ul>
-				{/if}
-			</div>
-
-			<div class="rail-section"><h2>Record</h2>
-				<form class="entry-form" onsubmit={addEntry}>
-					<Select label="Kind" bind:value={entryKind} disabled={addingEntry}
-						options={Object.entries(KIND_LABELS).map(([value, label]) => ({ value, label }))} />
-					<TextField label="Details" type="textarea" bind:value={entryContent} required disabled={addingEntry}
-						placeholder="e.g. Fasting glucose 92 mg/dL, 2026-09-14" />
-					<Button type="submit" loading={addingEntry}>Add to record</Button>
-				</form>
-
-				{#if entries.length}
-					<ul class="list entries">
-						{#each entries as e (e.id)}
-							<li class="entry">
-								<div class="er">
-									<Chip tone="neutral">{KIND_LABELS[e.kind] ?? e.kind}</Chip>
-									{#if isPatientReported(e.content)}<Chip tone="accent">Patient-reported</Chip>{/if}
-									<span class="hint">{e.created_at?.slice(0, 10)}</span>
-									<button type="button" class="remove" onclick={() => removeEntry(e.id)} disabled={deletingEntry === e.id} title="Remove">×</button>
-								</div>
-								<p class="content">{entryText(e.content)}</p>
-							</li>
-						{/each}
-					</ul>
-				{:else}
-					<p class="hint" style="margin-top: var(--space-3)">Nothing recorded yet — conditions, medications, and labs added here shape what the consult pipeline considers when answering.</p>
-				{/if}
-			</div>
+		<div class="rail-section"><h2>Files</h2>
+			{#if !data.files?.length}
+				<p class="hint">No files uploaded yet.</p>
+			{:else}
+				<ul class="list">
+					{#each data.files as f (f.id)}
+						<li><a href={fileUrl(f)} target="_blank" rel="noopener">{f.original_name}</a> <span class="hint">{f.uploaded_at ?? ''}</span></li>
+					{/each}
+				</ul>
+			{/if}
 		</div>
+	{:else if active === 'documents'}
+		<div class="rail-section"><h2>Documents</h2>
+			{#if !data.documents?.length}
+				<p class="hint">No documents yet.</p>
+			{:else}
+				<ul class="list doc-list">
+					{#each data.documents as d (d.id)}
+						<li>
+							<a href="/practitioner/consult?client={data.client.id}&session={d.session_id}&pane=doc&kind={d.kind}">
+								{DOCUMENT_KIND_LABELS[d.kind] ?? d.kind}
+							</a>
+							<span class="pill" class:final={d.status === 'final'}>{d.status === 'final' ? 'Final' : 'Draft'}</span>
+							<span class="hint">{d.session_title ?? ''} · {d.updated_at ?? ''}</span>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</div>
+	{:else if active === 'record'}
+		<div class="rail-section"><h2>Record</h2>
+			<form class="entry-form" onsubmit={addEntry}>
+				<Select label="Kind" bind:value={entryKind} disabled={addingEntry}
+					options={Object.entries(KIND_LABELS).map(([value, label]) => ({ value, label }))} />
+				<TextField label="Details" type="textarea" bind:value={entryContent} required disabled={addingEntry}
+					placeholder="e.g. Fasting glucose 92 mg/dL, 2026-09-14" />
+				<Button type="submit" loading={addingEntry}>Add to record</Button>
+			</form>
 
+			{#if entries.length}
+				<ul class="list entries">
+					{#each entries as e (e.id)}
+						<li class="entry">
+							<div class="er">
+								<Chip tone="neutral">{KIND_LABELS[e.kind] ?? e.kind}</Chip>
+								{#if isPatientReported(e.content)}<Chip tone="accent">Patient-reported</Chip>{/if}
+								<span class="hint">{e.created_at?.slice(0, 10)}</span>
+								<button type="button" class="remove" onclick={() => removeEntry(e.id)} disabled={deletingEntry === e.id} title="Remove">×</button>
+							</div>
+							<p class="content">{entryText(e.content)}</p>
+						</li>
+					{/each}
+				</ul>
+			{:else}
+				<p class="hint" style="margin-top: var(--space-3)">Nothing recorded yet — conditions, medications, and labs added here shape what the consult pipeline considers when answering.</p>
+			{/if}
+		</div>
+	{:else}
 		<div class="rail-section"><h2>Sessions</h2>
 			{#if !data.sessions?.length}
 				<p class="hint">No consultation sessions yet.</p>
@@ -284,10 +299,11 @@
 				</ul>
 			{/if}
 		</div>
-	</div>
+	{/if}
 </div></div>
 
 <style>
+	.tabbar { margin: var(--space-4) 0; }
 	.rail-section { margin-bottom: var(--space-5); }
 	.intake-panel { padding: var(--space-4); border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--panel-2); margin-bottom: var(--space-5); }
 	.intake-answers { margin-top: var(--space-3); }

@@ -21,6 +21,7 @@
 		kind = $bindable<Kind>('clinician_note'),
 		documents,
 		turns,
+		focusMode = $bindable(false),
 		logoUrl,
 		practitionerName,
 		practitionerLocation,
@@ -31,11 +32,16 @@
 		kind?: Kind;
 		documents: Record<Kind, { content: string; status: string } | null>;
 		turns: any[];
+		focusMode?: boolean;
 		logoUrl: string | null;
 		practitionerName: string;
 		practitionerLocation: string;
 		onFlashTurn: (documentId: string | null, locator: string) => void;
 	} = $props();
+
+	function onEditorKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape' && focusMode) focusMode = false;
+	}
 
 	const KIND_LABEL: Record<Kind, string> = {
 		clinician_note: 'Clinician Note',
@@ -223,6 +229,12 @@
 </script>
 
 <div class="doc-head">
+	<button
+		type="button" class="btn-sm focus-toggle" title={focusMode ? 'Exit focus mode (Esc)' : 'Widen this pane while drafting'}
+		onclick={() => (focusMode = !focusMode)}
+	>
+		{focusMode ? 'Exit focus' : 'Focus'}
+	</button>
 	<div class="doc-tabs">
 		{#each ['clinician_note', 'client_report'] as const as k}
 			<button type="button" class:on={kind === k} onclick={() => (kind = k)}>{KIND_LABEL[k]}</button>
@@ -271,7 +283,7 @@
 {/if}
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-<div class="doc-body" onclick={onDocBodyClick}>
+<div class="doc-body" onclick={onDocBodyClick} onkeydown={onEditorKeydown}>
 	<div class="doc-letterhead">
 		{#if logoUrl}<img class="doc-logo" src={logoUrl} alt="" />{:else}<div class="doc-logo-fallback">{practitionerName?.[0] ?? '?'}</div>{/if}
 		<div><div class="pn">{practitionerName}</div><div class="pm">{practitionerLocation}</div></div>
@@ -309,6 +321,7 @@
 	.pill.final { background: var(--accent-soft); color: var(--accent-ink); }
 	.btn-sm { border: 1px solid var(--line-2); background: var(--panel); border-radius: var(--r); padding: .3rem .6rem; font-size: var(--text-xs); font-weight: 650; cursor: pointer; }
 	.btn-sm:hover { background: var(--panel-2); }
+	.focus-toggle { margin-right: var(--space-3); flex: none; }
 
 	.doc-toolbar { display: flex; align-items: center; gap: 2px; padding: .4rem var(--space-4); border-bottom: 1px solid var(--line); flex: none; flex-wrap: wrap; }
 	.tbtn { border: none; background: none; width: 1.75rem; height: 1.75rem; display: grid; place-items: center; border-radius: 6px; color: var(--ink-2); cursor: pointer; }

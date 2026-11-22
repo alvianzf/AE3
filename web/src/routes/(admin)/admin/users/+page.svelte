@@ -35,15 +35,6 @@
 		);
 	});
 
-	let clientQuery = $state(page.url.searchParams.get('tab') === 'clients' ? (page.url.searchParams.get('q') ?? '') : '');
-	const filteredClients = $derived.by(() => {
-		const needle = clientQuery.trim().toLowerCase();
-		if (!needle) return data.clients;
-		return data.clients.filter((c: any) =>
-			[c.name, c.email, c.practitioner_name].some((v) => (v ?? '').toLowerCase().includes(needle))
-		);
-	});
-
 	let name = $state('');
 	let email = $state('');
 	let password = $state('');
@@ -129,31 +120,6 @@
 		}
 	}
 
-	// --- Clients tab: read-only listing across every Pro practitioner's
-	// vault, plus a suspend/reactivate action (app/vault.py's new `active`
-	// column — the same pattern as practitioner/admin suspension, not a
-	// separate mechanism).
-	let confirmingClient = $state<{ practitioner_id: string; id: string; name: string; kind: 'suspend' | 'reactivate' } | null>(null);
-	let confirmClientOpen = $state(false);
-
-	function askClientConfirm(c: any, kind: 'suspend' | 'reactivate') {
-		confirmingClient = { practitioner_id: c.practitioner_id, id: c.id, name: c.name, kind };
-		confirmClientOpen = true;
-	}
-
-	async function runClientConfirmed() {
-		if (!confirmingClient) return;
-		const { practitioner_id, id, kind } = confirmingClient;
-		confirmClientOpen = false;
-		try {
-			await post(fetch, `/admin/clients/${practitioner_id}/${id}/${kind}`);
-			toast(kind === 'suspend' ? 'Client suspended.' : 'Client reactivated.');
-			await invalidateAll();
-		} catch (err: any) {
-			toast(err.message, 'alert');
-		}
-	}
-
 	async function approve(id: string) {
 		try { await post(fetch, `/admin/practitioners/${id}/approve`); await invalidateAll(); }
 		catch (err: any) { toast(err.message, 'alert'); }
@@ -222,7 +188,7 @@
 <!-- specs/v4/03: Tier 2 on this screen — a datatable an admin revisits many
      times a day doesn't need the red band's attention-getting weight. -->
 <div class="pane-row"><div class="detail-pane"><div class="detail-head"><div class="head-title"><span class="head-ico"><Icon name="users" size={16} /></span><h1>Users</h1></div></div>
-	<Tabs bind:active tabs={[{ id: 'practitioners', label: 'Practitioners' }, { id: 'admins', label: 'Admins' }, { id: 'clients', label: 'Clients' }]} />
+	<Tabs bind:active tabs={[{ id: 'practitioners', label: 'Practitioners' }, { id: 'admins', label: 'Admins' }]} />
 
 	{#if active === 'practitioners'}
 		<div class="toolbar">
@@ -273,7 +239,7 @@
 				</td>
 			{/snippet}
 		</DataTable>
-	{:else if active === 'admins'}
+	{:else}
 		{#if isSuperadmin}
 			<div class="toolbar">
 				<Button variant="filled" onclick={() => (openNewAdmin = true)}><Icon name="plus" size={15} />New admin</Button>
@@ -319,35 +285,6 @@
 							label="Active status for {a.name}"
 						/>
 					{/if}
-				</td>
-			{/snippet}
-		</DataTable>
-	{:else}
-		<div class="toolbar">
-			<input
-				class="search"
-				type="search"
-				placeholder="Search name, email, or practitioner…"
-				bind:value={clientQuery}
-				aria-label="Search clients"
-			/>
-		</div>
-		<DataTable
-			columns={[{ key: 'name', label: 'Name' }, { key: 'email', label: 'Email' }, { key: 'practitioner_name', label: 'Practitioner' }, { key: 'active', label: 'Status' }, { key: 'actions', label: '' }]}
-			rows={filteredClients}
-			empty="No clients yet."
-		>
-			{#snippet row(c)}
-				<td>{c.name}</td>
-				<td>{c.email}</td>
-				<td>{c.practitioner_name}</td>
-				<td><Chip tone={c.active ? 'ok' : 'danger'}>{c.active ? 'active' : 'suspended'}</Chip></td>
-				<td class="actions">
-					<Toggle
-						checked={!!c.active}
-						onchange={(next) => askClientConfirm(c, next ? 'reactivate' : 'suspend')}
-						label="Active status for {c.name}"
-					/>
 				</td>
 			{/snippet}
 		</DataTable>
@@ -410,20 +347,6 @@
 	{#snippet footer()}
 		<Button variant="ghost" onclick={() => (confirmAdminOpen = false)}>Cancel</Button>
 		<Button variant="danger" onclick={runAdminConfirmed}>{confirmingAdmin?.kind === 'suspend' ? 'Suspend' : 'Reactivate'}</Button>
-	{/snippet}
-</Dialog>
-
-<Dialog bind:open={confirmClientOpen} title={confirmingClient?.kind === 'suspend' ? 'Suspend client' : 'Reactivate client'}>
-	{#if confirmingClient}
-		<p>
-			{confirmingClient.kind === 'suspend'
-				? `Suspend "${confirmingClient.name}"?`
-				: `Reactivate "${confirmingClient.name}"?`}
-		</p>
-	{/if}
-	{#snippet footer()}
-		<Button variant="ghost" onclick={() => (confirmClientOpen = false)}>Cancel</Button>
-		<Button variant="danger" onclick={runClientConfirmed}>{confirmingClient?.kind === 'suspend' ? 'Suspend' : 'Reactivate'}</Button>
 	{/snippet}
 </Dialog>
 

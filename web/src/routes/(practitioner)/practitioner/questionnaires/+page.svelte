@@ -7,6 +7,7 @@
 	import TextField from '$lib/components/TextField.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import Icon from '$lib/components/Icon.svelte';
+	import QuestionnairePreview from '$lib/components/QuestionnairePreview.svelte';
 
 	// Mirrors the admin builder (../../../(admin)/admin/questionnaires) —
 	// same core_store.QUESTION_TYPES, same question editor — but scoped to
@@ -33,6 +34,7 @@
 
 	let { data } = $props();
 	let open = $state(false);
+	let previewOpen = $state(false);
 	let linkOpen = $state(false);
 	let linkFor = $state<any>(null);
 	let linkClientId = $state('');
@@ -130,6 +132,18 @@
 
 	function removeQuestion(key: string) {
 		questions = questions.filter((q) => q.key !== key);
+	}
+
+	// No backend change needed: _insert_questionnaire assigns `ordinal` by
+	// array position at save time, so reordering this local array before
+	// save is sufficient (ux-implementation-spec.md#6).
+	function moveQuestion(key: string, dir: -1 | 1) {
+		const i = questions.findIndex((q) => q.key === key);
+		const j = i + dir;
+		if (i === -1 || j < 0 || j >= questions.length) return;
+		const copy = [...questions];
+		[copy[i], copy[j]] = [copy[j], copy[i]];
+		questions = copy;
 	}
 
 	async function save(e: Event) {
@@ -254,6 +268,8 @@
 					<div class="question-head">
 						<span class="num">{i + 1}</span>
 						{#if !viewOnly}
+							<button type="button" class="move" onclick={() => moveQuestion(q.key, -1)} disabled={i === 0} aria-label="Move question up">&uarr;</button>
+							<button type="button" class="move" onclick={() => moveQuestion(q.key, 1)} disabled={i === questions.length - 1} aria-label="Move question down">&darr;</button>
 							<button type="button" class="remove" onclick={() => removeQuestion(q.key)} disabled={questions.length === 1} aria-label="Remove question">&times;</button>
 						{/if}
 					</div>
@@ -301,6 +317,7 @@
 		{/if}
 	</form>
 	{#snippet footer()}
+		<Button variant="outlined" onclick={() => (previewOpen = true)}>Preview</Button>
 		{#if viewOnly}
 			<Button variant="ghost" onclick={() => (open = false)}>Close</Button>
 		{:else}
@@ -309,6 +326,8 @@
 		{/if}
 	{/snippet}
 </Dialog>
+
+<QuestionnairePreview bind:open={previewOpen} title={title || 'Untitled questionnaire'} {questions} />
 
 <Dialog bind:open={linkOpen} title="Get link — {linkFor?.title ?? ''}">
 	{#if linkFor?.kind === 'followup'}
@@ -364,6 +383,11 @@
 	}
 	.remove:hover:not(:disabled) { color: var(--danger); }
 	.remove:disabled { opacity: .35; cursor: not-allowed; }
+	.move {
+		border: none; background: none; font-size: 1rem; line-height: 1; cursor: pointer; color: var(--muted); padding: 0 .15rem;
+	}
+	.move:hover:not(:disabled) { color: var(--ink); }
+	.move:disabled { opacity: .3; cursor: not-allowed; }
 	.question-fields { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
 	.field { display: flex; flex-direction: column; gap: .35rem; }
 	select {

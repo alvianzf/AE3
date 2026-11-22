@@ -25,6 +25,11 @@
 
 	const firstName = $derived((data.profile?.name ?? data.session?.name ?? '').replace(/^Dr\.?\s+/i, '').split(/\s+/)[0]);
 	const recentConsults = $derived((data.recentSessions ?? []).slice(0, 5));
+	// tour_completed already gates the onboarding Tour (+layout.svelte), so
+	// it's a correct, free proxy for "has this practitioner been here
+	// before" — no new field needed to stop "Welcome back" showing on a
+	// true first visit (ux-implementation-spec.md#5).
+	const isFirstVisit = $derived(!data.session?.tour_completed);
 </script>
 
 <svelte:head><title>Overview — Practitioner portal</title></svelte:head>
@@ -35,7 +40,7 @@
 			<div class="head-title">
 				<span class="head-ico"><Icon name="home" size={18} /></span>
 				<div>
-					<h1>{firstName ? `Welcome back, Dr. ${firstName}` : 'Practitioner Overview'}</h1>
+					<h1>{firstName ? `Welcome${isFirstVisit ? '' : ' back'}, Dr. ${firstName}` : 'Practitioner Overview'}</h1>
 					<p>{isPro ? 'Grounded clinical intelligence & client records' : 'Complete your profile to get started'}</p>
 				</div>
 			</div>
