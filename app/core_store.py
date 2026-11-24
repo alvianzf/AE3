@@ -925,7 +925,14 @@ def practitioner_stats(practitioner_id: str) -> dict:
 # "repeater" is a question with its own sub-fields, answered as a list of
 # rows — addable/removable (Medications) when its options carry no fixed
 # row labels, or a pre-seeded fixed grid (Typical Workday) when they do.
-QUESTION_TYPES = ("text", "number", "date", "choice", "multi_choice", "info", "repeater")
+# "file" asks the client to attach a document as the answer itself (e.g.
+# "Upload your most recent lab panel") — the file is uploaded through the
+# same intake upload endpoints every other attachment uses
+# (app/main.py's intake_upload_file et al., already open to a
+# questionnaire-kind link, not just an 'upload'-kind one); the answer
+# value stored here is just the filename(s), a readable record of what
+# was attached, not the file bytes themselves.
+QUESTION_TYPES = ("text", "number", "date", "choice", "multi_choice", "info", "repeater", "file")
 QUESTIONNAIRE_KINDS = ("initial", "followup")
 # Which new-client field a question's answer maps to, for an 'initial'-kind
 # questionnaire's submission — see questionnaire_questions.maps_to above.

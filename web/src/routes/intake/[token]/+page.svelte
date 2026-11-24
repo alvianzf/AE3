@@ -129,11 +129,57 @@
 		}, 1200);
 	});
 
+	// A "file" question (app/core_store.py's QUESTION_TYPES) asks the client
+	// to attach a document as the answer itself — but the intake upload
+	// endpoints need a real client_id, which for an 'initial' questionnaire
+	// only exists once /submit creates the client. So a file picked here is
+	// just staged locally (never uploaded on pick) and the actual upload
+	// happens right after a successful submit, same as every other
+	// attachment on this page.
+	let stagedQuestionFiles = $state<Record<string, File[]>>({});
+	function onQuestionFilePicked(questionId: string, e: Event) {
+		const files = (e.target as HTMLInputElement).files;
+		if (!files?.length) return;
+		stagedQuestionFiles = { ...stagedQuestionFiles, [questionId]: Array.from(files) };
+	}
+
+	async function uploadOneFile(file: File) {
+		if (file.size > DIRECT_UPLOAD_LIMIT) {
+			await chunkedUpload(`/intake/${data.token}`, file);
+		} else {
+			const form = new FormData();
+			form.set('file', file);
+			const res = await fetch(`${PUBLIC_API_BASE}/api/intake/${data.token}/upload`, {
+				method: 'POST',
+				credentials: 'include',
+				body: form
+			});
+			if (!res.ok) throw new Error('Could not upload ' + file.name + '.');
+		}
+	}
+
 	async function submitQuestionnaire(e: Event) {
 		e.preventDefault();
 		submitting = true;
 		try {
-			await post(fetch, `/intake/${data.token}/submit`, { answers: answersForSave() });
+			const finalAnswers = answersForSave();
+			// A file question's own "answer" is just a readable record of
+			// what was attached — the real file goes through the upload
+			// endpoint below, same as every other attachment, so it's also
+			// extracted/chunked/embedded into the client's RAG the same way.
+			for (const [qid, files] of Object.entries(stagedQuestionFiles)) {
+				finalAnswers[qid] = files.map((f) => f.name).join(', ');
+			}
+			await post(fetch, `/intake/${data.token}/submit`, { answers: finalAnswers });
+			for (const files of Object.values(stagedQuestionFiles)) {
+				for (const file of files) {
+					try {
+						await uploadOneFile(file);
+					} catch (err: any) {
+						toast(err.message || `Could not upload ${file.name}.`, 'alert');
+					}
+				}
+			}
 			stage = 'attach';
 		} catch (err: any) {
 			toast(err.message || 'Could not submit this form.', 'alert');
@@ -148,18 +194,7 @@
 		uploading = true;
 		try {
 			for (const file of Array.from(files)) {
-				if (file.size > DIRECT_UPLOAD_LIMIT) {
-					await chunkedUpload(`/intake/${data.token}`, file);
-				} else {
-					const form = new FormData();
-					form.set('file', file);
-					const res = await fetch(`${PUBLIC_API_BASE}/api/intake/${data.token}/upload`, {
-						method: 'POST',
-						credentials: 'include',
-						body: form
-					});
-					if (!res.ok) throw new Error('Could not upload ' + file.name + '.');
-				}
+				await uploadOneFile(file);
 				uploadedFiles = [...uploadedFiles, file.name];
 			}
 		} catch (err: any) {
@@ -328,6 +363,16 @@
 											<input id="q-{question.id}" type="number" bind:value={answers[question.id]} />
 										{:else if question.input_type === 'date'}
 											<input id="q-{question.id}" type="date" bind:value={answers[question.id]} />
+										{:else if question.input_type === 'file'}
+											<label class="upload-btn">
+												Choose file…
+												<input id="q-{question.id}" type="file" multiple onchange={(e) => onQuestionFilePicked(question.id, e)} hidden />
+											</label>
+											{#if stagedQuestionFiles[question.id]?.length}
+												<ul class="file-list">
+													{#each stagedQuestionFiles[question.id] as file}<li>{file.name}</li>{/each}
+												</ul>
+											{/if}
 										{:else if question.maps_to === 'client_name' || question.maps_to === 'client_email'}
 											<!-- A name or an email is always single-line — the generic
 											     "text" question type otherwise means free-form prose

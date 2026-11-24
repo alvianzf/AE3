@@ -10,6 +10,7 @@
 	import Color from '@tiptap/extension-color';
 	import Highlight from '@tiptap/extension-highlight';
 	import { ResizableImage } from './resizableImage';
+	import { Citation } from './citationMark';
 	import { put } from '$lib/api';
 	import { PUBLIC_API_BASE } from '$env/static/public';
 	import { resolveCitationsForDocument } from '$lib/markdown';
@@ -96,7 +97,8 @@
 			TableCellWithBackground,
 			TextStyle,
 			Color,
-			Highlight.configure({ multicolor: true })
+			Highlight.configure({ multicolor: true }),
+			Citation
 		],
 		content: '',
 		editorProps: {

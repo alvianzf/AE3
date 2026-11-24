@@ -91,6 +91,8 @@
 									</table>
 									{#if !question.fixed_rows}<span class="hint">Client can add more rows.</span>{/if}
 								</div>
+							{:else if question.input_type === 'file'}
+								<button type="button" class="upload-placeholder" disabled>Choose file…</button>
 							{:else}
 								<input type="text" disabled placeholder="Client's answer appears here" />
 							{/if}
@@ -126,4 +128,8 @@
 	.repeater th, .repeater td { text-align: left; padding: .3rem .5rem; border-bottom: 1px solid var(--line); }
 	.row-label { font-weight: 600; }
 	.placeholder { color: var(--muted); font-style: italic; }
+	.upload-placeholder {
+		align-self: start; border: 1px dashed var(--line-2); background: var(--panel-2); color: var(--muted);
+		border-radius: var(--r); padding: .4rem 1rem; font-size: var(--text-sm); font-weight: 650;
+	}
 </style>

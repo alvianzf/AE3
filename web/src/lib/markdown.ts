@@ -64,7 +64,16 @@ export function resolveCitationsForDocument(
 					refs.push({ number: n, title: s.title });
 				}
 				const docAttr = s.document_id ? ` data-doc-id="${s.document_id}"` : '';
-				return `<sup><button type="button" class="cite" data-locator="${s.locator ?? ''}"${docAttr}>${n}</button></sup>`;
+				// A single <sup class="cite"> — not a nested <sup><button>:
+				// the document editor's schema (DocumentPane.svelte's
+				// Citation mark, web/src/lib/components/consult/citationMark.ts)
+				// has to be able to parse this shape back out of saved HTML,
+				// and a bare semantic tag plus one class is what that mark
+				// matches. A <button> nested inside had no matching schema
+				// entry at all, so TipTap silently dropped both tags on
+				// load — the number stayed but came out as plain inline
+				// text, not superscript.
+				return `<sup class="cite" data-locator="${s.locator ?? ''}"${docAttr}>${n}</sup>`;
 			})
 			.join('');
 	});

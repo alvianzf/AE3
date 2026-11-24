@@ -17,7 +17,7 @@
 	// "info" (plain instructional text, no answer) and "repeater" (an
 	// addable table, or a fixed grid when it has row labels) are Client
 	// Intake Links additions — core_store.QUESTION_TYPES.
-	const QUESTION_TYPES = ['text', 'number', 'date', 'choice', 'multi_choice', 'info', 'repeater'] as const;
+	const QUESTION_TYPES = ['text', 'number', 'date', 'choice', 'multi_choice', 'info', 'repeater', 'file'] as const;
 	const MAPS_TO_FIELDS = ['', 'client_name', 'client_email', 'client_dob', 'client_country'] as const;
 
 	type Question = {
@@ -345,7 +345,7 @@
 						<TextField label="Columns" bind:value={q.columns} hint="Comma-separated, e.g. Medication, Dose, How often, Reason" disabled={viewOnly} />
 						<TextField label="Fixed row labels (optional)" bind:value={q.fixedRows} hint="Leave blank for an addable table (e.g. Medications). Fill in for a fixed grid (e.g. Breakfast, Lunch, Dinner)." disabled={viewOnly} />
 					{/if}
-					{#if qKind === 'initial' && q.input_type !== 'info' && q.input_type !== 'repeater'}
+					{#if qKind === 'initial' && q.input_type !== 'info' && q.input_type !== 'repeater' && q.input_type !== 'file'}
 						<div class="field">
 							<label for="maps-{q.key}">Maps to (new-client field)</label>
 							<select id="maps-{q.key}" bind:value={q.mapsTo} disabled={viewOnly}>
