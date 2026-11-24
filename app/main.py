@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import html
 import io
 import json
@@ -37,7 +38,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel
 
-from . import auth, billing, core_store, db, originals, scraper, uploads, vault, vault_files
+from . import auth, billing, core_store, db, originals, pdf_tidy, scraper, uploads, vault, vault_files
 from .config import get_config
 from .clients import nebius_admin
 from .clients.llm_client import Role as LLMRole
@@ -3723,6 +3724,23 @@ def me_download_document_pdf(client_id: str, session_id: str, kind: str,
     client = vault.get_client(practitioner_id, client_id)
     practitioner = core_store.get_practitioner(practitioner_id) or {}
 
+    # Claude tidies the saved HTML into clean, consistent markup for the
+    # PDF (app/pdf_tidy.py) — cached by a hash of `content` so a document
+    # that hasn't changed since its last PDF doesn't spend another Claude
+    # call on every repeat download or preview. Best-effort: a tidy
+    # failure (or an implausible/truncated result) falls back to the raw
+    # saved content rather than ever blocking the PDF.
+    content_hash = hashlib.sha256(doc["content"].encode("utf-8")).hexdigest()
+    if doc.get("pdf_html") and doc.get("pdf_source_hash") == content_hash:
+        document_html = doc["pdf_html"]
+    else:
+        try:
+            document_html = pdf_tidy.tidy_document_html(doc["content"])
+            vault.save_pdf_cache(practitioner_id, session_id, kind, content_hash, document_html)
+        except Exception as exc:
+            logging.warning("PDF tidy via Claude failed for session %s/%s: %s", session_id, kind, exc)
+            document_html = doc["content"]
+
     logo_html = ""
     logo_path = practitioner.get("logo_path")
     if logo_path:
@@ -3801,7 +3819,7 @@ def me_download_document_pdf(client_id: str, session_id: str, kind: str,
             <div class="doc-title">{_DOCUMENT_KIND_LABEL.get(kind, kind)}</div>
             <div class="doc-subject">{("Prepared for " + client_name + " &middot; ") if client_name else ""}{generated_on}</div>
         </div>
-        <div class="content">{doc["content"]}</div>
+        <div class="content">{document_html}</div>
     </body></html>"""
 
     # The letterhead lives in the page HEADER (repeated by Chromium on

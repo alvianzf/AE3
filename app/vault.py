@@ -120,6 +120,13 @@ _SCHEMA_DDL = """
             );
             CREATE INDEX IF NOT EXISTS documents_by_client
                 ON session_documents(client_id, updated_at);
+            -- Tidying a document's HTML for PDF export (app/pdf_tidy.py)
+            -- is a real Claude call, not something to repeat on every
+            -- download/preview — cached here, keyed by a hash of the
+            -- `content` it was generated from, so the next PDF request
+            -- only re-tidies once that content actually changes.
+            ALTER TABLE session_documents ADD COLUMN IF NOT EXISTS pdf_html TEXT;
+            ALTER TABLE session_documents ADD COLUMN IF NOT EXISTS pdf_source_hash TEXT;
             -- An image pasted, dropped, or cropped into a session document —
             -- its own table, not a column on session_documents, since one
             -- document can hold several and a document's content only needs
@@ -1028,6 +1035,22 @@ def save_document(
             row,
         )
     return get_document(practitioner_id, session_id, kind)
+
+
+def save_pdf_cache(
+    practitioner_id: str, session_id: str, kind: str, source_hash: str, pdf_html: str,
+) -> None:
+    """Records the Claude-tidied HTML a PDF was last generated from, keyed
+    by a hash of the document's own `content` at that moment — see
+    app/pdf_tidy.py. Deliberately a plain UPDATE, not folded into
+    save_document's own upsert: a manual edit or autosave shouldn't have
+    to know or care about this cache, only the PDF route does."""
+    with vault_connection(practitioner_id) as conn:
+        conn.execute(
+            "UPDATE session_documents SET pdf_html = %s, pdf_source_hash = %s "
+            "WHERE session_id = %s AND kind = %s",
+            (pdf_html, source_hash, session_id, kind),
+        )
 
 
 def get_document(practitioner_id: str, session_id: str, kind: str) -> dict | None:
