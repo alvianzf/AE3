@@ -126,11 +126,20 @@ def _sentences(text: str) -> list[str]:
     return sentences
 
 
-# Same 700-char headroom the HHEM path uses (app/reasoning/checker.py) —
-# keeps the prompt bounded regardless of how large a cited chunk is,
-# though the constraint here is prompt/token budget, not a hard sequence
-# limit the way HHEM's 512 tokens was.
-_MAX_EVIDENCE_CHARS = 700
+# Found live, testing a real consultation: every single retrieved chunk
+# (10/10 in that run, 700-2200 chars each — chunk_size is configured at
+# 1200 but a chunk can run longer) exceeded the old 700-char figure
+# inherited from the HHEM path (app/reasoning/checker.py), which needed
+# it as a hard embedding-sequence limit — this path has no such limit,
+# only a prompt/token budget, and 700 chars routinely cut a chunk off
+# before the specific detail a citation actually drew from. The reasoner
+# itself sees the full, untruncated chunk when writing the answer, so a
+# claim grounded in the back half of a long passage was being judged
+# against only the front half — exactly the kind of well-cited claim
+# that was wrongly coming back "unsupported." 3000 chars comfortably
+# covers essentially every real chunk seen so far; 10 citations at that
+# size is still a modest prompt for a single chat_json call.
+_MAX_EVIDENCE_CHARS = 3000
 
 # patient_context_text is one block covering the whole patient (labs,
 # conditions, and now any uploaded documents — app/patient/context.py),
