@@ -98,6 +98,18 @@ def _sentences(text: str) -> list[str]:
 # limit the way HHEM's 512 tokens was.
 _MAX_EVIDENCE_CHARS = 700
 
+# patient_context_text is one block covering the whole patient (labs,
+# conditions, and now any uploaded documents — app/patient/context.py),
+# not a single retrieved chunk — the 700-char citation-chunk budget above
+# cut it off before ever reaching an uploaded document's content (found
+# live: a real 20K-char lab panel the reasoner correctly used got checked
+# against only the first 700 chars of patient context, which never even
+# reached the "Uploaded documents" section appended at the end of
+# as_query_text() — every lab-grounded sentence was marked unsupported
+# and stripped from the final answer). Large enough to actually cover a
+# real uploaded lab panel, not just the context block's opening lines.
+_MAX_PATIENT_CONTEXT_CHARS = 20_000
+
 
 def _node_text(node: dict) -> str:
     if store.is_chunk(node):
@@ -125,7 +137,7 @@ def check(question: str, reasoned: ReasonedAnswer, patient_context_text: str) ->
     if not sentences:
         return {"verdict": "pass", "unsupported": [], "note": "Nothing to check.", "usage": dict(_ZERO_USAGE)}
 
-    evidence_texts = [_node_text(n) for n in reasoned.citations] + [patient_context_text[:_MAX_EVIDENCE_CHARS]]
+    evidence_texts = [_node_text(n) for n in reasoned.citations] + [patient_context_text[:_MAX_PATIENT_CONTEXT_CHARS]]
     evidence_block = "\n".join(f"[E{i}] {t}" for i, t in enumerate(evidence_texts))
     sentence_block = "\n".join(f"[{i}] {s}" for i, s in enumerate(sentences))
     prompt = f"Evidence:\n{evidence_block}\n\nAnswer sentences to check:\n{sentence_block}"

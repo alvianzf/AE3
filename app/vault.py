@@ -16,7 +16,10 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .config import get_config
 from .db import schema_connection, vault_connection, vault_connection_creating_schema
+
+cfg = get_config()
 
 KINDS = ("lab", "history", "note", "session_summary", "condition", "medication", "protocol")
 # "protocol" added: client-specific clinical protocols staged and implemented
@@ -199,6 +202,16 @@ _SCHEMA_DDL = """
             );
             CREATE INDEX IF NOT EXISTS files_by_client
                 ON uploaded_files(client_id, uploaded_at);
+            -- An uploaded file used to be a pure attachment — Consult never
+            -- read it (found live: uploading a client's real lab PDF, then
+            -- asking Consult to prepare for the visit, got "no labs on
+            -- file"). Extracted once at upload time (same PDF/OCR/.docx
+            -- pipeline the library uses, app/main.py's _extract_pages) and
+            -- read from here by app/patient/context.py, not re-extracted
+            -- per consult call.
+            ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS extracted_text TEXT;
+            ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS
+                extraction_status TEXT NOT NULL DEFAULT 'pending';
             CREATE TABLE IF NOT EXISTS wearable_connections (
                 id TEXT PRIMARY KEY,
                 client_id TEXT NOT NULL,
@@ -221,9 +234,37 @@ _SCHEMA_DDL = """
             """
 
 
+def _vector_schema_ddl() -> str:
+    """Separate from _SCHEMA_DDL (a plain string, not an f-string) since
+    this needs cfg.embedding_dimensions interpolated — same reasoning
+    app/retrieval/pgvector_store.py's own ensure_schema() gives. Chunks +
+    embeds each uploaded client file (app/main.py's _save_uploaded_file)
+    so Consult can retrieve only the passages relevant to the current
+    question (app/patient/context.py's get_relevant_uploaded_excerpts)
+    instead of concatenating every uploaded document's full text into
+    every prompt — found live: that doesn't scale past a client with a
+    couple of files, let alone a long-term client with years of lab
+    panels and prior consult documents attached."""
+    return f"""
+        CREATE EXTENSION IF NOT EXISTS vector;
+        CREATE TABLE IF NOT EXISTS client_document_chunks (
+            id TEXT PRIMARY KEY,
+            client_id TEXT NOT NULL,
+            file_id TEXT NOT NULL,
+            file_name TEXT NOT NULL,
+            chunk_index INTEGER NOT NULL,
+            text TEXT NOT NULL,
+            embedding vector({cfg.embedding_dimensions}) NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS client_document_chunks_by_client
+            ON client_document_chunks(client_id);
+        """
+
+
 def ensure_schema(practitioner_id: str) -> None:
     with vault_connection_creating_schema(practitioner_id) as conn:
         conn.executescript(_SCHEMA_DDL)
+        conn.executescript(_vector_schema_ddl())
 
 
 def ensure_schema_by_name(schema_name: str) -> None:
@@ -235,6 +276,7 @@ def ensure_schema_by_name(schema_name: str) -> None:
     practitioners row is missing/stale in the core store."""
     with schema_connection(schema_name) as conn:
         conn.executescript(_SCHEMA_DDL)
+        conn.executescript(_vector_schema_ddl())
 
 
 def ping(practitioner_id: str) -> bool:
@@ -358,6 +400,8 @@ def delete_client(practitioner_id: str, client_id: str) -> bool:
                 logging.warning("could not remove uploaded file %s: %s",
                                 row["storage_path"], exc)
         conn.execute("DELETE FROM uploaded_files WHERE client_id = %s", (client_id,))
+        conn.execute(
+            "DELETE FROM client_document_chunks WHERE client_id = %s", (client_id,))
         conn.execute(
             "DELETE FROM wearable_data_points WHERE client_id = %s", (client_id,))
         conn.execute(
@@ -834,16 +878,19 @@ def count_unviewed_intake(practitioner_id: str) -> int:
 
 def save_uploaded_file(
     practitioner_id: str, client_id: str, original_name: str, media_type: str,
-    storage_path: str,
+    storage_path: str, extracted_text: str | None = None,
+    extraction_status: str = "pending",
 ) -> dict:
     row = {"id": str(uuid.uuid4()), "client_id": client_id,
            "original_name": original_name, "media_type": media_type,
-           "storage_path": storage_path, "uploaded_at": _now()}
+           "storage_path": storage_path, "uploaded_at": _now(),
+           "extracted_text": extracted_text, "extraction_status": extraction_status}
     with vault_connection(practitioner_id) as conn:
         conn.execute(
             "INSERT INTO uploaded_files (id, client_id, original_name, "
-            "media_type, storage_path, uploaded_at) VALUES (%(id)s, %(client_id)s, "
-            "%(original_name)s, %(media_type)s, %(storage_path)s, %(uploaded_at)s)",
+            "media_type, storage_path, uploaded_at, extracted_text, extraction_status) "
+            "VALUES (%(id)s, %(client_id)s, %(original_name)s, %(media_type)s, "
+            "%(storage_path)s, %(uploaded_at)s, %(extracted_text)s, %(extraction_status)s)",
             row,
         )
     return row
@@ -874,6 +921,69 @@ def get_uploaded_file(practitioner_id: str, file_id: str, client_id: str | None 
             row = conn.execute(
                 "SELECT * FROM uploaded_files WHERE id = %s", (file_id,)).fetchone()
     return dict(row) if row else None
+
+
+def _vec_literal(embedding: list[float]) -> str:
+    # Same reasoning as app/retrieval/pgvector_store.py's own helper:
+    # psycopg2 has no built-in adapter for pgvector's `vector` type, so a
+    # bound string parameter cast with ::vector avoids the extra
+    # `pgvector` package dependency for what's otherwise one line.
+    return "[" + ",".join(str(x) for x in embedding) + "]"
+
+
+def save_client_document_chunks(
+    practitioner_id: str, client_id: str, file_id: str, file_name: str,
+    chunks: list[dict],
+) -> None:
+    """`chunks` is [{"text", "embedding"}, ...] — called once at upload
+    time (app/main.py's _save_uploaded_file), not re-chunked per consult
+    call. Replaces any existing chunks for this file first so re-
+    uploading the same file_id (not currently possible from the UI, but
+    cheap to make safe) doesn't accumulate duplicates."""
+    if not chunks:
+        return
+    with vault_connection(practitioner_id) as conn:
+        conn.execute("DELETE FROM client_document_chunks WHERE file_id = %s", (file_id,))
+        for i, c in enumerate(chunks):
+            conn.execute(
+                "INSERT INTO client_document_chunks "
+                "(id, client_id, file_id, file_name, chunk_index, text, embedding) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s::vector)",
+                (str(uuid.uuid4()), client_id, file_id, file_name, i, c["text"],
+                 _vec_literal(c["embedding"])),
+            )
+
+
+def search_client_documents(
+    practitioner_id: str, client_id: str, query_embedding: list[float], top_k: int = 8,
+) -> list[dict]:
+    """Nearest-neighbor search (cosine distance) scoped to one client's
+    uploaded-document chunks — the question-scoped alternative to
+    app/patient/context.py concatenating every uploaded document's full
+    text into every prompt. A sequential scan is fine at today's scale
+    (one client's documents, not the whole library) — an ivfflat/hnsw
+    index is the obvious next step if a single client's own document
+    count ever grows large enough for that to matter, not added
+    preemptively, same call app/retrieval/pgvector_store.py's search()
+    already makes for the library-wide table."""
+    with vault_connection(practitioner_id) as conn:
+        rows = conn.execute(
+            """
+            SELECT file_id, file_name, chunk_index, text,
+                   1 - (embedding <=> %s::vector) AS score
+            FROM client_document_chunks
+            WHERE client_id = %s
+            ORDER BY embedding <=> %s::vector
+            LIMIT %s
+            """,
+            (_vec_literal(query_embedding), client_id, _vec_literal(query_embedding), top_k),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def delete_client_document_chunks(practitioner_id: str, file_id: str) -> None:
+    with vault_connection(practitioner_id) as conn:
+        conn.execute("DELETE FROM client_document_chunks WHERE file_id = %s", (file_id,))
 
 
 # --- Session documents (clinician note / client report) -----------------------

@@ -48,7 +48,7 @@ from .graph import schema as graph_schema
 from .graph import store
 from .ingestion import pipeline as ingestion_pipeline
 from .ingestion import queue as ingestion_queue
-from .patient.context import get_patient_context
+from .patient.context import get_patient_context, load_relevant_documents
 from .reasoning import llm_checker, reasoner
 from .retrieval import general_lookup, pgvector_store, seed_search
 from .retrieval.traversal import GraphTraversalRetriever
@@ -323,32 +323,67 @@ _MAX_SOURCE_UPLOAD_BYTES = 20 * 1024 * 1024
 _MAX_CLIENT_FILE_BYTES = 20 * 1024 * 1024
 
 
+def _extract_docx_text(docx_doc) -> str:
+    """Paragraphs in order, then each table's rows flattened to one line
+    apiece — a .docx's own structure has no PDF-style page boundaries to
+    cite, so this always returns a single (None, text) passage, same as
+    plain text."""
+    parts = [p.text for p in docx_doc.paragraphs if p.text.strip()]
+    for table in docx_doc.tables:
+        for row in table.rows:
+            cells = " | ".join(c.text.strip() for c in row.cells)
+            if cells.strip():
+                parts.append(cells)
+    return "\n".join(parts)
+
+
 def _extract_pages(filename: str, raw: bytes) -> list[tuple[int | None, str]]:
     """Return [(page_number, text), ...].
 
     PDFs are read page by page so a citation can name the page it came from.
-    Plain text has no pagination, so its page number is None.
+    Plain text, a .docx, and a single image have no pagination, so their
+    page number is None.
 
-    Anything that isn't a real PDF or real text — a .docx, a .png, any other
-    binary — used to fall through to `raw.decode("utf-8", errors="replace")`
-    and get ingested as a real, graded source full of corrupted garbage
-    instead of being rejected the way a scanned (image-only) PDF deliberately
-    is (specs/v4/04-known-issues.md#h7). Raises ValueError instead, which the
-    route below turns into a clean 400.
+    Anything that isn't a real PDF, real text, a real .docx, or a real
+    image — gets rejected with ValueError instead of silently falling
+    through to `raw.decode("utf-8", errors="replace")` and being ingested
+    as a real, graded source full of corrupted garbage
+    (specs/v4/04-known-issues.md#h7). The route below turns ValueError
+    into a clean 400.
     """
-    if filename.lower().endswith(".pdf"):
+    lower = filename.lower()
+    if lower.endswith(".pdf"):
         if not raw.startswith(b"%PDF"):
             raise ValueError("This file is named .pdf but isn't a real PDF.")
         from pypdf import PdfReader
 
-        return [(i + 1, page.extract_text() or "")
-                for i, page in enumerate(PdfReader(io.BytesIO(raw)).pages)]
+        pages = [(i + 1, page.extract_text() or "")
+                 for i, page in enumerate(PdfReader(io.BytesIO(raw)).pages)]
+        if pages and not any(t.strip() for _, t in pages):
+            # A scanned PDF has no text layer for pypdf to read at all —
+            # this used to be a hard rejection (specs/v4/04-known-issues.md
+            # #h7); OCR via vision closes that gap instead of just naming it.
+            from .ingestion.ocr import ocr_scanned_pdf
+            pages = ocr_scanned_pdf(raw)
+        return pages
+    if lower.endswith(".docx"):
+        from docx import Document as DocxDocument
+        try:
+            return [(None, _extract_docx_text(DocxDocument(io.BytesIO(raw))))]
+        except Exception as exc:
+            raise ValueError("This file is named .docx but isn't a real Word document.") from exc
+    ext = _sniff_image_ext(raw)
+    if ext is not None:
+        from .ingestion.ocr import ocr_image
+        media_type = {".jpg": "image/jpeg", ".png": "image/png",
+                     ".gif": "image/gif", ".webp": "image/webp"}[ext]
+        return [(None, ocr_image(raw, media_type))]
     try:
         return [(None, raw.decode("utf-8"))]
     except UnicodeDecodeError as exc:
         raise ValueError(
-            "This file doesn't look like plain text or a PDF — only those "
-            "two are supported."
+            "This file doesn't look like plain text, a PDF, a Word "
+            "document, or a supported image (JPEG/PNG/GIF/WebP)."
         ) from exc
 
 
@@ -363,20 +398,38 @@ def _extract_pages_from_path(filename: str, path: Path) -> list[tuple[int | None
     the realistic 200 MB case is a large PDF, whose *extracted* text is
     far smaller than the file; a 200 MB source that's actually plain text
     is an extreme edge case this app's pipeline isn't designed around."""
-    if filename.lower().endswith(".pdf"):
+    lower = filename.lower()
+    if lower.endswith(".pdf"):
         with path.open("rb") as f:
             if f.read(4) != b"%PDF":
                 raise ValueError("This file is named .pdf but isn't a real PDF.")
         from pypdf import PdfReader
 
-        return [(i + 1, page.extract_text() or "")
+        pages = [(i + 1, page.extract_text() or "")
                 for i, page in enumerate(PdfReader(str(path)).pages)]
+        if pages and not any(t.strip() for _, t in pages):
+            from .ingestion.ocr import ocr_scanned_pdf
+            pages = ocr_scanned_pdf(path.read_bytes())
+        return pages
+    if lower.endswith(".docx"):
+        from docx import Document as DocxDocument
+        try:
+            return [(None, _extract_docx_text(DocxDocument(str(path))))]
+        except Exception as exc:
+            raise ValueError("This file is named .docx but isn't a real Word document.") from exc
+    raw_head = path.read_bytes()
+    ext = _sniff_image_ext(raw_head)
+    if ext is not None:
+        from .ingestion.ocr import ocr_image
+        media_type = {".jpg": "image/jpeg", ".png": "image/png",
+                     ".gif": "image/gif", ".webp": "image/webp"}[ext]
+        return [(None, ocr_image(raw_head, media_type))]
     try:
         return [(None, path.read_text(encoding="utf-8"))]
     except UnicodeDecodeError as exc:
         raise ValueError(
-            "This file doesn't look like plain text or a PDF — only those "
-            "two are supported."
+            "This file doesn't look like plain text, a PDF, a Word "
+            "document, or a supported image (JPEG/PNG/GIF/WebP)."
         ) from exc
 
 
@@ -3170,6 +3223,7 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
     patient = get_patient_context(practitioner_id, body.client_id)
     if patient is None:
         raise HTTPException(404, "no such client")
+    load_relevant_documents(patient, practitioner_id, body.question)
 
     session_id = body.session_id
     if session_id and vault.get_session(practitioner_id, session_id) is None:
@@ -3645,6 +3699,8 @@ def me_draft_document(client_id: str, session_id: str, kind: str, body: Document
     prior = vault.get_document(practitioner_id, session_id, kind)
     prior_content = prior["content"] if prior else None
     patient = get_patient_context(practitioner_id, client_id)
+    if patient is not None:
+        load_relevant_documents(patient, practitioner_id, body.instruction or kind)
     patient_context_text = patient.as_query_text() if patient else ""
 
     def _sse(event: dict) -> str:
@@ -3859,7 +3915,17 @@ def _save_uploaded_file(
     content: bytes | Path,
 ) -> dict:
     """Shared by the direct-upload route and the chunked-upload complete
-    step below — everything past receiving the bytes is identical."""
+    step below — everything past receiving the bytes is identical.
+
+    Also extracts the file's text (same PDF/scanned-PDF-OCR/.docx/image
+    pipeline the library uses, _extract_pages/_extract_pages_from_path)
+    synchronously, same as /api/sources' own direct-upload path already
+    does — found live: a practitioner uploads a client's real lab PDF,
+    asks Consult to prepare for the visit, and gets "no labs on file"
+    because nothing ever read the file back out. Extraction failing
+    (an unsupported format, a corrupt file) never blocks the upload
+    itself — the file is still a valid attachment even if it can't be
+    read for AI context."""
     file_id = str(uuid.uuid4())
     if isinstance(content, Path):
         saved = vault_files.save_from_path(practitioner_id, file_id, content, filename)
@@ -3867,11 +3933,51 @@ def _save_uploaded_file(
         saved = vault_files.save(practitioner_id, file_id, content, filename)
     if not saved:
         raise HTTPException(500, "could not store the uploaded file")
-    return vault.save_uploaded_file(
+
+    extracted_text: str | None = None
+    extraction_status = "failed"
+    try:
+        if isinstance(content, Path):
+            pages = _extract_pages_from_path(filename, content)
+        else:
+            pages = _extract_pages(filename, content)
+        extracted_text = "\n\n".join(t.strip() for _, t in pages if t.strip()).strip() or None
+        extraction_status = "done" if extracted_text else "failed"
+    except Exception as exc:
+        pages = []
+        logging.warning("client file extraction failed for %r (client %s): %s",
+                        filename, client_id, exc)
+
+    saved_row = vault.save_uploaded_file(
         practitioner_id, client_id, filename,
         content_type or _media_type(filename),
         str(vault_files.path(practitioner_id, file_id, filename)),
+        extracted_text=extracted_text, extraction_status=extraction_status,
     )
+
+    # Chunked + embedded once here, not dumped as one giant block into
+    # every consult prompt — a long-term client with years of lab panels
+    # and prior documents needs this to actually scale (found live: a
+    # single 20K-char lab panel alone ate ~5K tokens of every prompt
+    # regardless of whether that question even needed it). Consult
+    # retrieves only the chunks relevant to its current question
+    # (app/patient/context.py's get_relevant_uploaded_excerpts). Best-
+    # effort: an embedding failure shouldn't undo an otherwise-successful
+    # upload, same reasoning as the extraction try/except above.
+    if extraction_status == "done":
+        try:
+            chunks = store.chunk_pages(pages)
+            texts = [c["text"] for c in chunks]
+            embeddings = get_llm_client(LLMRole.EMBEDDER).embed(texts)
+            vault.save_client_document_chunks(
+                practitioner_id, client_id, saved_row["id"], filename,
+                [{"text": t, "embedding": e} for t, e in zip(texts, embeddings)],
+            )
+        except Exception as exc:
+            logging.warning("client file chunk/embed failed for %r (client %s): %s",
+                            filename, client_id, exc)
+
+    return saved_row
 
 
 def _serve_uploaded_file(practitioner_id: str, file_id: str, client_id: str | None) -> FileResponse:
@@ -3903,7 +4009,7 @@ def me_list_client_files(client_id: str,
                          session: dict = Depends(auth.require_pro_practitioner)) -> list[dict]:
     if vault.get_client(session["id"], client_id) is None:
         raise HTTPException(404, "no such client")
-    return [{k: v for k, v in f.items() if k != "storage_path"}
+    return [{k: v for k, v in f.items() if k not in ("storage_path", "extracted_text")}
             for f in vault.list_uploaded_files(session["id"], client_id)]
 
 

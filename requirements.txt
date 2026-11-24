@@ -44,6 +44,15 @@ neo4j==6.2.0
 
 # Source ingestion
 pypdf==6.14.2
+# .docx text extraction (app/main.py's _extract_pages) — pure-Python XML
+# parsing, no system dependency.
+python-docx==1.2.0
+# Rasterizes a scanned PDF's pages to images for vision OCR
+# (app/ingestion/ocr.py) — chosen over pdf2image because it bundles its
+# own PDF renderer (MuPDF) as a single wheel, so a scanned-PDF deploy
+# needs no system package (pdf2image needs poppler-utils installed
+# separately, which DEPLOY.md's setup doesn't currently do).
+pymupdf==1.26.6
 # Web-page scraper's headless-browser fallback (app/scraper.py) — a
 # Cloudflare-style JS challenge or a client-rendered SPA is invisible to
 # a plain HTTP client no matter what headers it sends; only a real

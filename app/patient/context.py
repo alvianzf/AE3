@@ -40,6 +40,15 @@ class PatientContext:
     recent_labs: list[dict] = field(default_factory=list)
     legacy_notes: list[dict] = field(default_factory=list)
     questionnaire_summary: str = ""
+    # Filenames only — always present regardless of the current question,
+    # so the model (and the "none on file" vs "N on file" distinction)
+    # doesn't depend on whether this question's vector search happened to
+    # surface anything. The actual content lives in uploaded_documents
+    # below, populated separately by load_relevant_documents() once a
+    # question is known — see that function's docstring for why this
+    # isn't just eagerly loaded here.
+    uploaded_document_names: list[str] = field(default_factory=list)
+    uploaded_documents: list[dict] = field(default_factory=list)
 
     def as_query_text(self) -> str:
         """A compact text block for conditioning an LLM call (seed search
@@ -70,6 +79,14 @@ class PatientContext:
         else:
             lines.append("Other recorded history/notes: none recorded")
         lines.append(f"Questionnaire responses: {self.questionnaire_summary or 'none recorded'}")
+        if self.uploaded_document_names:
+            lines.append(f"Uploaded documents on file: {', '.join(self.uploaded_document_names)}")
+        else:
+            lines.append("Uploaded documents on file: none")
+        if self.uploaded_documents:
+            lines.append("Excerpts from uploaded documents relevant to the current question:")
+            for doc in self.uploaded_documents:
+                lines.append(f"--- from {doc['name']} ---\n{doc['text']}")
         return "\n".join(lines)
 
 
@@ -77,6 +94,17 @@ class PatientContext:
 # be over-engineering for a single call site; hardcoded and named clearly
 # per CLAUDE.md's "hardcode until there's a real reason to configure it".
 _RECENT_LAB_COUNT = 10
+
+# How many of the most relevant uploaded-document chunks to surface per
+# question (app/vault.py's search_client_documents) — question-scoped
+# retrieval, not a flat dump of every uploaded file's full text. That
+# flat-dump approach was the first fix tried here and didn't scale past
+# a client with a file or two (found live: a single 20K-char lab panel
+# alone ate ~5K tokens of every prompt, relevant or not) — a long-term
+# client with years of lab panels and prior documents needs retrieval,
+# the same reasoning the library's own chunk+embed+search already rests
+# on, just scoped to one client instead of the whole library.
+_RELEVANT_CHUNK_COUNT = 8
 
 
 def get_patient_context(practitioner_id: str, client_id: str) -> PatientContext | None:
@@ -108,6 +136,11 @@ def get_patient_context(practitioner_id: str, client_id: str) -> PatientContext 
         answers = response.get("answers") or {}
         questionnaire_summary = "; ".join(f"{q}: {a}" for q, a in answers.items())
 
+    uploaded_document_names = [
+        f["original_name"] for f in vault.list_uploaded_files(practitioner_id, client_id)
+        if f.get("extraction_status") == "done"
+    ]
+
     return PatientContext(
         client_id=client_id,
         name=client["name"],
@@ -119,4 +152,30 @@ def get_patient_context(practitioner_id: str, client_id: str) -> PatientContext 
         recent_labs=labs[-_RECENT_LAB_COUNT:],
         legacy_notes=legacy,
         questionnaire_summary=questionnaire_summary,
+        uploaded_document_names=uploaded_document_names,
     )
+
+
+def load_relevant_documents(patient: PatientContext, practitioner_id: str, query_text: str) -> None:
+    """Mutates patient.uploaded_documents in place with the chunks most
+    relevant to `query_text` (the practitioner's actual consult question,
+    or — for document drafting, which has no single "question" — the
+    instruction/kind given there). Separate from get_patient_context()
+    because it needs an embedding call (a real request, not free) and a
+    query to embed against; get_patient_context() alone is cheap and
+    callable without knowing yet what's being asked. A no-op (leaves
+    uploaded_documents empty) if the client has no uploaded documents at
+    all or the embed call itself fails — callers already render "none on
+    file" correctly from uploaded_document_names in that case, so this
+    degrades to the pre-retrieval behavior rather than erroring the
+    whole consult."""
+    if not patient.uploaded_document_names:
+        return
+    from ..clients.llm_client import Role, get_client
+    try:
+        [query_embedding] = get_client(Role.EMBEDDER).embed([query_text])
+    except Exception:
+        return
+    hits = vault.search_client_documents(
+        practitioner_id, patient.client_id, query_embedding, top_k=_RELEVANT_CHUNK_COUNT)
+    patient.uploaded_documents = [{"name": h["file_name"], "text": h["text"]} for h in hits]

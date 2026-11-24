@@ -155,6 +155,35 @@ class AnthropicLLMClient:
             pass
         return text, usage
 
+    def chat_vision(self, system: str, media_type: str, image_b64: str,
+                    prompt: str = "Transcribe this image.", max_tokens: int = 8_000) -> tuple[str, dict]:
+        """One image-in, text-out call — scanned-PDF-page and photographed-
+        document OCR (app/ingestion/ocr.py) is the only caller. No
+        chat_json equivalent: OCR wants free-text transcription, not a
+        structured field, and there's no other vision call site in this
+        app to generalize for yet."""
+        response = self._client.messages.create(
+            model=self.model,
+            max_tokens=self._clamp(max_tokens),
+            system=_cacheable_system(system),
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": image_b64}},
+                    {"type": "text", "text": prompt},
+                ],
+            }],
+            thinking={"type": "disabled"},
+        )
+        text = "".join(b.text for b in response.content if b.type == "text").strip()
+        usage = self._usage(response)
+        try:
+            from app.token_tracker import record_tokens
+            record_tokens(self.role, usage.get("input_tokens", 0), usage.get("output_tokens", 0), self.model)
+        except Exception:
+            pass
+        return text, usage
+
     def embed(self, texts: list[str]) -> list[list[float]]:
         raise NotImplementedError(
             "Anthropic has no embeddings endpoint — Role.EMBEDDER always "
