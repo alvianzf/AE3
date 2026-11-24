@@ -3323,6 +3323,14 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
     if patient is None:
         raise HTTPException(404, "no such client")
     load_relevant_documents(patient, practitioner_id, body.question)
+    # Pooled, de-identified patterns from other consultations across the
+    # whole platform (app/clinical_patterns.py) — best-effort, never
+    # blocks the consult if the library has nothing relevant yet or the
+    # lookup itself fails.
+    try:
+        pattern_context = clinical_patterns.relevant_patterns_text(body.question)
+    except Exception:
+        pattern_context = ""
 
     session_id = body.session_id
     if session_id and vault.get_session(practitioner_id, session_id) is None:
@@ -3470,7 +3478,7 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
             else:
                 yield _sse({"event": "agent_start", "agent": "reasoner"})
                 t0 = time.monotonic()
-                reasoned = reasoner.answer(question, patient, traversal)
+                reasoned = reasoner.answer(question, patient, traversal, pattern_context=pattern_context)
                 _track(reasoned.usage)
                 yield _sse(_timed_done({"event": "agent_done", "agent": "reasoner", **reasoned.usage}, t0))
                 answer_text = reasoned.text
@@ -3496,7 +3504,8 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
                         yield _sse({"event": "agent_start", "agent": "reasoner", "retry": True})
                         t0 = time.monotonic()
                         revised_reasoned = reasoner.answer(
-                            question, patient, traversal, unsupported=verdict["unsupported"])
+                            question, patient, traversal, unsupported=verdict["unsupported"],
+                            pattern_context=pattern_context)
                         _track(revised_reasoned.usage)
                         yield _sse(_timed_done({"event": "agent_done", "agent": "reasoner",
                                    "retry": True, **revised_reasoned.usage}, t0))

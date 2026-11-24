@@ -97,7 +97,7 @@ def _label(node: dict) -> str:
 
 
 def answer(question: str, patient: PatientContext, traversal: TraversalResult,
-          unsupported: list[str] | None = None) -> ReasonedAnswer:
+          unsupported: list[str] | None = None, pattern_context: str | None = None) -> ReasonedAnswer:
     """`unsupported` is only passed on the one bounded revision retry
     (mirrors the pre-existing Checker retry pattern) — the Checker's own
     list of sentences it couldn't ground in the accumulated context. The
@@ -121,10 +121,16 @@ def answer(question: str, patient: PatientContext, traversal: TraversalResult,
             "rephrasing it more vaguely. Do not introduce new claims the context "
             "doesn't cover either."
         )
+    # De-identified, pooled across every practitioner (app/clinical_
+    # patterns.py) — background context for approach only, never a
+    # source of fact about this specific patient, so it's kept in its
+    # own clearly-labeled block rather than folded into the patient
+    # context or knowledge-base context above.
+    pattern_block = f"\n\n{pattern_context}" if pattern_context else ""
     prompt = (
         f"Patient context:\n{patient.as_query_text()}\n\n"
         f"Accumulated knowledge-base context:\n---\n{block}\n---\n\n"
-        f"Practitioner's question: {question}{revision_block}"
+        f"Practitioner's question: {question}{revision_block}{pattern_block}"
     )
     text, usage = get_client(Role.REASONER).chat_text(
         REASONER_SYSTEM, prompt, max_tokens=100_000, extra_body=_NO_THINKING)
