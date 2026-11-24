@@ -92,16 +92,38 @@ def ping() -> dict:
 
 
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
+_BULLET_PREFIX = re.compile(r"^(?:[-*•]|\d+[.)])\s+")
+_BOLD_ONLY_LINE = re.compile(r"^\*\*[^*]+\*\*:?$")
 
 
 def _sentences(text: str) -> list[str]:
-    # Markdown section headers ("## Answer") aren't checkable claims —
-    # found live in specs/v6.3/02's MiniCheck prototype (the same bug
-    # exists in the HHEM path's _sentences(), unfixed there since it
-    # doesn't change that document's conclusion; fixed here since this
-    # is a fresh implementation).
-    body = " ".join(line for line in text.splitlines() if not line.strip().startswith("#"))
-    return [s.strip() for s in _SENTENCE_SPLIT.split(body) if s.strip()]
+    # Found live: joining every line with a single space before splitting
+    # on sentence punctuation (the previous approach) turned a bulleted
+    # list — each item a separate, independently-cited claim, often with
+    # no terminal period — into one run-on blob, so two adjacent bullets
+    # (each individually well-grounded in its own single citation) merged
+    # into one "sentence" that no single passage could possibly ground as
+    # a whole. That merged, garbled unit is what the checker was actually
+    # flagging as unsupported, not the real claims the reasoner wrote —
+    # this was the dominant cause of a real answer coming back gutted.
+    # Splitting on newlines FIRST, before punctuation, keeps each
+    # markdown line (paragraph, bullet, list item) — almost always one
+    # coherent claim in these answers — as its own unit; multi-sentence
+    # lines still get split further by punctuation within that line.
+    sentences: list[str] = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        line = _BULLET_PREFIX.sub("", line)
+        if not line or _BOLD_ONLY_LINE.match(line):
+            # A bare "**Lab markers**" subsection title carries no claim
+            # to verify — including it would always get (correctly, but
+            # uselessly) flagged as unsupported, since it cites nothing
+            # and states no fact.
+            continue
+        sentences.extend(s.strip() for s in _SENTENCE_SPLIT.split(line) if s.strip())
+    return sentences
 
 
 # Same 700-char headroom the HHEM path uses (app/reasoning/checker.py) —
