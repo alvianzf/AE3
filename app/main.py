@@ -53,7 +53,7 @@ from .ingestion import queue as ingestion_queue
 from .patient.context import get_patient_context, load_relevant_documents
 from .reasoning import llm_checker, reasoner
 from .retrieval import general_lookup, pgvector_store, seed_search
-from .retrieval.traversal import GraphTraversalRetriever
+from .retrieval.traversal import GraphTraversalRetriever, two_stage_discover
 
 cfg = get_config()
 STATIC = Path(__file__).parent.parent / "static"
@@ -3293,6 +3293,53 @@ class MeConsult(BaseModel):
     topic: str = ""
 
 
+def _cap_chunks_per_document(accumulated: list[dict], max_per_document: int) -> list[dict]:
+    """Keeps at most `max_per_document` chunks from any one document in
+    the final accumulated context, preserving relative order (which, by
+    the time this runs, is already trust-sorted — GraphTraversalRetriever's
+    own final sort — so capping drops each document's lowest-trust chunks
+    first, never its highest). Entities have no single document to cap
+    against and always pass through."""
+    per_doc_count: dict[str, int] = {}
+    kept = []
+    for node in accumulated:
+        doc_id = node.get("document_id")
+        if doc_id is None:
+            kept.append(node)
+            continue
+        if per_doc_count.get(doc_id, 0) >= max_per_document:
+            continue
+        per_doc_count[doc_id] = per_doc_count.get(doc_id, 0) + 1
+        kept.append(node)
+    return kept
+
+
+def _dedupe_searched_documents(accumulated: list[dict], cited_k: set[int]) -> dict[str, dict]:
+    """Every document retrieval kept, deduped (several chunks of the same
+    document count once) — a practitioner asking "what did it even look
+    at" thinks in documents, not individual passages. `cited` is True if
+    ANY of that document's chunks ended up in the final answer's
+    citations, not just whichever chunk this loop happens to see last for
+    that document — a plain dict comprehension keyed by document_id would
+    silently let a later, uncited chunk overwrite an earlier cited one's
+    flag back to False."""
+    by_doc: dict[str, dict] = {}
+    for i, node in enumerate(accumulated):
+        key = node.get("document_id") or node.get("name") or node.get("id")
+        cited = (i + 1) in cited_k
+        existing = by_doc.get(key)
+        if existing is None:
+            by_doc[key] = {
+                "document_id": node.get("document_id"),
+                "title": node.get("document_title") or node.get("name") or node.get("id"),
+                "grade": node.get("grade"),
+                "cited": cited,
+            }
+        elif cited:
+            existing["cited"] = True
+    return by_doc
+
+
 @app.post("/api/me/consult")
 def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practitioner)):
     """Streams progress as text/event-stream (specs/v3/08-api.md#live-progress-stream):
@@ -3426,18 +3473,35 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
                 # (found live, 2026-09-15).
                 search_query_repr = body.question
             else:
-                yield _sse({"event": "agent_start", "agent": "seed_search"})
+                # Stage 1 of two-stage retrieval (app/retrieval/traversal.py's
+                # two_stage_discover): a deliberately wide, document-capped
+                # seed plus one un-judged structural hop plus one batched
+                # diversity ranking — replaces the old plain seed_search.seed()
+                # call here specifically to fix low cross-document recall
+                # (found live: the old design's narrow per-hop limit, judged
+                # immediately every hop, compounded into narrowing onto 1-2
+                # documents well before traversal was done). Still reported
+                # under "seed_search" wasn't honest about what's now a
+                # richer step than plain seeding, hence the renamed agent.
+                yield _sse({"event": "agent_start", "agent": "discover"})
                 t0 = time.monotonic()
-                seed_result = seed_search.seed(question, patient, body.min_grade, weights=weights,
-                                               accessible_private_ids=accessible_private,
-                                               folder=body.folder, topic=body.topic)
+                seed_result = two_stage_discover(question, patient, body.min_grade, weights=weights,
+                                                 accessible_private_ids=accessible_private,
+                                                 folder=body.folder, topic=body.topic)
                 _track(seed_result.usage)
-                yield _sse(_timed_done({"event": "agent_done", "agent": "seed_search", **seed_result.usage}, t0))
+                yield _sse(_timed_done({"event": "agent_done", "agent": "discover", **seed_result.usage}, t0))
                 search_query_repr = seed_result.search_query
 
+                # Stage 2: the existing hop-by-hop traversal, unchanged,
+                # just starting from stage 1's diverse frontier instead of a
+                # narrow single-document-leaning seed, and budgeted for
+                # fewer additional hops (traversal_stage2_max_depth) since
+                # stage 1 already did the breadth-finding work.
                 yield _sse({"event": "agent_start", "agent": "traversal"})
                 t0 = time.monotonic()
-                retriever = GraphTraversalRetriever(min_grade=body.min_grade, weights=weights,
+                retriever = GraphTraversalRetriever(min_grade=body.min_grade,
+                                                    max_depth=cfg.traversal_stage2_max_depth,
+                                                    weights=weights,
                                                     accessible_private_ids=accessible_private,
                                                     folder=body.folder, topic=body.topic)
                 traversal = None
@@ -3459,6 +3523,16 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
                                    "duration_s": hop_dt})
                     else:
                         traversal = hop_payload
+                # Applied once, after stage 2 finishes, over the whole
+                # two-stage result — caps how many chunks from any single
+                # document reach the Reasoner, so one large or richly-
+                # connected document still can't crowd out the cross-
+                # document coverage the two stages above exist to produce.
+                # Already sorted by trust (GraphTraversalRetriever's own
+                # final sort), so this keeps each document's highest-trust
+                # chunks, not an arbitrary subset.
+                traversal.accumulated = _cap_chunks_per_document(
+                    traversal.accumulated, cfg.traversal_max_chunks_per_document_final)
                 _track(traversal.usage)
                 yield _sse(_timed_done({"event": "agent_done", "agent": "traversal", **traversal.usage,
                            "depth": traversal.depth_reached, "stopped": traversal.stopped_reason,
@@ -3607,6 +3681,15 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
                 for i, node in enumerate(traversal.accumulated)
                 if (i + 1) in cited_k
             ],
+            # Every document the pipeline actually retrieved and judged
+            # relevant enough to keep — not just the ones the final answer
+            # went on to cite. "Sources" above answers "what backs this
+            # claim"; this answers a different, real question a
+            # practitioner asked for directly: "what did it even look
+            # at". Deduped by document (several chunks of the same
+            # document count once), since a practitioner thinks in terms
+            # of documents, not individual passages.
+            "searched": list(_dedupe_searched_documents(traversal.accumulated, cited_k).values()),
         }
         vault.add_turn(practitioner_id, session_id, body.question, answer_text,
                       {k: v for k, v in result.items()

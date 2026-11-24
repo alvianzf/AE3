@@ -358,7 +358,7 @@
 	// (seed_search, traversal, reasoner, checker) are unchanged everywhere
 	// else (SSE events, step_times keys, AGENT_LABELS' own dict keys).
 	const AGENT_LABELS: Record<string, string> = {
-		seed_search: 'Searching', traversal: 'Connecting the dots', lookup: 'Lookup',
+		discover: 'Finding sources', traversal: 'Connecting the dots', lookup: 'Lookup',
 		reasoner: 'Answering', checker: 'Checking the facts'
 	};
 
@@ -579,6 +579,28 @@
 		{/if}
 		{#if t.revised}<Chip tone="accent">revised</Chip>{/if}
 		{#if t.total_time_s}<Chip tone="neutral">{t.total_time_s}s total</Chip>{/if}
+		{#if t.searched?.length}
+			<!-- "What did it even look at" — a different, real question from
+			     "Sources" below (which only lists what the answer actually
+			     cites). A small badge next to the verdict, not a full line:
+			     answers it in one click without competing with the answer
+			     text for attention. -->
+			<details class="searched-acc">
+				<summary><Chip tone="neutral">{t.searched.length} source{t.searched.length === 1 ? '' : 's'} searched</Chip></summary>
+				<ul class="searched-list">
+					{#each t.searched as d (d.document_id ?? d.title)}
+						<li>
+							<Chip tone={d.cited ? 'accent' : 'neutral'}>{d.cited ? 'cited' : 'considered'}</Chip>
+							{#if d.document_id}
+								<button type="button" class="searched-title" onclick={() => openInLibrary(d)}>{d.title}</button>
+							{:else}
+								<span class="searched-title">{d.title}</span>
+							{/if}
+						</li>
+					{/each}
+				</ul>
+			</details>
+		{/if}
 		{#if t.answered_at}<span class="ts">{timeLabel(t.answered_at)}</span>{/if}
 	</div>
 	<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
@@ -1190,6 +1212,21 @@
 	/* Sources: closed by default, chevron rotates open — the native
 	   <details> marker is suppressed in favor of the Icon so the rotation
 	   is consistent across browsers. */
+	.searched-acc { position: relative; display: inline-block; }
+	.searched-acc summary { cursor: pointer; list-style: none; }
+	.searched-acc summary::-webkit-details-marker { display: none; }
+	.searched-list {
+		position: absolute; top: calc(100% + .3rem); left: 0; z-index: 5;
+		margin: 0; padding: var(--space-3); display: grid; gap: .4rem;
+		border: 1px solid var(--line); border-radius: var(--r); background: var(--panel);
+		box-shadow: 0 4px 16px rgba(0, 0, 0, .1);
+		font-size: var(--text-sm); list-style: none; min-width: 16rem; max-width: 22rem;
+	}
+	.searched-list li { display: flex; align-items: center; gap: .5rem; }
+	.searched-title {
+		border: none; background: none; padding: 0; font: inherit; color: var(--ink); cursor: pointer; text-align: left;
+	}
+	button.searched-title:hover { color: var(--accent); text-decoration: underline; }
 	.sources-acc { margin-top: var(--space-4); font-size: var(--text-sm); }
 	.sources-acc summary {
 		cursor: pointer; color: var(--muted); font-weight: 600; list-style: none;

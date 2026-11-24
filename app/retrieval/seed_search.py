@@ -64,7 +64,8 @@ def form_search_query(question: str, patient: PatientContext) -> tuple[str, dict
 def seed(question: str, patient: PatientContext, min_grade: int,
         top_k: int | None = None, weights: dict[str, int] | None = None,
         accessible_private_ids: set[str] | None = None,
-        folder: str = "", topic: str = "") -> SeedResult:
+        folder: str = "", topic: str = "",
+        max_chunks_per_document: int | None = None) -> SeedResult:
     """`min_grade`/`weights` no longer exclude a candidate from seeding —
     grade (and a practitioner's own per-document override,
     vault.get_source_weights()) is a trust signal the Reasoner weighs
@@ -75,7 +76,16 @@ def seed(question: str, patient: PatientContext, min_grade: int,
     `folder`/`topic` is a practitioner-chosen library scope
     (store.in_scope()) — a real hard filter, unrelated to trust: a
     source outside the chosen folder/tag never becomes a seed, so it
-    can't reach the answer by any traversal path either."""
+    can't reach the answer by any traversal path either.
+
+    `max_chunks_per_document` (app/retrieval/traversal.py's two_stage_discover
+    passes cfg.seed_max_chunks_per_document; every other caller leaves it
+    unset) caps how many of this call's own chunks can come from one
+    document — found live: an uncapped top_k routinely collapsed onto
+    1-2 documents that happened to score highest, well before traversal
+    ever got a chance to reach anything else. Applied in the order
+    vector/fulltext search already ranked results, so it drops a
+    document's *weakest* matches first, never its strongest."""
     top_k = top_k or cfg.traversal_seed_top_k
     weights = weights or {}
     accessible_private_ids = accessible_private_ids or set()
@@ -96,6 +106,16 @@ def seed(question: str, patient: PatientContext, min_grade: int,
         if (not r.get("is_private") or r.get("document_id") in accessible_private_ids)
         and store.in_scope(r, folder, topic)
     ]
+    if max_chunks_per_document is not None:
+        per_doc_count: dict[str, int] = {}
+        capped_ids = []
+        for cid in chunk_ids:
+            doc_id = records[cid].get("document_id")
+            if per_doc_count.get(doc_id, 0) >= max_chunks_per_document:
+                continue
+            per_doc_count[doc_id] = per_doc_count.get(doc_id, 0) + 1
+            capped_ids.append(cid)
+        chunk_ids = capped_ids
     # Grade/weight still orders the seeds — a higher-trust source lists
     # (and gets cited) ahead of a lower-trust one reaching the same
     # question, same reasoning as GraphTraversalRetriever's own sort of

@@ -22,6 +22,7 @@ from ..clients.llm_client import NO_THINKING, Role, get_client
 from ..config import get_config
 from ..graph import store
 from ..patient.context import PatientContext
+from . import seed_search
 from .seed_search import SeedResult
 
 cfg = get_config()
@@ -273,3 +274,96 @@ class GraphTraversalRetriever:
             accumulated=ordered, path_log=path_log,
             depth_reached=depth, stopped_reason=stopped_reason, usage=total_usage,
         )
+
+
+def two_stage_discover(
+    question: str, patient: PatientContext, min_grade: int,
+    weights: dict[str, int] | None = None,
+    accessible_private_ids: set[str] | None = None,
+    folder: str = "", topic: str = "",
+    judge_fn: JudgeFn | None = None,
+) -> SeedResult:
+    """Stage 1 of two-stage retrieval: breadth-first discovery, before any
+    of GraphTraversalRetriever's existing per-hop pruning (stage 2,
+    unchanged) ever runs. Fixes low cross-document recall found live in
+    the old single-stage design — seeding had no document cap, and the
+    old default of judging relevance immediately every hop, capped at 5
+    raw candidates total per hop, compounded into narrowing onto 1-2
+    documents well before traversal was done.
+
+    1. A deliberately wider, document-capped seed
+       (cfg.traversal_seed_top_k_broad / cfg.seed_max_chunks_per_document)
+       — unconditionally trusted as the starting frontier, same as the
+       single-stage design already trusts its own (narrower) seed.
+    2. One structural, *un-judged* 1-hop fetch from that frontier
+       (cfg.traversal_stage1_hop_limit) — no LLM call yet, pure graph
+       lookup, deliberately wide.
+    3. One batched relevance judgment over that 1-hop pool (reusing the
+       same judge stage 2 uses) to decide which of it is actually worth
+       carrying forward — then document-capped again, so this step buys
+       *document coverage* in the stage 2 starting frontier, not just
+       more chunks from whichever document the 1-hop happened to favor.
+
+    Returns a SeedResult shaped exactly like seed_search.seed()'s own, so
+    the existing GraphTraversalRetriever.retrieve_streaming() can consume
+    it completely unchanged as stage 2's starting point — this function
+    only replaces *how the frontier gets picked*, not what consumes it.
+    """
+    weights = weights or {}
+    accessible_private_ids = accessible_private_ids or set()
+    judge_fn = judge_fn or llm_judge_relevance
+    total_usage = dict(_ZERO_USAGE)
+
+    broad_seed = seed_search.seed(
+        question, patient, min_grade, top_k=cfg.traversal_seed_top_k_broad,
+        weights=weights, accessible_private_ids=accessible_private_ids,
+        folder=folder, topic=topic, max_chunks_per_document=cfg.seed_max_chunks_per_document,
+    )
+    total_usage["input_tokens"] += broad_seed.usage.get("input_tokens", 0)
+    total_usage["output_tokens"] += broad_seed.usage.get("output_tokens", 0)
+
+    frontier_ids = list(dict.fromkeys([*broad_seed.seed_chunk_ids, *broad_seed.seed_entity_ids]))
+    visited_ids = set(frontier_ids)
+    raw_neighbors = store.fetch_hop_neighbors(
+        frontier_ids, visited_ids, min_grade, cfg.traversal_stage1_hop_limit,
+        weights=weights, accessible_private_ids=accessible_private_ids,
+        folder=folder, topic=topic,
+    )
+
+    seed_values = list(broad_seed.seed_records.values())
+    judgments, judge_usage = judge_fn(question, patient, seed_values, raw_neighbors)
+    total_usage["input_tokens"] += judge_usage.get("input_tokens", 0)
+    total_usage["output_tokens"] += judge_usage.get("output_tokens", 0)
+
+    relevant_neighbors = [
+        cand for cand, verdict in zip(raw_neighbors, judgments) if verdict.get("relevant")
+    ]
+    # Same per-document cap as the broad seed itself, same reasoning:
+    # judged-relevant is necessary but not sufficient for diversity — a
+    # single richly-connected document could otherwise supply most of
+    # the "relevant" 1-hop pool on its own.
+    per_doc_count: dict[str, int] = {}
+    diverse_neighbors = []
+    for cand in relevant_neighbors:
+        if "Entity" in cand.get("labels", []):
+            diverse_neighbors.append(cand)
+            continue
+        doc_id = cand.get("document_id")
+        if per_doc_count.get(doc_id, 0) >= cfg.seed_max_chunks_per_document:
+            continue
+        per_doc_count[doc_id] = per_doc_count.get(doc_id, 0) + 1
+        diverse_neighbors.append(cand)
+
+    records = dict(broad_seed.seed_records)
+    for cand in diverse_neighbors:
+        records.setdefault(cand["id"], cand)
+    chunk_ids = [rid for rid, r in records.items() if store.is_chunk(r)]
+    entity_ids = [rid for rid, r in records.items() if not store.is_chunk(r)]
+
+    return SeedResult(
+        search_query=broad_seed.search_query,
+        seed_chunk_ids=chunk_ids,
+        seed_entity_ids=entity_ids,
+        seed_records=records,
+        usage=total_usage,
+    )

@@ -170,6 +170,36 @@ class Config:
     # traversal ever starts expanding.
     traversal_seed_top_k = int(os.getenv("TRAVERSAL_SEED_TOP_K", "10"))
 
+    # Two-stage retrieval (app/retrieval/traversal.py's two_stage_discover):
+    # Stage 1 casts a deliberately wider net than ordinary seeding/hopping
+    # ever did, specifically to fix low cross-document recall (found live:
+    # the old single-stage design's 5-candidates-per-hop limit, judged
+    # immediately every hop, compounded into narrowing onto 1-2 documents
+    # well before the traversal was done). Starting conservative (top_k 20,
+    # not the 40 first considered) — measure before raising further.
+    traversal_seed_top_k_broad = int(os.getenv("TRAVERSAL_SEED_TOP_K_BROAD", "20"))
+    # Caps how many of the broad seed's chunks can come from any one
+    # document, so the top_k budget above buys document *coverage*, not
+    # more depth on whichever one document happens to score highest.
+    seed_max_chunks_per_document = int(os.getenv("SEED_MAX_CHUNKS_PER_DOCUMENT", "2"))
+    # Stage 1's single structural 1-hop fetch — deliberately un-judged (no
+    # LLM call per candidate here), so this can be much wider than the
+    # per-hop limit stage 2 still uses; the one diversity-ranking call
+    # afterward is what actually prunes this pool.
+    traversal_stage1_hop_limit = int(os.getenv("TRAVERSAL_STAGE1_HOP_LIMIT", "40"))
+    # Stage 2 (app/retrieval/traversal.py's existing GraphTraversalRetriever,
+    # unchanged) now starts from the diverse frontier stage 1 already
+    # found, so it only needs to go a little deeper, not the full 5 hops
+    # the old single-stage design budgeted for discovery *and* depth.
+    traversal_stage2_max_depth = int(os.getenv("TRAVERSAL_STAGE2_MAX_DEPTH", "2"))
+    # Applied once, after stage 2 finishes, to the final accumulated
+    # context — caps how many chunks from any single document reach the
+    # Reasoner, so one large or richly-connected document still can't
+    # crowd out the cross-document coverage the two stages above exist to
+    # produce.
+    traversal_max_chunks_per_document_final = int(
+        os.getenv("TRAVERSAL_MAX_CHUNKS_PER_DOCUMENT_FINAL", "4"))
+
     # Ingestion queue (app/ingestion/queue.py) — how many staged-promotion
     # jobs run their actual Reader/embed/graph-extraction work at once.
     # Default 1 (fully serialized): found live, 2026-11-03, a single large
