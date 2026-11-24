@@ -32,14 +32,17 @@ CHECK_SCHEMA = {
                 "type": "object",
                 "properties": {
                     "sentence_index": {"type": "integer", "description": "The sentence's [N] index, verbatim."},
-                    "supporting_evidence_index": {
-                        "type": "integer",
-                        "description": "The single [E#] index of the ONE evidence passage that, alone, "
-                                       "states this sentence's claim — verbatim number, no brackets. "
-                                       "-1 if no single passage does.",
+                    "supporting_evidence_indices": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "Every [E#] evidence index (verbatim numbers, no brackets) whose "
+                                       "stated facts, combined, ground this sentence — one index if a "
+                                       "single passage states the whole claim, several if it takes more "
+                                       "than one passage's facts together to ground it. Empty if nothing "
+                                       "in the evidence grounds it, even combined.",
                     },
                 },
-                "required": ["sentence_index", "supporting_evidence_index"],
+                "required": ["sentence_index", "supporting_evidence_indices"],
                 "additionalProperties": False,
             },
         },
@@ -49,21 +52,30 @@ CHECK_SCHEMA = {
 }
 
 CHECK_SYSTEM = (
-    "You are a strict fact-checker for a clinical answer. You are given "
-    "numbered evidence passages and numbered answer sentences.\n\n"
-    "For each sentence, check it against each evidence passage ONE AT A "
-    "TIME, independently — never combine partial support from several "
-    "passages into one judgment. A sentence is supported only if a SINGLE "
-    "individual passage, alone, directly states its claim. Report that "
-    "one passage's index. If passage A states half the claim and passage "
-    "B states the other half, but neither states the whole claim on its "
-    "own, the sentence is NOT supported — report -1.\n\n"
-    "This matters because a pile of topically-related passages can make a "
-    "claim look supported at a glance even when no single one of them "
-    "actually backs it — you are checking for that specific failure, not "
-    "just general relevance. Not by general medical knowledge, not by "
-    "plausibility, not by a reasonable inference the evidence doesn't "
-    "itself state — only by what one individual passage actually says.\n\n"
+    "You are a fact-checker for a clinical answer. You are given numbered "
+    "evidence passages and numbered answer sentences.\n\n"
+    "For each sentence, decide whether it is actually grounded in the "
+    "evidence — not whether it is phrased exactly as the evidence phrases "
+    "it. A sentence is grounded if:\n"
+    "- a single passage states its claim directly, or\n"
+    "- combining the facts stated across two or more passages establishes "
+    "it (e.g. one passage gives a value, another states what that value "
+    "indicates — together they ground a sentence connecting the two), or\n"
+    "- it is a reasonable clinical inference drawn directly from facts the "
+    "evidence actually states — ordinary clinical reasoning connecting "
+    "those stated facts to a conclusion, not a new fact standing on its "
+    "own. Report the evidence index(es) the inference is actually drawn "
+    "from.\n\n"
+    "A sentence is NOT grounded — report an empty list — if:\n"
+    "- it states a specific fact, value, or finding that no passage gives, "
+    "combined or otherwise (this is the failure this check exists to "
+    "catch: a pile of topically-related passages can make an invented "
+    "detail look supported at a glance), or\n"
+    "- it borrows a premise from outside medical knowledge that the "
+    "evidence itself never supplies — interpreting a stated fact is fine, "
+    "inventing one isn't, or\n"
+    "- it states something as established or certain that the evidence "
+    "only supports as a possibility.\n\n"
     "Judge every sentence independently and return exactly one judgment "
     "per sentence index given."
 )
@@ -144,13 +156,15 @@ def check(question: str, reasoned: ReasonedAnswer, patient_context_text: str) ->
 
     result, usage = get_client(Role.CHECKER).chat_json(
         CHECK_SYSTEM, prompt, CHECK_SCHEMA, max_tokens=20_000, extra_body=NO_THINKING)
-    # supported = a real single evidence index was given, not just "true" —
-    # mirrors the HHEM path's own per-(evidence, sentence)-pair scoring
-    # (app/reasoning/checker.py): a claim only passes if one individual
-    # passage backs it alone, never a same-side synthesis across several
-    # passages that are each merely topic-adjacent.
+    # supported = at least one real evidence index was given — a claim can
+    # be grounded by combining facts across several passages (or a
+    # reasonable inference drawn from them), not only by one single
+    # passage stating it verbatim; see CHECK_SYSTEM. Still fails closed:
+    # an index out of range, or an empty list, means not grounded.
     by_index = {
-        j["sentence_index"]: 0 <= j.get("supporting_evidence_index", -1) < len(evidence_texts)
+        j["sentence_index"]: any(
+            0 <= idx < len(evidence_texts) for idx in j.get("supporting_evidence_indices", [])
+        )
         for j in result["judgments"]
     }
     # A sentence the model drops from its response is treated as
