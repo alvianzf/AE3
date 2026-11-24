@@ -439,7 +439,7 @@
 						<li class="entry">
 							<div class="er">
 								<Chip tone="neutral">{KIND_LABELS[e.kind] ?? e.kind}</Chip>
-								{#if isPatientReported(e.content)}<Chip tone="accent">Patient-reported</Chip>{/if}
+								{#if isPatientReported(e.content)}<Chip tone="accent">Client-reported</Chip>{/if}
 								<span class="hint">{e.created_at?.slice(0, 10)}</span>
 								<button type="button" class="remove" onclick={() => removeEntry(e.id)} disabled={deletingEntry === e.id} title="Remove">×</button>
 							</div>

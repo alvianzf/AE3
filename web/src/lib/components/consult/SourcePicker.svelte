@@ -29,7 +29,18 @@
 			const res = await fetch(`${PUBLIC_API_BASE}/api/sources/${documentId}/images`, {
 				credentials: 'include'
 			});
-			if (!res.ok) throw new Error('Could not read this source.');
+			if (!res.ok) {
+				// Surface the backend's actual reason (e.g. "this source has
+				// no PDF original to pull images from" — this feature only
+				// works for a PDF source, not every library document) rather
+				// than a single generic message that hides why every single
+				// time (found live: every non-PDF source failed with the
+				// exact same unhelpful text).
+				const body = await res.json().catch(() => ({}));
+				const detail = body?.detail;
+				const message = (detail && typeof detail === 'object' ? detail.message : detail) || 'Could not read this source.';
+				throw new Error(message);
+			}
 			images = await res.json();
 			if (!images.length) error = 'No chart or figure images found in this source.';
 		} catch (err: any) {

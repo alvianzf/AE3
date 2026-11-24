@@ -2,7 +2,14 @@
 	import { get as storeGet } from 'svelte/store';
 	import { createEditor, EditorContent } from 'svelte-tiptap';
 	import StarterKit from '@tiptap/starter-kit';
-	import TiptapImage from '@tiptap/extension-image';
+	import { Table as TiptapTable } from '@tiptap/extension-table';
+	import TiptapTableRow from '@tiptap/extension-table-row';
+	import TiptapTableHeader from '@tiptap/extension-table-header';
+	import TiptapTableCell from '@tiptap/extension-table-cell';
+	import { TextStyle } from '@tiptap/extension-text-style';
+	import Color from '@tiptap/extension-color';
+	import Highlight from '@tiptap/extension-highlight';
+	import { ResizableImage } from './resizableImage';
 	import { put } from '$lib/api';
 	import { PUBLIC_API_BASE } from '$env/static/public';
 	import { resolveCitationsForDocument } from '$lib/markdown';
@@ -62,9 +69,57 @@
 	// schedule a save.
 	let isHydrating = false;
 
+	// TiptapTableCell has no notion of a background color out of the box —
+	// "change cell colors" needs one more HTML attribute on top of what the
+	// extension already renders (colspan/rowspan/colwidth).
+	const TableCellWithBackground = TiptapTableCell.extend({
+		addAttributes() {
+			return {
+				...this.parent?.(),
+				backgroundColor: {
+					default: null,
+					parseHTML: (element) => element.style.backgroundColor || null,
+					renderHTML: (attributes) =>
+						attributes.backgroundColor ? { style: `background-color: ${attributes.backgroundColor}` } : {}
+				}
+			};
+		}
+	});
+
 	const editor = createEditor({
-		extensions: [StarterKit, TiptapImage.configure({ inline: false })],
+		extensions: [
+			StarterKit,
+			ResizableImage.configure({ inline: false }),
+			TiptapTable.configure({ resizable: true }),
+			TiptapTableRow,
+			TiptapTableHeader,
+			TableCellWithBackground,
+			TextStyle,
+			Color,
+			Highlight.configure({ multicolor: true })
+		],
 		content: '',
+		editorProps: {
+			// A practitioner pasting a screenshot (a lab chart, say) straight
+			// from their clipboard used to just drop silently — TipTap's own
+			// default paste handling only understands text/HTML, not image
+			// clipboard data. Routes through the exact same crop-then-upload
+			// flow the "Image" toolbar button already uses (onFilePicked ->
+			// ImageCropModal -> insertImageBlob), so there's one path for
+			// "an image enters this document," not two.
+			handlePaste: (_view, event: ClipboardEvent) => {
+				const items = event.clipboardData?.items;
+				if (!items) return false;
+				const imageItem = Array.from(items).find((i) => i.type.startsWith('image/'));
+				if (!imageItem) return false;
+				const file = imageItem.getAsFile();
+				if (!file) return false;
+				event.preventDefault();
+				pasteCropFile = file;
+				pasteCropSrc = URL.createObjectURL(file);
+				return true;
+			}
+		},
 		onUpdate: () => {
 			if (isHydrating) return;
 			dirty = true;
@@ -140,6 +195,35 @@
 		}
 	}
 
+	// Lets a practitioner see exactly what the finished PDF will look like
+	// — letterhead, footer, page breaks and all — before they finalize or
+	// send it, instead of only finding out after a download. Works on a
+	// draft too: the backend's PDF route renders whatever content is
+	// currently saved, draft or final, same as Download PDF would.
+	let previewingPdf = $state(false);
+	async function previewPdf() {
+		previewingPdf = true;
+		try {
+			await saveDocument();
+			const res = await fetch(
+				`${PUBLIC_API_BASE}/api/me/clients/${clientId}/sessions/${sessionId}/documents/${kind}/pdf`,
+				{ credentials: 'include' }
+			);
+			if (!res.ok) throw new Error();
+			const blob = await res.blob();
+			const url = URL.createObjectURL(blob);
+			window.open(url, '_blank', 'noopener');
+			// The opened tab holds its own reference to the blob once loaded;
+			// revoking a little later avoids a race where the tab opens to a
+			// dead URL on a slow machine.
+			setTimeout(() => URL.revokeObjectURL(url), 30_000);
+		} catch {
+			toast('Could not generate the PDF preview', 'alert');
+		} finally {
+			previewingPdf = false;
+		}
+	}
+
 	function onDocBodyClick(e: MouseEvent) {
 		const btn = (e.target as HTMLElement).closest('.cite') as HTMLElement | null;
 		if (!btn) return;
@@ -190,6 +274,46 @@
 			asking = false;
 			askOpen = false;
 			instruction = '';
+		}
+	}
+
+	// A full redraft (replace, not append) from this session's consult —
+	// the consult page already does this automatically after every turn,
+	// but a practitioner who edited the text by hand, or wants a fresh
+	// take after the auto-redraft skipped a turn (it never overwrites a
+	// mid-edit document), needs an explicit way to ask for one instead of
+	// waiting on the next question.
+	let regenerating = $state(false);
+
+	// Just drives each color swatch's own visible fill — the actual
+	// formatting commands below read the native <input type="color">'s
+	// value directly off the change event, not from these.
+	let textColor = $state('#1f2a24');
+	let highlightColor = $state('#fff3b0');
+	let cellColor = $state('#f2f6f3');
+	async function regenerateDraft() {
+		regenerating = true;
+		try {
+			let text = '';
+			let sources: any[] = [];
+			for await (const ev of streamDocumentDraft(clientId, sessionId, kind)) {
+				if (ev.event === 'result') {
+					text = ev.text;
+					sources = ev.sources;
+				} else if (ev.event === 'error') {
+					savingState = 'error';
+				}
+			}
+			if (text) {
+				const html = resolveCitationsForDocument(text, sources);
+				const inst = storeGet(editor);
+				inst.commands.setContent(html);
+				await saveDocument();
+			}
+		} catch {
+			savingState = 'error';
+		} finally {
+			regenerating = false;
 		}
 	}
 
@@ -257,10 +381,20 @@
 		<span class="pill {documents[kind]?.status === 'final' ? 'final' : 'draft'}">
 			{documents[kind]?.status === 'final' ? 'Final' : 'Draft'}
 		</span>
-		{#if kind === 'client_report' && documents[kind]?.status === 'final'}
-			<button type="button" class="btn-sm" onclick={downloadPdf} disabled={downloadingPdf}>
-				{downloadingPdf ? 'Preparing…' : 'Download PDF'}
+		{#if documents[kind]?.status !== 'final'}
+			<button type="button" class="btn-sm" onclick={regenerateDraft} disabled={regenerating} title="Regenerate this draft from the consult so far, replacing the current content">
+				{regenerating ? 'Regenerating…' : 'Regenerate'}
 			</button>
+		{/if}
+		{#if kind === 'client_report'}
+			<button type="button" class="btn-sm" onclick={previewPdf} disabled={previewingPdf} title="See exactly what the PDF will look like">
+				{previewingPdf ? 'Preparing…' : 'Preview PDF'}
+			</button>
+			{#if documents[kind]?.status === 'final'}
+				<button type="button" class="btn-sm" onclick={downloadPdf} disabled={downloadingPdf}>
+					{downloadingPdf ? 'Preparing…' : 'Download PDF'}
+				</button>
+			{/if}
 		{/if}
 		<button type="button" class="btn-sm" onclick={toggleFinalize}>
 			{documents[kind]?.status === 'final' ? 'Reopen as draft' : 'Finalize'}
@@ -271,8 +405,36 @@
 <div class="doc-toolbar">
 	<button type="button" class="tbtn" title="Bold" onclick={() => storeGet(editor).chain().focus().toggleBold().run()}><b>B</b></button>
 	<button type="button" class="tbtn" title="Italic" onclick={() => storeGet(editor).chain().focus().toggleItalic().run()}><i>I</i></button>
+	<button type="button" class="tbtn underline-btn" title="Underline" onclick={() => storeGet(editor).chain().focus().toggleUnderline().run()}>U</button>
+	<button type="button" class="tbtn strike-btn" title="Strikethrough" onclick={() => storeGet(editor).chain().focus().toggleStrike().run()}>S</button>
+	<div class="tsep"></div>
 	<button type="button" class="tbtn" title="Heading" onclick={() => storeGet(editor).chain().focus().toggleHeading({ level: 2 }).run()}>H2</button>
+	<button type="button" class="tbtn" title="Subheading" onclick={() => storeGet(editor).chain().focus().toggleHeading({ level: 3 }).run()}>H3</button>
 	<button type="button" class="tbtn" title="Bullet list" onclick={() => storeGet(editor).chain().focus().toggleBulletList().run()}><Icon name="list" size={15} /></button>
+	<button type="button" class="tbtn" title="Numbered list" onclick={() => storeGet(editor).chain().focus().toggleOrderedList().run()}>1.</button>
+	<button type="button" class="tbtn" title="Quote" onclick={() => storeGet(editor).chain().focus().toggleBlockquote().run()}>&rdquo;</button>
+	<div class="tsep"></div>
+	<label class="tbtn color-btn" style:--swatch={textColor} title="Text color">
+		A
+		<input type="color" bind:value={textColor} oninput={(e) => storeGet(editor).chain().focus().setColor((e.target as HTMLInputElement).value).run()} />
+	</label>
+	<label class="tbtn color-btn" style:--swatch={highlightColor} title="Highlight color">
+		Highlight
+		<input type="color" bind:value={highlightColor} oninput={(e) => storeGet(editor).chain().focus().toggleHighlight({ color: (e.target as HTMLInputElement).value }).run()} />
+	</label>
+	<div class="tsep"></div>
+	<button type="button" class="tbtn wide" title="Insert a table" onclick={() => storeGet(editor).chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}>Table</button>
+	{#if $editor?.isActive('table')}
+		<button type="button" class="tbtn wide" title="Add row" onclick={() => storeGet(editor).chain().focus().addRowAfter().run()}>+Row</button>
+		<button type="button" class="tbtn wide" title="Add column" onclick={() => storeGet(editor).chain().focus().addColumnAfter().run()}>+Col</button>
+		<button type="button" class="tbtn wide" title="Delete row" onclick={() => storeGet(editor).chain().focus().deleteRow().run()}>-Row</button>
+		<button type="button" class="tbtn wide" title="Delete column" onclick={() => storeGet(editor).chain().focus().deleteColumn().run()}>-Col</button>
+		<label class="tbtn color-btn" style:--swatch={cellColor} title="Cell background color">
+			Cell
+			<input type="color" bind:value={cellColor} oninput={(e) => storeGet(editor).chain().focus().updateAttributes('tableCell', { backgroundColor: (e.target as HTMLInputElement).value }).run()} />
+		</label>
+		<button type="button" class="tbtn" title="Delete table" onclick={() => storeGet(editor).chain().focus().deleteTable().run()}><Icon name="trash" size={14} /></button>
+	{/if}
 	<div class="tsep"></div>
 	<button type="button" class="tbtn wide" onclick={() => fileInput?.click()}><Icon name="image" size={14} /> Image</button>
 	<button type="button" class="tbtn wide" onclick={() => (sourcePickerOpen = true)}>Insert from source</button>
@@ -339,6 +501,16 @@
 	.tbtn.wide { width: auto; padding: 0 .55rem; gap: .35rem; display: inline-flex; align-items: center; font-size: var(--text-xs); font-weight: 650; }
 	.tsep { width: 1px; height: 1.1rem; background: var(--line-2); margin: 0 .4rem; }
 	.ask-ai { margin-left: auto; background: var(--accent-soft); color: var(--accent-ink); }
+	.underline-btn { text-decoration: underline; }
+	.strike-btn { text-decoration: line-through; }
+	.color-btn {
+		position: relative; width: auto; padding: 0 .4rem; font-size: var(--text-xs); font-weight: 700;
+		display: inline-flex; align-items: center; gap: .3rem;
+	}
+	.color-btn::after { content: ''; display: block; width: .8rem; height: .8rem; border-radius: 3px; border: 1px solid var(--line-2); background: var(--swatch, var(--ink-2)); }
+	.color-btn input[type='color'] {
+		position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: none; padding: 0;
+	}
 
 	.ask-row { display: flex; gap: .4rem; padding: .5rem var(--space-4); border-bottom: 1px solid var(--line); }
 	.ask-row input { flex: 1; border: 1px solid var(--line-2); border-radius: var(--r); padding: .4rem .6rem; font: inherit; font-size: var(--text-sm); }
@@ -354,8 +526,31 @@
 	.doc-body :global(.ProseMirror p) { margin: 0 0 .7em; }
 	.doc-body :global(.ProseMirror h2) { font-size: var(--text-base); color: var(--ink); margin: 1em 0 .4em; }
 	.doc-body :global(.ProseMirror img) { max-width: 100%; border-radius: var(--r); margin: .4em 0; }
+	.doc-body :global(.resizable-image) { border-radius: var(--r); margin: .4em 0; }
+	.doc-body :global(.resizable-image .resize-handle) {
+		position: absolute; right: -4px; bottom: -4px; width: .7rem; height: .7rem;
+		border-radius: 50%; background: var(--accent); border: 2px solid var(--panel);
+		cursor: nwse-resize; opacity: 0; transition: opacity .15s;
+	}
+	.doc-body :global(.resizable-image:hover .resize-handle) { opacity: 1; }
+	.doc-body :global(table) { border-collapse: collapse; margin: .6em 0; width: 100%; }
+	.doc-body :global(table td), .doc-body :global(table th) {
+		border: 1px solid var(--line-2); padding: .3em .5em; min-width: 2em; vertical-align: top;
+	}
+	.doc-body :global(table th) { background: var(--panel-2); font-weight: 650; }
+	.doc-body :global(mark) { border-radius: 2px; padding: 0 .1em; }
 	.doc-body :global(.cite) {
+		-webkit-appearance: none; appearance: none; outline: none;
 		font: inherit; font-weight: 650; color: var(--accent-ink); background: var(--accent-soft);
 		border: none; border-radius: 4px; padding: 0 .25rem; cursor: pointer; white-space: nowrap;
 	}
+	.doc-body :global(.references) {
+		margin-top: 1.5em; padding-top: .8em; border-top: 1px solid var(--line);
+	}
+	.doc-body :global(.references h3) {
+		font-size: var(--text-xs); letter-spacing: .04em; text-transform: uppercase;
+		color: var(--muted); font-weight: 700; margin: 0 0 .5em;
+	}
+	.doc-body :global(.references ol) { margin: 0; padding-left: 1.2em; font-size: var(--text-xs); color: var(--muted); }
+	.doc-body :global(.references li) { margin-bottom: .3em; }
 </style>

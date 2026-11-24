@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
-	import { get, post } from '$lib/api';
+	import { get, post, patch } from '$lib/api';
 	import { toast } from '$lib/stores/toast';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import Dialog from '$lib/components/Dialog.svelte';
@@ -168,18 +168,57 @@
 				maps_to: qKind === 'initial' && q.mapsTo ? q.mapsTo : null
 			}));
 		try {
-			await post(fetch, editingId ? `/me/questionnaires/${editingId}/edit` : '/me/questionnaires', {
-				title,
-				kind: qKind,
-				questions: payload
-			});
-			toast(editingId ? 'New version saved.' : 'Questionnaire created.');
+			const result = await post(
+				fetch, editingId ? `/me/questionnaires/${editingId}/edit` : '/me/questionnaires',
+				{ title, kind: qKind, questions: payload }
+			);
+			if (!editingId) {
+				toast('Questionnaire created.');
+			} else if (result.id === editingId) {
+				toast('Questionnaire updated.');
+			} else {
+				// Only happens once someone has actually submitted a
+				// response to it — app/main.py's me_edit_questionnaire
+				// keeps the original instead of mutating it, since that
+				// response's answers are keyed against its current
+				// questions.
+				toast('A response already exists for this questionnaire, so a new version was created instead of editing it.');
+			}
 			open = false;
 			await invalidateAll();
 		} catch (err: any) {
 			toast(err.message, 'alert');
 		} finally {
 			submitting = false;
+		}
+	}
+
+	let duplicating = $state<string | null>(null);
+	async function duplicateQuestionnaire(q: any) {
+		duplicating = q.id;
+		try {
+			await post(fetch, `/me/questionnaires/${q.id}/duplicate`, {});
+			toast('Duplicated.');
+			await invalidateAll();
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		} finally {
+			duplicating = null;
+		}
+	}
+
+	let showArchived = $state(false);
+	let archiving = $state<string | null>(null);
+	async function setArchived(q: any, archived: boolean) {
+		archiving = q.id;
+		try {
+			await patch(fetch, `/me/questionnaires/${q.id}`, { archived });
+			toast(archived ? 'Archived.' : 'Restored.');
+			await invalidateAll();
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		} finally {
+			archiving = null;
 		}
 	}
 
@@ -221,13 +260,17 @@
 		Any of your questionnaires can be sent to a client — use "Get link" on the one you want.
 		Your clients see the site default only until you create your own.
 	</p>
+	<label class="archived-toggle">
+		<input type="checkbox" bind:checked={showArchived} />
+		Show archived
+	</label>
 	<DataTable
 		columns={[{ key: 'title', label: 'Title', sortable: true }, { key: 'owner', label: 'Owner' }, { key: 'kind', label: 'Kind' }, { key: 'version', label: 'Version' }, { key: 'actions', label: '' }]}
-		rows={data.questionnaires}
+		rows={(data.questionnaires ?? []).filter((q: any) => showArchived || !q.archived)}
 		empty="You haven't created a questionnaire yet — your clients see the site default until you do."
 	>
 		{#snippet row(q: any)}
-			<td>{q.title}</td>
+			<td>{q.title}{#if q.archived}<span class="pill archived">Archived</span>{/if}</td>
 			<td>{isMine(q) ? 'Yours' : 'Site default'}</td>
 			<td>{q.kind === 'initial' ? 'New client' : 'Follow-up'}</td>
 			<td>{q.version}</td>
@@ -235,9 +278,16 @@
 				{#if isMine(q)}
 					<button class="edit" onclick={() => openEdit(q)}><Icon name="edit" size={14} />Edit</button>
 					<button class="edit" onclick={() => openLink(q)}><Icon name="send" size={14} />Get link</button>
+					<button class="edit" onclick={() => duplicateQuestionnaire(q)} disabled={duplicating === q.id}>Duplicate</button>
+					{#if q.archived}
+						<button class="edit" onclick={() => setArchived(q, false)} disabled={archiving === q.id}><Icon name="archive" size={14} />Restore</button>
+					{:else}
+						<button class="edit" onclick={() => setArchived(q, true)} disabled={archiving === q.id}><Icon name="archive" size={14} />Archive</button>
+					{/if}
 				{:else}
 					<button class="edit" onclick={() => openEdit(q)}><Icon name="eye" size={14} />View</button>
 					<button class="edit" onclick={() => openLink(q)}><Icon name="send" size={14} />Get link</button>
+					<button class="edit" onclick={() => duplicateQuestionnaire(q)} disabled={duplicating === q.id}>Duplicate</button>
 				{/if}
 			</td>
 		{/snippet}
@@ -313,7 +363,7 @@
 		{/if}
 
 		{#if editingId && !viewOnly}
-			<p class="hint">Saving creates a new version, ready to use right away — generate a fresh "Get link" for it from the list.</p>
+			<p class="hint">Saving updates this questionnaire directly. If a client has already submitted a response to it, saving creates a new version instead, so that response stays correctly interpretable.</p>
 		{/if}
 	</form>
 	{#snippet footer()}
@@ -322,7 +372,7 @@
 			<Button variant="ghost" onclick={() => (open = false)}>Close</Button>
 		{:else}
 			<Button variant="ghost" onclick={() => (open = false)}>Cancel</Button>
-			<Button onclick={save} loading={submitting}>{editingId ? 'Save new version' : 'Create'}</Button>
+			<Button onclick={save} loading={submitting}>{editingId ? 'Save' : 'Create'}</Button>
 		{/if}
 	{/snippet}
 </Dialog>
@@ -358,7 +408,12 @@
 </Dialog>
 
 <style>
-	.actions { display: flex; align-items: center; gap: .25rem; }
+	.archived-toggle { display: flex; align-items: center; gap: .4rem; font-size: var(--text-sm); color: var(--muted); margin: var(--space-2) 0 var(--space-3); cursor: pointer; }
+	.pill.archived {
+		display: inline-flex; margin-left: .5rem; padding: 1px 7px; border-radius: 99px; font-size: 10px; font-weight: 700;
+		text-transform: uppercase; letter-spacing: .03em; background: var(--warn-soft); color: var(--warn);
+	}
+	.actions { display: flex; align-items: center; gap: .25rem; flex-wrap: wrap; }
 	.edit {
 		display: inline-flex; align-items: center; gap: .35rem;
 		font: inherit; font-size: var(--text-sm); font-weight: 650; cursor: pointer;

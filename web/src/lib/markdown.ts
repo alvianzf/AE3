@@ -30,14 +30,23 @@ const TITLE_TRUNCATE = 10;
 // the document must carry its own resolved document_id/locator baked into
 // its HTML at insertion time, not just the ephemeral [K1] label a reload
 // could no longer resolve. Same CITE_GROUP matching as renderAnswerHtml,
-// different output shape per citation.
+// different output shape: a plain numbered superscript (reading order,
+// first appearance = 1) rather than the source's title inline, with the
+// full titles collected into a References list appended at the end — the
+// citation-heavy style a finalized clinical document/PDF actually wants,
+// as opposed to the chat thread's inline title chips (renderAnswerHtml,
+// unchanged — a live conversation reads better with the title right
+// there, not a number sending you to the bottom of an ever-growing page).
 export function resolveCitationsForDocument(
 	text: string,
 	sources: { label: string; document_id: string | null; locator: string; title: string }[]
 ): string {
 	const byLabel = new Map(sources.map((s) => [s.label, s]));
+	const numberByLabel = new Map<string, number>();
+	const refs: { number: number; title: string }[] = [];
+
 	const html = DOMPurify.sanitize(marked.parse(text, { async: false }) as string);
-	return html.replace(CITE_GROUP, (_match, group: string) => {
+	const withCitations = html.replace(CITE_GROUP, (_match, group: string) => {
 		let lastPrefix = 'K';
 		return group
 			.split(',')
@@ -48,12 +57,25 @@ export function resolveCitationsForDocument(
 				const label = `${lastPrefix}${m[2]}`;
 				const s = byLabel.get(label);
 				if (!s) return '';
-				const truncated = s.title.length > TITLE_TRUNCATE ? s.title.slice(0, TITLE_TRUNCATE) + '…' : s.title;
+				let n = numberByLabel.get(label);
+				if (n === undefined) {
+					n = refs.length + 1;
+					numberByLabel.set(label, n);
+					refs.push({ number: n, title: s.title });
+				}
 				const docAttr = s.document_id ? ` data-doc-id="${s.document_id}"` : '';
-				return `<sup><button type="button" class="cite" data-locator="${s.locator ?? ''}"${docAttr}>${truncated}</button></sup>`;
+				return `<sup><button type="button" class="cite" data-locator="${s.locator ?? ''}"${docAttr}>${n}</button></sup>`;
 			})
-			.join(' ');
+			.join('');
 	});
+
+	if (!refs.length) return withCitations;
+	const list = refs.map((r) => `<li>${escapeHtml(r.title)}</li>`).join('');
+	return `${withCitations}<div class="references"><h3>References</h3><ol>${list}</ol></div>`;
+}
+
+function escapeHtml(s: string): string {
+	return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 }
 
 export function renderAnswerHtml(text: string, sourceTitles: Map<string, string> = new Map()): string {

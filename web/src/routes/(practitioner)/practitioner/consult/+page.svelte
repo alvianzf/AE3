@@ -728,7 +728,7 @@
 
 		{#if selectedClient}
 			<div class="sidebar-block patient-widget">
-				<div class="block-head"><Icon name="user-card" size={15} /><strong>Patient</strong></div>
+				<div class="block-head"><Icon name="user-card" size={15} /><strong>Client</strong></div>
 				<p class="pname">{selectedClient.name}</p>
 				<p class="hint"><Icon name="mail" size={13} />{selectedClient.email}</p>
 				<dl>
@@ -738,7 +738,7 @@
 				<!-- Conditions/medications/labs shape every answer this pipeline
 				     gives (app/patient/context.py) but are edited on the client's
 				     own page, not here — this is a jump-to, not a duplicate form. -->
-				<a class="record-link" href="/practitioner/clients/{selectedClient.id}">Edit patient record →</a>
+				<a class="record-link" href="/practitioner/clients/{selectedClient.id}">Edit client record →</a>
 			</div>
 		{/if}
 	</aside>
@@ -763,12 +763,12 @@
 						</div>
 					</div>
 				{:else if initialSummary}
-					<div class="briefing-card" aria-label="AI Patient Summary & Clinical History">
+					<div class="briefing-card" aria-label="AI Client Summary & Clinical History">
 						<div class="briefing-head">
 							<div class="briefing-title-group">
 								<span class="briefing-badge-icon" aria-hidden="true"><Icon name="sparkles" size={16} /></span>
 								<div>
-									<h2 class="briefing-title">AI Patient Summary & Clinical History</h2>
+									<h2 class="briefing-title">AI Client Summary & Clinical History</h2>
 									<p class="briefing-subtitle">Opening briefing prepared strictly up until consultation point</p>
 								</div>
 							</div>

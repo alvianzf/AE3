@@ -173,6 +173,15 @@ def ensure_schema() -> None:
             -- before this existed was answered by an already-signed-up client.
             ALTER TABLE questionnaires ADD COLUMN IF NOT EXISTS
                 kind TEXT NOT NULL DEFAULT 'followup';
+            -- A practitioner's way to retire a questionnaire without a hard
+            -- delete — intake_links and questionnaire_responses reference
+            -- a questionnaire_id with no FK (they live in a different
+            -- per-practitioner vault database entirely), so deleting the
+            -- row outright would silently orphan real historical client
+            -- data. Archiving just hides it from the active list; nothing
+            -- already sent or answered is affected.
+            ALTER TABLE questionnaires ADD COLUMN IF NOT EXISTS
+                archived BOOLEAN NOT NULL DEFAULT FALSE;
             -- Which new-client field (if any) this question's answer fills
             -- in on submission of an 'initial'-kind questionnaire — NULL for
             -- every ordinary question. Lets the backend read the client's
@@ -963,14 +972,10 @@ def _decode_question(row: dict) -> dict:
     return d
 
 
-def _insert_questionnaire(
-    title: str, version: int, created_by: str, questions: list[dict],
-    practitioner_id: str | None = None, kind: str = "followup",
-) -> str:
-    """Insert a new questionnaire version and deactivate every other one in
-    the same scope — one active questionnaire per practitioner_id (NULL
-    being the admin-curated global default), not one active questionnaire
-    globally."""
+def _validate_questions(questions: list[dict], kind: str) -> None:
+    """Shared by every write path that stores a question list — insert a
+    brand-new questionnaire, mutate one in place, or duplicate one — so
+    the same rules apply regardless of which of those three a caller uses."""
     if kind not in QUESTIONNAIRE_KINDS:
         raise ValueError(f"unknown questionnaire kind: {kind}")
     for q in questions:
@@ -998,6 +1003,33 @@ def _insert_questionnaire(
             raise ValueError(
                 "an 'initial' questionnaire needs exactly one question "
                 "mapped to client_name and one mapped to client_email")
+
+
+def _replace_questions(conn, questionnaire_id: str, questions: list[dict]) -> None:
+    """Shared by _insert_questionnaire and update_questionnaire_in_place —
+    both ultimately just need "this id's question rows are now exactly
+    this list, in this order"."""
+    conn.execute("DELETE FROM questionnaire_questions WHERE questionnaire_id = %s", (questionnaire_id,))
+    for ordinal, q in enumerate(questions):
+        conn.execute(
+            "INSERT INTO questionnaire_questions (id, questionnaire_id, "
+            "ordinal, prompt, input_type, options_json, theme, maps_to) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            (str(uuid.uuid4()), questionnaire_id, ordinal, q["prompt"],
+             q["input_type"], _encode_options(q),
+             q.get("theme") or "General", q.get("maps_to")),
+        )
+
+
+def _insert_questionnaire(
+    title: str, version: int, created_by: str, questions: list[dict],
+    practitioner_id: str | None = None, kind: str = "followup",
+) -> str:
+    """Insert a new questionnaire version and deactivate every other one in
+    the same scope — one active questionnaire per practitioner_id (NULL
+    being the admin-curated global default), not one active questionnaire
+    globally."""
+    _validate_questions(questions, kind)
     # No longer deactivates every other questionnaire in scope — a
     # practitioner can have as many active questionnaires (of either kind)
     # at once as they want; link generation doesn't even look at is_active
@@ -1016,15 +1048,7 @@ def _insert_questionnaire(
             "VALUES (%s, %s, %s, TRUE, %s, %s, %s, %s)",
             (questionnaire_id, title, version, created_by, _now(), practitioner_id, kind),
         )
-        for ordinal, q in enumerate(questions):
-            conn.execute(
-                "INSERT INTO questionnaire_questions (id, questionnaire_id, "
-                "ordinal, prompt, input_type, options_json, theme, maps_to) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-                (str(uuid.uuid4()), questionnaire_id, ordinal, q["prompt"],
-                 q["input_type"], _encode_options(q),
-                 q.get("theme") or "General", q.get("maps_to")),
-            )
+        _replace_questions(conn, questionnaire_id, questions)
     return questionnaire_id
 
 
@@ -1071,6 +1095,78 @@ def edit_questionnaire(
     return get_questionnaire(new_id)
 
 
+def update_questionnaire_in_place(
+    questionnaire_id: str, title: str, questions: list[dict], created_by: str,
+    kind: str | None = None,
+) -> dict:
+    """The edit path for the common case: nobody has answered this
+    questionnaire yet, so there's no existing response whose answer keys
+    depend on its current exact question list — mutating it in place (same
+    id, same version) is safe, and is what a practitioner means by "edit",
+    not "silently create a near-duplicate". The caller (app/main.py's
+    me_edit_questionnaire) is what decides which of this or
+    edit_questionnaire applies, since that decision needs
+    vault.has_questionnaire_responses — a different database this module
+    has no connection to."""
+    with core_connection() as conn:
+        old = conn.execute(
+            "SELECT kind FROM questionnaires WHERE id = %s", (questionnaire_id,),
+        ).fetchone()
+    if old is None:
+        raise ValueError(f"unknown questionnaire: {questionnaire_id}")
+    effective_kind = kind if kind is not None else old["kind"]
+    _validate_questions(questions, effective_kind)
+    with core_connection() as conn:
+        conn.execute(
+            "UPDATE questionnaires SET title = %s, kind = %s WHERE id = %s",
+            (title, effective_kind, questionnaire_id),
+        )
+        _replace_questions(conn, questionnaire_id, questions)
+    log(created_by, "questionnaire updated in place", questionnaire_id)
+    return get_questionnaire(questionnaire_id)
+
+
+def duplicate_questionnaire(questionnaire_id: str, created_by: str, practitioner_id: str) -> dict:
+    """An explicit, deliberate copy — a new id, version 1, "(copy)"
+    appended to the title — for when a practitioner actually wants a
+    variant without touching the original. Distinct from the old implicit
+    behavior where every edit created a new row that looked like a
+    duplicate; that's gone now (see update_questionnaire_in_place).
+
+    `practitioner_id` is always the caller's own id, even when duplicating
+    the admin default (practitioner_id IS NULL there) — the copy is always
+    a new, editable questionnaire owned by whoever asked for it, never
+    another read-only default."""
+    original = get_questionnaire(questionnaire_id)
+    if original is None:
+        raise ValueError(f"unknown questionnaire: {questionnaire_id}")
+    questions = [
+        {"prompt": q["prompt"], "input_type": q["input_type"], "theme": q["theme"],
+         "options": q["options"], "allow_other": q["allow_other"],
+         "columns": q["columns"], "fixed_rows": q["fixed_rows"], "maps_to": q.get("maps_to")}
+        for q in original["questions"]
+    ]
+    return create_questionnaire(
+        f"{original['title']} (copy)", questions, created_by,
+        practitioner_id=practitioner_id, kind=original["kind"])
+
+
+def set_questionnaire_archived(questionnaire_id: str, practitioner_id: str, archived: bool) -> dict:
+    """Scoped to practitioner_id so a practitioner can never archive the
+    admin-curated global default (practitioner_id IS NULL there) or
+    another practitioner's own questionnaire."""
+    with core_connection() as conn:
+        row = conn.execute(
+            "UPDATE questionnaires SET archived = %s "
+            "WHERE id = %s AND practitioner_id = %s RETURNING id",
+            (archived, questionnaire_id, practitioner_id),
+        ).fetchone()
+    if row is None:
+        raise ValueError(f"unknown questionnaire: {questionnaire_id}")
+    log(practitioner_id, "questionnaire archived" if archived else "questionnaire unarchived", questionnaire_id)
+    return get_questionnaire(questionnaire_id)
+
+
 def get_questionnaire(questionnaire_id: str) -> dict | None:
     with core_connection() as conn:
         row = conn.execute(
@@ -1088,28 +1184,33 @@ def get_questionnaire(questionnaire_id: str) -> dict | None:
 
 def list_questionnaires(
     practitioner_id: str | None = None, include_admin_default: bool = False,
+    include_archived: bool = False,
 ) -> list[dict]:
     """With no practitioner_id: the admin listing, every questionnaire in
     every scope. With one: only that practitioner's own — never another
     practitioner's — plus the admin default too if include_admin_default
     (view-only on the caller's side; this function doesn't enforce that,
     the route layer does by never wiring edit to a questionnaire outside
-    the caller's own scope)."""
+    the caller's own scope). Archived ones are hidden unless
+    include_archived — the admin default is never archived (a practitioner
+    can't archive it), so that filter never hides it either way."""
+    archived_clause = "" if include_archived else "AND archived = FALSE"
     with core_connection() as conn:
         if practitioner_id is None:
             rows = conn.execute(
-                "SELECT * FROM questionnaires ORDER BY created_at DESC"
+                f"SELECT * FROM questionnaires WHERE TRUE {archived_clause} "
+                "ORDER BY created_at DESC"
             ).fetchall()
         elif include_admin_default:
             rows = conn.execute(
                 "SELECT * FROM questionnaires "
-                "WHERE practitioner_id = %s OR practitioner_id IS NULL "
+                f"WHERE (practitioner_id = %s {archived_clause} OR practitioner_id IS NULL) "
                 "ORDER BY created_at DESC",
                 (practitioner_id,),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM questionnaires WHERE practitioner_id = %s "
+                f"SELECT * FROM questionnaires WHERE practitioner_id = %s {archived_clause} "
                 "ORDER BY created_at DESC",
                 (practitioner_id,),
             ).fetchall()

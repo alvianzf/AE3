@@ -2873,9 +2873,11 @@ def _own_or_admin_default_questionnaire_or_404(
 
 @app.get("/api/me/questionnaires")
 def me_list_questionnaires(
+    include_archived: bool = False,
     session: dict = Depends(auth.require_pro_practitioner),
 ) -> list[dict]:
-    return core_store.list_questionnaires(session["id"], include_admin_default=True)
+    return core_store.list_questionnaires(
+        session["id"], include_admin_default=True, include_archived=include_archived)
 
 
 @app.get("/api/me/questionnaires/{questionnaire_id}")
@@ -2902,12 +2904,54 @@ def me_edit_questionnaire(
     questionnaire_id: str, body: QuestionnaireIn,
     session: dict = Depends(auth.require_pro_practitioner),
 ) -> dict:
-    _own_questionnaire_or_404(session["id"], questionnaire_id)
+    """Mutates the questionnaire in place unless someone has already
+    submitted a real response to it — only then does editing create a new
+    version, since that response's answers are keyed against the exact
+    question list being replaced (vault.has_questionnaire_responses is the
+    only thing that knows that, since responses live in the practitioner's
+    own vault database, not here)."""
+    practitioner_id = session["id"]
+    _own_questionnaire_or_404(practitioner_id, questionnaire_id)
     try:
-        return core_store.edit_questionnaire(
-            questionnaire_id, body.title, body.questions, session["id"], kind=body.kind)
+        if vault.has_questionnaire_responses(practitioner_id, questionnaire_id):
+            return core_store.edit_questionnaire(
+                questionnaire_id, body.title, body.questions, practitioner_id, kind=body.kind)
+        return core_store.update_questionnaire_in_place(
+            questionnaire_id, body.title, body.questions, practitioner_id, kind=body.kind)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/api/me/questionnaires/{questionnaire_id}/duplicate")
+def me_duplicate_questionnaire(
+    questionnaire_id: str, session: dict = Depends(auth.require_pro_practitioner),
+) -> dict:
+    """Works on the admin default too (view-only otherwise) — duplicating
+    it is how a practitioner gets their own editable starting point from
+    it, same intent as _own_or_admin_default_questionnaire_or_404 already
+    serves for viewing."""
+    practitioner_id = session["id"]
+    _own_or_admin_default_questionnaire_or_404(practitioner_id, questionnaire_id)
+    try:
+        return core_store.duplicate_questionnaire(questionnaire_id, practitioner_id, practitioner_id)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+class QuestionnaireArchiveIn(BaseModel):
+    archived: bool
+
+
+@app.patch("/api/me/questionnaires/{questionnaire_id}")
+def me_archive_questionnaire(
+    questionnaire_id: str, body: QuestionnaireArchiveIn,
+    session: dict = Depends(auth.require_pro_practitioner),
+) -> dict:
+    _own_questionnaire_or_404(session["id"], questionnaire_id)
+    try:
+        return core_store.set_questionnaire_archived(questionnaire_id, session["id"], body.archived)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
 
 
 # --- Client Intake Links: practitioner side (generate, list) -------------------
@@ -3708,11 +3752,6 @@ def me_download_document_pdf(client_id: str, session_id: str, kind: str,
 
     page_html = f"""<!doctype html><html><head><meta charset="utf-8"><style>
         body {{ font-family: {_SANS}; color: {_INK}; margin: 0; padding: 0 56px; }}
-        .letterhead {{ display: flex; align-items: center; gap: 16px; border-bottom: 3px solid {_ACCENT};
-            padding: 44px 0 18px; margin-bottom: 30px; }}
-        .logo {{ max-height: 52px; max-width: 170px; object-fit: contain; }}
-        .practitioner-name {{ font-size: 19px; font-weight: 700; color: {_ACCENT}; letter-spacing: .01em; }}
-        .practitioner-location {{ font-size: 12.5px; color: {_MUTED}; margin-top: 2px; }}
         .doc-meta {{ display: flex; align-items: baseline; justify-content: space-between;
             margin-bottom: 26px; }}
         .doc-title {{ font-size: 13px; letter-spacing: .08em; text-transform: uppercase;
@@ -3729,18 +3768,41 @@ def me_download_document_pdf(client_id: str, session_id: str, kind: str,
         .content blockquote {{ margin: 0 0 14px; padding: 12px 16px; border-left: 3px solid {_ACCENT};
             background: {_TINT}; color: {_INK}; font-style: normal; }}
         .content strong {{ color: {_INK}; }}
-        .cite {{ color: {_ACCENT}; font-weight: 600; }}
+        .content mark {{ border-radius: 2px; padding: 0 2px; }}
+        .content table {{ border-collapse: collapse; width: 100%; margin: 0 0 16px; font-size: 13px; }}
+        .content td, .content th {{ border: 1px solid {_RULE}; padding: 6px 10px; vertical-align: top; }}
+        .content th {{ background: {_TINT}; font-weight: 700; text-align: left; }}
+        .resizable-image {{ display: block; max-width: 100%; }}
+        .cite {{ -webkit-appearance: none; appearance: none; border: none; outline: none;
+            background: none; padding: 0; margin: 0; font: inherit; cursor: default;
+            color: {_ACCENT}; font-weight: 700; }}
+        .references {{ margin-top: 36px; padding-top: 14px; border-top: 1px solid {_RULE}; }}
+        .references h3 {{ font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
+            color: {_MUTED}; font-weight: 700; margin: 0 0 10px; }}
+        .references ol {{ margin: 0; padding-left: 20px; font-size: 11.5px; color: {_MUTED}; }}
+        .references li {{ margin-bottom: 5px; }}
     </style></head><body>
-        <div class="letterhead">{logo_html}
-            <div><div class="practitioner-name">{practitioner_name}</div>
-            <div class="practitioner-location">{html.escape(", ".join(practitioner.get("specialties") or []))}</div></div>
-        </div>
         <div class="doc-meta">
             <div class="doc-title">{_DOCUMENT_KIND_LABEL.get(kind, kind)}</div>
             <div class="doc-subject">{("Prepared for " + client_name + " &middot; ") if client_name else ""}{generated_on}</div>
         </div>
         <div class="content">{doc["content"]}</div>
     </body></html>"""
+
+    # The letterhead lives in the page HEADER (repeated by Chromium on
+    # every page, not just once at the top of the flowing content) — a
+    # multi-page report used to only carry the practitioner's name/logo on
+    # its first page, with nothing identifying it on any page after.
+    header_html = f"""
+        <div style="width:100%; font-family:{_SANS}; padding:16px 56px 10px;
+            display:flex; align-items:center; gap:12px; border-bottom:3px solid {_ACCENT};
+            box-sizing:border-box;">
+            {logo_html}
+            <div>
+                <div style="font-size:13px; font-weight:700; color:{_ACCENT}; letter-spacing:.01em;">{practitioner_name}</div>
+                <div style="font-size:9px; color:{_MUTED}; margin-top:1px;">{html.escape(", ".join(practitioner.get("specialties") or []))}</div>
+            </div>
+        </div>"""
 
     footer_bits = " &middot; ".join(b for b in (practitioner_name, f"Prepared for {client_name}" if client_name else "") if b)
     footer_html = f"""
@@ -3760,8 +3822,8 @@ def me_download_document_pdf(client_id: str, session_id: str, kind: str,
             page.set_content(page_html, wait_until="load")
             pdf_bytes = page.pdf(
                 format="A4", print_background=True,
-                margin={"top": "0", "bottom": "70px", "left": "0", "right": "0"},
-                display_header_footer=True, header_template="<span></span>",
+                margin={"top": "90px", "bottom": "70px", "left": "0", "right": "0"},
+                display_header_footer=True, header_template=header_html,
                 footer_template=footer_html,
             )
         finally:

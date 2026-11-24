@@ -768,6 +768,21 @@ def save_questionnaire_response(
     return {**row, "answers": answers}
 
 
+def has_questionnaire_responses(practitioner_id: str, questionnaire_id: str) -> bool:
+    """Whether anyone has ever submitted this exact questionnaire — the
+    deciding factor (app/main.py's me_edit_questionnaire) between editing
+    it in place and creating a new version: once a real response exists,
+    its answers are keyed against this questionnaire's current question
+    ids, and mutating those out from under it would make that historical
+    response impossible to interpret correctly."""
+    with vault_connection(practitioner_id) as conn:
+        row = conn.execute(
+            "SELECT 1 FROM questionnaire_responses WHERE questionnaire_id = %s LIMIT 1",
+            (questionnaire_id,),
+        ).fetchone()
+    return row is not None
+
+
 def create_intake_link(
     practitioner_id: str, token: str, kind: str, questionnaire_id: str | None = None,
     questionnaire_version: int | None = None, client_id: str | None = None,
