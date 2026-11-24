@@ -398,6 +398,13 @@
 							</a>
 							<span class="pill" class:final={d.status === 'final'}>{d.status === 'final' ? 'Final' : 'Draft'}</span>
 							<span class="hint">{d.session_title ?? ''} · {d.updated_at ?? ''}</span>
+							{#if d.kind === 'client_report' && d.status === 'final'}
+								<a class="pdf-link"
+									href="{PUBLIC_API_BASE}/api/me/clients/{data.client.id}/sessions/{d.session_id}/documents/{d.kind}/pdf"
+									target="_blank" rel="noopener">
+									Download PDF
+								</a>
+							{/if}
 						</li>
 					{/each}
 				</ul>
@@ -500,6 +507,8 @@
 		text-transform: uppercase; letter-spacing: .03em; background: var(--warn-soft); color: var(--warn);
 	}
 	.doc-list .pill.final { background: var(--accent-soft); color: var(--accent-ink); }
+	.pdf-link { font-size: var(--text-xs); font-weight: 650; color: var(--accent-ink); text-decoration: none; }
+	.pdf-link:hover { text-decoration: underline; }
 	.link-text { word-break: break-all; display: flex; align-items: center; gap: .5rem; margin-top: var(--space-2); }
 	.copy-btn { border: none; background: var(--panel-2); border-radius: var(--r); padding: .2rem .6rem; font-size: var(--text-xs); font-weight: 650; cursor: pointer; flex: none; }
 	.upload-btn {

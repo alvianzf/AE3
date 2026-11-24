@@ -26,6 +26,7 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 
 import openai
@@ -3687,25 +3688,69 @@ def me_download_document_pdf(client_id: str, session_id: str, kind: str,
             encoded = base64.b64encode(logo_file.read_bytes()).decode("ascii")
             logo_html = f'<img class="logo" src="data:{mime};base64,{encoded}">'
 
+    practitioner_name = html.escape(practitioner.get("name") or "")
+    client_name = html.escape(client["name"]) if client and client.get("name") else ""
+    generated_on = datetime.now().strftime("%B %-d, %Y")
+
+    # Palette and type match a real finalized client report the practice
+    # already sends by hand (a DUTCH hormone-panel write-up) — #214F3D is
+    # that document's own heading/accent color, lifted directly from its
+    # run-level formatting, and Avenir (with system sans fallbacks, since
+    # headless Chromium can't be assumed to have Avenir installed) is its
+    # body typeface. The brief was "make it look like that", not a fresh
+    # design — this is deliberately not an invented palette.
+    _ACCENT = "#214F3D"
+    _INK = "#1c2622"
+    _MUTED = "#6c786f"
+    _RULE = "#e3e9e4"
+    _TINT = "#f2f6f3"
+    _SANS = "'Avenir Next', Avenir, 'Helvetica Neue', Helvetica, Arial, sans-serif"
+
     page_html = f"""<!doctype html><html><head><meta charset="utf-8"><style>
-        body {{ font-family: Georgia, serif; color: #1b1b1b; margin: 0; padding: 48px 56px; }}
-        .letterhead {{ display: flex; align-items: center; gap: 14px; border-bottom: 2px solid #2d6a4f;
-            padding-bottom: 14px; margin-bottom: 28px; }}
-        .logo {{ max-height: 48px; max-width: 160px; }}
-        .practitioner-name {{ font-size: 18px; font-weight: 700; color: #2d6a4f; }}
-        .practitioner-location {{ font-size: 13px; color: #555; }}
-        .doc-title {{ font-size: 14px; letter-spacing: .04em; text-transform: uppercase;
-            color: #888; margin-bottom: 20px; }}
-        .content {{ font-size: 15px; line-height: 1.6; }}
-        .content img {{ max-width: 100%; }}
+        body {{ font-family: {_SANS}; color: {_INK}; margin: 0; padding: 0 56px; }}
+        .letterhead {{ display: flex; align-items: center; gap: 16px; border-bottom: 3px solid {_ACCENT};
+            padding: 44px 0 18px; margin-bottom: 30px; }}
+        .logo {{ max-height: 52px; max-width: 170px; object-fit: contain; }}
+        .practitioner-name {{ font-size: 19px; font-weight: 700; color: {_ACCENT}; letter-spacing: .01em; }}
+        .practitioner-location {{ font-size: 12.5px; color: {_MUTED}; margin-top: 2px; }}
+        .doc-meta {{ display: flex; align-items: baseline; justify-content: space-between;
+            margin-bottom: 26px; }}
+        .doc-title {{ font-size: 13px; letter-spacing: .08em; text-transform: uppercase;
+            color: {_ACCENT}; font-weight: 700; }}
+        .doc-subject {{ font-size: 13px; color: {_MUTED}; }}
+        .content {{ font-size: 14px; line-height: 1.65; }}
+        .content img {{ max-width: 100%; border-radius: 4px; }}
+        .content h1 {{ font-size: 19px; font-weight: 700; color: {_ACCENT}; margin: 26px 0 10px; }}
+        .content h2 {{ font-size: 15.5px; font-weight: 700; color: {_ACCENT}; margin: 22px 0 8px; }}
+        .content h3 {{ font-size: 14px; font-weight: 700; color: {_ACCENT}; margin: 18px 0 6px; }}
+        .content p {{ margin: 0 0 12px; }}
+        .content ul, .content ol {{ margin: 0 0 12px; padding-left: 22px; }}
+        .content li {{ margin-bottom: 4px; }}
+        .content blockquote {{ margin: 0 0 14px; padding: 12px 16px; border-left: 3px solid {_ACCENT};
+            background: {_TINT}; color: {_INK}; font-style: normal; }}
+        .content strong {{ color: {_INK}; }}
+        .cite {{ color: {_ACCENT}; font-weight: 600; }}
     </style></head><body>
         <div class="letterhead">{logo_html}
-            <div><div class="practitioner-name">{html.escape(practitioner.get("name") or "")}</div>
+            <div><div class="practitioner-name">{practitioner_name}</div>
             <div class="practitioner-location">{html.escape(", ".join(practitioner.get("specialties") or []))}</div></div>
         </div>
-        <div class="doc-title">{_DOCUMENT_KIND_LABEL.get(kind, kind)}{" for " + html.escape(client["name"]) if client and client.get("name") else ""}</div>
+        <div class="doc-meta">
+            <div class="doc-title">{_DOCUMENT_KIND_LABEL.get(kind, kind)}</div>
+            <div class="doc-subject">{("Prepared for " + client_name + " &middot; ") if client_name else ""}{generated_on}</div>
+        </div>
         <div class="content">{doc["content"]}</div>
     </body></html>"""
+
+    footer_bits = " &middot; ".join(b for b in (practitioner_name, f"Prepared for {client_name}" if client_name else "") if b)
+    footer_html = f"""
+        <div style="width:100%; font-family:{_SANS}; font-size:9px; color:{_MUTED};
+            padding:0 56px; display:flex; justify-content:space-between; align-items:center;
+            border-top:1px solid {_RULE}; padding-top:6px;">
+            <span>{footer_bits}</span>
+            <span>Confidential &mdash; not for redistribution</span>
+            <span>Page <span class="pageNumber"></span> of <span class="totalPages"></span></span>
+        </div>"""
 
     from playwright.sync_api import sync_playwright
     with sync_playwright() as p:
@@ -3713,8 +3758,12 @@ def me_download_document_pdf(client_id: str, session_id: str, kind: str,
         try:
             page = browser.new_page()
             page.set_content(page_html, wait_until="load")
-            pdf_bytes = page.pdf(format="A4", print_background=True,
-                                 margin={"top": "0", "bottom": "0", "left": "0", "right": "0"})
+            pdf_bytes = page.pdf(
+                format="A4", print_background=True,
+                margin={"top": "0", "bottom": "70px", "left": "0", "right": "0"},
+                display_header_footer=True, header_template="<span></span>",
+                footer_template=footer_html,
+            )
         finally:
             browser.close()
 

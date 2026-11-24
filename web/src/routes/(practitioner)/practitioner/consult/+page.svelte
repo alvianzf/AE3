@@ -183,23 +183,30 @@
 	// (a flaky LLM call) must never surface as if the consult turn itself
 	// failed, so errors are swallowed here, same reasoning as the other
 	// best-effort background work in this app (chunk/embed on upload, etc).
-	let autoRedrafting = $state(false);
+	// Both document kinds redraft off the same consult turns — the
+	// clinician note and the client report are two different renderings of
+	// one conversation (generate_session_document's own system prompts are
+	// what actually differ), not two separate things that happen to share
+	// a page. Keyed by kind since both can be in flight independently.
+	let autoRedrafting = $state<Record<string, boolean>>({ clinician_note: false, client_report: false });
 	// Set by DocumentPane (bind:dirty) from the moment the practitioner
-	// makes a real manual edit until it's saved.
+	// makes a real manual edit until it's saved — only ever reflects
+	// whichever kind is currently open in the editor (DocumentPane shows
+	// one at a time), so it only guards that one kind below.
 	let docDirty = $state(false);
-	async function autoRedraftDocument() {
+	async function autoRedraftDocument(kind: 'clinician_note' | 'client_report') {
 		// A finalized document is a deliberate sign-off — auto-redraft must
 		// never silently overwrite it. The practitioner reopens it as a
 		// draft (DocumentPane's Finalize toggle) to resume auto-updates.
 		// A dirty (mid-edit, unsaved) document is skipped too — applying a
 		// fresh draft over it would discard whatever the practitioner is
 		// in the middle of typing.
-		if (!sessionId || autoRedrafting || docDirty || documents[docKind]?.status === 'final') return;
-		autoRedrafting = true;
+		if (!sessionId || autoRedrafting[kind] || (kind === docKind && docDirty) || documents[kind]?.status === 'final') return;
+		autoRedrafting[kind] = true;
 		try {
 			let text = '';
 			let sources: any[] = [];
-			for await (const ev of streamDocumentDraft(clientId, sessionId, docKind)) {
+			for await (const ev of streamDocumentDraft(clientId, sessionId, kind)) {
 				if (ev.event === 'result') {
 					text = ev.text;
 					sources = ev.sources;
@@ -209,16 +216,21 @@
 			const html = resolveCitationsForDocument(text, sources);
 			const saved = await put(
 				fetch,
-				`/me/clients/${clientId}/sessions/${sessionId}/documents/${docKind}`,
-				{ content: html, status: documents[docKind]?.status ?? 'draft' }
+				`/me/clients/${clientId}/sessions/${sessionId}/documents/${kind}`,
+				{ content: html, status: documents[kind]?.status ?? 'draft' }
 			);
-			documents[docKind] = saved;
+			documents[kind] = saved;
 		} catch {
 			/* best-effort — the practitioner can still draft manually via
 			   Ask AI, and the next turn tries again. */
 		} finally {
-			autoRedrafting = false;
+			autoRedrafting[kind] = false;
 		}
+	}
+
+	function autoRedraftBothDocuments() {
+		void autoRedraftDocument('clinician_note');
+		void autoRedraftDocument('client_report');
 	}
 
 	async function selectClient(id: string) {
@@ -437,7 +449,7 @@
 			if (sessionId) {
 				await loadSession(sessionId);
 				if (turns.length > priorTurnCount) {
-					void autoRedraftDocument();
+					void autoRedraftBothDocuments();
 					return;
 				}
 			} else {
@@ -445,7 +457,7 @@
 				const found = sessions.find((s) => !priorSessionIds.has(s.id));
 				if (found) {
 					await loadSession(found.id);
-					void autoRedraftDocument();
+					void autoRedraftBothDocuments();
 					return;
 				}
 			}
@@ -520,7 +532,7 @@
 					sessionId = ev.session_id;
 					turns = [...turns, { question: askedQuestion, asked_at: askedAt, answered_at: new Date().toISOString(), ...ev }];
 					loadSessions(clientId);
-					void autoRedraftDocument();
+					void autoRedraftBothDocuments();
 				} else if (ev.event === 'error') {
 					gotError = true;
 					failRunningSteps();
