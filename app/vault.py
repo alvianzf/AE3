@@ -219,6 +219,14 @@ _SCHEMA_DDL = """
             ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS extracted_text TEXT;
             ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS
                 extraction_status TEXT NOT NULL DEFAULT 'pending';
+            -- Which part of the client's record this file's content
+            -- actually belongs to — set once, at upload time, from the
+            -- same extracted text (app/main.py's _categorize_upload), so
+            -- an uploaded file surfaces where a practitioner would
+            -- actually go looking for it (Record for a lab/test result)
+            -- instead of only ever sitting in one undifferentiated pile.
+            ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS
+                category TEXT NOT NULL DEFAULT 'document';
             CREATE TABLE IF NOT EXISTS wearable_connections (
                 id TEXT PRIMARY KEY,
                 client_id TEXT NOT NULL,
@@ -901,18 +909,19 @@ def count_unviewed_intake(practitioner_id: str) -> int:
 def save_uploaded_file(
     practitioner_id: str, client_id: str, original_name: str, media_type: str,
     storage_path: str, extracted_text: str | None = None,
-    extraction_status: str = "pending",
+    extraction_status: str = "pending", category: str = "document",
 ) -> dict:
     row = {"id": str(uuid.uuid4()), "client_id": client_id,
            "original_name": original_name, "media_type": media_type,
            "storage_path": storage_path, "uploaded_at": _now(),
-           "extracted_text": extracted_text, "extraction_status": extraction_status}
+           "extracted_text": extracted_text, "extraction_status": extraction_status,
+           "category": category}
     with vault_connection(practitioner_id) as conn:
         conn.execute(
             "INSERT INTO uploaded_files (id, client_id, original_name, "
-            "media_type, storage_path, uploaded_at, extracted_text, extraction_status) "
+            "media_type, storage_path, uploaded_at, extracted_text, extraction_status, category) "
             "VALUES (%(id)s, %(client_id)s, %(original_name)s, %(media_type)s, "
-            "%(storage_path)s, %(uploaded_at)s, %(extracted_text)s, %(extraction_status)s)",
+            "%(storage_path)s, %(uploaded_at)s, %(extracted_text)s, %(extraction_status)s, %(category)s)",
             row,
         )
     return row

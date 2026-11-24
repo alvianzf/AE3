@@ -4,6 +4,7 @@
 	import { toast } from '$lib/stores/toast';
 	import { chunkedUpload } from '$lib/chunkedUpload';
 	import { groupIntoSections } from '$lib/questionnaireSections';
+	import { fileDrop } from '$lib/fileDrop';
 
 	// Mirrors app/main.py's _MAX_CLIENT_FILE_BYTES — anything over this used
 	// to just fail with an error telling the client to "use the chunked
@@ -25,6 +26,7 @@
 	let submitted = $state(data.state === 'submitted');
 	let uploadedFiles = $state<string[]>([]);
 	let uploading = $state(false);
+	let dragOver = $state(false);
 	// A questionnaire-kind link's submit already marks it "submitted" (the
 	// one-time flip) — but for an 'initial' questionnaire that's also the
 	// moment the client record is first created, so it's the earliest point
@@ -137,10 +139,17 @@
 	// happens right after a successful submit, same as every other
 	// attachment on this page.
 	let stagedQuestionFiles = $state<Record<string, File[]>>({});
+	let questionDragOver = $state<Record<string, boolean>>({});
 	function onQuestionFilePicked(questionId: string, e: Event) {
 		const files = (e.target as HTMLInputElement).files;
-		if (!files?.length) return;
-		stagedQuestionFiles = { ...stagedQuestionFiles, [questionId]: Array.from(files) };
+		if (files?.length) stageQuestionFiles(questionId, Array.from(files));
+	}
+	function stageQuestionFiles(questionId: string, files: File[]) {
+		// Dropping (or re-picking) adds to what's already staged for this
+		// question rather than replacing it — same "add more" behavior the
+		// upload-kind link's own file list already has.
+		const existing = stagedQuestionFiles[questionId] ?? [];
+		stagedQuestionFiles = { ...stagedQuestionFiles, [questionId]: [...existing, ...files] };
 	}
 
 	async function uploadOneFile(file: File) {
@@ -188,12 +197,15 @@
 		}
 	}
 
-	async function onFilesPicked(e: Event) {
+	function onFilesPicked(e: Event) {
 		const files = (e.target as HTMLInputElement).files;
-		if (!files?.length) return;
+		if (files?.length) void uploadFiles(Array.from(files));
+	}
+
+	async function uploadFiles(files: File[]) {
 		uploading = true;
 		try {
-			for (const file of Array.from(files)) {
+			for (const file of files) {
 				await uploadOneFile(file);
 				uploadedFiles = [...uploadedFiles, file.name];
 			}
@@ -260,8 +272,9 @@
 			{#if data.kind === 'upload'}
 				<h1>Upload your results</h1>
 				<p class="hint">Add one or more files. You can come back to this link any time before you're done.</p>
-				<label class="upload-btn">
-					{uploading ? 'Uploading…' : 'Choose files'}
+				<label class="dropzone" class:drag-over={dragOver} use:fileDrop={uploadFiles}
+					ondragenter={() => (dragOver = true)} ondragleave={() => (dragOver = false)} ondrop={() => (dragOver = false)}>
+					{uploading ? 'Uploading…' : 'Drag files here, or click to choose'}
 					<input type="file" multiple onchange={onFilesPicked} disabled={uploading} hidden />
 				</label>
 				{#if uploadedFiles.length}
@@ -275,8 +288,9 @@
 			{:else if q && stage === 'attach'}
 				<h1>Attach any documents</h1>
 				<p class="hint">Lab results, previous reports, anything that'll help your practitioner — optional.</p>
-				<label class="upload-btn">
-					{uploading ? 'Uploading…' : 'Choose files'}
+				<label class="dropzone" class:drag-over={dragOver} use:fileDrop={uploadFiles}
+					ondragenter={() => (dragOver = true)} ondragleave={() => (dragOver = false)} ondrop={() => (dragOver = false)}>
+					{uploading ? 'Uploading…' : 'Drag files here, or click to choose'}
 					<input type="file" multiple onchange={onFilesPicked} disabled={uploading} hidden />
 				</label>
 				{#if uploadedFiles.length}
@@ -364,8 +378,12 @@
 										{:else if question.input_type === 'date'}
 											<input id="q-{question.id}" type="date" bind:value={answers[question.id]} />
 										{:else if question.input_type === 'file'}
-											<label class="upload-btn">
-												Choose file…
+											<label class="dropzone" class:drag-over={questionDragOver[question.id]}
+												use:fileDrop={(files) => stageQuestionFiles(question.id, files)}
+												ondragenter={() => (questionDragOver = { ...questionDragOver, [question.id]: true })}
+												ondragleave={() => (questionDragOver = { ...questionDragOver, [question.id]: false })}
+												ondrop={() => (questionDragOver = { ...questionDragOver, [question.id]: false })}>
+												Drag a file here, or click to choose…
 												<input id="q-{question.id}" type="file" multiple onchange={(e) => onQuestionFilePicked(question.id, e)} hidden />
 											</label>
 											{#if stagedQuestionFiles[question.id]?.length}
@@ -432,7 +450,13 @@
 	.row-remove { border: none; background: none; color: var(--muted); cursor: pointer; font-size: 1.1rem; }
 	.add-row { margin-top: .4rem; border: 1px dashed var(--line-2); background: none; border-radius: var(--r); padding: .3rem .7rem; font-size: var(--text-sm); cursor: pointer; }
 
-	.upload-btn { display: inline-flex; border: 1px solid var(--line-2); border-radius: var(--r); padding: .6rem 1.2rem; font-weight: 650; cursor: pointer; background: var(--panel-2); margin-bottom: var(--space-4); }
+	.dropzone {
+		display: flex; align-items: center; justify-content: center; text-align: center;
+		border: 1px dashed var(--line-2); border-radius: var(--r-lg); padding: var(--space-4) 1.2rem;
+		font-weight: 650; cursor: pointer; background: var(--panel-2); margin-bottom: var(--space-4);
+		transition: border-color .15s, background .15s;
+	}
+	.dropzone:hover, .dropzone.drag-over { border-color: var(--accent); background: var(--accent-soft); }
 	.file-list { margin: 0 0 var(--space-4); padding-left: 1.2rem; font-size: var(--text-sm); }
 
 	.submit-btn {

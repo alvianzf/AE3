@@ -1200,32 +1200,29 @@ def fetch_hop_neighbors(frontier_ids: list[str], visited_ids: set[str],
     HAS_CHUNK's reverse, or any typed entity-entity relationship the
     KG-builder produced) — deliberately not enumerating relationship
     types so a new type MedGemma introduces is traversable without a
-    code change.
+    code change. Capped at `limit` candidates, matching the hop's
+    config.traversal_max_candidates_per_hop budget.
 
-    Grade is only enforced on Chunk-type candidates (a Chunk's trust
-    boundary is its parent Document's grade); Entity candidates pass
-    through un-filtered here — an Entity by itself carries no clinical
-    claim on its own, only the Chunks that mention it do, and those get
-    filtered when *they're* reached. Capped at `limit` candidates,
-    matching the hop's config.traversal_max_candidates_per_hop budget.
-
-    `weights` is a practitioner's own per-document grade override
-    (never the shared admin grade, vault.get_source_weights()) — when a
-    document has one, it wins over doc.grade for this threshold check,
-    same as the pre-v5 traverse()'s behavior. Without this, a source a
-    practitioner explicitly down-weighted below their own threshold
-    could still reach the answer via a hop that only checked the shared
-    grade.
+    `min_grade`/`weights` no longer exclude a candidate — grade (and a
+    practitioner's own per-document override, vault.get_source_weights())
+    is a trust signal for the Reasoner to weigh when sources conflict,
+    not a gate on which sources are even allowed to reach it (explicit
+    product decision: a lower-graded source should still inform an
+    answer, just be deprioritized against a higher-graded one that says
+    something different). `min_grade` stays as a parameter only because
+    every call site still passes one; grade itself is still returned on
+    each candidate so the caller can present/sort by it.
 
     `folder`/`topic` is a practitioner-chosen library scope (in_scope()
-    above) — a hard filter re-applied at this hop for the same reason
-    `weights`/`accessible_private_ids` are: a source excluded from the
-    seed could otherwise re-enter two hops later via a neighbor edge
-    that only this function checks.
+    above) — a real hard filter, unrelated to trust: a source outside
+    the chosen folder/tag never reaches the answer by any traversal
+    path, re-applied at this hop for the same reason
+    `accessible_private_ids` is: a source excluded from the seed could
+    otherwise re-enter two hops later via a neighbor edge that only
+    this function checks.
     """
     if not frontier_ids:
         return []
-    weights = weights or {}
     accessible_private_ids = accessible_private_ids or set()
     with session() as s:
         recs = s.run(
@@ -1258,7 +1255,6 @@ def fetch_hop_neighbors(frontier_ids: list[str], visited_ids: set[str],
         c for c in candidates
         if "Entity" in c["labels"] or (
             c.get("grade") is not None
-            and weights.get(c.get("document_id"), c["grade"]) >= min_grade
             and (not c.get("is_private") or c.get("document_id") in accessible_private_ids)
             and in_scope(c, folder, topic)
         )

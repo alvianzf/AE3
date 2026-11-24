@@ -53,6 +53,11 @@ def lookup(question: str, patient: PatientContext, min_grade: int,
         }
         for r in rows
     ]
+    # Grade no longer filters these results (pgvector_store.search()) —
+    # it orders them instead, so a higher-trust source lists (and gets
+    # cited) ahead of a lower-trust one for the same question, same
+    # reasoning as GraphTraversalRetriever's own sort.
+    accumulated.sort(key=lambda c: c["grade"], reverse=True)
     return TraversalResult(
         accumulated=accumulated, path_log=[], depth_reached=0,
         stopped_reason="general_lookup", usage={"input_tokens": 0, "output_tokens": 0},

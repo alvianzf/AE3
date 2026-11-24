@@ -252,7 +252,24 @@ class GraphTraversalRetriever:
             if not frontier:
                 stopped_reason = "frontier_empty"
 
+        # Grade/weight no longer excludes a candidate from reaching here
+        # (store.fetch_hop_neighbors' own docstring explains why) — this
+        # is where that trust signal actually does something instead:
+        # sorting the accumulated context so a higher-graded source lists
+        # (and gets cited) ahead of a lower-graded one, the ordering the
+        # Reasoner is told to use when two sources disagree
+        # (REASONER_SYSTEM's conflict rule). Entities have no grade of
+        # their own and sort last, same relative position they'd have had
+        # under the old grade-exclusion scheme (never ranked by grade at
+        # all, just allowed through).
+        def _trust(node: dict) -> int:
+            grade = node.get("grade")
+            if grade is None:
+                return -1
+            return self.weights.get(node.get("document_id"), grade)
+        ordered = sorted(accumulated.values(), key=_trust, reverse=True)
+
         yield "done", TraversalResult(
-            accumulated=list(accumulated.values()), path_log=path_log,
+            accumulated=ordered, path_log=path_log,
             depth_reached=depth, stopped_reason=stopped_reason, usage=total_usage,
         )

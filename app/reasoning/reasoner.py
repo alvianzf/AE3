@@ -51,6 +51,19 @@ REASONER_SYSTEM = (
     "there's nothing, say there's nothing.\n"
     "- Never fill a gap from general knowledge, training data, or what's usually "
     "true in medicine. If it isn't in the context below, it isn't in this answer.\n"
+    "- Every source below is labeled with a trust score out of 10 — every "
+    "source is eligible to inform your answer regardless of its score, a "
+    "lower-trust source is not excluded, but if two sources genuinely "
+    "disagree, prefer the higher-trust one and say so (e.g. 'the "
+    "higher-confidence source indicates...'), rather than presenting the "
+    "conflict as unresolved or silently picking one.\n"
+    "- A real answer can draw on more than one passage: if no single "
+    "passage fully covers the question but multiple passages, read "
+    "together, directly establish the answer, synthesize across them and "
+    "cite each one you relied on — that is reasoning from the context, not "
+    "fabrication. The fabrication rule above is about adding something no "
+    "passage supports, not about requiring one single passage to carry the "
+    "whole answer alone.\n"
     "- Weigh the patient's specific conditions, medications, and labs explicitly "
     "where they matter — a general answer that ignores what's already in front of "
     "you about this patient is not the answer this patient needs.\n"
@@ -92,7 +105,9 @@ class ReasonedAnswer:
 
 def _label(node: dict) -> str:
     if store.is_chunk(node):
-        return f"(source: {node.get('document_title', 'unknown')}) {node['text']}"
+        grade = node.get("grade")
+        trust = f", trust {grade}/10" if grade is not None else ""
+        return f"(source: {node.get('document_title', 'unknown')}{trust}) {node['text']}"
     return f"(entity, {store.node_type(node)}: {node.get('name', node.get('id'))})"
 
 

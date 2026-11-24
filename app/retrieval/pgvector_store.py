@@ -159,20 +159,27 @@ def search(query_embedding: list[float], top_k: int, min_grade: int,
     obvious next step if the corpus grows large enough for this to
     start costing real time, not added preemptively.
 
+    `min_grade` no longer excludes a chunk from this search — grade is a
+    trust signal the Reasoner weighs when sources conflict
+    (REASONER_SYSTEM), not a gate on which chunks are even eligible to
+    be found; kept as a parameter only because every call site still
+    passes one. `grade` is still selected on each row (below) so the
+    caller can sort/present by it — general_lookup.py does, same
+    reasoning as GraphTraversalRetriever's own sort of its accumulated
+    context.
+
     `accessible_private_ids` gates a private document out of this fast
     path the same way the deep-research path's seed search and every
-    traversal hop already are (specs/v6.9/01) — this path has no
-    weight-aware grade check of its own either (a pre-existing gap, not
-    introduced here), so the privacy gate is a plain SQL filter, same
-    as the `grade >= %s` check already is.
+    traversal hop already are (specs/v6.9/01) — a real access-control
+    filter, unrelated to trust.
 
     `folder`/`topic` is the same hard library-scope filter the
     deep-research path enforces via store.in_scope() — this path has no
     traversal hops to re-check it at, so it only needs applying here,
     at the one query this path makes."""
     accessible_private_ids = accessible_private_ids or set()
-    filters = ["grade >= %s", "(NOT is_private OR document_id = ANY(%s))"]
-    params: list = [min_grade, list(accessible_private_ids)]
+    filters = ["(NOT is_private OR document_id = ANY(%s))"]
+    params: list = [list(accessible_private_ids)]
     if folder:
         # starts_with(), not LIKE — a folder name containing '_' or '%'
         # (both valid in the Neo4j-side folder_path string) would

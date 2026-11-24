@@ -4175,11 +4175,19 @@ def _save_uploaded_file(
         logging.warning("client file extraction failed for %r (client %s): %s",
                         filename, client_id, exc)
 
+    # Which part of the client's record this file actually belongs to —
+    # decided once, here, from the same extracted text every other
+    # best-effort step below already reads. A file nobody can classify
+    # (extraction failed, or it's just a plain document) stays the
+    # default 'document' category rather than being forced into 'lab'.
+    category = "lab" if extraction_status == "done" and _looks_like_lab_result(extracted_text) else "document"
+
     saved_row = vault.save_uploaded_file(
         practitioner_id, client_id, filename,
         content_type or _media_type(filename),
         str(vault_files.path(practitioner_id, file_id, filename)),
         extracted_text=extracted_text, extraction_status=extraction_status,
+        category=category,
     )
 
     # Chunked + embedded once here, not dumped as one giant block into
@@ -4213,7 +4221,7 @@ def _save_uploaded_file(
         # RAG above, so this entry only needs to be a short pointer, same
         # shape as every other 'lab' entry in recent_labs
         # (app/patient/context.py).
-        if _looks_like_lab_result(extracted_text):
+        if category == "lab":
             try:
                 excerpt = " ".join(extracted_text.split())[:400]
                 vault.add_entry(

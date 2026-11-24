@@ -65,19 +65,17 @@ def seed(question: str, patient: PatientContext, min_grade: int,
         top_k: int | None = None, weights: dict[str, int] | None = None,
         accessible_private_ids: set[str] | None = None,
         folder: str = "", topic: str = "") -> SeedResult:
-    """`weights` is a practitioner's own per-document grade override
-    (vault.get_source_weights()) — applied here, in Python, rather than
-    as a Cypher WHERE clause (store.seed_chunks_by_vector/_fulltext
-    deliberately return unfiltered candidates) so a source the
-    practitioner explicitly up-weighted above min_grade can still seed
-    the traversal even if the shared admin grade alone would have
-    excluded it, matching fetch_hop_neighbors' same weight-aware check
-    at every later hop.
+    """`min_grade`/`weights` no longer exclude a candidate from seeding —
+    grade (and a practitioner's own per-document override,
+    vault.get_source_weights()) is a trust signal the Reasoner weighs
+    when sources conflict (REASONER_SYSTEM), not a gate on which sources
+    are even allowed to reach it. `min_grade` stays as a parameter only
+    because every call site still passes one.
 
     `folder`/`topic` is a practitioner-chosen library scope
-    (store.in_scope()) — a hard filter, same as min_grade: a source
-    outside the chosen folder/tag never becomes a seed, so it can't
-    reach the answer by any traversal path either."""
+    (store.in_scope()) — a real hard filter, unrelated to trust: a
+    source outside the chosen folder/tag never becomes a seed, so it
+    can't reach the answer by any traversal path either."""
     top_k = top_k or cfg.traversal_seed_top_k
     weights = weights or {}
     accessible_private_ids = accessible_private_ids or set()
@@ -91,14 +89,19 @@ def seed(question: str, patient: PatientContext, min_grade: int,
     for hit in (*vector_hits, *fulltext_hits):
         records.setdefault(hit["id"], hit)
     # A private chunk (specs/v6.9/01) this practitioner has no grant for
-    # never becomes a seed in the first place — same weight-aware-grade
-    # reasoning above, just a second gate alongside it, not instead of it.
+    # never becomes a seed in the first place — a real access-control
+    # gate, unlike grade/weight above.
     chunk_ids = [
         cid for cid, r in records.items()
-        if weights.get(r.get("document_id"), r.get("grade", 0)) >= min_grade
-        and (not r.get("is_private") or r.get("document_id") in accessible_private_ids)
+        if (not r.get("is_private") or r.get("document_id") in accessible_private_ids)
         and store.in_scope(r, folder, topic)
     ]
+    # Grade/weight still orders the seeds — a higher-trust source lists
+    # (and gets cited) ahead of a lower-trust one reaching the same
+    # question, same reasoning as GraphTraversalRetriever's own sort of
+    # the final accumulated context.
+    chunk_ids.sort(key=lambda cid: weights.get(records[cid].get("document_id"), records[cid].get("grade", 0)),
+                   reverse=True)
     records = {cid: records[cid] for cid in chunk_ids}
 
     for entity in store.entities_mentioned_by_chunks(chunk_ids):

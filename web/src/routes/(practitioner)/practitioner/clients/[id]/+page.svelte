@@ -9,6 +9,7 @@
 	import Chip from '$lib/components/Chip.svelte';
 	import Tabs from '$lib/components/Tabs.svelte';
 	import { chunkedUpload } from '$lib/chunkedUpload';
+	import { fileDrop } from '$lib/fileDrop';
 
 	let { data } = $props();
 	// Split out of one long scroll into tabs (ux-implementation-spec.md#1) —
@@ -117,13 +118,17 @@
 	let files = $state<any[]>(data.files ?? []);
 	let uploadingFile = $state(false);
 	let fileInput: HTMLInputElement | undefined = $state();
+	let dragOver = $state(false);
 
-	async function onFilesPicked(e: Event) {
+	function onFilesPicked(e: Event) {
 		const picked = (e.target as HTMLInputElement).files;
-		if (!picked?.length) return;
+		if (picked?.length) handleFiles(Array.from(picked));
+	}
+
+	async function handleFiles(picked: File[]) {
 		uploadingFile = true;
 		try {
-			for (const file of Array.from(picked)) {
+			for (const file of picked) {
 				let saved;
 				if (file.size > DIRECT_UPLOAD_LIMIT) {
 					saved = await chunkedUpload(`/me/clients/${data.client.id}/files`, file);
@@ -162,6 +167,18 @@
 		clinician_note: 'Clinician Note',
 		client_report: 'Client Report'
 	};
+
+	// A session's own generated documents, shown inline under it in the
+	// Sessions tab — the separate top-level "Documents" tab these used to
+	// live under was just this same list with an extra click, not a
+	// different piece of information.
+	const documentsBySession = $derived.by(() => {
+		const map: Record<string, any[]> = {};
+		for (const d of data.documents ?? []) {
+			(map[d.session_id] ??= []).push(d);
+		}
+		return map;
+	});
 
 	// The consult pipeline's patient context (app/patient/context.py) has
 	// always read conditions/medications/labs — nothing ever wrote them
@@ -285,7 +302,6 @@
 		<Tabs bind:active tabs={[
 			{ id: 'overview', label: 'Overview' },
 			{ id: 'intake', label: 'Intake & Files' },
-			{ id: 'documents', label: 'Documents' },
 			{ id: 'record', label: 'Record' },
 			{ id: 'sessions', label: 'Sessions' }
 		]} />
@@ -370,55 +386,23 @@
 		</div>
 
 		<div class="rail-section"><h2>Files</h2>
-			<label class="upload-btn">
-				{uploadingFile ? 'Uploading…' : 'Upload file'}
+			<label class="dropzone" class:drag-over={dragOver} use:fileDrop={handleFiles}
+				ondragenter={() => (dragOver = true)} ondragleave={() => (dragOver = false)} ondrop={() => (dragOver = false)}>
+				<Icon name="upload" size={18} />
+				<span>{uploadingFile ? 'Uploading…' : 'Drag files here, or click to choose'}</span>
+				<span class="hint">Labs, intake forms, anything for this client — drop one or several at once. Sorted automatically (a test result also lands in Record).</span>
 				<input bind:this={fileInput} type="file" multiple onchange={onFilesPicked} disabled={uploadingFile} hidden />
 			</label>
-			<p class="hint upload-hint">Documents, labs, or files from a prior session — attached directly, no link needed.</p>
 			{#if !files.length}
 				<p class="hint">No files uploaded yet.</p>
 			{:else}
 				<ul class="list">
 					{#each files as f (f.id)}
-						<li><a href={fileUrl(f)} target="_blank" rel="noopener">{f.original_name}</a> <span class="hint">{f.uploaded_at ?? ''}</span></li>
-					{/each}
-				</ul>
-			{/if}
-		</div>
-	{:else if active === 'documents'}
-		<div class="rail-section"><h2>Documents</h2>
-			{#if !data.documents?.length}
-				<p class="hint">No documents yet.</p>
-			{:else}
-				<ul class="list doc-list">
-					{#each data.documents as d (d.id)}
 						<li>
-							<a href="/practitioner/consult?client={data.client.id}&session={d.session_id}&pane=doc&kind={d.kind}">
-								{DOCUMENT_KIND_LABELS[d.kind] ?? d.kind}
-							</a>
-							<span class="pill" class:final={d.status === 'final'}>{d.status === 'final' ? 'Final' : 'Draft'}</span>
-							<span class="hint">{d.session_title ?? ''} · {d.updated_at ?? ''}</span>
-							{#if d.kind === 'client_report' && d.status === 'final'}
-								<a class="pdf-link"
-									href="{PUBLIC_API_BASE}/api/me/clients/{data.client.id}/sessions/{d.session_id}/documents/{d.kind}/pdf"
-									target="_blank" rel="noopener">
-									Download PDF
-								</a>
-							{/if}
+							<a href={fileUrl(f)} target="_blank" rel="noopener">{f.original_name}</a>
+							{#if f.category === 'lab'}<Chip tone="accent">Record</Chip>{/if}
+							<span class="hint">{f.uploaded_at ?? ''}</span>
 						</li>
-					{/each}
-				</ul>
-			{/if}
-		</div>
-		<div class="rail-section">
-			<h2>Uploaded files</h2>
-			<p class="hint">Labs, reports, or anything attached directly to this client — uploaded from Intake & Files.</p>
-			{#if !files.length}
-				<p class="hint">No files uploaded yet.</p>
-			{:else}
-				<ul class="list">
-					{#each files as f (f.id)}
-						<li><a href={fileUrl(f)} target="_blank" rel="noopener">{f.original_name}</a> <span class="hint">{f.uploaded_at ?? ''}</span></li>
 					{/each}
 				</ul>
 			{/if}
@@ -464,6 +448,25 @@
 								<Button variant="outlined" onclick={() => summarize(s.id)} loading={summarizing === s.id}>Summarize</Button>
 							</div>
 							{#if summaries[s.id]}<p class="summary">{summaries[s.id]}</p>{/if}
+							{#if documentsBySession[s.id]?.length}
+								<ul class="list doc-list session-docs">
+									{#each documentsBySession[s.id] as d (d.id)}
+										<li>
+											<a href="/practitioner/consult?client={data.client.id}&session={d.session_id}&pane=doc&kind={d.kind}">
+												{DOCUMENT_KIND_LABELS[d.kind] ?? d.kind}
+											</a>
+											<span class="pill" class:final={d.status === 'final'}>{d.status === 'final' ? 'Final' : 'Draft'}</span>
+											{#if d.kind === 'client_report' && d.status === 'final'}
+												<a class="pdf-link"
+													href="{PUBLIC_API_BASE}/api/me/clients/{data.client.id}/sessions/{d.session_id}/documents/{d.kind}/pdf"
+													target="_blank" rel="noopener">
+													Download PDF
+												</a>
+											{/if}
+										</li>
+									{/each}
+								</ul>
+							{/if}
 						</li>
 					{/each}
 				</ul>
@@ -511,12 +514,16 @@
 	.pdf-link:hover { text-decoration: underline; }
 	.link-text { word-break: break-all; display: flex; align-items: center; gap: .5rem; margin-top: var(--space-2); }
 	.copy-btn { border: none; background: var(--panel-2); border-radius: var(--r); padding: .2rem .6rem; font-size: var(--text-xs); font-weight: 650; cursor: pointer; flex: none; }
-	.upload-btn {
-		display: inline-flex; border: 1px solid var(--line-2); background: var(--panel-2); border-radius: var(--r);
-		padding: .5rem 1rem; font-size: var(--text-sm); font-weight: 650; cursor: pointer;
+	.dropzone {
+		display: flex; flex-direction: column; align-items: center; gap: .3rem; text-align: center;
+		border: 1px dashed var(--line-2); background: var(--panel-2); border-radius: var(--r-lg);
+		padding: var(--space-5) var(--space-4); font-size: var(--text-sm); font-weight: 650; cursor: pointer;
+		color: var(--ink-2); margin-bottom: var(--space-3); transition: border-color .15s, background .15s;
 	}
-	.upload-hint { margin: var(--space-2) 0 var(--space-3); }
+	.dropzone:hover, .dropzone.drag-over { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
+	.dropzone .hint { font-weight: 400; max-width: 26rem; }
 	.session { display: grid; gap: .35rem; }
+	.session-docs { margin: .2rem 0 0 1rem; }
 	.sr { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
 	.summary { margin: 0; padding: var(--space-3); background: var(--panel-2); border-radius: var(--r); font-size: var(--text-sm); white-space: pre-wrap; }
 	.entry-form { display: grid; gap: var(--space-3); }
