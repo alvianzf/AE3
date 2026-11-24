@@ -448,7 +448,7 @@ def _flatten_and_remap(turns: list[dict]) -> tuple[list[dict], list[str]]:
 
 def generate_session_document(
     kind: str, turns: list[dict], prior_document: str | None = None,
-    instruction: str | None = None,
+    instruction: str | None = None, pattern_context: str | None = None,
 ) -> tuple[str, dict, list[dict]]:
     """Drafts a clinician_note or client_report from this session's consult
     turns. No deterministic fallback, unlike generate_consult_intake_summary
@@ -477,10 +477,15 @@ def generate_session_document(
     instruction_block = (
         f"\n\nSpecific instruction from the practitioner: {instruction}" if instruction else ""
     )
+    # De-identified, pooled across every practitioner (app/clinical_
+    # patterns.py) — background context for phrasing/approach only, never
+    # a source of fact about THIS client, so it's kept clearly separate
+    # from the consultation/sources blocks above rather than merged in.
+    pattern_block = f"\n\n{pattern_context}" if pattern_context else ""
     prompt = (
         f"Consultation so far:\n{convo_block}\n\n"
         f"Numbered sources behind that consultation:\n{source_block}"
-        f"{prior_block}{instruction_block}"
+        f"{prior_block}{instruction_block}{pattern_block}"
     )
     text, usage = get_client(Role.REASONER).chat_text(
         _DOCUMENT_SYSTEM[kind], prompt, max_tokens=100_000, extra_body=_NO_THINKING)

@@ -298,12 +298,84 @@ def ensure_schema() -> None:
                 conn.execute(
                     "UPDATE admins SET role = 'superadmin' WHERE id = %s",
                     (oldest["id"],))
+        conn.executescript(_pattern_schema_ddl())
+
+
+def _pattern_schema_ddl() -> str:
+    """A pooled, de-identified, platform-wide library of clinical
+    patterns (app/clinical_patterns.py) — "when X finding appears,
+    practitioners typically recommend Y" — extracted from finalized
+    documents across every practitioner, never tied back to a client or
+    practitioner, fed into future consults/drafts as extra grounding. A
+    separate function (not the plain-string block above) because it
+    needs cfg.embedding_dimensions interpolated, same reasoning as
+    app/vault.py's _vector_schema_ddl(). `vector` itself is installed by
+    app/retrieval/pgvector_store.ensure_schema() into `public` — this
+    table lives in that same schema (core_store's), so it's already
+    visible here without installing the extension again."""
+    from .config import get_config
+    cfg = get_config()
+    return f"""
+        CREATE TABLE IF NOT EXISTS clinical_patterns (
+            id TEXT PRIMARY KEY,
+            topic TEXT NOT NULL,
+            finding TEXT NOT NULL,
+            recommendation TEXT NOT NULL,
+            embedding vector({cfg.embedding_dimensions}) NOT NULL,
+            created_at TEXT NOT NULL
+        );
+        """
 
 
 def ping() -> bool:
     with core_connection() as conn:
         conn.execute("SELECT 1")
     return True
+
+
+def _pattern_vec_literal(embedding: list) -> str:
+    # Same reasoning as app/vault.py's own _vec_literal: psycopg2 has no
+    # built-in adapter for pgvector's `vector` type, so a bound string
+    # parameter cast with ::vector avoids the extra `pgvector` package
+    # dependency for what's otherwise one line.
+    return "[" + ",".join(str(x) for x in embedding) + "]"
+
+
+def save_clinical_patterns(patterns: list[dict]) -> None:
+    """`patterns` is [{"topic", "finding", "recommendation", "embedding"}],
+    already de-identified (app/clinical_patterns.py does the extraction
+    and embedding before calling this) — this function just stores
+    them. Pooled across every practitioner by design: no client_id, no
+    practitioner_id, nothing that scopes a row back to who it came from."""
+    if not patterns:
+        return
+    with core_connection() as conn:
+        for p in patterns:
+            conn.execute(
+                "INSERT INTO clinical_patterns (id, topic, finding, recommendation, embedding, created_at) "
+                "VALUES (%s, %s, %s, %s, %s::vector, %s)",
+                (str(uuid.uuid4()), p["topic"], p["finding"], p["recommendation"],
+                 _pattern_vec_literal(p["embedding"]), _now()),
+            )
+
+
+def search_clinical_patterns(query_embedding: list, top_k: int = 5) -> list[dict]:
+    """Nearest-neighbor search (cosine distance) over the pooled,
+    platform-wide pattern library — same query shape as
+    app/vault.py's search_client_documents, just unscoped (every
+    practitioner's extracted patterns are in the same pool)."""
+    with core_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT topic, finding, recommendation,
+                   1 - (embedding <=> %s::vector) AS score
+            FROM clinical_patterns
+            ORDER BY embedding <=> %s::vector
+            LIMIT %s
+            """,
+            (_pattern_vec_literal(query_embedding), _pattern_vec_literal(query_embedding), top_k),
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def log(actor: str, action: str, detail: str) -> None:

@@ -38,7 +38,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel
 
-from . import auth, billing, core_store, db, originals, pdf_tidy, scraper, uploads, vault, vault_files
+from . import auth, billing, clinical_patterns, core_store, db, originals, pdf_tidy, scraper, uploads, vault, vault_files
 from .config import get_config
 from .clients import nebius_admin
 from .clients.llm_client import Role as LLMRole
@@ -3698,11 +3698,24 @@ def me_save_document(client_id: str, session_id: str, kind: str, body: DocumentI
                      session: dict = Depends(auth.require_pro_practitioner)) -> dict:
     practitioner_id = session["id"]
     _owned_session(practitioner_id, client_id, session_id)
+    was_final = (vault.get_document(practitioner_id, session_id, kind) or {}).get("status") == "final"
     try:
-        return vault.save_document(
+        saved = vault.save_document(
             practitioner_id, session_id, client_id, kind, body.content, body.status)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
+    # A genuine draft -> final transition, not an autosave that happens to
+    # land while already final (an edit made before "Reopen as draft") —
+    # otherwise every keystroke-triggered autosave on an already-finalized
+    # document would re-extract and duplicate patterns into the pooled
+    # library. Best-effort: never let this block the save itself.
+    if body.status == "final" and not was_final:
+        try:
+            clinical_patterns.extract_and_save_patterns(body.content)
+        except Exception as exc:
+            logging.warning(
+                "clinical pattern extraction failed for session %s/%s: %s", session_id, kind, exc)
+    return saved
 
 
 _DOCUMENT_KIND_LABEL = {"clinician_note": "Clinician Note", "client_report": "Client Report"}
@@ -3899,6 +3912,14 @@ def me_draft_document(client_id: str, session_id: str, kind: str, body: Document
     if patient is not None:
         load_relevant_documents(patient, practitioner_id, body.instruction or kind)
     patient_context_text = patient.as_query_text() if patient else ""
+    # Pooled, de-identified patterns from other consultations across the
+    # whole platform (app/clinical_patterns.py) — best-effort, never
+    # blocks drafting if the library has nothing relevant yet or the
+    # lookup itself fails.
+    try:
+        pattern_context = clinical_patterns.relevant_patterns_text(body.instruction or kind)
+    except Exception:
+        pattern_context = ""
 
     def _sse(event: dict) -> str:
         return f"data: {json.dumps(event)}\n\n"
@@ -3908,7 +3929,7 @@ def me_draft_document(client_id: str, session_id: str, kind: str, body: Document
             yield _sse({"event": "agent_start", "agent": "reasoner"})
             t0 = time.monotonic()
             text, usage, sources = reasoner.generate_session_document(
-                kind, turns, prior_content, body.instruction)
+                kind, turns, prior_content, body.instruction, pattern_context)
             yield _sse({"event": "agent_done", "agent": "reasoner",
                        "duration_s": round(time.monotonic() - t0, 2), **usage})
 
