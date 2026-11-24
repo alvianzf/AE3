@@ -3915,6 +3915,68 @@ def me_download_client_file(client_id: str, file_id: str,
     return _serve_uploaded_file(session["id"], file_id, client_id)
 
 
+@app.post("/api/me/clients/{client_id}/files")
+async def me_upload_client_file(client_id: str, file: UploadFile,
+                                session: dict = Depends(auth.require_pro_practitioner)) -> dict:
+    """Direct upload of a document/lab/prior-session file straight onto a
+    client's record — the only path before this was the client-facing
+    upload link, with no way for the practitioner to attach something
+    themselves (found live: a practitioner has documents from a prior
+    clinic/previous sessions on day one, before any client link is ever
+    sent). Mirrors intake_upload_file's size split exactly; use the
+    chunked routes below for anything over _MAX_CLIENT_FILE_BYTES."""
+    practitioner_id = session["id"]
+    if vault.get_client(practitioner_id, client_id) is None:
+        raise HTTPException(404, "no such client")
+    raw = await file.read()
+    if len(raw) > _MAX_CLIENT_FILE_BYTES:
+        raise HTTPException(
+            400,
+            f"File must be under {_MAX_CLIENT_FILE_BYTES // (1024 * 1024)} MB "
+            "via direct upload — use the chunked upload for a larger file.")
+    filename = file.filename or "upload"
+    return _save_uploaded_file(
+        practitioner_id, client_id, filename, file.content_type or "", raw)
+
+
+class ClientFileUploadInit(BaseModel):
+    filename: str
+    total_size: int
+    content_type: str = ""
+
+
+@app.post("/api/me/clients/{client_id}/files/upload/init")
+def me_client_file_upload_init(client_id: str, body: ClientFileUploadInit,
+                               session: dict = Depends(auth.require_pro_practitioner)) -> dict:
+    if vault.get_client(session["id"], client_id) is None:
+        raise HTTPException(404, "no such client")
+    return uploads.start(body.total_size, {
+        "filename": body.filename, "content_type": body.content_type,
+    })
+
+
+@app.post("/api/me/clients/{client_id}/files/upload/{upload_id}/chunk")
+async def me_client_file_upload_chunk(client_id: str, upload_id: str, chunk: UploadFile,
+                                      session: dict = Depends(auth.require_pro_practitioner)) -> dict:
+    if vault.get_client(session["id"], client_id) is None:
+        raise HTTPException(404, "no such client")
+    return await uploads.append_chunk(upload_id, chunk)
+
+
+@app.post("/api/me/clients/{client_id}/files/upload/{upload_id}/complete")
+def me_client_file_upload_complete(client_id: str, upload_id: str,
+                                   session: dict = Depends(auth.require_pro_practitioner)) -> dict:
+    practitioner_id = session["id"]
+    if vault.get_client(practitioner_id, client_id) is None:
+        raise HTTPException(404, "no such client")
+    path, meta = uploads.finish(upload_id)
+    try:
+        return _save_uploaded_file(
+            practitioner_id, client_id, meta["filename"], meta["content_type"], path)
+    finally:
+        uploads.cleanup(upload_id)
+
+
 # --- Frontend -----------------------------------------------------------------
 #
 # specs/v4: SvelteKit's adapter-static build (WEB_BUILD) replaces the old

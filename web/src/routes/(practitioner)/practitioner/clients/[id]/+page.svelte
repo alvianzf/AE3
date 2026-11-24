@@ -8,6 +8,7 @@
 	import TextField from '$lib/components/TextField.svelte';
 	import Chip from '$lib/components/Chip.svelte';
 	import Tabs from '$lib/components/Tabs.svelte';
+	import { chunkedUpload } from '$lib/chunkedUpload';
 
 	let { data } = $props();
 	// Split out of one long scroll into tabs (ux-implementation-spec.md#1) —
@@ -35,6 +36,47 @@
 	async function copyUploadLink() {
 		await navigator.clipboard.writeText(uploadLinkUrl);
 		toast('Link copied.');
+	}
+
+	// Before this, the only way a file reached a client's record was the
+	// client-facing upload link — no path for the practitioner to attach
+	// something themselves (a prior clinic's labs, a scanned referral)
+	// on day one, before any link is ever sent. Direct practitioner-side
+	// upload, mirroring the intake page's own direct-vs-chunked split.
+	const DIRECT_UPLOAD_LIMIT = 20 * 1024 * 1024;
+	let files = $state<any[]>(data.files ?? []);
+	let uploadingFile = $state(false);
+	let fileInput: HTMLInputElement | undefined = $state();
+
+	async function onFilesPicked(e: Event) {
+		const picked = (e.target as HTMLInputElement).files;
+		if (!picked?.length) return;
+		uploadingFile = true;
+		try {
+			for (const file of Array.from(picked)) {
+				let saved;
+				if (file.size > DIRECT_UPLOAD_LIMIT) {
+					saved = await chunkedUpload(`/me/clients/${data.client.id}/files`, file);
+				} else {
+					const form = new FormData();
+					form.set('file', file);
+					const res = await fetch(`${PUBLIC_API_BASE}/api/me/clients/${data.client.id}/files`, {
+						method: 'POST',
+						credentials: 'include',
+						body: form
+					});
+					if (!res.ok) throw new Error('Could not upload ' + file.name + '.');
+					saved = await res.json();
+				}
+				files = [saved, ...files];
+			}
+			toast('File uploaded.');
+		} catch (err: any) {
+			toast(err.message || 'Could not upload the file.', 'alert');
+		} finally {
+			uploadingFile = false;
+			if (fileInput) fileInput.value = '';
+		}
 	}
 
 	// session_documents rows have no `filename` — this list used to fall
@@ -225,11 +267,16 @@
 		</div>
 
 		<div class="rail-section"><h2>Files</h2>
-			{#if !data.files?.length}
+			<label class="upload-btn">
+				{uploadingFile ? 'Uploading…' : 'Upload file'}
+				<input bind:this={fileInput} type="file" multiple onchange={onFilesPicked} disabled={uploadingFile} hidden />
+			</label>
+			<p class="hint upload-hint">Documents, labs, or files from a prior session — attached directly, no link needed.</p>
+			{#if !files.length}
 				<p class="hint">No files uploaded yet.</p>
 			{:else}
 				<ul class="list">
-					{#each data.files as f (f.id)}
+					{#each files as f (f.id)}
 						<li><a href={fileUrl(f)} target="_blank" rel="noopener">{f.original_name}</a> <span class="hint">{f.uploaded_at ?? ''}</span></li>
 					{/each}
 				</ul>
@@ -325,6 +372,11 @@
 	.doc-list .pill.final { background: var(--accent-soft); color: var(--accent-ink); }
 	.link-text { word-break: break-all; display: flex; align-items: center; gap: .5rem; margin-top: var(--space-2); }
 	.copy-btn { border: none; background: var(--panel-2); border-radius: var(--r); padding: .2rem .6rem; font-size: var(--text-xs); font-weight: 650; cursor: pointer; flex: none; }
+	.upload-btn {
+		display: inline-flex; border: 1px solid var(--line-2); background: var(--panel-2); border-radius: var(--r);
+		padding: .5rem 1rem; font-size: var(--text-sm); font-weight: 650; cursor: pointer;
+	}
+	.upload-hint { margin: var(--space-2) 0 var(--space-3); }
 	.session { display: grid; gap: .35rem; }
 	.sr { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
 	.summary { margin: 0; padding: var(--space-3); background: var(--panel-2); border-radius: var(--r); font-size: var(--text-sm); white-space: pre-wrap; }

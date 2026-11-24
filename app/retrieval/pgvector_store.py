@@ -90,6 +90,10 @@ def save_chunk_embeddings(document_id: str, document_title: str, grade: int,
         for c in chunks:
             if c.get("embedding") is None:
                 continue
+            # Some PDF text extraction carries embedded NUL bytes, which a
+            # Postgres text literal rejects outright (found live, the
+            # pgvector backfill's very first document) — strip them.
+            text = (c["text"] or "").replace("\x00", "")
             conn.execute(
                 """
                 INSERT INTO chunk_embeddings
@@ -106,7 +110,7 @@ def save_chunk_embeddings(document_id: str, document_title: str, grade: int,
                     folder_path = EXCLUDED.folder_path,
                     topics = EXCLUDED.topics
                 """,
-                (c["id"], document_id, document_title, grade, c["text"],
+                (c["id"], document_id, document_title, grade, text,
                  c.get("page_start"), c.get("page_end"), _vec_literal(c["embedding"]),
                  folder_path, topics),
             )
