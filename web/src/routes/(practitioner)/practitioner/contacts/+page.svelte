@@ -38,7 +38,8 @@
 			<td>{c.email}</td>
 			<td class="msg">{c.message}</td>
 			<td><Chip tone={c.status === 'new' ? 'accent' : 'neutral'}>{c.status}</Chip></td>
-			<td>
+			<td class="actions">
+				<Button variant="text" onclick={() => addAsClient(c)}><Icon name="plus" size={15} />Add as client</Button>
 				{#if c.status === 'new'}
 					<Button variant="text" onclick={() => setStatus(c.id as string, 'handled')}><Icon name="check" size={15} />Mark handled</Button>
 				{/if}
@@ -49,4 +50,5 @@
 
 <style>
 	.msg { max-width: 22rem; white-space: normal; }
+	.actions { display: flex; gap: var(--space-2); white-space: nowrap; }
 </style>

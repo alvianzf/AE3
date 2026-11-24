@@ -3060,10 +3060,67 @@ def submit_intake(token: str, body: IntakeSubmitIn) -> dict:
 
     vault.save_questionnaire_response(
         practitioner_id, client_id, questionnaire["id"], questionnaire["version"], answers)
+    _ingest_questionnaire_response(practitioner_id, client_id, questionnaire, answers)
     vault.submit_intake_link(practitioner_id, token, client_id)
     vault.log(practitioner_id, "client", "intake questionnaire submitted",
               questionnaire["title"], client_id)
     return {"submitted": True, "client_id": client_id}
+
+
+def _ingest_questionnaire_response(
+    practitioner_id: str, client_id: str, questionnaire: dict, answers: dict,
+) -> None:
+    """Folds a submitted questionnaire's answers into the same per-client
+    RAG (client_document_chunks) that uploaded files already feed —
+    previously only the uploaded-file side of an intake was retrievable
+    by Consult; the questionnaire text itself was just a flat summary
+    line in patient context, not something a targeted question could
+    pull a specific answer out of. Best-effort: an embedding failure
+    here must not block the submission itself (same reasoning as
+    _save_uploaded_file's own try/except)."""
+    prompt_by_id = {q["id"]: q["prompt"] for q in questionnaire["questions"]}
+    lines = [
+        f"Q: {prompt_by_id[qid]}\nA: {ans}"
+        for qid, ans in answers.items()
+        if qid in prompt_by_id and ans not in (None, "", [])
+    ]
+    if not lines:
+        return
+    text = "\n\n".join(lines)
+    try:
+        chunks = store.chunk_pages([(None, text)])
+        texts = [c["text"] for c in chunks]
+        embeddings = get_llm_client(LLMRole.EMBEDDER).embed(texts)
+        vault.save_client_document_chunks(
+            practitioner_id, client_id, str(uuid.uuid4()),
+            f"Questionnaire: {questionnaire['title']}",
+            [{"text": t, "embedding": e} for t, e in zip(texts, embeddings)],
+        )
+    except Exception as exc:
+        logging.warning(
+            "questionnaire response chunk/embed failed for client %s: %s", client_id, exc)
+
+
+def _intake_link_for_upload(token: str) -> tuple[str, dict]:
+    """Resolves a token for a file-upload action specifically — distinct
+    from _active_intake_link, which 410s a submitted link. A questionnaire
+    intake's own submit is what creates the client in the first place (an
+    'initial'-kind link has no client_id until then), so uploads for a
+    questionnaire-kind link need to keep working for a short while AFTER
+    submission, not just before it, or there'd be no way to ever attach
+    documents to that client's intake at all."""
+    entry = core_store.get_intake_link_directory_entry(token)
+    if entry is None:
+        raise HTTPException(404, "no such intake link")
+    practitioner_id = entry["practitioner_id"]
+    link = vault.get_intake_link(practitioner_id, token)
+    if link is None:
+        raise HTTPException(404, "no such intake link")
+    if link["kind"] not in ("upload", "questionnaire"):
+        raise HTTPException(400, "this link has no file upload to make")
+    if not link["client_id"]:
+        raise HTTPException(400, "submit the questionnaire before attaching documents")
+    return practitioner_id, link
 
 
 @app.post("/api/intake/{token}/upload")
@@ -3072,9 +3129,7 @@ async def intake_upload_file(token: str, file: UploadFile) -> dict:
     _MAX_CLIENT_FILE_BYTES — for a larger file use the chunked routes
     below, the same split me_upload_file/me_file_upload_* already offer
     a logged-in client."""
-    practitioner_id, link = _active_intake_link(token)
-    if link["kind"] != "upload":
-        raise HTTPException(400, "this link has no file upload to make")
+    practitioner_id, link = _intake_link_for_upload(token)
     raw = await file.read()
     if len(raw) > _MAX_CLIENT_FILE_BYTES:
         raise HTTPException(
@@ -3094,9 +3149,7 @@ class IntakeUploadInit(BaseModel):
 
 @app.post("/api/intake/{token}/upload/init")
 def intake_upload_init(token: str, body: IntakeUploadInit) -> dict:
-    _, link = _active_intake_link(token)
-    if link["kind"] != "upload":
-        raise HTTPException(400, "this link has no file upload to make")
+    _intake_link_for_upload(token)
     return uploads.start(body.total_size, {
         "filename": body.filename, "content_type": body.content_type,
     })
@@ -3104,13 +3157,13 @@ def intake_upload_init(token: str, body: IntakeUploadInit) -> dict:
 
 @app.post("/api/intake/{token}/upload/{upload_id}/chunk")
 async def intake_upload_chunk(token: str, upload_id: str, chunk: UploadFile) -> dict:
-    _active_intake_link(token)
+    _intake_link_for_upload(token)
     return await uploads.append_chunk(upload_id, chunk)
 
 
 @app.post("/api/intake/{token}/upload/{upload_id}/complete")
 def intake_upload_complete(token: str, upload_id: str) -> dict:
-    practitioner_id, link = _active_intake_link(token)
+    practitioner_id, link = _intake_link_for_upload(token)
     path, meta = uploads.finish(upload_id)
     try:
         return _save_uploaded_file(
@@ -3977,7 +4030,47 @@ def _save_uploaded_file(
             logging.warning("client file chunk/embed failed for %r (client %s): %s",
                             filename, client_id, exc)
 
+        # An uploaded test result used to only surface on the Intake & Files
+        # tab, a dead end a practitioner wouldn't think to check when
+        # reviewing the client's Record — a lab panel is clinical data, not
+        # just an attachment. Flagged by a cheap keyword heuristic over the
+        # already-extracted text rather than another LLM call per upload;
+        # the full text is still searchable in detail via the per-client
+        # RAG above, so this entry only needs to be a short pointer, same
+        # shape as every other 'lab' entry in recent_labs
+        # (app/patient/context.py).
+        if _looks_like_lab_result(extracted_text):
+            try:
+                excerpt = " ".join(extracted_text.split())[:400]
+                vault.add_entry(
+                    practitioner_id, client_id, "lab",
+                    f"{filename} (uploaded test result): {excerpt}",
+                )
+            except Exception as exc:
+                logging.warning("auto lab-entry creation failed for %r (client %s): %s",
+                                filename, client_id, exc)
+
     return saved_row
+
+
+_LAB_RESULT_MARKERS = (
+    "reference range", "reference interval", "normal range", "out of range",
+    "specimen", "collected", "lab report", "laboratory report", "test result",
+    "panel", "mg/dl", "ng/ml", "miu/l", "iu/l", "mmol/l", "umol/l", "pg/ml",
+    "cells/mcl", "10^3/ul", "10^6/ul",
+)
+
+
+def _looks_like_lab_result(text: str | None) -> bool:
+    """A deliberately cheap heuristic, not a classifier call per upload —
+    looks for the vocabulary a real lab report almost always has (units,
+    reference ranges, specimen/collection language). Two independent hits
+    is the bar: one alone is too easy for an ordinary document to trip
+    (e.g. a single stray "panel")."""
+    if not text:
+        return False
+    lowered = text.lower()
+    return sum(1 for marker in _LAB_RESULT_MARKERS if marker in lowered) >= 2
 
 
 def _serve_uploaded_file(practitioner_id: str, file_id: str, client_id: str | None) -> FileResponse:

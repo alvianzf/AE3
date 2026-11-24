@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { PUBLIC_API_BASE } from '$env/static/public';
-	import { post, del } from '$lib/api';
+	import { get, post, del } from '$lib/api';
 	import { toast } from '$lib/stores/toast';
 	import Icon from '$lib/components/Icon.svelte';
 	import Button from '$lib/components/Button.svelte';
@@ -18,6 +18,76 @@
 
 	function fileUrl(f: any) {
 		return `${PUBLIC_API_BASE}/api/me/clients/${data.client.id}/files/${f.id}`;
+	}
+
+	// --- Journey redesign: the client page is the hub, not one of several
+	// equal-weight destinations. One status, one primary next action —
+	// instead of six flat tabs with no sense of "what do I do next" and
+	// no way to even start a consult without leaving this page entirely
+	// (found live: Consult and Clients were two disconnected lists; to
+	// talk to a client you had to leave their page and re-find them in a
+	// separate one). ------------------------------------------------------
+	let links = $state<any[]>(data.links ?? []);
+	const finalReport = $derived(
+		(data.documents ?? []).find((d: any) => d.kind === 'client_report' && d.status === 'final')
+	);
+	const hasAnySession = $derived((data.sessions ?? []).length > 0);
+	const hasQuestionnaireResponse = $derived(!!data.intake?.response);
+	const openQuestionnaireLink = $derived(
+		links.find((l: any) => l.kind === 'questionnaire' && l.status !== 'submitted')
+	);
+	const status = $derived.by(() => {
+		if (finalReport) return {
+			label: 'Client Report ready', detail: 'Finalized — download the PDF and send it to your client.',
+			cta: 'Open report', href: `/practitioner/consult?client=${data.client.id}&session=${finalReport.session_id}&pane=doc&kind=client_report`
+		};
+		if (hasAnySession) return {
+			label: 'Consult in progress', detail: 'No report finalized yet.',
+			cta: 'Continue consult', href: `/practitioner/consult?client=${data.client.id}`
+		};
+		if (hasQuestionnaireResponse) return {
+			label: 'Ready for consult', detail: 'Questionnaire received — nothing scheduled yet.',
+			cta: 'Start consult', href: `/practitioner/consult?client=${data.client.id}`
+		};
+		if (openQuestionnaireLink) return {
+			label: 'Awaiting response', detail: 'A questionnaire link was sent and not yet submitted.',
+			cta: null
+		};
+		return {
+			label: 'No questionnaire sent', detail: 'Send one to get started with this client.',
+			cta: 'Send a questionnaire', action: () => { active = 'intake'; showSendPicker = true; }
+		};
+	});
+
+	// "Send a questionnaire" directly from this page — used to mean
+	// leaving the client entirely, going to the separate Questionnaires
+	// page, and re-finding this same client in a dropdown there.
+	let showSendPicker = $state(false);
+	let selectedQuestionnaireId = $state('');
+	let sendingQuestionnaire = $state(false);
+	const followupQuestionnaires = $derived((data.questionnaires ?? []).filter((q: any) => q.kind === 'followup'));
+	async function sendQuestionnaire() {
+		if (!selectedQuestionnaireId) return;
+		sendingQuestionnaire = true;
+		try {
+			const result = await post(fetch, `/me/questionnaires/${selectedQuestionnaireId}/links`, {
+				client_id: data.client.id
+			});
+			links = [result, ...links];
+			showSendPicker = false;
+			toast('Questionnaire link created — copy it from the list below.');
+		} catch (err: any) {
+			toast(err.message, 'alert');
+		} finally {
+			sendingQuestionnaire = false;
+		}
+	}
+	function linkUrl(l: any) {
+		return `${window.location.origin}/intake/${l.token}`;
+	}
+	async function copyLinkUrl(l: any) {
+		await navigator.clipboard.writeText(linkUrl(l));
+		toast('Link copied.');
 	}
 
 	let uploadLinkUrl = $state('');
@@ -71,6 +141,10 @@
 				files = [saved, ...files];
 			}
 			toast('File uploaded.');
+			// A file recognized as a test result auto-creates a Record entry
+			// (app/main.py's _looks_like_lab_result) — reload Record so it
+			// shows up without a manual page refresh.
+			entries = await get(fetch, `/me/clients/${data.client.id}/entries`).catch(() => entries);
 		} catch (err: any) {
 			toast(err.message || 'Could not upload the file.', 'alert');
 		} finally {
@@ -195,6 +269,18 @@
 	<p><strong>{data.client.name}</strong> — {data.client.email}</p>
 	<p class="hint">{data.client.country ?? 'Country not set'} · DOB {data.client.dob ?? 'not set'}</p>
 
+	<div class="status-banner">
+		<div class="status-text">
+			<div class="status-label">{status.label}</div>
+			<p class="hint status-detail">{status.detail}</p>
+		</div>
+		{#if status.cta && status.href}
+			<Button href={status.href}>{status.cta}</Button>
+		{:else if status.cta && status.action}
+			<Button onclick={status.action}>{status.cta}</Button>
+		{/if}
+	</div>
+
 	<div class="tabbar">
 		<Tabs bind:active tabs={[
 			{ id: 'overview', label: 'Overview' },
@@ -247,19 +333,36 @@
 		{/if}
 	{:else if active === 'intake'}
 		<div class="rail-section"><h2>Intake Links</h2>
-			<Button variant="outlined" onclick={createUploadLink} loading={creatingUploadLink}>Get upload link</Button>
+			<div class="link-actions">
+				<Button variant="outlined" onclick={() => (showSendPicker = !showSendPicker)}>Send a questionnaire</Button>
+				<Button variant="outlined" onclick={createUploadLink} loading={creatingUploadLink}>Get upload link</Button>
+			</div>
+			{#if showSendPicker}
+				<div class="send-picker">
+					{#if !followupQuestionnaires.length}
+						<p class="hint">No follow-up questionnaires yet — create one on the <a href="/practitioner/questionnaires">Questionnaires</a> page first.</p>
+					{:else}
+						<Select label="Questionnaire" bind:value={selectedQuestionnaireId}
+							options={followupQuestionnaires.map((q: any) => ({ value: q.id, label: q.title }))} />
+						<Button onclick={sendQuestionnaire} loading={sendingQuestionnaire} disabled={!selectedQuestionnaireId}>Create link</Button>
+					{/if}
+				</div>
+			{/if}
 			{#if uploadLinkUrl}
 				<p class="hint link-text">{uploadLinkUrl} <button type="button" class="copy-btn" onclick={copyUploadLink}>Copy</button></p>
 			{/if}
-			{#if !data.links?.length}
+			{#if !links.length}
 				<p class="hint">No links sent yet.</p>
 			{:else}
 				<ul class="list doc-list">
-					{#each data.links as l (l.token)}
+					{#each links as l (l.token)}
 						<li>
 							{l.kind === 'upload' ? 'Upload link' : 'Questionnaire link'}
 							<span class="pill" class:final={l.status === 'submitted'}>{l.status === 'submitted' ? 'Submitted' : 'Open'}</span>
 							<span class="hint">{l.created_at ?? ''}</span>
+							{#if l.status !== 'submitted'}
+								<button type="button" class="copy-btn" onclick={() => copyLinkUrl(l)}>Copy link</button>
+							{/if}
 						</li>
 					{/each}
 				</ul>
@@ -296,6 +399,19 @@
 							<span class="pill" class:final={d.status === 'final'}>{d.status === 'final' ? 'Final' : 'Draft'}</span>
 							<span class="hint">{d.session_title ?? ''} · {d.updated_at ?? ''}</span>
 						</li>
+					{/each}
+				</ul>
+			{/if}
+		</div>
+		<div class="rail-section">
+			<h2>Uploaded files</h2>
+			<p class="hint">Labs, reports, or anything attached directly to this client — uploaded from Intake & Files.</p>
+			{#if !files.length}
+				<p class="hint">No files uploaded yet.</p>
+			{:else}
+				<ul class="list">
+					{#each files as f (f.id)}
+						<li><a href={fileUrl(f)} target="_blank" rel="noopener">{f.original_name}</a> <span class="hint">{f.uploaded_at ?? ''}</span></li>
 					{/each}
 				</ul>
 			{/if}
@@ -350,7 +466,21 @@
 </div></div>
 
 <style>
+	.status-banner {
+		display: flex; align-items: center; justify-content: space-between; gap: var(--space-4);
+		margin-top: var(--space-4); padding: var(--space-4); border: 1px solid var(--line);
+		border-radius: var(--r-lg); background: var(--accent-soft);
+	}
+	.status-label { font-weight: 700; color: var(--accent-ink); font-size: var(--text-base); }
+	.status-detail { margin: .2rem 0 0; }
 	.tabbar { margin: var(--space-4) 0; }
+	.link-actions { display: flex; gap: var(--space-3); flex-wrap: wrap; margin-bottom: var(--space-3); }
+	.send-picker {
+		display: flex; align-items: flex-end; gap: var(--space-3); flex-wrap: wrap;
+		padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--r); background: var(--panel-2);
+		margin-bottom: var(--space-3);
+	}
+	.send-picker :global(.field) { flex: 1 1 14rem; }
 	.rail-section { margin-bottom: var(--space-5); }
 	.intake-panel { padding: var(--space-4); border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--panel-2); margin-bottom: var(--space-5); }
 	.intake-answers { margin-top: var(--space-3); }

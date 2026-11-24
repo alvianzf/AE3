@@ -2,15 +2,16 @@
 	import { onMount, onDestroy, tick } from 'svelte';
 	import { page } from '$app/state';
 	import { replaceState } from '$app/navigation';
-	import { get, post } from '$lib/api';
+	import { get, post, put } from '$lib/api';
 	import { streamConsult, type RetrievalMode } from '$lib/consultStream';
+	import { streamDocumentDraft } from '$lib/documentStream';
 	import { toast } from '$lib/stores/toast';
 	import TextField from '$lib/components/TextField.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import Chip from '$lib/components/Chip.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
-	import { renderAnswerHtml } from '$lib/markdown';
+	import { renderAnswerHtml, resolveCitationsForDocument } from '$lib/markdown';
 	import DocumentPane from '$lib/components/consult/DocumentPane.svelte';
 
 	let { data } = $props();
@@ -174,10 +175,64 @@
 		}
 	}
 
+	// Keeps the clinician note/client report in sync with the consult as it
+	// happens, instead of only drafting on an explicit "Ask AI" click — a
+	// full redraft (not an append) after every answered turn, same prompt
+	// path generate_session_document() already uses to "revise or extend"
+	// a prior draft. Fire-and-forget from the caller: a redraft failing
+	// (a flaky LLM call) must never surface as if the consult turn itself
+	// failed, so errors are swallowed here, same reasoning as the other
+	// best-effort background work in this app (chunk/embed on upload, etc).
+	let autoRedrafting = $state(false);
+	// Set by DocumentPane (bind:dirty) from the moment the practitioner
+	// makes a real manual edit until it's saved.
+	let docDirty = $state(false);
+	async function autoRedraftDocument() {
+		// A finalized document is a deliberate sign-off — auto-redraft must
+		// never silently overwrite it. The practitioner reopens it as a
+		// draft (DocumentPane's Finalize toggle) to resume auto-updates.
+		// A dirty (mid-edit, unsaved) document is skipped too — applying a
+		// fresh draft over it would discard whatever the practitioner is
+		// in the middle of typing.
+		if (!sessionId || autoRedrafting || docDirty || documents[docKind]?.status === 'final') return;
+		autoRedrafting = true;
+		try {
+			let text = '';
+			let sources: any[] = [];
+			for await (const ev of streamDocumentDraft(clientId, sessionId, docKind)) {
+				if (ev.event === 'result') {
+					text = ev.text;
+					sources = ev.sources;
+				}
+			}
+			if (!text) return;
+			const html = resolveCitationsForDocument(text, sources);
+			const saved = await put(
+				fetch,
+				`/me/clients/${clientId}/sessions/${sessionId}/documents/${docKind}`,
+				{ content: html, status: documents[docKind]?.status ?? 'draft' }
+			);
+			documents[docKind] = saved;
+		} catch {
+			/* best-effort — the practitioner can still draft manually via
+			   Ask AI, and the next turn tries again. */
+		} finally {
+			autoRedrafting = false;
+		}
+	}
+
 	async function selectClient(id: string) {
 		if (asking || clientId === id) return;
+		// Picking a client no longer auto-starts a session (and its real
+		// AI-briefing call) — that's now an explicit "Start new session" CTA
+		// in the empty chat pane, so opening a client's record for a reason
+		// other than consulting (e.g. just checking their history) doesn't
+		// spend an LLM call and create a session row nobody asked for.
 		clientId = id;
-		await initSession(id);
+		sessionId = '';
+		turns = [];
+		initialSummary = null;
+		documents = { ...EMPTY_DOCUMENTS };
 	}
 
 	async function newChat() {
@@ -199,9 +254,10 @@
 		clientId = qClient ?? '';
 		if (qSession && qClient) {
 			await loadSession(qSession);
-		} else if (qClient) {
-			await initSession(qClient);
 		}
+		// A deep link that names a client but no session lands on the same
+		// "start a new session" CTA as picking the client manually — no
+		// auto-init here either.
 		// Deep-link from the client detail page's document list
 		// (?pane=doc&kind=clinician_note) straight into the document pane.
 		if (page.url.searchParams.get('pane') === 'doc') activePane = 'doc';
@@ -209,21 +265,13 @@
 		if (qKind === 'clinician_note' || qKind === 'client_report') docKind = qKind;
 	});
 
-	// A client switch always starts a new conversation — carrying the old
-	// session forward into a different client's context would be a real
-	// safety issue, not a nicety. Compares against the *previous* value
-	// rather than an "initialized" flag so this can't race onMount's async
-	// deep-link history fetch above (whichever finishes first, the very
-	// first observed clientId never counts as a "switch"). Also (re)loads
-	// this client's history list, including on that first run.
-	let lastClientId = '';
+	// Keeps the session history list in sync with whichever client is
+	// selected — no longer auto-starts a session on switch (that's the
+	// explicit "Start new session" CTA now); carrying the old session
+	// forward into a different client's context would be a real safety
+	// issue regardless, so selectClient above already clears it.
 	$effect(() => {
-		const id = clientId;
-		if (lastClientId && id !== lastClientId && id && !sessionId) {
-			initSession(id);
-		}
-		lastClientId = id;
-		loadSessions(id);
+		loadSessions(clientId);
 	});
 
 	// Keeps the URL in sync with which client/session is open, so a refresh
@@ -388,12 +436,16 @@
 		for (;;) {
 			if (sessionId) {
 				await loadSession(sessionId);
-				if (turns.length > priorTurnCount) return;
+				if (turns.length > priorTurnCount) {
+					void autoRedraftDocument();
+					return;
+				}
 			} else {
 				await loadSessions(clientId);
 				const found = sessions.find((s) => !priorSessionIds.has(s.id));
 				if (found) {
 					await loadSession(found.id);
+					void autoRedraftDocument();
 					return;
 				}
 			}
@@ -468,6 +520,7 @@
 					sessionId = ev.session_id;
 					turns = [...turns, { question: askedQuestion, asked_at: askedAt, answered_at: new Date().toISOString(), ...ev }];
 					loadSessions(clientId);
+					void autoRedraftDocument();
 				} else if (ev.event === 'error') {
 					gotError = true;
 					failRunningSteps();
@@ -727,9 +780,16 @@
 							</div>
 						{/if}
 					</div>
+				{:else if !sessionId}
+					<div class="empty-state">
+						<Icon name="new-chat" size={28} />
+						<p>No session started yet</p>
+						<p class="hint">Start a new session to begin consulting {selectedClient?.name}, or pick a past one from History on the left.</p>
+						<Button type="button" onclick={() => initSession(clientId)}>Start new session</Button>
+					</div>
 				{/if}
 
-				{#if !turns.length && !pendingQuestion && !loadingSummary}
+				{#if sessionId && !turns.length && !pendingQuestion && !loadingSummary}
 					<div class="start-prompt">
 						<p class="hint">Consultation session active. Ask a question about {selectedClient?.name} or explore clinical findings below.</p>
 					</div>
@@ -822,7 +882,7 @@
 		{#if sessionId}
 			<DocumentPane
 				{clientId} {sessionId} bind:kind={docKind} {documents} {turns}
-				bind:focusMode
+				bind:focusMode bind:dirty={docDirty}
 				logoUrl={data.profile?.logo_path ?? null}
 				practitionerName={data.profile?.name ?? ''}
 				practitionerLocation={(data.profile?.specialties ?? []).join(', ')}

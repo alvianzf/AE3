@@ -25,6 +25,12 @@
 	let submitted = $state(data.state === 'submitted');
 	let uploadedFiles = $state<string[]>([]);
 	let uploading = $state(false);
+	// A questionnaire-kind link's submit already marks it "submitted" (the
+	// one-time flip) — but for an 'initial' questionnaire that's also the
+	// moment the client record is first created, so it's the earliest point
+	// a document can be attached at all. This stage shows an upload step
+	// right after a successful submit, before the final confirmation.
+	let stage = $state<'form' | 'attach' | 'done'>('form');
 
 	let isHydrating = true;
 	// Hydrates once per token rather than reactively on every change to
@@ -128,7 +134,7 @@
 		submitting = true;
 		try {
 			await post(fetch, `/intake/${data.token}/submit`, { answers: answersForSave() });
-			submitted = true;
+			stage = 'attach';
 		} catch (err: any) {
 			toast(err.message || 'Could not submit this form.', 'alert');
 		} finally {
@@ -173,6 +179,14 @@
 		} finally {
 			submitting = false;
 		}
+	}
+
+	// Questionnaire-kind links already called /submit once, in
+	// submitQuestionnaire — this just closes out the local "attach
+	// documents" step, no second submit call (the link is already marked
+	// submitted and a second call would 410).
+	function finishAttach() {
+		submitted = true;
 	}
 </script>
 
@@ -222,6 +236,21 @@
 				{/if}
 				<button class="submit-btn" onclick={finishUpload} disabled={submitting || !uploadedFiles.length}>
 					{submitting ? 'Finishing…' : 'Done'}
+				</button>
+			{:else if q && stage === 'attach'}
+				<h1>Attach any documents</h1>
+				<p class="hint">Lab results, previous reports, anything that'll help your practitioner — optional.</p>
+				<label class="upload-btn">
+					{uploading ? 'Uploading…' : 'Choose files'}
+					<input type="file" multiple onchange={onFilesPicked} disabled={uploading} hidden />
+				</label>
+				{#if uploadedFiles.length}
+					<ul class="file-list">
+						{#each uploadedFiles as name}<li>{name}</li>{/each}
+					</ul>
+				{/if}
+				<button class="submit-btn" onclick={finishAttach} disabled={uploading}>
+					{uploadedFiles.length ? 'Done' : 'Skip'}
 				</button>
 			{:else if q}
 				<h1>{q.title}</h1>

@@ -22,6 +22,13 @@
 		documents,
 		turns,
 		focusMode = $bindable(false),
+		// True from the moment a real keystroke/insert happens until that
+		// edit is saved — the consult page's auto-redraft-after-each-turn
+		// feature checks this before overwriting editor content, so it
+		// never clobbers an edit the practitioner is in the middle of
+		// making (found live: an auto-redraft landing mid-keystroke would
+		// otherwise silently discard unsaved text).
+		dirty = $bindable(false),
 		logoUrl,
 		practitionerName,
 		practitionerLocation,
@@ -33,6 +40,7 @@
 		documents: Record<Kind, { content: string; status: string } | null>;
 		turns: any[];
 		focusMode?: boolean;
+		dirty?: boolean;
 		logoUrl: string | null;
 		practitionerName: string;
 		practitionerLocation: string;
@@ -59,6 +67,7 @@
 		content: '',
 		onUpdate: () => {
 			if (isHydrating) return;
+			dirty = true;
 			savingState = 'pending';
 			clearTimeout(saveTimer);
 			saveTimer = setTimeout(() => void saveDocument(), 1800);
@@ -93,6 +102,7 @@
 			);
 			documents[kind] = saved;
 			savingState = 'saved';
+			dirty = false;
 		} catch {
 			savingState = 'error';
 		}
