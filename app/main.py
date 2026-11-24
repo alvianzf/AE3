@@ -3726,11 +3726,26 @@ def me_download_document_pdf(client_id: str, session_id: str, kind: str,
     logo_html = ""
     logo_path = practitioner.get("logo_path")
     if logo_path:
-        logo_file = Path(cfg.photos_path) / logo_path
+        # logo_path is stored as the URL path _save_logo() returns
+        # ("/photos/<file>"), not a bare filename — joining that directly
+        # onto cfg.photos_path silently discards cfg.photos_path entirely
+        # (pathlib's `/` operator treats a leading-"/" right operand as
+        # absolute and resets to it), so logo_file always pointed at a
+        # nonexistent path at the filesystem root and the logo never
+        # rendered. Path(...).name strips it down to just the filename.
+        logo_file = Path(cfg.photos_path) / Path(logo_path).name
         if logo_file.is_file():
             mime = mimetypes.guess_type(logo_file.name)[0] or "image/png"
             encoded = base64.b64encode(logo_file.read_bytes()).decode("ascii")
-            logo_html = f'<img class="logo" src="data:{mime};base64,{encoded}">'
+            # Inline style, not a class — logo_html is only ever used inside
+            # the page HEADER template below, which Chromium renders in an
+            # isolated context with no access to this file's own <style>
+            # block (confirmed live: the image was silently never painted
+            # at all with only a class name and no size of its own).
+            logo_html = (
+                f'<img src="data:{mime};base64,{encoded}" '
+                f'style="max-height:40px; max-width:150px; object-fit:contain; display:block;">'
+            )
 
     practitioner_name = html.escape(practitioner.get("name") or "")
     client_name = html.escape(client["name"]) if client and client.get("name") else ""
