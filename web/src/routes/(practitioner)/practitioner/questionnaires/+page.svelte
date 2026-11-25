@@ -254,10 +254,10 @@
 
 <div class="pane-row"><div class="detail-pane"><div class="detail-head"><div class="head-title"><span class="head-ico"><Icon name="clipboard" size={16} /></span><h1>Intake</h1></div><div class="head-actions">{@render actions()}</div></div>
 	{#snippet actions()}
-		<Button variant="filled" onclick={openCreate}><Icon name="plus" size={15} />New questionnaire</Button>
+		<Button variant="filled" onclick={openCreate}><Icon name="plus" size={15} />New intake form</Button>
 	{/snippet}
 	<p class="hint">
-		Any of your questionnaires can be sent to a client — use "Get link" on the one you want.
+		Any of your intake forms can be sent to a client — use "Get link" on the one you want.
 		Your clients see the site default only until you create your own.
 	</p>
 	<label class="archived-toggle">
@@ -267,7 +267,7 @@
 	<DataTable
 		columns={[{ key: 'title', label: 'Title', sortable: true }, { key: 'owner', label: 'Owner' }, { key: 'kind', label: 'Kind' }, { key: 'version', label: 'Version' }, { key: 'actions', label: '' }]}
 		rows={(data.questionnaires ?? []).filter((q: any) => showArchived || !q.archived)}
-		empty="You haven't created a questionnaire yet — your clients see the site default until you do."
+		empty="You haven't created an intake form yet — your clients see the site default until you do."
 	>
 		{#snippet row(q: any)}
 			<td>{q.title}{#if q.archived}<span class="pill archived">Archived</span>{/if}</td>
@@ -294,7 +294,7 @@
 	</DataTable>
 </div></div>
 
-<Dialog bind:open title={viewOnly ? title : editingId ? 'Edit questionnaire' : 'New questionnaire'} wide>
+<Dialog bind:open title={viewOnly ? title : editingId ? 'Edit intake form' : 'New intake form'} wide>
 	{#if viewOnly}
 		<p class="hint">The site default — read-only. Create your own above to override it for your clients.</p>
 	{/if}
@@ -363,7 +363,7 @@
 		{/if}
 
 		{#if editingId && !viewOnly}
-			<p class="hint">Saving updates this questionnaire directly. If a client has already submitted a response to it, saving creates a new version instead, so that response stays correctly interpretable.</p>
+			<p class="hint">Saving updates this intake form directly. If a client has already submitted a response to it, saving creates a new version instead, so that response stays correctly interpretable.</p>
 		{/if}
 	</form>
 	{#snippet footer()}
@@ -389,7 +389,7 @@
 			</select>
 		</div>
 	{:else}
-		<p class="hint">This is a "new intake" questionnaire — the link isn't tied to any existing client. Submitting it creates one.</p>
+		<p class="hint">This is a "new intake" form — the link isn't tied to any existing client. Submitting it creates one.</p>
 	{/if}
 	{#if linkUrl}
 		<div class="link-row">

@@ -345,12 +345,12 @@
 				{/if}
 			</div>
 		{:else}
-			<p class="hint">No questionnaire response yet.</p>
+			<p class="hint">No intake response yet.</p>
 		{/if}
 	{:else if active === 'intake'}
 		<div class="rail-section"><h2>Intake Links</h2>
 			<div class="link-actions">
-				<Button variant="outlined" onclick={() => (showSendPicker = !showSendPicker)}>Send a questionnaire</Button>
+				<Button variant="outlined" onclick={() => (showSendPicker = !showSendPicker)}>Send an intake form</Button>
 				<Button variant="outlined" onclick={createUploadLink} loading={creatingUploadLink}>Get upload link</Button>
 			</div>
 			{#if showSendPicker}
