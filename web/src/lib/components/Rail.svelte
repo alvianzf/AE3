@@ -20,10 +20,10 @@
 	}
 
 	let {
-		items, onCommandPalette, userLabel,
+		items, onCommandPalette, onAskLibrary, userLabel,
 		showSwitcher = false, switcherTo = 'practitioner'
 	}: {
-		items: NavItem[]; onCommandPalette?: () => void; userLabel?: string;
+		items: NavItem[]; onCommandPalette?: () => void; onAskLibrary?: () => void; userLabel?: string;
 		showSwitcher?: boolean; switcherTo?: 'admin' | 'practitioner';
 	} = $props();
 
@@ -141,6 +141,11 @@
 	{#if onCommandPalette}
 		<button class="search-trigger" onclick={onCommandPalette} title="Search (⌘K)">
 			<Icon name="search" size={15} /><span class="lbl">Search…</span><kbd>⌘K</kbd>
+		</button>
+	{/if}
+	{#if onAskLibrary}
+		<button class="search-trigger ask-library-trigger" onclick={onAskLibrary} title="Ask the Library — general questions, no client data">
+			<Icon name="book" size={15} /><span class="lbl">Ask the Library</span>
 		</button>
 	{/if}
 
@@ -281,6 +286,17 @@
 				<Icon name="search" size={15} />
 				<span class="lbl">Search everything…</span>
 				<kbd>⌘K</kbd>
+			</button>
+		{/if}
+		{#if onAskLibrary}
+			<button
+				type="button"
+				class="drawer-search-btn"
+				onclick={() => { closeDrawer(); onAskLibrary(); }}
+				aria-label="Ask the Library"
+			>
+				<Icon name="book" size={15} />
+				<span class="lbl">Ask the Library</span>
 			</button>
 		{/if}
 

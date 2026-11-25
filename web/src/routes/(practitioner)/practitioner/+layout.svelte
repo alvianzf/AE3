@@ -4,6 +4,8 @@
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import Tour from '$lib/components/Tour.svelte';
 	import DisclaimerBar from '$lib/components/DisclaimerBar.svelte';
+	import AskLibraryModal from '$lib/components/AskLibraryModal.svelte';
+	import { askLibrary } from '$lib/stores/askLibrary.svelte';
 	import { get } from '$lib/api';
 	import { PRO_FEATURES } from '$lib/proFeatures';
 
@@ -77,11 +79,18 @@
 <Tour steps={tourSteps} bind:active={tourActive} />
 
 <div class="app-shell portal portal-practitioner">
-	<Rail {items} onCommandPalette={openPalette} userLabel={data.profile?.name}
-		showSwitcher={data.session?.role === 'admin'} switcherTo="admin" />
+	<Rail {items} onCommandPalette={openPalette} onAskLibrary={isPro ? () => askLibrary.open() : undefined}
+		userLabel={data.profile?.name} showSwitcher={data.session?.role === 'admin'} switcherTo="admin" />
 	<main class="portal-main">
 		{@render children()}
 	</main>
 </div>
 {#if showDisclaimer}<DisclaimerBar />{/if}
+<!-- Mounted once here, not per-page — reachable from the Rail's global
+     button on every practitioner page, and from the dashboard's own
+     compact preview card; both drive the same shared askLibrary store
+     (web/src/lib/stores/askLibrary.svelte.ts), so the conversation is
+     identical regardless of where it was opened from. Pro-gated same as
+     the backend route (auth.require_pro_practitioner). -->
+{#if isPro}<AskLibraryModal />{/if}
 
