@@ -41,7 +41,7 @@
 				</button>
 			</div>
 			<div class="al-thread" bind:this={scrollEl}>
-				{#if !askLibrary.turns.length && !askLibrary.streamingAnswer}
+				{#if !askLibrary.turns.length && !askLibrary.streamingAnswer && !askLibrary.asking}
 					<p class="hint empty-text">Ask a question to get started.</p>
 				{/if}
 				{#each askLibrary.turns as t (t.id)}
@@ -104,8 +104,9 @@
 		z-index: 60; padding: var(--space-4);
 	}
 	.al-modal {
-		width: min(42rem, 100%); max-height: min(80vh, 46rem); display: flex; flex-direction: column;
-		background: var(--panel); border-radius: var(--r-lg); box-shadow: var(--shadow); overflow: hidden;
+		width: min(42rem, 100%); height: min(80vh, 36rem); max-height: min(80vh, 46rem);
+		display: flex; flex-direction: column; background: var(--panel); border-radius: var(--r-lg);
+		box-shadow: var(--shadow); overflow: hidden;
 	}
 	.al-modal-head {
 		display: flex; align-items: center; gap: .75rem; padding: var(--space-4) var(--space-5);
