@@ -229,6 +229,24 @@ def make_tool_fn(tools: AgenticTools):
     return _dispatch
 
 
+FINAL_ANSWER_SYSTEM = (
+    "You are a senior clinician writing the final answer to a practitioner's "
+    "question during a live consult. Evidence has already been gathered for "
+    "you below — do not search further, write the answer strictly from what's "
+    "given, verifying (and rewriting if needed) a draft another assistant "
+    "proposed from the same evidence.\n\n"
+    "Rules:\n"
+    "- Never fabricate — if the evidence doesn't directly and specifically "
+    "answer the question, say plainly that you don't have anything on it.\n"
+    "- `citations` must list every chunk_id you actually relied on, each "
+    "paired with the specific claim it supports — the literal fact it "
+    "backs, not a general topic match. Every clinical claim in "
+    "`answer_text` must have a matching citation.\n"
+    "- The draft is a starting point, not a source of truth — if it "
+    "overstates what the evidence actually supports, correct it rather "
+    "than repeating the overstatement."
+)
+
 _ZERO_USAGE = {"input_tokens": 0, "output_tokens": 0}
 
 
@@ -250,17 +268,27 @@ def run(question: str, patient: PatientContext, min_grade: int,
     entry point (scripts/shadow_eval_agentic.py) — not called from
     app/main.py's consult route in this cut.
 
+    Two-tier by design, not one model doing both jobs: the search/decide
+    loop runs on Role.ANSWER_ENGINE (the cheap, fast tier this codebase's
+    other per-hop judgments already use), and only the final answer write
+    pays for Role.REASONER — found live in this session's first shadow
+    eval: running every turn, including simple "search again or stop"
+    decisions, on Opus-tier made the loop slower than the pipeline it's
+    meant to replace. This mirrors the existing pipeline's own economics
+    (cheap per-hop judge, one expensive final write), not a new idea.
+
     `chunk_texts` is built from the tool-call trace itself — exactly what
-    the model actually saw, not a separate re-fetch — so
-    app/reasoning/citation_gate.py's check runs against the same evidence
-    the agent had, never a possibly-drifted later read of the same chunk.
+    the search loop actually saw, not a separate re-fetch — so both the
+    final-answer call below and app/reasoning/citation_gate.py's check run
+    against the same evidence, never a possibly-drifted later read of the
+    same chunk.
     """
     tools = AgenticTools(
         patient=patient, min_grade=min_grade, weights=weights or {},
         accessible_private_ids=accessible_private_ids or set(), folder=folder, topic=topic,
     )
     prompt = f"Patient context:\n{patient.as_query_text()}\n\nQuestion: {question}"
-    submit, trace, usage = get_client(Role.REASONER).chat_agentic(
+    draft, trace, search_usage = get_client(Role.ANSWER_ENGINE).chat_agentic(
         AGENTIC_SYSTEM, prompt, TOOLS, make_tool_fn(tools), max_turns=max_turns,
     )
     chunk_texts: dict[str, str] = {}
@@ -269,12 +297,26 @@ def run(question: str, patient: PatientContext, min_grade: int,
             cid = r.get("chunk_id")
             if cid and r.get("text"):
                 chunk_texts[cid] = r["text"]
-    if submit is None:
+    if draft is None:
         return AgenticResult(
             answer_text=None, citations=[], trace=trace, chunk_texts=chunk_texts,
-            turns_used=max_turns, usage=usage,
+            turns_used=max_turns, usage=search_usage,
         )
+    evidence_block = "\n\n".join(f"[{cid}] {text}" for cid, text in chunk_texts.items()) \
+        or "(no evidence was gathered)"
+    final_prompt = (
+        f"Patient context:\n{patient.as_query_text()}\n\n"
+        f"Question: {question}\n\n"
+        f"Evidence gathered by search:\n{evidence_block}\n\n"
+        f"Draft answer proposed from this evidence: {draft.get('answer_text', '')}"
+    )
+    final, final_usage = get_client(Role.REASONER).chat_json(
+        FINAL_ANSWER_SYSTEM, final_prompt, _SUBMIT_ANSWER_SCHEMA, max_tokens=20_000)
+    usage = {
+        "input_tokens": search_usage.get("input_tokens", 0) + final_usage.get("input_tokens", 0),
+        "output_tokens": search_usage.get("output_tokens", 0) + final_usage.get("output_tokens", 0),
+    }
     return AgenticResult(
-        answer_text=submit.get("answer_text", ""), citations=submit.get("citations") or [],
+        answer_text=final.get("answer_text", ""), citations=final.get("citations") or [],
         trace=trace, chunk_texts=chunk_texts, turns_used=len(trace) + 1, usage=usage,
     )

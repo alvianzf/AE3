@@ -54,8 +54,21 @@ def _run_current_pipeline(question: str, patient, min_grade: int) -> dict:
 def _run_agentic_pipeline(question: str, patient, min_grade: int, max_turns: int) -> dict:
     t0 = time.monotonic()
     result = agentic.run(question, patient, min_grade, max_turns=max_turns)
-    grounding = check_grounding(result.citations, result.chunk_texts)
     latency = time.monotonic() - t0
+    if result.answer_text is None:
+        # Found live, this session's first eval run: check_grounding([], {})
+        # correctly returns "pass" for an answer with no claims to check —
+        # but the eval was reusing that same "pass" when the loop hit
+        # max_turns with NO answer at all (citations=[] either way), which
+        # printed as a clean success for a run that actually produced
+        # nothing. Distinct verdict so this failure mode is never silently
+        # indistinguishable from a real pass.
+        return {
+            "answer_text": None, "documents": [], "latency_s": round(latency, 1),
+            "turns_used": result.turns_used, "grounding_verdict": "no_answer_produced",
+            "flagged": [],
+        }
+    grounding = check_grounding(result.citations, result.chunk_texts)
     documents = sorted({
         entry["output"].get("document_id")
         for entry in result.trace
