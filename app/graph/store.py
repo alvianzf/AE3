@@ -1172,6 +1172,39 @@ def node_type(node: dict) -> str:
     return node.get("type") or "unknown type"
 
 
+def neighbors_by_embedding(chunk_id: str, top_k: int) -> list[dict]:
+    """Nearest chunks to a given chunk's own stored embedding — the
+    agentic retrieval loop's find_similar tool (app/retrieval/agentic.py)
+    uses this to reach a related passage in a different document, the
+    same connectivity an Entity-hop was providing, without touching the
+    Entity graph at all. Excludes the chunk itself from its own results.
+    Returns [] for an unknown chunk_id rather than raising — a tool call
+    on a stale/mistaken id should come back empty, not crash the loop."""
+    with session() as s:
+        rec = s.run(
+            "MATCH (c:Chunk {id: $id}) RETURN c.embedding AS embedding", id=chunk_id,
+        ).single()
+        if not rec or rec["embedding"] is None:
+            return []
+        recs = s.run(
+            """
+            CALL db.index.vector.queryNodes('chunk_embedding', $top_k, $embedding)
+            YIELD node AS c, score
+            WHERE c.id <> $chunk_id
+            MATCH (doc:Document)-[:HAS_CHUNK]->(c)
+            RETURN c.id AS id, c.text AS text, c.chunk_index AS chunk_index,
+                   c.page_start AS page_start, c.page_end AS page_end,
+                   doc.id AS document_id, doc.title AS document_title,
+                   doc.grade AS grade, coalesce(doc.is_private, false) AS is_private,
+                   coalesce(doc.folder_path, '') AS folder_path,
+                   coalesce(doc.topics, []) AS topics, score
+            ORDER BY score DESC
+            """,
+            embedding=rec["embedding"], top_k=top_k + 1, chunk_id=chunk_id,
+        )
+        return [dict(r) for r in recs][:top_k]
+
+
 def entities_mentioned_by_chunks(chunk_ids: list[str]) -> list[dict]:
     """The Entity nodes a set of chunks mentions — used to seed the
     traversal frontier with entity points alongside the seed chunks

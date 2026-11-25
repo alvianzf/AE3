@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import Callable
 
 from openai import OpenAI
 
@@ -233,6 +234,100 @@ class LLMClient:
         except Exception:
             pass
         return text, usage
+
+    def chat_agentic(self, system: str, prompt: str, tools: list[dict],
+                     tool_fn: Callable[[str, dict], dict], max_turns: int = 6,
+                     extra_body: dict | None = None) -> tuple[dict | None, list[dict], dict]:
+        """ReAct-style loop: the model picks a tool each turn, tool_fn(name,
+        input) executes it and the result goes back as the next turn's
+        input, repeating until the model calls the terminal "submit_answer"
+        tool or max_turns is exhausted. Returns (submit_answer_input, trace,
+        usage) — submit_answer_input is None if max_turns was hit with no
+        terminal call (the caller decides how to handle that, same as any
+        other "didn't get a usable answer" case). `trace` is
+        [{"tool": name, "input": input, "output": output}, ...] — the full
+        audit-trail/trajectory-logging record, one entry per actual tool
+        call, in order.
+
+        `tools` is the provider-neutral shape app/retrieval/agentic.py
+        defines ({"name", "description", "input_schema"}, Anthropic's own
+        naming used as the shared shape) — translated to OpenAI's
+        {"type": "function", "function": {...}} wire format here so
+        nothing outside clients/ needs to know which provider it's
+        talking to, same reasoning every other method on this class
+        already follows.
+
+        Bounded by max_turns as this loop's own circuit breaker, same
+        reasoning app/retrieval/traversal.py's max_depth already documents
+        for the old hop loop — a model that never calls submit_answer must
+        not hang the caller indefinitely. Each turn is still individually
+        bounded by _CHAT_TIMEOUT_SECONDS, same as chat_json/chat_text.
+        """
+        import json
+
+        openai_tools = [
+            {"type": "function", "function": {
+                "name": t["name"], "description": t["description"], "parameters": t["input_schema"],
+            }}
+            for t in tools
+        ]
+        messages: list[dict] = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": prompt},
+        ]
+        trace: list[dict] = []
+        total_usage = dict(input_tokens=0, output_tokens=0)
+
+        for _turn in range(max_turns):
+            response = self._client.with_options(timeout=_CHAT_TIMEOUT_SECONDS).chat.completions.create(
+                model=self.model, max_tokens=20_000, messages=messages,
+                tools=openai_tools, extra_body=extra_body,
+            )
+            usage = self._usage(response)
+            total_usage["input_tokens"] += usage["input_tokens"]
+            total_usage["output_tokens"] += usage["output_tokens"]
+            choice = response.choices[0].message
+            if not choice.tool_calls:
+                # A model that answers in plain text instead of calling a
+                # tool gets one nudge rather than silently losing the turn
+                # — a real failure shape some tool-calling models show
+                # when they "forget" the terminal tool exists partway
+                # through a long loop.
+                messages.append({"role": "assistant", "content": choice.content or ""})
+                messages.append({"role": "user", "content": "Call a tool — search for more "
+                                 "evidence, or submit_answer if you have enough."})
+                continue
+            messages.append({"role": "assistant", "content": choice.content,
+                             "tool_calls": [tc.model_dump() for tc in choice.tool_calls]})
+            for tc in choice.tool_calls:
+                name = tc.function.name
+                try:
+                    tool_input = json.loads(tc.function.arguments)
+                except json.JSONDecodeError:
+                    tool_input = {}
+                if name == "submit_answer":
+                    self._record_usage(total_usage)
+                    return tool_input, trace, total_usage
+                try:
+                    output = tool_fn(name, tool_input)
+                except Exception as exc:
+                    # A tool execution error (a bad id, an unavailable
+                    # store) must come back to the model as a tool result
+                    # it can react to — reformulate, try another tool — not
+                    # an unhandled exception that kills the whole loop over
+                    # one bad call.
+                    output = {"error": str(exc)}
+                trace.append({"tool": name, "input": tool_input, "output": output})
+                messages.append({"role": "tool", "tool_call_id": tc.id, "content": json.dumps(output)})
+        self._record_usage(total_usage)
+        return None, trace, total_usage
+
+    def _record_usage(self, usage: dict) -> None:
+        try:
+            from app.token_tracker import record_tokens
+            record_tokens(self.role, usage.get("input_tokens", 0), usage.get("output_tokens", 0), self.model)
+        except Exception:
+            pass
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         if not texts:

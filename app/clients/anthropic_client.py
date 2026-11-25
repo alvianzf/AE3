@@ -13,6 +13,9 @@ know which provider they're talking to — see llm_client.get_client().
 """
 from __future__ import annotations
 
+import json
+from typing import Callable
+
 from anthropic import Anthropic
 
 from ..config import get_config
@@ -183,6 +186,79 @@ class AnthropicLLMClient:
         except Exception:
             pass
         return text, usage
+
+    def chat_agentic(self, system: str, prompt: str, tools: list[dict],
+                     tool_fn: Callable[[str, dict], dict], max_turns: int = 6,
+                     extra_body: dict | None = None) -> tuple[dict | None, list[dict], dict]:
+        """See llm_client.LLMClient.chat_agentic's docstring — same
+        contract, Anthropic's native multi-turn tool-use shape instead of
+        OpenAI's. `tools` already matches Anthropic's own
+        {"name", "description", "input_schema"} shape (that's why
+        app/retrieval/agentic.py's TOOLS uses this naming as the shared,
+        provider-neutral shape), so no translation is needed here, unlike
+        the OpenAI-compatible side.
+
+        tool_choice is left at its default ("auto"), unlike chat_json's
+        forced single tool_use — the whole point of this loop is letting
+        the model decide whether it needs another tool call or is ready
+        to submit_answer. Thinking is left enabled for Role.REASONER
+        (this method's only real caller), same reasoning chat_text
+        already gives — the model benefits from reasoning about whether
+        it has enough evidence, this isn't a fixed-format extraction call.
+        """
+        anthropic_tools = [
+            {"name": t["name"], "description": t["description"], "input_schema": t["input_schema"]}
+            for t in tools
+        ]
+        messages: list[dict] = [{"role": "user", "content": prompt}]
+        trace: list[dict] = []
+        total_usage = dict(input_tokens=0, output_tokens=0)
+        kwargs = {} if self.role.value == "reasoner" else {"thinking": {"type": "disabled"}}
+
+        for _turn in range(max_turns):
+            response = self._client.messages.create(
+                model=self.model, max_tokens=self._clamp(20_000),
+                system=_cacheable_system(system), messages=messages,
+                tools=anthropic_tools, **kwargs,
+            )
+            usage = self._usage(response)
+            total_usage["input_tokens"] += usage["input_tokens"]
+            total_usage["output_tokens"] += usage["output_tokens"]
+            tool_uses = [b for b in response.content if b.type == "tool_use"]
+            if not tool_uses:
+                # Same nudge llm_client.LLMClient.chat_agentic gives a
+                # model that answered in plain text instead of calling a
+                # tool — see that docstring.
+                messages.append({"role": "assistant", "content": response.content})
+                messages.append({"role": "user", "content": "Call a tool — search for more "
+                                 "evidence, or submit_answer if you have enough."})
+                continue
+            messages.append({"role": "assistant", "content": response.content})
+            tool_results = []
+            for block in tool_uses:
+                if block.name == "submit_answer":
+                    self._record_usage(total_usage)
+                    return block.input, trace, total_usage
+                try:
+                    output = tool_fn(block.name, block.input)
+                except Exception as exc:
+                    # Same reasoning as llm_client.LLMClient.chat_agentic —
+                    # a tool execution error must reach the model as a
+                    # reactable tool result, not kill the loop.
+                    output = {"error": str(exc)}
+                trace.append({"tool": block.name, "input": block.input, "output": output})
+                tool_results.append({"type": "tool_result", "tool_use_id": block.id,
+                                     "content": json.dumps(output)})
+            messages.append({"role": "user", "content": tool_results})
+        self._record_usage(total_usage)
+        return None, trace, total_usage
+
+    def _record_usage(self, usage: dict) -> None:
+        try:
+            from app.token_tracker import record_tokens
+            record_tokens(self.role, usage.get("input_tokens", 0), usage.get("output_tokens", 0), self.model)
+        except Exception:
+            pass
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         raise NotImplementedError(

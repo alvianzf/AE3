@@ -299,6 +299,33 @@ def ensure_schema() -> None:
                     "UPDATE admins SET role = 'superadmin' WHERE id = %s",
                     (oldest["id"],))
         conn.executescript(_pattern_schema_ddl())
+        conn.executescript(_trajectory_schema_ddl())
+
+
+def _trajectory_schema_ddl() -> str:
+    """Continual-learning log for agentic retrieval (app/retrieval/
+    agentic.py) — the raw record every run writes from day one of
+    shadow-mode traffic, per the architecture decision doc's "turn on
+    continual learning from day one of real traffic," well before any
+    ranking-boost logic gets built on top of it. Deliberately just a log
+    table in this cut — no affinity/ranking table yet; building that
+    before there's real data to design it against would be exactly the
+    speculative abstraction this isn't worth doing yet."""
+    return """
+        CREATE TABLE IF NOT EXISTS retrieval_trajectories (
+            id TEXT PRIMARY KEY,
+            created_at TEXT NOT NULL,
+            question TEXT NOT NULL,
+            tool_calls_json TEXT NOT NULL,
+            cited_document_ids_json TEXT NOT NULL,
+            turns_used INTEGER NOT NULL,
+            grounding_verdict TEXT NOT NULL,
+            total_latency_s REAL NOT NULL,
+            pipeline TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS retrieval_trajectories_by_created
+            ON retrieval_trajectories(created_at);
+        """
 
 
 def _pattern_schema_ddl() -> str:
@@ -376,6 +403,26 @@ def search_clinical_patterns(query_embedding: list, top_k: int = 5) -> list[dict
             (_pattern_vec_literal(query_embedding), _pattern_vec_literal(query_embedding), top_k),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def save_retrieval_trajectory(*, question: str, tool_calls: list[dict],
+                              cited_document_ids: list[str], turns_used: int,
+                              grounding_verdict: str, total_latency_s: float,
+                              pipeline: str) -> None:
+    """One row per agentic-retrieval run (app/retrieval/agentic.py), from
+    day one of shadow-mode traffic — the raw material any future
+    continual-learning ranking boost gets built from, not the boost
+    itself (none exists yet; see _trajectory_schema_ddl's docstring)."""
+    with core_connection() as conn:
+        conn.execute(
+            "INSERT INTO retrieval_trajectories "
+            "(id, created_at, question, tool_calls_json, cited_document_ids_json, "
+            "turns_used, grounding_verdict, total_latency_s, pipeline) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (str(uuid.uuid4()), _now(), question, json.dumps(tool_calls),
+             json.dumps(cited_document_ids), turns_used, grounding_verdict,
+             total_latency_s, pipeline),
+        )
 
 
 def log(actor: str, action: str, detail: str) -> None:
