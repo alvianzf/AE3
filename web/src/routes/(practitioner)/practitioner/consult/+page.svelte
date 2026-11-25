@@ -147,11 +147,39 @@
 			turns = [];
 			documents = { ...EMPTY_DOCUMENTS };
 			await loadSessions(id);
+			pollForAutoDraft(id, sessionId);
 		} catch (err: any) {
 			toast(err?.message || 'Could not start consultation session.', 'alert');
 		} finally {
 			clearBriefingTimers();
 			loadingSummary = false;
+		}
+	}
+
+	// _auto_draft_session_documents runs in a backend BackgroundTasks job,
+	// well after /sessions/init already returned — found live, 2026-11-26:
+	// the document pane stayed permanently blank for a practitioner who
+	// started a session and simply stayed on the page, because nothing
+	// ever re-fetched once the background drafting finished. Polls the
+	// session a few times with backoff; stops early if the practitioner
+	// has since switched to a different session (sessionId changed) or a
+	// turn has already been asked (autoRedraftDocument will keep both
+	// documents current from here on, so this poll's job is done).
+	async function pollForAutoDraft(clientIdAtStart: string, sessionIdAtStart: string) {
+		const delaysMs = [3000, 3000, 5000, 5000, 10000];
+		for (const delay of delaysMs) {
+			await new Promise((r) => setTimeout(r, delay));
+			if (sessionId !== sessionIdAtStart || turns.length) return;
+			try {
+				const s = await get(fetch, `/me/clients/${clientIdAtStart}/sessions/${sessionIdAtStart}`);
+				if (sessionId !== sessionIdAtStart) return;
+				if (s.documents?.clinician_note || s.documents?.client_report) {
+					documents = s.documents;
+					return;
+				}
+			} catch {
+				return;
+			}
 		}
 	}
 
