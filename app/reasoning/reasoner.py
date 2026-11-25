@@ -501,12 +501,26 @@ def _flatten_and_remap(turns: list[dict]) -> tuple[list[dict], list[str]]:
 def generate_session_document(
     kind: str, turns: list[dict], prior_document: str | None = None,
     instruction: str | None = None, pattern_context: str | None = None,
+    patient_context_text: str | None = None, patient_history_text: str | None = None,
 ) -> tuple[str, dict, list[dict]]:
-    """Drafts a clinician_note or client_report from this session's consult
-    turns. No deterministic fallback, unlike generate_consult_intake_summary
-    above — there's no sane non-LLM substitute for freeform drafting, so
-    (like summarize_session) this lets openai.APIError propagate to the
-    caller's route rather than swallowing it.
+    """Drafts a clinician_note or client_report. No deterministic fallback,
+    unlike generate_consult_intake_summary above — there's no sane non-LLM
+    substitute for freeform drafting, so (like summarize_session) this lets
+    openai.APIError propagate to the caller's route rather than swallowing
+    it.
+
+    `patient_context_text` (patient.as_query_text()) and
+    `patient_history_text` (format_deterministic_consult_summary's output
+    over vault.get_patient_history_up_to — every lab/condition/prior-
+    session on file, uncapped, chronological) were found live, 2026-11-25,
+    to be completely missing from this function: a practitioner asking the
+    drafter to "go through all blood panels and generate a comparative
+    table" got back "no clinical interpretation is possible" because
+    `turns` alone (this session's own chat Q&A, often empty — drafting is
+    frequently the first thing a practitioner does in a session) was the
+    *only* clinical content this function ever saw. Both are optional
+    (every existing caller/test keeps working unchanged) but the route
+    should always supply them now — see app/main.py's me_draft_document.
 
     Returns (markdown_text, usage, sources) — `sources` is the flattened,
     renumbered list the [1]/[2] markers in `markdown_text` refer to, in
@@ -534,10 +548,22 @@ def generate_session_document(
     # a source of fact about THIS client, so it's kept clearly separate
     # from the consultation/sources blocks above rather than merged in.
     pattern_block = f"\n\n{pattern_context}" if pattern_context else ""
+    patient_block = f"\n\nPatient context:\n{patient_context_text}" if patient_context_text else ""
+    # Comes last and is labeled for exactly what it's for — a request that
+    # spans more than this one session (trends, a comparative table across
+    # dated panels, "what's still open") has to be answered from this, not
+    # from convo_block above, which only ever covers THIS session's chat.
+    history_block = (
+        f"\n\nFull patient clinical history on file (every lab, condition, "
+        f"and prior session recorded for this client — use this for any "
+        f"request spanning multiple sessions or asking about trends across "
+        f"dated panels):\n{patient_history_text}"
+        if patient_history_text else ""
+    )
     prompt = (
         f"Consultation so far:\n{convo_block}\n\n"
         f"Numbered sources behind that consultation:\n{source_block}"
-        f"{prior_block}{instruction_block}{pattern_block}"
+        f"{prior_block}{instruction_block}{pattern_block}{patient_block}{history_block}"
     )
     text, usage = get_client(Role.REASONER).chat_text(
         _DOCUMENT_SYSTEM[kind], prompt, max_tokens=100_000, extra_body=_NO_THINKING)

@@ -4023,6 +4023,18 @@ def me_draft_document(client_id: str, session_id: str, kind: str, body: Document
     if patient is not None:
         load_relevant_documents(patient, practitioner_id, body.instruction or kind)
     patient_context_text = patient.as_query_text() if patient else ""
+    # Found live, 2026-11-25: generate_session_document() below never
+    # received either of these — a drafting request that spans more than
+    # this one session's own chat turns (e.g. "go through all blood panels
+    # and generate a comparative table") had literally nothing to draw on
+    # and correctly refused to fabricate a table, which looked like total
+    # failure rather than the missing-data issue it actually was. Reuses
+    # the same uncapped, chronological history
+    # generate_consult_intake_summary's deterministic fallback already
+    # builds — no new data-gathering path, just wiring it to a function
+    # that was missing it.
+    history_data = vault.get_patient_history_up_to(practitioner_id, client_id, vault._now())
+    patient_history_text = reasoner.format_deterministic_consult_summary(history_data, vault._now())
     # Pooled, de-identified patterns from other consultations across the
     # whole platform (app/clinical_patterns.py) — best-effort, never
     # blocks drafting if the library has nothing relevant yet or the
@@ -4040,7 +4052,8 @@ def me_draft_document(client_id: str, session_id: str, kind: str, body: Document
             yield _sse({"event": "agent_start", "agent": "reasoner"})
             t0 = time.monotonic()
             text, usage, sources = reasoner.generate_session_document(
-                kind, turns, prior_content, body.instruction, pattern_context)
+                kind, turns, prior_content, body.instruction, pattern_context,
+                patient_context_text, patient_history_text)
             yield _sse({"event": "agent_done", "agent": "reasoner",
                        "duration_s": round(time.monotonic() - t0, 2), **usage})
 
