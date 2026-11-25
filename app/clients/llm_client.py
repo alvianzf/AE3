@@ -40,6 +40,15 @@ _PROVIDER_SETTING_KEY = "llm_provider"
 # stall into a clean, fast openai.APIError instead of an indefinite hang.
 _CHAT_TIMEOUT_SECONDS = 90.0
 
+# embed() had no timeout at all until found live, 2026-11-25: with a
+# dedicated embedding deployment unreachable, a request/consult/library-
+# chat call hung indefinitely on a raw socket read instead of failing
+# with a clean error — the same failure mode _CHAT_TIMEOUT_SECONDS above
+# already exists to prevent, just never applied here. 30s is generous
+# for an embedding call (far cheaper than a generation call) while still
+# turning a genuine stall into a fast openai.APIError.
+_EMBED_TIMEOUT_SECONDS = 30.0
+
 # Disables hidden reasoning for every model family this app has hit so
 # far — moonshotai/Kimi-K3's "thinking" costs 30-120s+ per call with no
 # visible quality difference on this app's prompts (found live,
@@ -388,7 +397,8 @@ class LLMClient:
     def embed(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
-        response = self._client.embeddings.create(model=self.model, input=texts)
+        response = self._client.with_options(timeout=_EMBED_TIMEOUT_SECONDS).embeddings.create(
+            model=self.model, input=texts)
         try:
             from app.token_tracker import record_tokens
             est_tokens = sum(max(1, len(t.split()) * 2) for t in texts)
