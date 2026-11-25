@@ -6,6 +6,7 @@ per-hop relevance judging at query time) is deliberately cheap and fast.
 """
 from __future__ import annotations
 
+import html
 import json
 import logging
 import re
@@ -503,6 +504,48 @@ _DOCUMENT_SYSTEM = {
 
 # Same bracket-group shape renderAnswerHtml (web/src/lib/markdown.ts)
 # turns into clickable citation buttons.
+_HTML_CITE_SUP = re.compile(r'<sup[^>]*class="cite"[^>]*>(\d+)</sup>', re.IGNORECASE)
+_HTML_STRONG = re.compile(r"<(?:strong|b)[^>]*>(.*?)</(?:strong|b)>", re.IGNORECASE | re.DOTALL)
+_HTML_HEADING = re.compile(r"<h([1-6])[^>]*>(.*?)</h\1>", re.IGNORECASE | re.DOTALL)
+_HTML_LI = re.compile(r"<li[^>]*>(.*?)</li>", re.IGNORECASE | re.DOTALL)
+_HTML_BR = re.compile(r"<br\s*/?>", re.IGNORECASE)
+_HTML_P_BREAK = re.compile(r"</p>\s*<p[^>]*>", re.IGNORECASE)
+_HTML_TAG = re.compile(r"<[^>]+>")
+
+
+def _html_to_markdown_lite(raw_html: str) -> str:
+    """Reverses the HTML a saved document is actually stored as (either
+    the TipTap editor's own resolved citations — web/src/lib/markdown.ts's
+    resolveCitationsForDocument — or app/main.py's _markdown_lite_to_html
+    for the session-start auto-draft) back into plain markdown, before
+    showing it to the model as "existing draft to revise or extend".
+
+    Found live, 2026-11-25, on a real practitioner's real document:
+    passing raw stored HTML straight into the prompt (what this function
+    replaces) confused the model into echoing fragments of HTML structure
+    verbatim instead of writing fresh markdown — orphaned headings with no
+    body text, a duplicated References section — because every other part
+    of this prompt (and the instruction to write in Markdown) told it to
+    produce one format while its own "prior self" appeared in a different
+    one. The corruption compounds: each regeneration's confused output
+    becomes the next regeneration's even more confusing "existing draft".
+
+    Not a full HTML parser — handles exactly the tags this app's own
+    document-rendering path produces, nothing more."""
+    if not raw_html:
+        return raw_html
+    text = raw_html
+    text = _HTML_CITE_SUP.sub(lambda m: f"[{m.group(1)}]", text)
+    text = _HTML_STRONG.sub(lambda m: f"**{m.group(1)}**", text)
+    text = _HTML_HEADING.sub(lambda m: f"\n\n{'#' * int(m.group(1))} {m.group(2)}\n", text)
+    text = _HTML_LI.sub(lambda m: f"\n- {m.group(1)}", text)
+    text = _HTML_BR.sub(" ", text)
+    text = _HTML_P_BREAK.sub("\n\n", text)
+    text = _HTML_TAG.sub("", text)
+    text = html.unescape(text)
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
 _CITE_GROUP = re.compile(r"\[(\d+(?:\s*,\s*\d+)*)\]")
 
 
@@ -590,7 +633,8 @@ def generate_session_document(
         for t, a in zip(turns, remapped_answers)
     ) or "(no turns recorded in this consultation yet)"
     prior_block = (
-        f"\n\nExisting draft to revise or extend:\n{prior_document}" if prior_document else ""
+        f"\n\nExisting draft to revise or extend:\n{_html_to_markdown_lite(prior_document)}"
+        if prior_document else ""
     )
     instruction_block = (
         f"\n\nSpecific instruction from the practitioner: {instruction}" if instruction else ""
