@@ -153,9 +153,32 @@ def answer(question: str, patient: PatientContext, traversal: TraversalResult,
 
 
 SUMMARY_SYSTEM = (
-    "Write a short session summary for a patient's clinical record: what was "
-    "asked, what the assistant advised, and anything the next practitioner should "
-    "know. Three or four sentences, plain clinical prose, no headings."
+    "Write a structured session summary for a patient's clinical record — "
+    "this is read by the next practitioner before a future consultation, and "
+    "feeds the opening-briefing generator (generate_consult_intake_summary) "
+    "that every later session's 'big picture' view is built from. It must "
+    "carry every finding a future session would need, not a vague gloss — "
+    "found live: a thin 3-4 sentence summary left nothing for a multi-session "
+    "client's cross-session briefing to actually synthesize from.\n\n"
+    "Structure in Markdown with these sections, omitting one entirely only "
+    "if it genuinely has nothing to report:\n"
+    "## Key findings\n"
+    "Every flagged or clinically significant marker/result discussed this "
+    "session, each with its value and why it matters — every flagged "
+    "marker, not a representative sample of them.\n"
+    "## Hypotheses discussed\n"
+    "Every clinical hypothesis or working theory raised, even a tentative "
+    "one, stated specifically (what it is, not just that one was raised).\n"
+    "## Action plan\n"
+    "Every concrete recommendation, protocol, or next step agreed or "
+    "proposed this session.\n"
+    "## Follow-up needed\n"
+    "Anything still open — a pending retest, an unanswered question, a "
+    "thing the next session should check.\n\n"
+    "Terse and specific — a bullet per item, not a paragraph restating the "
+    "conversation. Every claim must come from what was actually discussed "
+    "in the transcript below, never filled in from general clinical "
+    "knowledge."
 )
 
 
@@ -261,10 +284,21 @@ def format_deterministic_consult_summary(history_data: dict, consultation_point:
             # before it). A real "session_summary" entry is already short
             # (written by the Summariser); only it goes through, hard-capped
             # as a second line of defense.
+            #
+            # Cap raised from 400 to 3000 (found live, 2026-11-25: a
+            # multi-session client's prior summaries were being cut to one
+            # line, discarding the flagged-markers/hypotheses/action-plan
+            # structure SUMMARY_SYSTEM now produces, which is exactly the
+            # content a later "big picture" briefing needs) — this feeds an
+            # LLM prompt, not a UI field, so token cost is the only real
+            # constraint; 3000 covers a full structured summary for
+            # several sessions without ballooning the prompt.
             s_summary = s.get("summary") or f"{s.get('turns', 0)} turn(s) recorded"
-            if len(s_summary) > 400:
-                s_summary = s_summary[:400].rstrip() + "…"
-            lines.append(f"- **{s_date} — {s_title}**: {s_summary}")
+            if len(s_summary) > 3000:
+                s_summary = s_summary[:3000].rstrip() + "…"
+            lines.append(f"- **{s_date} — {s_title}**:")
+            for summary_line in s_summary.splitlines():
+                lines.append(f"  {summary_line}")
     else:
         lines.append("No prior consultation sessions recorded before this consultation point.")
 

@@ -3384,6 +3384,21 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
         raise HTTPException(404, "no such consultation")
     if not session_id:
         now_ts = vault._now()
+        # Backfill any prior session that has real turns but was never
+        # summarized (the manual "Summarize" button on the client detail
+        # page is easy to forget — found live, 2026-11-25, on a real
+        # multi-session client where none of 5 prior sessions had ever
+        # been summarized, so this opening briefing had nothing but raw
+        # entry tags to draw from). Best-effort per session: one failure
+        # (a transient API error) must not block starting this new
+        # session over an unrelated prior one.
+        for prior in vault.list_sessions(practitioner_id, body.client_id):
+            if prior.get("turns") and not prior.get("summary"):
+                try:
+                    _summarize_and_save_session(practitioner_id, body.client_id, prior["id"])
+                except Exception:
+                    logging.exception(
+                        "auto-backfill session summary failed for session %s", prior["id"])
         history_data = vault.get_patient_history_up_to(practitioner_id, body.client_id, now_ts)
         init_summary = reasoner.generate_consult_intake_summary(history_data, now_ts)
         session_id = vault.create_session(
@@ -4102,20 +4117,17 @@ def me_get_session_asset(client_id: str, session_id: str, asset_id: str,
                         headers={"X-Content-Type-Options": "nosniff"})
 
 
-@app.post("/api/me/clients/{client_id}/sessions/{session_id}/summary")
-def me_summarize_session(client_id: str, session_id: str,
-                         session: dict = Depends(auth.require_pro_practitioner)) -> dict:
-    """Runs the Summariser (specs/v3/07-ai-team.md) — fully implemented since
-    v1 but never reachable from a route until now."""
-    practitioner_id = session["id"]
-    _owned_session(practitioner_id, client_id, session_id)
+def _summarize_and_save_session(practitioner_id: str, client_id: str, session_id: str) -> str:
+    """Shared by the manual /summary route below and the auto-backfill in
+    me_consult's new-session branch — runs the Summariser and persists its
+    result as a session_summary record_entry, same contract either way.
+    Factored out once a second call site needed it (found live, 2026-11-25:
+    a real multi-session client's opening briefing had nothing to
+    synthesize from because every one of her 5 prior sessions' summaries
+    was never generated — the manual button existed but nothing prompted
+    anyone to click it)."""
     transcript = vault.session_transcript(practitioner_id, session_id)
-    try:
-        summary = reasoner.summarize_session(transcript)
-    except openai.APIError as exc:
-        raise HTTPException(
-            502, "The AI service is temporarily unavailable. Try again shortly."
-        ) from exc
+    summary = reasoner.summarize_session(transcript)
     # Deterministic, not left to the Summariser's discretion: if any turn's
     # Checker verdict wasn't a clean 'pass', say so explicitly rather than
     # relying on the model to have carried it through from the transcript flag.
@@ -4126,6 +4138,22 @@ def me_summarize_session(client_id: str, session_id: str,
                     "relying on this summary.")
     vault.add_entry(practitioner_id, client_id, "session_summary", summary,
                      session_id=session_id)
+    return summary
+
+
+@app.post("/api/me/clients/{client_id}/sessions/{session_id}/summary")
+def me_summarize_session(client_id: str, session_id: str,
+                         session: dict = Depends(auth.require_pro_practitioner)) -> dict:
+    """Runs the Summariser (specs/v3/07-ai-team.md) — fully implemented since
+    v1 but never reachable from a route until now."""
+    practitioner_id = session["id"]
+    _owned_session(practitioner_id, client_id, session_id)
+    try:
+        summary = _summarize_and_save_session(practitioner_id, client_id, session_id)
+    except openai.APIError as exc:
+        raise HTTPException(
+            502, "The AI service is temporarily unavailable. Try again shortly."
+        ) from exc
     return {"summary": summary}
 
 
