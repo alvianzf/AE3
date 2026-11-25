@@ -32,7 +32,7 @@ from pathlib import Path
 
 import openai
 import neo4j.exceptions
-from fastapi import Depends, FastAPI, Form, HTTPException, Request, Response, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
@@ -51,7 +51,7 @@ from .graph import store
 from .ingestion import pipeline as ingestion_pipeline
 from .ingestion import queue as ingestion_queue
 from .patient.context import get_patient_context, load_relevant_documents
-from .reasoning import llm_checker, reasoner
+from .reasoning import clinical_state, llm_checker, reasoner
 from .retrieval import general_lookup, pgvector_store, seed_search
 from .retrieval.traversal import GraphTraversalRetriever, two_stage_discover
 
@@ -3170,7 +3170,7 @@ def _intake_link_for_upload(token: str) -> tuple[str, dict]:
 
 
 @app.post("/api/intake/{token}/upload")
-async def intake_upload_file(token: str, file: UploadFile) -> dict:
+async def intake_upload_file(token: str, file: UploadFile, background_tasks: BackgroundTasks) -> dict:
     """Direct, single-request upload for anything under
     _MAX_CLIENT_FILE_BYTES — for a larger file use the chunked routes
     below, the same split me_upload_file/me_file_upload_* already offer
@@ -3184,7 +3184,7 @@ async def intake_upload_file(token: str, file: UploadFile) -> dict:
             "via direct upload — use the chunked upload for a larger file.")
     filename = file.filename or "upload"
     return _save_uploaded_file(
-        practitioner_id, link["client_id"], filename, file.content_type or "", raw)
+        practitioner_id, link["client_id"], filename, file.content_type or "", raw, background_tasks)
 
 
 class IntakeUploadInit(BaseModel):
@@ -3208,12 +3208,13 @@ async def intake_upload_chunk(token: str, upload_id: str, chunk: UploadFile) -> 
 
 
 @app.post("/api/intake/{token}/upload/{upload_id}/complete")
-def intake_upload_complete(token: str, upload_id: str) -> dict:
+def intake_upload_complete(token: str, upload_id: str, background_tasks: BackgroundTasks) -> dict:
     practitioner_id, link = _intake_link_for_upload(token)
     path, meta = uploads.finish(upload_id)
     try:
         return _save_uploaded_file(
-            practitioner_id, link["client_id"], meta["filename"], meta["content_type"], path)
+            practitioner_id, link["client_id"], meta["filename"], meta["content_type"], path,
+            background_tasks)
     finally:
         uploads.cleanup(upload_id)
 
@@ -4253,7 +4254,7 @@ def me_list_entries(client_id: str,
 
 
 @app.post("/api/me/clients/{client_id}/entries")
-def me_add_entry(client_id: str, body: RecordEntryIn,
+def me_add_entry(client_id: str, body: RecordEntryIn, background_tasks: BackgroundTasks,
                  session: dict = Depends(auth.require_pro_practitioner)) -> dict:
     practitioner_id = session["id"]
     if vault.get_client(practitioner_id, client_id) is None:
@@ -4265,6 +4266,11 @@ def me_add_entry(client_id: str, body: RecordEntryIn,
     entry = vault.add_entry(practitioner_id, client_id, body.kind, body.content.strip())
     vault.log(practitioner_id, "practitioner", f"{body.kind} recorded",
               body.content[:120], client_id)
+    if body.kind == "lab":
+        # specs/v9/03 — backgrounded, never inline: the practitioner's
+        # "entry saved" response must not wait on an LLM extraction call,
+        # and a failed extraction must not look like a failed save.
+        background_tasks.add_task(clinical_state.update_lab_state, practitioner_id, client_id, entry)
     return entry
 
 
@@ -4281,7 +4287,7 @@ def me_delete_entry(client_id: str, entry_id: str,
 
 def _save_uploaded_file(
     practitioner_id: str, client_id: str, filename: str, content_type: str,
-    content: bytes | Path,
+    content: bytes | Path, background_tasks: BackgroundTasks,
 ) -> dict:
     """Shared by the direct-upload route and the chunked-upload complete
     step below — everything past receiving the bytes is identical.
@@ -4366,9 +4372,19 @@ def _save_uploaded_file(
         if category == "lab":
             try:
                 excerpt = " ".join(extracted_text.split())[:400]
-                vault.add_entry(
+                lab_entry = vault.add_entry(
                     practitioner_id, client_id, "lab",
                     f"{filename} (uploaded test result): {excerpt}",
+                )
+                # specs/v9/03 — extracted from the FULL text, not the
+                # 400-char excerpt above: a whole panel's worth of markers
+                # would otherwise be cut off before extraction ever saw
+                # them. The real entry id is kept as source_entry_id so
+                # client_clinical_state still traces back to the actual
+                # saved record_entries row, not this synthetic dict.
+                background_tasks.add_task(
+                    clinical_state.update_lab_state, practitioner_id, client_id,
+                    {"id": lab_entry["id"], "content": extracted_text},
                 )
             except Exception as exc:
                 logging.warning("auto lab-entry creation failed for %r (client %s): %s",
@@ -4439,7 +4455,7 @@ def me_download_client_file(client_id: str, file_id: str,
 
 
 @app.post("/api/me/clients/{client_id}/files")
-async def me_upload_client_file(client_id: str, file: UploadFile,
+async def me_upload_client_file(client_id: str, file: UploadFile, background_tasks: BackgroundTasks,
                                 session: dict = Depends(auth.require_pro_practitioner)) -> dict:
     """Direct upload of a document/lab/prior-session file straight onto a
     client's record — the only path before this was the client-facing
@@ -4459,7 +4475,7 @@ async def me_upload_client_file(client_id: str, file: UploadFile,
             "via direct upload — use the chunked upload for a larger file.")
     filename = file.filename or "upload"
     return _save_uploaded_file(
-        practitioner_id, client_id, filename, file.content_type or "", raw)
+        practitioner_id, client_id, filename, file.content_type or "", raw, background_tasks)
 
 
 class ClientFileUploadInit(BaseModel):
@@ -4487,7 +4503,7 @@ async def me_client_file_upload_chunk(client_id: str, upload_id: str, chunk: Upl
 
 
 @app.post("/api/me/clients/{client_id}/files/upload/{upload_id}/complete")
-def me_client_file_upload_complete(client_id: str, upload_id: str,
+def me_client_file_upload_complete(client_id: str, upload_id: str, background_tasks: BackgroundTasks,
                                    session: dict = Depends(auth.require_pro_practitioner)) -> dict:
     practitioner_id = session["id"]
     if vault.get_client(practitioner_id, client_id) is None:
@@ -4495,7 +4511,7 @@ def me_client_file_upload_complete(client_id: str, upload_id: str,
     path, meta = uploads.finish(upload_id)
     try:
         return _save_uploaded_file(
-            practitioner_id, client_id, meta["filename"], meta["content_type"], path)
+            practitioner_id, client_id, meta["filename"], meta["content_type"], path, background_tasks)
     finally:
         uploads.cleanup(upload_id)
 

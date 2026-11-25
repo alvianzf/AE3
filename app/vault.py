@@ -71,6 +71,33 @@ _SCHEMA_DDL = """
             );
             CREATE INDEX IF NOT EXISTS entries_by_client
                 ON record_entries(client_id, created_at);
+            -- specs/v9/03 — a living, bi-temporal view of a client's lab
+            -- markers, so a consult's opening briefing can read an
+            -- already-current trend ("ferritin falling for 4 tests")
+            -- instead of an LLM re-deriving it from raw record_entries on
+            -- every single consult. Disposable/rebuildable by design, never
+            -- the sole source of truth: record_entries stays authoritative,
+            -- and scripts/reconcile_clinical_state.py recomputes this table
+            -- from scratch to catch any drift. v1 scope is lab markers only
+            -- (app/reasoning/clinical_state.py) — condition/medication/
+            -- protocol entries are already atomic and don't need this.
+            CREATE TABLE IF NOT EXISTS client_clinical_state (
+                id TEXT PRIMARY KEY,
+                client_id TEXT NOT NULL REFERENCES clients(id),
+                label TEXT NOT NULL,
+                display_label TEXT NOT NULL,
+                value TEXT,
+                unit TEXT,
+                reference_range TEXT,
+                flag TEXT,
+                trend TEXT,
+                valid_from TEXT NOT NULL,
+                valid_to TEXT,
+                source_entry_id TEXT NOT NULL REFERENCES record_entries(id),
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS clinical_state_current
+                ON client_clinical_state(client_id, label) WHERE valid_to IS NULL;
             -- Audit of anything that touches a client. Kept here rather than in
             -- the core store because these rows carry clinical detail (the
             -- question asked, which client it was about), and that must not
@@ -447,6 +474,122 @@ def add_entry(practitioner_id: str, client_id: str, kind: str, content: str,
     return entry
 
 
+_CLINICAL_STATE_COLUMNS = (
+    "id, client_id, label, display_label, value, unit, reference_range, "
+    "flag, trend, valid_from, valid_to, source_entry_id, created_at"
+)
+
+
+def _parse_float(value: str | None) -> float | None:
+    if not value:
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+# A tolerance, not an exact-equality check — two draws of the same
+# genuinely stable marker rarely land on the identical float, and
+# reporting "falling" on noise would be worse than useless on a trend a
+# practitioner is expected to act on. 2% of the prior value, floor 0.01,
+# hardcoded per CLAUDE.md's "hardcode until there's a real reason to
+# configure it" — a single call site, no product request for a different
+# threshold yet.
+_TREND_TOLERANCE_FRACTION = 0.02
+
+
+def _compute_trend(old_value: str | None, new_value: str | None) -> str | None:
+    old_f, new_f = _parse_float(old_value), _parse_float(new_value)
+    if old_f is None or new_f is None:
+        return None
+    tolerance = max(abs(old_f) * _TREND_TOLERANCE_FRACTION, 0.01)
+    if new_f > old_f + tolerance:
+        return "rising"
+    if new_f < old_f - tolerance:
+        return "falling"
+    return "stable"
+
+
+def upsert_clinical_state_marker(
+    practitioner_id: str, client_id: str, *, label: str, value: str | None = None,
+    unit: str | None = None, reference_range: str | None = None,
+    flag: str | None = None, source_entry_id: str,
+) -> dict:
+    """One lab marker's current-value row, bi-temporally versioned —
+    specs/v9/03. `label` is canon()-normalized (app/graph/store.py — reused
+    rather than reinvented, it already resolves exactly this clinical-
+    term-aliasing problem, e.g. "serum ferritin" -> "ferritin") so the same
+    marker reported under slightly different wording across lab reports
+    still tracks as one trend, not two unrelated ones.
+
+    Deterministic — no LLM call in this function. The caller
+    (app/reasoning/clinical_state.py's update_lab_state, run in the
+    background after a lab entry is saved) already did the one LLM call
+    this marker needed, to extract it from free text in the first place."""
+    from .graph.store import canon
+    normalized = canon(label)
+    now = _now()
+    with vault_connection(practitioner_id) as conn:
+        current = conn.execute(
+            f"SELECT {_CLINICAL_STATE_COLUMNS} FROM client_clinical_state "
+            "WHERE client_id = %s AND label = %s AND valid_to IS NULL",
+            (client_id, normalized),
+        ).fetchone()
+        trend = _compute_trend(current["value"] if current else None, value)
+        if current:
+            conn.execute(
+                "UPDATE client_clinical_state SET valid_to = %s WHERE id = %s",
+                (now, current["id"]),
+            )
+        row = {
+            "id": str(uuid.uuid4()), "client_id": client_id, "label": normalized,
+            "display_label": label, "value": value, "unit": unit,
+            "reference_range": reference_range, "flag": flag, "trend": trend,
+            "valid_from": now, "valid_to": None, "source_entry_id": source_entry_id,
+            "created_at": now,
+        }
+        conn.execute(
+            f"INSERT INTO client_clinical_state ({_CLINICAL_STATE_COLUMNS}) "
+            f"VALUES (%(id)s, %(client_id)s, %(label)s, %(display_label)s, %(value)s, "
+            f"%(unit)s, %(reference_range)s, %(flag)s, %(trend)s, %(valid_from)s, "
+            f"%(valid_to)s, %(source_entry_id)s, %(created_at)s)",
+            row,
+        )
+    return row
+
+
+def get_clinical_state(practitioner_id: str, client_id: str) -> list[dict]:
+    """A client's current lab-marker trends — the "living state" read side.
+    Never the only place this data lives: record_entries (the raw lab
+    text) remains authoritative; this is a disposable, rebuildable
+    projection of it (scripts/reconcile_clinical_state.py rebuilds and
+    diffs it from scratch for exactly this reason)."""
+    with vault_connection(practitioner_id) as conn:
+        rows = conn.execute(
+            f"SELECT {_CLINICAL_STATE_COLUMNS} FROM client_clinical_state "
+            "WHERE client_id = %s AND valid_to IS NULL ORDER BY display_label",
+            (client_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def clinical_state_as_of(practitioner_id: str, client_id: str, cutoff: str) -> list[dict]:
+    """Same as get_clinical_state(), but strictly as of a point in time —
+    the same "nothing after consultation_point" contract
+    get_patient_history_up_to() already honors for every other query, so
+    a past session's reconstructed briefing stays reproducible rather
+    than silently picking up a marker recorded after that consult."""
+    with vault_connection(practitioner_id) as conn:
+        rows = conn.execute(
+            f"SELECT {_CLINICAL_STATE_COLUMNS} FROM client_clinical_state "
+            "WHERE client_id = %s AND valid_from <= %s "
+            "AND (valid_to IS NULL OR valid_to > %s) ORDER BY display_label",
+            (client_id, cutoff, cutoff),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def list_entries(practitioner_id: str, client_id: str) -> list[dict]:
     """A client's clinical record entries — conditions, medications, labs,
     and the older history/note kinds — for the practitioner-facing record
@@ -638,6 +781,17 @@ def get_patient_history_up_to(practitioner_id: str, client_id: str, consultation
             (client_id, consultation_point),
         ).fetchall()
 
+        # specs/v9/03 — the living lab-marker state, as of this consult
+        # point (not "right now"), same reproducibility contract every
+        # other query in this function already honors: a past session's
+        # briefing must not silently pick up a marker recorded later.
+        lab_state = conn.execute(
+            f"SELECT {_CLINICAL_STATE_COLUMNS} FROM client_clinical_state "
+            "WHERE client_id = %s AND valid_from <= %s "
+            "AND (valid_to IS NULL OR valid_to > %s) ORDER BY display_label",
+            (client_id, consultation_point, consultation_point),
+        ).fetchall()
+
     parsed_answers = {}
     if questionnaire and questionnaire["answers_json"]:
         try:
@@ -655,6 +809,7 @@ def get_patient_history_up_to(practitioner_id: str, client_id: str, consultation
             "answers": parsed_answers,
         } if questionnaire else None,
         "prior_sessions": [dict(s) for s in prior_sessions],
+        "lab_state": [dict(m) for m in lab_state],
     }
 
 

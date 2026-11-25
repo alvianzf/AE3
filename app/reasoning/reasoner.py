@@ -286,6 +286,23 @@ def format_deterministic_consult_summary(history_data: dict, consultation_point:
         f"- **Recent Labs & Diagnostics**: {'; '.join(labs) if labs else 'None recorded'}",
     ]
 
+    # specs/v9/03 — the living, bi-temporal lab-marker state
+    # (app/vault.py's client_clinical_state), additive to the raw labs
+    # line above, never a replacement for it: this is a disposable,
+    # rebuildable projection, not the source of truth. Only present once
+    # background extraction (app/reasoning/clinical_state.py) has run on
+    # at least one lab entry for this client — omitted entirely
+    # otherwise, same "don't pad with an empty section" rule every other
+    # optional block in this function already follows.
+    lab_state = history_data.get("lab_state") or []
+    if lab_state:
+        lines.append("- **Tracked Lab Marker Trends**:")
+        for m in lab_state:
+            trend = f", trending {m['trend']}" if m.get("trend") else ""
+            flag = f" [{m['flag'].upper()}]" if m.get("flag") not in (None, "in_range", "unknown") else ""
+            unit = f" {m['unit']}" if m.get("unit") else ""
+            lines.append(f"  - {m['display_label']}: {m.get('value', '')}{unit}{flag}{trend}")
+
     clinical_notes = []
     if legacy_notes:
         clinical_notes.extend(legacy_notes)
