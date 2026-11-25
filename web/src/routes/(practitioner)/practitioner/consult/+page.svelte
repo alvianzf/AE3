@@ -348,6 +348,14 @@
 	// answer exists) instead of waiting for the SSE stream's `result` event.
 	let pendingQuestion = $state('');
 	let steps = $state<{ agent: string; status: 'running' | 'done' | 'error'; input_tokens?: number; output_tokens?: number; duration_s?: number; progress?: string }[]>([]);
+	// The Reasoner's answer text as it streams in (answer_delta events) —
+	// shown live in place of the generic "Answering…" spinner, the same
+	// progressive-text experience GPT/Claude chat gives. Cleared once the
+	// terminal `result` event lands; that event's (possibly Checker-edited)
+	// text is what actually gets pushed into `turns`, not this — a brief
+	// settle at the end is the honest tradeoff for a safety check that has
+	// to run on the complete answer, not something streamable itself.
+	let streamingAnswer = $state('');
 	// Aborts the in-flight fetch if the practitioner navigates away mid-consult
 	// — see the note in consultStream.ts on what this does and doesn't stop
 	// server-side (specs/v4/04-known-issues.md#m4).
@@ -475,6 +483,7 @@
 		question = '';
 		asking = true;
 		steps = [];
+		streamingAnswer = '';
 		abortController = new AbortController();
 		let gotResult = false;
 		let gotError = false;
@@ -527,14 +536,18 @@
 							? { ...s, status: 'done', input_tokens: ev.input_tokens, output_tokens: ev.output_tokens, duration_s: ev.duration_s }
 							: s
 					);
+				} else if (ev.event === 'answer_delta') {
+					streamingAnswer += ev.text;
 				} else if (ev.event === 'result') {
 					gotResult = true;
 					sessionId = ev.session_id;
+					streamingAnswer = '';
 					turns = [...turns, { question: askedQuestion, asked_at: askedAt, answered_at: new Date().toISOString(), ...ev }];
 					loadSessions(clientId);
 					void autoRedraftBothDocuments();
 				} else if (ev.event === 'error') {
 					gotError = true;
+					streamingAnswer = '';
 					failRunningSteps();
 					toast(ev.message, 'alert');
 				}
@@ -563,6 +576,7 @@
 			clearInterval(stallWatch);
 			asking = false;
 			pendingQuestion = '';
+			streamingAnswer = '';
 			abortController = null;
 		}
 	}
@@ -872,6 +886,15 @@
 										<span class="hint">{s.progress ?? 'running…'}</span>
 									{/if}
 								</div>
+							</div>
+						{/if}
+						{#if streamingAnswer}
+							<!-- The answer as it's actually being written — replaces
+							     the "Answering…" dead air with real, growing content.
+							     Provisional: the result event above still settles this
+							     into `turns` with whatever text the Checker leaves. -->
+							<div class="bubble bubble-a streaming">
+								{@html renderAnswerHtml(streamingAnswer)}
 							</div>
 						{/if}
 					</div>

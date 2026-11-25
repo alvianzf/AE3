@@ -111,9 +111,13 @@ def _label(node: dict) -> str:
     return f"(entity, {store.node_type(node)}: {node.get('name', node.get('id'))})"
 
 
-def answer(question: str, patient: PatientContext, traversal: TraversalResult,
-          unsupported: list[str] | None = None, pattern_context: str | None = None) -> ReasonedAnswer:
-    """`unsupported` is only passed on the one bounded revision retry
+def _build_answer_prompt(question: str, patient: PatientContext, traversal: TraversalResult,
+                         unsupported: list[str] | None, pattern_context: str | None) -> str:
+    """Shared by answer() and answer_streaming() below — the exact same
+    prompt either way, the only difference is whether the Reasoner call
+    streams its text back or returns it all at once.
+
+    `unsupported` is only passed on the one bounded revision retry
     (mirrors the pre-existing Checker retry pattern) — the Checker's own
     list of sentences it couldn't ground in the accumulated context. The
     instruction is strictly "ground it or drop it": no new context is
@@ -142,14 +146,44 @@ def answer(question: str, patient: PatientContext, traversal: TraversalResult,
     # own clearly-labeled block rather than folded into the patient
     # context or knowledge-base context above.
     pattern_block = f"\n\n{pattern_context}" if pattern_context else ""
-    prompt = (
+    return (
         f"Patient context:\n{patient.as_query_text()}\n\n"
         f"Accumulated knowledge-base context:\n---\n{block}\n---\n\n"
         f"Practitioner's question: {question}{revision_block}{pattern_block}"
     )
+
+
+def answer(question: str, patient: PatientContext, traversal: TraversalResult,
+          unsupported: list[str] | None = None, pattern_context: str | None = None) -> ReasonedAnswer:
+    prompt = _build_answer_prompt(question, patient, traversal, unsupported, pattern_context)
     text, usage = get_client(Role.REASONER).chat_text(
         REASONER_SYSTEM, prompt, max_tokens=100_000, extra_body=_NO_THINKING)
     return ReasonedAnswer(text=text, usage=usage, citations=traversal.accumulated)
+
+
+def answer_streaming(question: str, patient: PatientContext, traversal: TraversalResult,
+                     unsupported: list[str] | None = None, pattern_context: str | None = None):
+    """Same prompt as answer() above, but streams the Reasoner's text as
+    it's generated — yields ("delta", text_chunk) for each chunk, then
+    exactly one ("done", ReasonedAnswer) at the end, same (kind, payload)
+    shape app/retrieval/traversal.py's retrieve_streaming() already uses.
+    Lets app/main.py's consult route forward real answer text to the
+    practitioner as it's written instead of only after the full ~20-40s
+    call completes — the answer is still re-checked by
+    app/reasoning/llm_checker.py exactly as before once streaming
+    finishes; nothing about the grounding/anti-fabrication guarantees
+    changes, only when the text first becomes visible."""
+    prompt = _build_answer_prompt(question, patient, traversal, unsupported, pattern_context)
+    parts: list[str] = []
+    usage = {"input_tokens": 0, "output_tokens": 0}
+    for kind, payload in get_client(Role.REASONER).chat_text_stream(
+        REASONER_SYSTEM, prompt, max_tokens=100_000, extra_body=_NO_THINKING):
+        if kind == "delta":
+            parts.append(payload)
+            yield "delta", payload
+        else:
+            usage = payload
+    yield "done", ReasonedAnswer(text="".join(parts), usage=usage, citations=traversal.accumulated)
 
 
 SUMMARY_SYSTEM = (

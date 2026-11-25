@@ -66,6 +66,33 @@ def _cacheable_system(system: str) -> list[dict]:
     return [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
 
 
+def _move_cache_breakpoint(messages: list[dict]) -> None:
+    """chat_agentic()'s multi-turn loop only: keeps exactly one 'growing
+    tail' cache breakpoint, on the last content block of the most recent
+    message, moved forward each turn rather than left stacking — the
+    second half of Anthropic's documented agent-loop caching pattern
+    (the first half, the system+tools prefix, is `_cacheable_system`'s own
+    permanent breakpoint). Clearing the previous turn's marker before
+    adding the new one keeps this to 2 breakpoints total for the whole
+    loop (system + tail), comfortably under Anthropic's 4-breakpoint
+    limit regardless of max_turns — stacking a new one every turn instead
+    would exceed it by turn 5.
+
+    Every message by the time this runs is already a plain dict with
+    `content` as a list of plain dict blocks (chat_agentic() builds them
+    that way specifically so this can mutate them) — this function would
+    silently no-op on an SDK response-block object, which has no
+    `cache_control` field to set, so that conversion has to happen first,
+    not here."""
+    for m in messages[:-1]:
+        content = m.get("content")
+        if isinstance(content, list) and content:
+            content[-1].pop("cache_control", None)
+    content = messages[-1].get("content")
+    if isinstance(content, list) and content:
+        content[-1] = {**content[-1], "cache_control": {"type": "ephemeral"}}
+
+
 class AnthropicLLMClient:
     def __init__(self, role, model: str):
         self.role = role
@@ -187,6 +214,28 @@ class AnthropicLLMClient:
             pass
         return text, usage
 
+    def chat_text_stream(self, system: str, prompt: str, max_tokens: int = 100_000,
+                         extra_body: dict | None = None):
+        """Same contract as llm_client.LLMClient.chat_text_stream — see
+        that docstring. Thinking is left at its model default for
+        Role.REASONER (this method's only real caller), same reasoning
+        chat_text already gives; the SDK's `text_stream` helper yields
+        only real text-block deltas, never a thinking block's own delta
+        text, so a thinking pass (if one runs) never leaks into the
+        answer the practitioner sees streaming in."""
+        kwargs = {} if self.role.value == "reasoner" else {"thinking": {"type": "disabled"}}
+        with self._client.messages.stream(
+            model=self.model, max_tokens=self._clamp(max_tokens),
+            system=_cacheable_system(system), messages=[{"role": "user", "content": prompt}],
+            **kwargs,
+        ) as stream:
+            for text in stream.text_stream:
+                yield "delta", text
+            final = stream.get_final_message()
+        usage = self._usage(final)
+        self._record_usage(usage)
+        yield "done", usage
+
     def chat_agentic(self, system: str, prompt: str, tools: list[dict],
                      tool_fn: Callable[[str, dict], dict], max_turns: int = 6,
                      extra_body: dict | None = None) -> tuple[dict | None, list[dict], dict]:
@@ -205,17 +254,33 @@ class AnthropicLLMClient:
         (this method's only real caller), same reasoning chat_text
         already gives — the model benefits from reasoning about whether
         it has enough evidence, this isn't a fixed-format extraction call.
+
+        Incremental prompt caching on the growing message history (found
+        live, 2026-11-25: turn N was reprocessing turns 1..N-1 as fresh,
+        uncached tokens every single turn — the dominant cost of a 6-7
+        turn loop running slower than the pipeline it's meant to replace,
+        per this session's architecture-latency research). `_cacheable_
+        system()` already gives the static system+tools prefix one
+        explicit, permanent breakpoint; `_move_cache_breakpoint` below adds
+        a second, *moving* one at the end of the growing tail each turn —
+        Anthropic's documented combination for agent loops — so turn N
+        reads turns 1..N-1 from cache and only pays full price for
+        whatever's new this turn. Every message is built as plain dicts
+        (not the SDK's response.content objects passed straight through)
+        specifically so a cache_control key can be attached/removed on
+        them each turn.
         """
         anthropic_tools = [
             {"name": t["name"], "description": t["description"], "input_schema": t["input_schema"]}
             for t in tools
         ]
-        messages: list[dict] = [{"role": "user", "content": prompt}]
+        messages: list[dict] = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
         trace: list[dict] = []
         total_usage = dict(input_tokens=0, output_tokens=0)
         kwargs = {} if self.role.value == "reasoner" else {"thinking": {"type": "disabled"}}
 
         for _turn in range(max_turns):
+            _move_cache_breakpoint(messages)
             response = self._client.messages.create(
                 model=self.model, max_tokens=self._clamp(20_000),
                 system=_cacheable_system(system), messages=messages,
@@ -224,16 +289,18 @@ class AnthropicLLMClient:
             usage = self._usage(response)
             total_usage["input_tokens"] += usage["input_tokens"]
             total_usage["output_tokens"] += usage["output_tokens"]
+            assistant_content = [block.model_dump() for block in response.content]
             tool_uses = [b for b in response.content if b.type == "tool_use"]
             if not tool_uses:
                 # Same nudge llm_client.LLMClient.chat_agentic gives a
                 # model that answered in plain text instead of calling a
                 # tool — see that docstring.
-                messages.append({"role": "assistant", "content": response.content})
-                messages.append({"role": "user", "content": "Call a tool — search for more "
-                                 "evidence, or submit_answer if you have enough."})
+                messages.append({"role": "assistant", "content": assistant_content})
+                messages.append({"role": "user", "content": [{"type": "text", "text":
+                                 "Call a tool — search for more evidence, or submit_answer "
+                                 "if you have enough."}]})
                 continue
-            messages.append({"role": "assistant", "content": response.content})
+            messages.append({"role": "assistant", "content": assistant_content})
             tool_results = []
             for block in tool_uses:
                 if block.name == "submit_answer":

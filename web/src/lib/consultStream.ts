@@ -16,6 +16,7 @@ export type ConsultEvent =
 			duration_s: number;
 	  }
 	| { event: 'agent_done'; agent: string; input_tokens: number; output_tokens: number; duration_s: number }
+	| { event: 'answer_delta'; text: string }
 	| {
 			event: 'result';
 			session_id: string;

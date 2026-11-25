@@ -3567,7 +3567,21 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
             else:
                 yield _sse({"event": "agent_start", "agent": "reasoner"})
                 t0 = time.monotonic()
-                reasoned = reasoner.answer(question, patient, traversal, pattern_context=pattern_context)
+                # Streamed, not a single blocking reasoner.answer() call —
+                # found live: the practitioner watched "Answering…" for the
+                # whole 20-40s span with nothing to show for it. The text
+                # the practitioner sees arriving here is provisional; the
+                # Checker below still re-verifies it exactly as before and
+                # the terminal `result` event below carries whatever
+                # (possibly edited) text survives that check — a brief
+                # settle at the end, not a change to the safety guarantee.
+                reasoned = None
+                for kind, payload in reasoner.answer_streaming(
+                        question, patient, traversal, pattern_context=pattern_context):
+                    if kind == "delta":
+                        yield _sse({"event": "answer_delta", "text": payload})
+                    else:
+                        reasoned = payload
                 _track(reasoned.usage)
                 yield _sse(_timed_done({"event": "agent_done", "agent": "reasoner", **reasoned.usage}, t0))
                 answer_text = reasoned.text

@@ -235,6 +235,43 @@ class LLMClient:
             pass
         return text, usage
 
+    def chat_text_stream(self, system: str, prompt: str, max_tokens: int = 100_000,
+                         extra_body: dict | None = None):
+        """Same contract as chat_text, but streamed: yields ("delta", text)
+        for each chunk as it arrives, then exactly one ("done", usage) at
+        the end — same (kind, payload) shape app/retrieval/traversal.py's
+        retrieve_streaming() already uses, for the same reason: a ~20-40s
+        blocking call left a practitioner watching "Answering…" with
+        nothing to show for the whole span. Lets app/reasoning/reasoner.py's
+        answer_streaming() forward real text to the SSE consult stream as
+        it's generated.
+
+        `stream_options={"include_usage": True}` is an OpenAI-specific
+        request field — unverified whether Nebius's OpenAI-compatible
+        endpoint honors it; if not, usage silently stays {0, 0} for this
+        one call (an inaccuracy in token tracking, not a functional
+        failure) rather than erroring, since every other call site's usage
+        tracking is best-effort already (see the try/except around
+        record_tokens below).
+        """
+        stream = self._client.with_options(timeout=_CHAT_TIMEOUT_SECONDS).chat.completions.create(
+            model=self.model, max_tokens=max_tokens,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
+            extra_body=extra_body, stream=True, stream_options={"include_usage": True},
+        )
+        usage = dict(input_tokens=0, output_tokens=0)
+        for chunk in stream:
+            if getattr(chunk, "usage", None):
+                usage = {"input_tokens": chunk.usage.prompt_tokens,
+                         "output_tokens": chunk.usage.completion_tokens}
+            if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                yield "delta", chunk.choices[0].delta.content
+        self._record_usage(usage)
+        yield "done", usage
+
     def chat_agentic(self, system: str, prompt: str, tools: list[dict],
                      tool_fn: Callable[[str, dict], dict], max_turns: int = 6,
                      extra_body: dict | None = None) -> tuple[dict | None, list[dict], dict]:
@@ -262,8 +299,25 @@ class LLMClient:
         for the old hop loop — a model that never calls submit_answer must
         not hang the caller indefinitely. Each turn is still individually
         bounded by _CHAT_TIMEOUT_SECONDS, same as chat_json/chat_text.
+
+        Prompt-caching note (not currently exercised — this role defaults
+        to the Nebius/OpenAI-compatible path only when the superadmin
+        provider toggle is set away from "anthropic", which it isn't as of
+        2026-11-25 — but kept correct for when it is): the OpenAI-compatible
+        surface has no manual cache_control marker like Anthropic's (see
+        anthropic_client.AnthropicLLMClient.chat_agentic's _move_cache_
+        breakpoint for that side's equivalent) — caching there is automatic
+        server-side prefix matching, which this loop already supports
+        structurally by construction (`messages` is strictly append-only
+        turn over turn, never rewritten, so each turn's request is a
+        verbatim-prefix extension of the last). `prompt_cache_key` is
+        OpenAI's own hint for routing repeated-prefix requests to the same
+        cache partition consistently; passed defensively via extra_body
+        (same pattern as `stream_options` above) since whether Nebius's
+        backend honors it at all is unverified — harmless if ignored.
         """
         import json
+        import uuid
 
         openai_tools = [
             {"type": "function", "function": {
@@ -277,11 +331,13 @@ class LLMClient:
         ]
         trace: list[dict] = []
         total_usage = dict(input_tokens=0, output_tokens=0)
+        cache_key = uuid.uuid4().hex
+        loop_extra_body = {**(extra_body or {}), "prompt_cache_key": cache_key}
 
         for _turn in range(max_turns):
             response = self._client.with_options(timeout=_CHAT_TIMEOUT_SECONDS).chat.completions.create(
                 model=self.model, max_tokens=20_000, messages=messages,
-                tools=openai_tools, extra_body=extra_body,
+                tools=openai_tools, extra_body=loop_extra_body,
             )
             usage = self._usage(response)
             total_usage["input_tokens"] += usage["input_tokens"]
