@@ -3621,7 +3621,11 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
             f"traversal stopped: {traversal.stopped_reason}, grade ≥{body.min_grade}{scope_note}",
             body.client_id,
         )
-        cited_k = {int(n) for n in re.findall(r"K(\d+)", answer_text)}
+        cited_k = {
+            int(n)
+            for group in re.findall(r"\[(\d+(?:\s*,\s*\d+)*)\]", answer_text)
+            for n in re.findall(r"\d+", group)
+        }
         result = {
             "event": "result",
             "session_id": session_id,
@@ -3660,12 +3664,12 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
             # Reasoner ended up using. Listing the whole accumulated set as
             # "Sources" implied every one of them backed the answer, which
             # wasn't true and looked like padding (found live, 2026-09-14).
-            # Extracted as bare K-numbers, not whole "[K1]" substrings — the
-            # model sometimes groups several into one bracket ("[K1, K3]"),
-            # which a literal "[K1]" substring check would miss entirely.
+            # Extracted as bare numbers, not whole "[1]" substrings — the
+            # model sometimes groups several into one bracket ("[1, 3]"),
+            # which a literal "[1]" substring check would miss entirely.
             "sources": [
                 {
-                    "label": f"K{i + 1}",
+                    "label": f"{i + 1}",
                     "id": node.get("id"),
                     # Only a chunk-kind source has one real document to open
                     # (specs/v6.8/02) — an entity-kind source's node has no
@@ -4049,13 +4053,13 @@ def me_draft_document(client_id: str, session_id: str, kind: str, body: Document
             yield _sse({"event": "error",
                        "message": "Something went wrong while drafting. Try again shortly."})
             return
-        # Re-labeled K1..Kn against generate_session_document()'s own
+        # Re-labeled 1..n against generate_session_document()'s own
         # flattened, globally-renumbered list — a source's original
-        # `label` here is still whatever turn-local K-number it carried
-        # before flattening, which no longer matches the [K1] markers in
+        # `label` here is still whatever turn-local number it carried
+        # before flattening, which no longer matches the [1] markers in
         # `text`, so it must lose, not win, the dict-merge below.
         yield _sse({"event": "result", "text": text, "check": verdict,
-                   "sources": [{**s, "label": f"K{i + 1}"} for i, s in enumerate(sources)]})
+                   "sources": [{**s, "label": f"{i + 1}"} for i, s in enumerate(sources)]})
 
     return StreamingResponse(stream(), media_type="text/event-stream")
 

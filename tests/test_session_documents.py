@@ -139,7 +139,7 @@ class SessionDocumentsApiTests(unittest.TestCase):
         with patch("app.reasoning.reasoner.generate_session_document") as mocked, \
                 patch("app.reasoning.llm_checker.check") as mocked_check:
             mocked.return_value = (
-                "## Subjective\nPatient reports fatigue. [K1]",
+                "## Subjective\nPatient reports fatigue. [1]",
                 {"input_tokens": 10, "output_tokens": 5},
                 [{"document_id": "doc-1", "title": "Lab Report", "snippet": "fatigue noted",
                   "locator": "p.1", "kind": "chunk"}],

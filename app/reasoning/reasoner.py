@@ -38,7 +38,7 @@ REASONER_SYSTEM = (
     "here — but that boundary is a fact about your input, not something to "
     "narrate to the reader.\n\n"
     "Rules:\n"
-    "- Cite the chunk or entity behind each clinical point inline, as [K1], [K2].\n"
+    "- Cite the chunk or entity behind each clinical point inline, as [1], [2].\n"
     "  A claim with no citation is a claim with no evidence — don't make it.\n"
     "- A passage that is merely topic-adjacent does NOT cover the question. If no "
     "passage directly and specifically addresses what was asked, do not construct "
@@ -121,7 +121,7 @@ def answer(question: str, patient: PatientContext, traversal: TraversalResult,
     given, or removed."""
     if traversal.accumulated:
         block = "\n\n".join(
-            f"[K{i + 1}] {_label(node)}" for i, node in enumerate(traversal.accumulated)
+            f"[{i + 1}] {_label(node)}" for i, node in enumerate(traversal.accumulated)
         )
     else:
         block = "(the traversal found nothing surviving relevance pruning)"
@@ -333,7 +333,7 @@ _ANTI_FABRICATION_RULES = (
     "- Never fill a gap from general clinical knowledge or what's usually true "
     "in medicine. If the consultation and sources below don't cover something, "
     "leave it out rather than reasoning your way to it.\n"
-    "- Cite the specific source behind a clinical point inline as [K1], [K2], "
+    "- Cite the specific source behind a clinical point inline as [1], [2], "
     "referring only to the numbered sources list given to you — never invent a "
     "number beyond that list's length, and never cite a source for something it "
     "doesn't actually support.\n"
@@ -417,25 +417,22 @@ _DOCUMENT_SYSTEM = {
 
 # Same bracket-group shape renderAnswerHtml (web/src/lib/markdown.ts)
 # turns into clickable citation buttons.
-_CITE_GROUP = re.compile(r"\[([SK]\d+(?:\s*,\s*[SK]?\d+)*)\]")
+_CITE_GROUP = re.compile(r"\[(\d+(?:\s*,\s*\d+)*)\]")
 
 
 def _remap_citations(text: str, label_map: dict[str, str]) -> str:
-    """Rewrites a turn's own [K1]-style markers to the flattened, globally
+    """Rewrites a turn's own [1]-style markers to the flattened, globally
     renumbered labels _flatten_and_remap() below assigns — the claim-to-
     source link survives flattening instead of being stripped, so the
     drafting model sees exactly which source backed which sentence,
     rather than having to re-guess it from a plain source list."""
     def repl(m: re.Match) -> str:
-        last_prefix = "K"
         parts = []
         for raw in m.group(1).split(","):
-            mm = re.match(r"^\s*([SK])?(\d+)\s*$", raw)
-            if not mm:
+            raw = raw.strip()
+            if not raw.isdigit():
                 continue
-            prefix = mm.group(1) or last_prefix
-            last_prefix = prefix
-            new_label = label_map.get(f"{prefix}{mm.group(2)}")
+            new_label = label_map.get(raw)
             if new_label:
                 parts.append(new_label)
         return f"[{', '.join(parts)}]" if parts else ""
@@ -458,7 +455,7 @@ def _flatten_and_remap(turns: list[dict]) -> tuple[list[dict], list[str]]:
             key = (s.get("document_id"), s.get("locator"), s.get("title"))
             new_label = key_to_label.get(key)
             if new_label is None:
-                new_label = f"K{len(flat) + 1}"
+                new_label = str(len(flat) + 1)
                 key_to_label[key] = new_label
                 flat.append(s)
             if s.get("label"):
@@ -478,14 +475,14 @@ def generate_session_document(
     caller's route rather than swallowing it.
 
     Returns (markdown_text, usage, sources) — `sources` is the flattened,
-    renumbered list the [K1]/[K2] markers in `markdown_text` refer to, in
+    renumbered list the [1]/[2] markers in `markdown_text` refer to, in
     the same shape as a chat turn's own `sources` (label/title/locator/
     document_id/snippet), so the caller can build the same citation-title
     map web/src/lib/markdown.ts's renderAnswerHtml() already uses for chat.
     """
     sources, remapped_answers = _flatten_and_remap(turns)
     source_block = "\n\n".join(
-        f"[K{i + 1}] {s.get('title', 'unknown')} — {s.get('snippet', '')}"
+        f"[{i + 1}] {s.get('title', 'unknown')} — {s.get('snippet', '')}"
         for i, s in enumerate(sources)
     ) or "(no sources were cited in this consultation yet)"
     convo_block = "\n\n".join(
