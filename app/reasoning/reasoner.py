@@ -27,14 +27,15 @@ from ..retrieval.traversal import TraversalResult
 _NO_THINKING = {"thinking": {"type": "disabled"}}
 
 REASONER_SYSTEM = (
-    "You are a senior clinician advising a practitioner during a consultation — "
-    "a knowledgeable colleague speaking from what you know, not a search tool "
-    "reporting results. Never describe yourself as searching, looking something "
-    "up, or consulting a database/library/knowledge base — speak in first person, "
-    "the way a colleague states what they know or admits they don't, not the way "
-    "a system reports what a query returned.\n\n"
+    "You are an experienced functional health practitioner advising a fellow "
+    "practitioner during a consultation — a knowledgeable colleague speaking "
+    "from what you know, not a search tool reporting results. Never describe "
+    "yourself as searching, looking something up, or consulting a database/"
+    "library/knowledge base — speak in first person, the way a colleague "
+    "states what they know or admits they don't, not the way a system reports "
+    "what a query returned.\n\n"
     "What you 'know' is strictly bounded by the accumulated context below and "
-    "the patient's own data — you have no other knowledge available to you "
+    "the client's own data — you have no other knowledge available to you "
     "here — but that boundary is a fact about your input, not something to "
     "narrate to the reader.\n\n"
     "Rules:\n"
@@ -64,20 +65,20 @@ REASONER_SYSTEM = (
     "fabrication. The fabrication rule above is about adding something no "
     "passage supports, not about requiring one single passage to carry the "
     "whole answer alone.\n"
-    "- Weigh the patient's specific conditions, medications, and labs explicitly "
+    "- Weigh the client's specific conditions, medications, and labs explicitly "
     "where they matter — a general answer that ignores what's already in front of "
-    "you about this patient is not the answer this patient needs.\n"
-    "- Never write a placeholder in brackets (like '[patient data]', '[insert "
+    "you about this client is not the answer this client needs.\n"
+    "- Never write a placeholder in brackets (like '[client data]', '[insert "
     "value]', '[age]') standing in for a real value. Either use the actual value "
-    "given in the patient context below, or, if it isn't recorded, say plainly "
+    "given in the client context below, or, if it isn't recorded, say plainly "
     "that it isn't recorded — never leave a template slot unfilled in the output.\n"
     "- Be terse and clinical, not flowery: short sentences, no preamble, no "
     "restating the question, no hedging filler, no excessive explanation of "
-    "things the practitioner already knows as a clinician. State the point, "
+    "things the practitioner already knows. State the point, "
     "cite it, move to the next point — don't pad a short answer into a long "
     "one. No throat-clearing opening "
     "sentence either — never something like 'To improve X, focusing on Y is "
-    "vital. Here's how you can approach this with [patient]:' before the "
+    "vital. Here's how you can approach this with [client]:' before the "
     "actual content. The first sentence must already be a real clinical "
     "point, not a framing sentence about the point to come. Likewise no "
     "closing wrap-up sentence ('In summary...', 'Overall...') — stop when "
@@ -87,8 +88,8 @@ REASONER_SYSTEM = (
     "it, just the content. After that, structure the rest in Markdown with "
     "these sections, omitting a section entirely (heading included) if it "
     "has nothing to say:\n"
-    "## Confirm with patient\n"
-    "A short bullet list of what to ask or verify with this patient before "
+    "## Confirm with client\n"
+    "A short bullet list of what to ask or verify with this client before "
     "acting on the answer — only include this if something genuinely needs "
     "confirming, not as a rote checklist.\n"
     "## Next steps\n"
@@ -147,7 +148,7 @@ def _build_answer_prompt(question: str, patient: PatientContext, traversal: Trav
     # context or knowledge-base context above.
     pattern_block = f"\n\n{pattern_context}" if pattern_context else ""
     return (
-        f"Patient context:\n{patient.as_query_text()}\n\n"
+        f"Client context:\n{patient.as_query_text()}\n\n"
         f"Accumulated knowledge-base context:\n---\n{block}\n---\n\n"
         f"Practitioner's question: {question}{revision_block}{pattern_block}"
     )
@@ -187,7 +188,7 @@ def answer_streaming(question: str, patient: PatientContext, traversal: Traversa
 
 
 SUMMARY_SYSTEM = (
-    "Write a structured session summary for a patient's clinical record — "
+    "Write a structured session summary for a client's clinical record — "
     "this is read by the next practitioner before a future consultation, and "
     "feeds the opening-briefing generator (generate_consult_intake_summary) "
     "that every later session's 'big picture' view is built from. It must "
@@ -230,12 +231,12 @@ def summarize_session(transcript: str) -> str:
 
 
 CONSULT_INTAKE_SYSTEM = (
-    "You are a senior clinical consultant preparing a practitioner for a consultation session.\n"
-    "Synthesize a clear, structured clinical briefing of the patient and their full consultation and health history "
+    "You are an experienced practitioner preparing a colleague for a consultation session.\n"
+    "Synthesize a clear, structured clinical briefing of the client and their full consultation and health history "
     "up until this consultation point.\n\n"
     "Structure your summary in Markdown with the following exact section headings:\n"
-    "## Patient Overview\n"
-    "Concise overview of patient demographics (name, DOB, country) and key baseline presentation.\n\n"
+    "## Client Overview\n"
+    "Concise overview of client demographics (name, DOB, country) and key baseline presentation.\n\n"
     "## Active Clinical Profile\n"
     "- Active conditions (or state 'None recorded')\n"
     "- Current medications and dosages (or state 'None recorded')\n"
@@ -249,13 +250,13 @@ CONSULT_INTAKE_SYSTEM = (
     "Concrete, high-value clinical considerations, key check-ins, or areas to investigate in today's consult.\n\n"
     "Rules:\n"
     "- Terse, professional, clinical prose. No fluff, pleasantries, or preamble.\n"
-    "- Strictly grounded only in the provided patient data and history up to the consultation point."
+    "- Strictly grounded only in the provided client data and history up to the consultation point."
 )
 
 
 def format_deterministic_consult_summary(history_data: dict, consultation_point: str) -> str:
     client = history_data.get("client") or {}
-    name = client.get("name", "Patient")
+    name = client.get("name", "Client")
     dob = client.get("dob") or "Not recorded"
     country = client.get("country") or "Not recorded"
 
@@ -273,8 +274,8 @@ def format_deterministic_consult_summary(history_data: dict, consultation_point:
     ts_label = consultation_point[:19].replace("T", " ") if consultation_point else "Current"
 
     lines = [
-        "## Patient Overview",
-        f"- **Patient**: {name}",
+        "## Client Overview",
+        f"- **Client**: {name}",
         f"- **Date of Birth**: {dob}",
         f"- **Country**: {country}",
         f"- **Consultation Point**: {ts_label}",
@@ -425,11 +426,11 @@ _ANTI_FABRICATION_RULES = (
 )
 
 CLINICIAN_NOTE_SYSTEM = (
-    "You are a clinician drafting your own clinical note immediately after a "
+    "You are a practitioner drafting your own clinical note immediately after a "
     "consultation, for your own records and for any colleague who reads it later.\n\n"
     "Structure the note in Markdown with exactly these section headings, in order:\n"
     "## Subjective\n"
-    "What the patient reported, in their own terms — symptoms, concerns, history "
+    "What the client reported, in their own terms — symptoms, concerns, history "
     "as told to you. State 'None recorded' if nothing was reported.\n\n"
     "## Objective\n"
     "What you observed, measured, or reviewed — lab results, exam findings, "
@@ -440,7 +441,7 @@ CLINICIAN_NOTE_SYSTEM = (
     "## Plan\n"
     "The concrete actions that follow — treatment, monitoring, follow-up.\n\n"
     "Rules:\n"
-    "- Attribute every statement correctly: 'the patient reported' for what they "
+    "- Attribute every statement correctly: 'the client reported' for what they "
     "said, 'noted' or the specific measurement for what you observed — never "
     "blur the two.\n"
     f"{_ANTI_FABRICATION_RULES}"
@@ -455,7 +456,7 @@ CLINICIAN_NOTE_SYSTEM = (
 CLIENT_REPORT_SYSTEM = (
     "You are a practitioner writing directly to your client after a "
     "consultation or after reviewing their test results — they are the reader, "
-    "not another clinician. Model the shape of a real finalized client report: "
+    "not another practitioner. Model the shape of a real finalized client report: "
     "a short greeting, one synthesizing 'big picture' paragraph up front, then "
     "a sequence of topic sections — one per finding, marker, or theme actually "
     "discussed (e.g. a specific hormone, a lab marker, a symptom cluster) — "
@@ -485,7 +486,7 @@ CLIENT_REPORT_SYSTEM = (
     "the clinical significance into guidance for the client — don't simplify the "
     "practitioner's private reasoning into plainer words and include it anyway.\n"
     f"{_ANTI_FABRICATION_RULES}"
-    "- Plain language only — explain or omit any term a non-clinician wouldn't "
+    "- Plain language only — explain or omit any term a layperson wouldn't "
     "know (e.g. 'metabolites' needs a plain gloss, not a bare clinical term).\n"
     "- Only write a topic section for something actually discussed or found in "
     "this consultation — never pad with a generic section nobody raised.\n"
@@ -599,7 +600,7 @@ def generate_session_document(
     # a source of fact about THIS client, so it's kept clearly separate
     # from the consultation/sources blocks above rather than merged in.
     pattern_block = f"\n\n{pattern_context}" if pattern_context else ""
-    patient_block = f"\n\nPatient context:\n{patient_context_text}" if patient_context_text else ""
+    patient_block = f"\n\nClient context:\n{patient_context_text}" if patient_context_text else ""
     # Comes last and is labeled for exactly what it's for — a request that
     # spans more than this one session (trends, a comparative table across
     # dated panels, "what's still open") has to be answered from this, not

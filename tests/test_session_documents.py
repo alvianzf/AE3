@@ -103,6 +103,17 @@ class SessionDocumentsApiTests(unittest.TestCase):
         self.auth = auth
         app.dependency_overrides[auth.require_pro_practitioner] = lambda: self.mock_session
 
+        # Session init now backgrounds an auto-draft of both document kinds
+        # (specs: "auto generate notes/report when starting a session"),
+        # and TestClient runs background tasks synchronously within the
+        # request — unmocked, every test below that calls .../sessions/init
+        # would make two real LLM calls.
+        doc_patcher = patch("app.reasoning.reasoner.generate_session_document")
+        self.mock_generate_document = doc_patcher.start()
+        self.mock_generate_document.return_value = (
+            "## Subjective\nNone recorded.", {"input_tokens": 1, "output_tokens": 1}, [])
+        self.addCleanup(doc_patcher.stop)
+
     def tearDown(self):
         app.dependency_overrides.pop(self.auth.require_pro_practitioner, None)
 
@@ -121,7 +132,11 @@ class SessionDocumentsApiTests(unittest.TestCase):
         self.assertEqual(get_resp.status_code, 200)
         documents = get_resp.json()["documents"]
         self.assertEqual(documents["clinician_note"]["content"], "<p>Plan: progesterone 100mg.</p>")
-        self.assertIsNone(documents["client_report"])
+        # Session init now auto-drafts both kinds in the background — the
+        # explicit PUT above overwrote clinician_note, but client_report
+        # still holds whatever the (mocked) auto-draft produced, not None.
+        self.assertIsNotNone(documents["client_report"])
+        self.assertEqual(documents["client_report"]["status"], "draft")
 
     def test_save_document_rejects_unknown_kind(self):
         init = self.test_client.post(f"/api/me/clients/{self.client_id}/sessions/init")
@@ -160,9 +175,13 @@ class SessionDocumentsApiTests(unittest.TestCase):
 
         # Deliberately not persisted by this endpoint — see its docstring:
         # the client resolves citations to HTML first, then saves through
-        # the normal PUT endpoint, same as any manual edit.
+        # the normal PUT endpoint, same as any manual edit. What IS there
+        # is session init's own auto-draft (setUp's class-level mock),
+        # untouched by this draft call — not the "Patient reports fatigue"
+        # text the /draft endpoint's own (locally-overridden) mock returned.
         saved = vault.get_document(self.practitioner_id, session_id, "clinician_note")
-        self.assertIsNone(saved)
+        self.assertIsNotNone(saved)
+        self.assertNotIn("Patient reports fatigue", saved["content"])
 
     def test_draft_endpoint_strips_sentences_the_checker_flags(self):
         init = self.test_client.post(f"/api/me/clients/{self.client_id}/sessions/init")

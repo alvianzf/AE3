@@ -3342,7 +3342,8 @@ def _dedupe_searched_documents(accumulated: list[dict], cited_k: set[int]) -> di
 
 
 @app.post("/api/me/consult")
-def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practitioner)):
+def me_consult(body: MeConsult, background_tasks: BackgroundTasks,
+              session: dict = Depends(auth.require_pro_practitioner)):
     """Streams progress as text/event-stream (specs/v3/08-api.md#live-progress-stream):
     an agent_start/agent_done pair per AI-team call with that call's real token
     usage, then one final `result` event carrying the same payload this route
@@ -3405,6 +3406,15 @@ def me_consult(body: MeConsult, session: dict = Depends(auth.require_pro_practit
         session_id = vault.create_session(
             practitioner_id, body.client_id, body.question, initial_summary=init_summary, started_at=now_ts
         )["id"]
+        # Same auto-draft as the explicit "Start session" button
+        # (me_init_session) — a session can also start implicitly here,
+        # by asking a question directly without calling sessions/init
+        # first, and shouldn't end up with a blank document pane just
+        # because it started differently.
+        background_tasks.add_task(
+            _auto_draft_session_documents, practitioner_id, body.client_id, session_id,
+            patient.as_query_text(), reasoner.format_deterministic_consult_summary(history_data, now_ts),
+        )
     else:
         existing = vault.get_session(practitioner_id, session_id)
         if existing and existing.get("title") == "Consultation Session":
@@ -3759,10 +3769,10 @@ def me_list_sessions(client_id: str,
 
 
 @app.post("/api/me/clients/{client_id}/sessions/init")
-def me_init_session(client_id: str,
+def me_init_session(client_id: str, background_tasks: BackgroundTasks,
                     session: dict = Depends(auth.require_pro_practitioner)) -> dict:
     """Starts a new consultation session by generating an opening AI summary of the
-    patient and all recorded histories strictly up until this consultation point."""
+    client and all recorded histories strictly up until this consultation point."""
     practitioner_id = session["id"]
     if vault.get_client(practitioner_id, client_id) is None:
         raise HTTPException(404, "no such client")
@@ -3775,6 +3785,14 @@ def me_init_session(client_id: str,
         "Consultation Session",
         initial_summary=summary,
         started_at=now_ts,
+    )
+    # Drafts both documents from the client's existing record right away
+    # — backgrounded so the practitioner isn't kept waiting on two LLM
+    # calls just to see their new session appear.
+    patient_history_text = reasoner.format_deterministic_consult_summary(history_data, now_ts)
+    background_tasks.add_task(
+        _auto_draft_session_documents, practitioner_id, client_id, session_row["id"],
+        "", patient_history_text,
     )
     return {**session_row, "turns": []}
 
@@ -4143,6 +4161,106 @@ def me_get_session_asset(client_id: str, session_id: str, asset_id: str,
         raise HTTPException(404, "the image is no longer on disk")
     return FileResponse(path, media_type=_media_type(row["filename"]),
                         headers={"X-Content-Type-Options": "nosniff"})
+
+
+_MD_BOLD = re.compile(r"\*\*(.+?)\*\*")
+_MD_BULLET = re.compile(r"^[-*]\s+(.*)")
+_MD_NUMBERED = re.compile(r"^\d+[.)]\s+(.*)")
+_MD_HEADING = re.compile(r"^(#{1,6})\s+(.*)")
+
+
+def _escape_html(s: str) -> str:
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _markdown_lite_to_html(text: str) -> str:
+    """A deliberately small, non-general markdown-to-HTML converter —
+    not a new dependency, because the only input this ever sees is this
+    app's own prompt output (reasoner.py's CLINICIAN_NOTE_SYSTEM/
+    CLIENT_REPORT_SYSTEM: headings, bullet/numbered lists, bold, plain
+    paragraphs — nothing else), not arbitrary user-authored markdown.
+    Used only for the session-start auto-draft path below, which has no
+    frontend round-trip to do this client-side the way the normal
+    "Ask AI" draft flow already does (web/src/lib/markdown.ts)."""
+    html_lines: list[str] = []
+    list_tag: str | None = None  # 'ul' | 'ol' | None — the currently open list
+
+    def close_list():
+        nonlocal list_tag
+        if list_tag:
+            html_lines.append(f"</{list_tag}>")
+            list_tag = None
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            close_list()
+            continue
+        inline = _MD_BOLD.sub(r"<strong>\1</strong>", _escape_html(line))
+        heading = _MD_HEADING.match(line)
+        if heading:
+            close_list()
+            level = len(heading.group(1))
+            html_lines.append(f"<h{level}>{_MD_BOLD.sub(r'<strong>\1</strong>', _escape_html(heading.group(2)))}</h{level}>")
+            continue
+        bullet = _MD_BULLET.match(line)
+        if bullet:
+            if list_tag != "ul":
+                close_list()
+                html_lines.append("<ul>")
+                list_tag = "ul"
+            html_lines.append(f"<li>{_MD_BOLD.sub(r'<strong>\1</strong>', _escape_html(bullet.group(1)))}</li>")
+            continue
+        numbered = _MD_NUMBERED.match(line)
+        if numbered:
+            if list_tag != "ol":
+                close_list()
+                html_lines.append("<ol>")
+                list_tag = "ol"
+            html_lines.append(f"<li>{_MD_BOLD.sub(r'<strong>\1</strong>', _escape_html(numbered.group(1)))}</li>")
+            continue
+        close_list()
+        html_lines.append(f"<p>{inline}</p>")
+    close_list()
+    return "\n".join(html_lines)
+
+
+def _auto_draft_session_documents(
+    practitioner_id: str, client_id: str, session_id: str,
+    patient_context_text: str, patient_history_text: str,
+) -> None:
+    """Drafts both document kinds the moment a session starts, from the
+    client's existing record alone (zero consult turns exist yet) — so a
+    practitioner opening a brand-new session finds a real starting draft
+    instead of a blank editor. Runs in the background (app/main.py's
+    BackgroundTasks, both call sites), never blocking the "session
+    started" response.
+
+    No citation markers are possible here (generate_session_document's
+    `sources` come from this session's own turns, and there are none
+    yet), so there's nothing for the client-side resolver
+    (web/src/lib/markdown.ts, used by the normal "Ask AI" flow) to do —
+    this path converts the plain markdown straight to HTML itself
+    (_markdown_lite_to_html) and saves directly, the one document-saving
+    path that doesn't go through a practitioner's own edit/Finalize
+    action, because there's no practitioner interaction to attach it to.
+
+    Best-effort per document kind: one failing (a transient API error)
+    must not prevent the other from being drafted, and a failure here
+    must never surface as a failure of "start session" itself — the
+    session already exists by the time this runs."""
+    for kind in vault.DOCUMENT_KINDS:
+        try:
+            text, _usage, _sources = reasoner.generate_session_document(
+                kind, turns=[], patient_context_text=patient_context_text,
+                patient_history_text=patient_history_text)
+            if text.strip():
+                vault.save_document(
+                    practitioner_id, session_id, client_id, kind,
+                    _markdown_lite_to_html(text), "draft")
+        except Exception:
+            logging.exception(
+                "auto-draft %s failed for session %s (client %s)", kind, session_id, client_id)
 
 
 def _summarize_and_save_session(practitioner_id: str, client_id: str, session_id: str) -> str:

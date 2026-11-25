@@ -93,7 +93,7 @@ class ConsultAiSummaryTests(unittest.TestCase):
         # the actual deterministic, template-based path the test name means.
         summary = reasoner.format_deterministic_consult_summary(history_data, t_now)
 
-        self.assertIn("## Patient Overview", summary)
+        self.assertIn("## Client Overview", summary)
         self.assertIn("Jane Doe", summary)
         self.assertIn("## Active Clinical Profile", summary)
         self.assertIn("Type 2 Diabetes", summary)
@@ -101,9 +101,16 @@ class ConsultAiSummaryTests(unittest.TestCase):
         self.assertIn("## Prior Consultations & Clinical Trajectory", summary)
         self.assertIn("## Consultation Focus & Recommendations", summary)
 
-    def test_api_session_init_and_get(self):
+    @patch("app.reasoning.reasoner.generate_session_document")
+    def test_api_session_init_and_get(self, mock_generate_document):
         from app import auth
         test_client = TestClient(app)
+        # Session init now backgrounds an auto-draft of both document kinds
+        # (specs: "auto generate notes/report when starting a session") —
+        # mocked here so this test doesn't make two real LLM calls on top
+        # of the pre-existing one for the opening summary.
+        mock_generate_document.return_value = ("## Subjective\nNone recorded.",
+                                               {"input_tokens": 1, "output_tokens": 1}, [])
 
         # Mock practitioner auth via FastAPI dependency_overrides
         mock_session = {

@@ -25,7 +25,7 @@
 	const BASIC_TOUR_STEPS = [
 		{ selector: '.search-trigger', title: 'Search everything', body: 'Press ⌘K (or Ctrl+K) anytime to jump straight to a client or a past consult.' },
 		{ selector: 'a[href="/practitioner/profile"]', title: 'Complete your profile', body: 'This is the one thing worth doing first — it\'s what clients and other practitioners see.' },
-		{ selector: 'a[href="/practitioner/upgrade"]', title: 'Upgrade when you\'re ready', body: 'Consult, Clients, Library weights, and Questionnaires all unlock on Pro.' }
+		{ selector: 'a[href="/practitioner/upgrade"]', title: 'Upgrade when you\'re ready', body: 'Consult, Clients, Library weights, and Intake all unlock on Pro.' }
 	];
 	const tourSteps = $derived(isPro ? PRO_TOUR_STEPS : BASIC_TOUR_STEPS);
 	const PRO_HREFS = new Set(PRO_FEATURES.map((f) => f.href));
@@ -35,7 +35,7 @@
 		{ href: '/practitioner/clients', label: 'Clients', icon: 'users', primary: true },
 		{ href: '/practitioner/contacts', label: 'Contacts', icon: 'mail' },
 		{ href: '/practitioner/knowledge', label: 'Library weights', icon: 'book' },
-		{ href: '/practitioner/questionnaires', label: 'Questionnaires', icon: 'clipboard' },
+		{ href: '/practitioner/questionnaires', label: 'Intake', icon: 'clipboard' },
 		{ href: '/practitioner/profile', label: 'Profile', icon: 'settings' },
 		// A Basic practitioner's dashboard CTA pointed at Upgrade but this
 		// page was never in the nav, so navigating anywhere else meant

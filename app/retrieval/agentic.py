@@ -22,7 +22,7 @@ from ..patient.context import PatientContext
 from . import seed_search
 
 AGENTIC_SYSTEM = (
-    "You are a senior clinician answering a practitioner's question during "
+    "You are a senior functional health practitioner answering a colleague's question during "
     "a live consult, using tools to search a curated clinical knowledge "
     "library. You have no clinical knowledge of your own available here — "
     "only what the tools return.\n\n"
@@ -294,7 +294,7 @@ def run(question: str, patient: PatientContext, min_grade: int,
         patient=patient, min_grade=min_grade, weights=weights or {},
         accessible_private_ids=accessible_private_ids or set(), folder=folder, topic=topic,
     )
-    prompt = f"Patient context:\n{patient.as_query_text()}\n\nQuestion: {question}"
+    prompt = f"Client context:\n{patient.as_query_text()}\n\nQuestion: {question}"
     draft, trace, search_usage = get_client(Role.ANSWER_ENGINE).chat_agentic(
         AGENTIC_SYSTEM, prompt, TOOLS, make_tool_fn(tools), max_turns=max_turns,
     )
@@ -312,7 +312,7 @@ def run(question: str, patient: PatientContext, min_grade: int,
     evidence_block = "\n\n".join(f"[{cid}] {text}" for cid, text in chunk_texts.items()) \
         or "(no evidence was gathered)"
     final_prompt = (
-        f"Patient context:\n{patient.as_query_text()}\n\n"
+        f"Client context:\n{patient.as_query_text()}\n\n"
         f"Question: {question}\n\n"
         f"Evidence gathered by search:\n{evidence_block}\n\n"
         f"Draft answer proposed from this evidence: {draft.get('answer_text', '')}"

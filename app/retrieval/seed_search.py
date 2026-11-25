@@ -55,7 +55,7 @@ class SeedResult:
 
 
 def form_search_query(question: str, patient: PatientContext) -> tuple[str, dict]:
-    prompt = f"Patient context:\n{patient.as_query_text()}\n\nQuestion: {question}"
+    prompt = f"Client context:\n{patient.as_query_text()}\n\nQuestion: {question}"
     result, usage = get_client(Role.ANSWER_ENGINE).chat_json(
         SEARCH_QUERY_SYSTEM, prompt, SEARCH_QUERY_SCHEMA, max_tokens=100_000, extra_body=NO_THINKING)
     return result["search_query"], usage

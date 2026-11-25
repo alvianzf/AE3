@@ -85,7 +85,7 @@
 		{
 			num: '02',
 			title: 'Credential Verification',
-			desc: 'Our clinical advisory team reviews your credentials (licensed physicians, NDs, NPs, PAs, DCs, CNSs, or IFMCP certified clinicians) within 24–48 hours.'
+			desc: 'Our clinical advisory team reviews your credentials (licensed physicians, NDs, NPs, PAs, DCs, CNSs, or IFMCP certified practitioners) within 24–48 hours.'
 		},
 		{
 			num: '03',
@@ -106,7 +106,7 @@
 
 <Seo
 	title="For Practitioners — Practice Augmented Functional Medicine"
-	description="Bring your practice onto Functional Health Collab: clinical intelligence that connects patient timelines, synthesizes lab biomarkers, and cites peer-reviewed medical literature so no information is missed."
+	description="Bring your practice onto Functional Health Collab: clinical intelligence that connects client timelines, synthesizes lab biomarkers, and cites peer-reviewed medical literature so no information is missed."
 	path="/join"
 />
 
@@ -119,7 +119,7 @@
 	<div class="container hero-inner">
 		<div class="badge-pill">
 			<span class="logo-mark"><Sprig size={18} /></span>
-			<span>For Functional & Integrative Medicine Clinicians</span>
+			<span>For Functional & Integrative Medicine Practitioners</span>
 		</div>
 
 		<h1>Practice at your peak. Arrive at every consult deeply informed.</h1>
@@ -207,7 +207,7 @@
 					<div class="f-row">
 						<div class="f-bullet"><Icon name="check" size={16} /></div>
 						<div>
-							<strong>Interactive Patient Timelines</strong>
+							<strong>Interactive Client Timelines</strong>
 							<p>Organize symptoms, medications, triggers, and life events along a visual chronological continuum.</p>
 						</div>
 					</div>
@@ -228,8 +228,8 @@
 					<div class="f-row">
 						<div class="f-bullet"><Icon name="check" size={16} /></div>
 						<div>
-							<strong>Client Questionnaire Engine</strong>
-							<p>Deploy comprehensive intake forms that populate directly into patient records, ready for your clinical review.</p>
+							<strong>Client Intake Engine</strong>
+							<p>Deploy comprehensive intake forms that populate directly into client records, ready for your review.</p>
 						</div>
 					</div>
 				</div>
@@ -245,7 +245,7 @@
 					</div>
 					<div class="preview-body">
 						<div class="preview-case">
-							<span class="case-tag">Patient Presentation</span>
+							<span class="case-tag">Client Presentation</span>
 							<p class="case-text">42yo F with refractory fatigue, postprandial bloating, and subclinical TSH elevation (3.8 μIU/mL) with positive anti-TPO antibodies.</p>
 						</div>
 						<div class="preview-synthesis">
@@ -290,7 +290,7 @@
 		<div class="section-header text-center">
 			<div class="sub-badge">Practitioner Guidance</div>
 			<h2>How onboarding & credential verification works</h2>
-			<p>We maintain high clinical standards to ensure patients connect with qualified, ethical practitioners.</p>
+			<p>We maintain high clinical standards to ensure clients connect with qualified, ethical practitioners.</p>
 		</div>
 
 		<div class="guidance-grid">
@@ -347,7 +347,7 @@
 
 			<form class="pb form-body" onsubmit={submit}>
 				<div class="field-grid">
-					<TextField label="Full Name (with professional credentials)" bind:value={name} placeholder="e.g. Dr. Sarah Jenkins, ND, IFMCP" required />
+					<TextField label="Full Name (with professional credentials)" bind:value={name} placeholder="e.g. Sarah Jenkins, FDN-P, IFMCP" required />
 					<TextField label="Professional Email Address" type="email" bind:value={email} placeholder="dr.jenkins@clinic.com" required />
 				</div>
 
@@ -357,7 +357,7 @@
 					label="Clinical Bio & Practice Philosophy"
 					type="textarea"
 					bind:value={bio}
-					placeholder="Describe your clinical training, experience, philosophy of care, and patient approach. This will be visible on your public directory profile."
+					placeholder="Describe your clinical training, experience, philosophy of care, and client approach. This will be visible on your public directory profile."
 				/>
 
 				<TextField

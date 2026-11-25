@@ -95,7 +95,7 @@ def llm_judge_relevance(question: str, patient: PatientContext,
         f"{c['id']}: {_candidate_label(c)}" for c in candidates
     )
     prompt = (
-        f"Patient context:\n{patient.as_query_text()}\n\n"
+        f"Client context:\n{patient.as_query_text()}\n\n"
         f"Question: {question}\n\n"
         f"Already gathered (for context, not to be re-judged):\n{accumulated_text}\n\n"
         f"New candidates to judge:\n{candidates_text}"

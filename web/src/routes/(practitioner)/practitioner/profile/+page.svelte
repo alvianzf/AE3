@@ -130,7 +130,7 @@
 					{p?.logo_path || logoPreview ? 'Change logo' : 'Upload logo'}
 					<input type="file" accept="image/jpeg,image/png,image/gif,image/webp" onchange={onLogoChange} hidden />
 				</label>
-				<p class="hint">Shown at the top of every clinician note and client report you produce. PNG with transparency works best.</p>
+				<p class="hint">Shown at the top of every practitioner note and client report you produce. PNG with transparency works best.</p>
 			</div>
 		</div>
 

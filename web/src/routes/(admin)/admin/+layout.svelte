@@ -20,7 +20,7 @@
 		// Read-only cross-practitioner roster, not account management — kept
 		// out of "Users" for that reason (ux-implementation-spec.md#4).
 		{ href: '/admin/clients', label: 'Clients', icon: 'user-card' },
-		{ href: '/admin/questionnaires', label: 'Questionnaires', icon: 'clipboard' },
+		{ href: '/admin/questionnaires', label: 'Intake', icon: 'clipboard' },
 		{ href: '/admin/audit', label: 'Audit history', icon: 'history' },
 		{ href: '/admin/settings', label: 'Settings', icon: 'settings' }
 	];
@@ -61,7 +61,7 @@
 				href: `/admin/clients?q=${encodeURIComponent(c.name ?? '')}`
 			})),
 			...(questionnaires ?? []).map((q: any) => ({
-				label: q.title, icon: 'clipboard', group: 'Questionnaires', href: `/admin/questionnaires`
+				label: q.title, icon: 'clipboard', group: 'Intake', href: `/admin/questionnaires`
 			}))
 		];
 	}

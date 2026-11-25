@@ -6,5 +6,5 @@ export const PRO_FEATURES: { label: string; href: string }[] = [
 	{ label: 'Consult (AI-assisted)', href: '/practitioner/consult' },
 	{ label: 'Client vault', href: '/practitioner/clients' },
 	{ label: 'Knowledge library weighting', href: '/practitioner/knowledge' },
-	{ label: 'Questionnaires', href: '/practitioner/questionnaires' }
+	{ label: 'Intake', href: '/practitioner/questionnaires' }
 ];

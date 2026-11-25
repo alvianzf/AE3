@@ -47,16 +47,16 @@
 			cta: 'Continue consult', href: `/practitioner/consult?client=${data.client.id}`
 		};
 		if (hasQuestionnaireResponse) return {
-			label: 'Ready for consult', detail: 'Questionnaire received — nothing scheduled yet.',
+			label: 'Ready for consult', detail: 'Intake form received — nothing scheduled yet.',
 			cta: 'Start consult', href: `/practitioner/consult?client=${data.client.id}`
 		};
 		if (openQuestionnaireLink) return {
-			label: 'Awaiting response', detail: 'A questionnaire link was sent and not yet submitted.',
+			label: 'Awaiting response', detail: 'An intake link was sent and not yet submitted.',
 			cta: null
 		};
 		return {
-			label: 'No questionnaire sent', detail: 'Send one to get started with this client.',
-			cta: 'Send a questionnaire', action: () => { active = 'intake'; showSendPicker = true; }
+			label: 'No intake sent', detail: 'Send one to get started with this client.',
+			cta: 'Send an intake form', action: () => { active = 'intake'; showSendPicker = true; }
 		};
 	});
 
@@ -76,7 +76,7 @@
 			});
 			links = [result, ...links];
 			showSendPicker = false;
-			toast('Questionnaire link created — copy it from the list below.');
+			toast('Intake link created — copy it from the list below.');
 		} catch (err: any) {
 			toast(err.message, 'alert');
 		} finally {
@@ -164,7 +164,7 @@
 	// with a proper label, a draft/final pill, and a deep link back into
 	// the document pane that produced it.
 	const DOCUMENT_KIND_LABELS: Record<string, string> = {
-		clinician_note: 'Clinician Note',
+		clinician_note: 'Practitioner Note',
 		client_report: 'Client Report'
 	};
 
@@ -310,7 +310,7 @@
 	{#if active === 'overview'}
 		{#if data.intake?.response}
 			<div class="rail-section intake-panel">
-				<h2>Questionnaire Response</h2>
+				<h2>Intake Response</h2>
 				<p class="hint">Submitted {data.intake.response.submitted_at?.slice(0, 10) ?? ''}</p>
 				<ul class="list intake-answers">
 					{#each (data.intake.questionnaire?.questions ?? []).filter((q: any) => q.input_type !== 'info') as q (q.id)}
@@ -356,9 +356,9 @@
 			{#if showSendPicker}
 				<div class="send-picker">
 					{#if !followupQuestionnaires.length}
-						<p class="hint">No follow-up questionnaires yet — create one on the <a href="/practitioner/questionnaires">Questionnaires</a> page first.</p>
+						<p class="hint">No follow-up intake forms yet — create one on the <a href="/practitioner/questionnaires">Intake</a> page first.</p>
 					{:else}
-						<Select label="Questionnaire" bind:value={selectedQuestionnaireId}
+						<Select label="Intake form" bind:value={selectedQuestionnaireId}
 							options={followupQuestionnaires.map((q: any) => ({ value: q.id, label: q.title }))} />
 						<Button onclick={sendQuestionnaire} loading={sendingQuestionnaire} disabled={!selectedQuestionnaireId}>Create link</Button>
 					{/if}
@@ -373,7 +373,7 @@
 				<ul class="list doc-list">
 					{#each links as l (l.token)}
 						<li>
-							{l.kind === 'upload' ? 'Upload link' : 'Questionnaire link'}
+							{l.kind === 'upload' ? 'Upload link' : 'Intake link'}
 							<span class="pill" class:final={l.status === 'submitted'}>{l.status === 'submitted' ? 'Submitted' : 'Open'}</span>
 							<span class="hint">{l.created_at ?? ''}</span>
 							{#if l.status !== 'submitted'}

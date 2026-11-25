@@ -40,7 +40,7 @@
 			<div class="head-title">
 				<span class="head-ico"><Icon name="home" size={18} /></span>
 				<div>
-					<h1>{firstName ? `Welcome${isFirstVisit ? '' : ' back'}, Dr. ${firstName}` : 'Practitioner Overview'}</h1>
+					<h1>{firstName ? `Welcome${isFirstVisit ? '' : ' back'}, ${firstName}` : 'Practitioner Overview'}</h1>
 					<p>{isPro ? 'Grounded clinical intelligence & client records' : 'Complete your profile to get started'}</p>
 				</div>
 			</div>

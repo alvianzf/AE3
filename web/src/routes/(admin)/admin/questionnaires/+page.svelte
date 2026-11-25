@@ -147,7 +147,7 @@
 				kind: qKind,
 				questions: payload
 			});
-			toast(editingId ? 'New version saved.' : 'Questionnaire created.');
+			toast(editingId ? 'New version saved.' : 'Intake form created.');
 			open = false;
 			await invalidateAll();
 		} catch (err: any) {
@@ -158,9 +158,9 @@
 	}
 </script>
 
-<svelte:head><title>Questionnaires — Admin portal</title></svelte:head>
+<svelte:head><title>Intake — Admin portal</title></svelte:head>
 
-<div class="pane-row"><div class="detail-pane"><div class="detail-head"><div class="head-title"><span class="head-ico"><Icon name="clipboard" size={16} /></span><h1>Questionnaires</h1></div><div class="head-actions">{@render actions()}</div></div>
+<div class="pane-row"><div class="detail-pane"><div class="detail-head"><div class="head-title"><span class="head-ico"><Icon name="clipboard" size={16} /></span><h1>Intake</h1></div><div class="head-actions">{@render actions()}</div></div>
 	{#snippet actions()}
 		<Button variant="filled" onclick={openCreate}><Icon name="plus" size={15} />New questionnaire</Button>
 	{/snippet}

@@ -173,9 +173,9 @@
 				{ title, kind: qKind, questions: payload }
 			);
 			if (!editingId) {
-				toast('Questionnaire created.');
+				toast('Intake form created.');
 			} else if (result.id === editingId) {
-				toast('Questionnaire updated.');
+				toast('Intake form updated.');
 			} else {
 				// Only happens once someone has actually submitted a
 				// response to it — app/main.py's me_edit_questionnaire
@@ -250,9 +250,9 @@
 
 </script>
 
-<svelte:head><title>Questionnaires — Practitioner portal</title></svelte:head>
+<svelte:head><title>Intake — Practitioner portal</title></svelte:head>
 
-<div class="pane-row"><div class="detail-pane"><div class="detail-head"><div class="head-title"><span class="head-ico"><Icon name="clipboard" size={16} /></span><h1>Questionnaires</h1></div><div class="head-actions">{@render actions()}</div></div>
+<div class="pane-row"><div class="detail-pane"><div class="detail-head"><div class="head-title"><span class="head-ico"><Icon name="clipboard" size={16} /></span><h1>Intake</h1></div><div class="head-actions">{@render actions()}</div></div>
 	{#snippet actions()}
 		<Button variant="filled" onclick={openCreate}><Icon name="plus" size={15} />New questionnaire</Button>
 	{/snippet}
@@ -377,7 +377,7 @@
 	{/snippet}
 </Dialog>
 
-<QuestionnairePreview bind:open={previewOpen} title={title || 'Untitled questionnaire'} {questions} />
+<QuestionnairePreview bind:open={previewOpen} title={title || 'Untitled intake form'} {questions} />
 
 <Dialog bind:open={linkOpen} title="Get link — {linkFor?.title ?? ''}">
 	{#if linkFor?.kind === 'followup'}

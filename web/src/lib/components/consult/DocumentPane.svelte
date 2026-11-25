@@ -60,7 +60,7 @@
 	}
 
 	const KIND_LABEL: Record<Kind, string> = {
-		clinician_note: 'Clinician Note',
+		clinician_note: 'Practitioner Note',
 		client_report: 'Client Report'
 	};
 
