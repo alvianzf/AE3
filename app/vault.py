@@ -426,6 +426,13 @@ def delete_client(practitioner_id: str, client_id: str) -> bool:
             "DELETE FROM session_turns WHERE session_id IN "
             "(SELECT id FROM sessions WHERE client_id = %s)", (client_id,))
         conn.execute("DELETE FROM sessions WHERE client_id = %s", (client_id,))
+        # Must precede record_entries below — client_clinical_state.
+        # source_entry_id references record_entries(id) with no cascade,
+        # so deleting record_entries first throws a ForeignKeyViolation
+        # (found live, 2026-11-25, in this feature's own first end-to-end
+        # test: erasing a client with any tracked lab-marker trend failed
+        # outright).
+        conn.execute("DELETE FROM client_clinical_state WHERE client_id = %s", (client_id,))
         conn.execute("DELETE FROM record_entries WHERE client_id = %s", (client_id,))
         conn.execute(
             "DELETE FROM questionnaire_responses WHERE client_id = %s",
@@ -613,6 +620,13 @@ def delete_entry(practitioner_id: str, client_id: str, entry_id: str) -> bool:
         ).fetchone()
         if not exists:
             return False
+        # Same reasoning as delete_client()'s own fix: client_clinical_
+        # state.source_entry_id references this row with no cascade.
+        # Deleting its derived marker rows along with it is also the
+        # honest behavior, not just an FK workaround — a marker whose
+        # only source entry was removed shouldn't keep being shown as
+        # "current" with nothing left to trace it back to.
+        conn.execute("DELETE FROM client_clinical_state WHERE source_entry_id = %s", (entry_id,))
         conn.execute("DELETE FROM record_entries WHERE id = %s", (entry_id,))
     return True
 
