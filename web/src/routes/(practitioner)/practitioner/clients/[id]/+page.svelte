@@ -203,7 +203,7 @@
 			? content.slice(PATIENT_REPORTED_PREFIX.length)
 			: content;
 	}
-	function isPatientReported(content: string) {
+	function isClientReported(content: string) {
 		return content.startsWith(PATIENT_REPORTED_PREFIX);
 	}
 	let entries = $state<any[]>(data.entries ?? []);
@@ -423,7 +423,7 @@
 						<li class="entry">
 							<div class="er">
 								<Chip tone="neutral">{KIND_LABELS[e.kind] ?? e.kind}</Chip>
-								{#if isPatientReported(e.content)}<Chip tone="accent">Client-reported</Chip>{/if}
+								{#if isClientReported(e.content)}<Chip tone="accent">Client-reported</Chip>{/if}
 								<span class="hint">{e.created_at?.slice(0, 10)}</span>
 								<button type="button" class="remove" onclick={() => removeEntry(e.id)} disabled={deletingEntry === e.id} title="Remove">×</button>
 							</div>

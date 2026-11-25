@@ -62,7 +62,7 @@ EXTRACT_MARKERS_SYSTEM = (
     "is already flagged (e.g. 'low', 'high', an asterisk, a note like "
     "'(L)'), that stated flag wins over your own range comparison.\n\n"
     "Extract only real markers with an actual value — skip narrative text, "
-    "dates, patient identifiers, and anything with no numeric result. If "
+    "dates, client identifiers, and anything with no numeric result. If "
     "nothing extractable is present, return an empty list."
 )
 
