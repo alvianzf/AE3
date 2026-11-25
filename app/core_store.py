@@ -281,6 +281,29 @@ def ensure_schema() -> None:
             );
             CREATE INDEX IF NOT EXISTS document_access_by_practitioner
                 ON document_access(practitioner_id);
+
+            -- "Ask the Library" (dashboard) — a practitioner-level
+            -- knowledge-library Q&A, deliberately with no client_id at
+            -- all: the whole point of this feature is answering a
+            -- general question with no client/patient data involved, so
+            -- it lives in the shared core schema next to `practitioners`,
+            -- never inside a per-client vault_<id> schema. Persisted
+            -- (not ephemeral) per explicit product decision — unlike a
+            -- per-client consult, there's no clinical record this is
+            -- part of, but a practitioner still expects to find a past
+            -- research question again.
+            CREATE TABLE IF NOT EXISTS library_chat_turns (
+                id TEXT PRIMARY KEY,
+                practitioner_id TEXT NOT NULL REFERENCES practitioners(id),
+                question TEXT NOT NULL,
+                answer TEXT NOT NULL,
+                sources_json TEXT NOT NULL DEFAULT '[]',
+                searched_json TEXT NOT NULL DEFAULT '[]',
+                retrieval_mode TEXT NOT NULL DEFAULT 'general_lookup',
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS library_chat_by_practitioner
+                ON library_chat_turns(practitioner_id, created_at);
             """
         )
         # Every deployment needs at least one superadmin able to manage
@@ -423,6 +446,46 @@ def save_retrieval_trajectory(*, question: str, tool_calls: list[dict],
              json.dumps(cited_document_ids), turns_used, grounding_verdict,
              total_latency_s, pipeline),
         )
+
+
+def add_library_chat_turn(
+    practitioner_id: str, question: str, answer: str, sources: list[dict],
+    searched: list[dict], retrieval_mode: str,
+) -> dict:
+    """One "Ask the Library" turn — persisted (not ephemeral) per explicit
+    product decision, scoped to the practitioner only, never a client."""
+    row = {
+        "id": str(uuid.uuid4()), "practitioner_id": practitioner_id, "question": question,
+        "answer": answer, "sources_json": json.dumps(sources), "searched_json": json.dumps(searched),
+        "retrieval_mode": retrieval_mode, "created_at": _now(),
+    }
+    with core_connection() as conn:
+        conn.execute(
+            "INSERT INTO library_chat_turns "
+            "(id, practitioner_id, question, answer, sources_json, searched_json, "
+            "retrieval_mode, created_at) VALUES (%(id)s, %(practitioner_id)s, %(question)s, "
+            "%(answer)s, %(sources_json)s, %(searched_json)s, %(retrieval_mode)s, %(created_at)s)",
+            row,
+        )
+    return {**row, "sources": sources, "searched": searched}
+
+
+def list_library_chat_turns(practitioner_id: str, limit: int = 50) -> list[dict]:
+    with core_connection() as conn:
+        rows = conn.execute(
+            "SELECT id, question, answer, sources_json, searched_json, retrieval_mode, created_at "
+            "FROM library_chat_turns WHERE practitioner_id = %s "
+            "ORDER BY created_at DESC LIMIT %s",
+            (practitioner_id, limit),
+        ).fetchall()
+    turns = []
+    for r in rows:
+        d = dict(r)
+        d["sources"] = json.loads(d.pop("sources_json") or "[]")
+        d["searched"] = json.loads(d.pop("searched_json") or "[]")
+        turns.append(d)
+    turns.reverse()  # chronological (oldest first), same order a chat thread reads in
+    return turns
 
 
 def log(actor: str, action: str, detail: str) -> None:

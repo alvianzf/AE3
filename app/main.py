@@ -50,7 +50,7 @@ from .graph import schema as graph_schema
 from .graph import store
 from .ingestion import pipeline as ingestion_pipeline
 from .ingestion import queue as ingestion_queue
-from .patient.context import get_patient_context, load_relevant_documents
+from .patient.context import PatientContext, get_patient_context, load_relevant_documents
 from .reasoning import clinical_state, llm_checker, reasoner
 from .retrieval import general_lookup, pgvector_store, seed_search
 from .retrieval.traversal import GraphTraversalRetriever, two_stage_discover
@@ -3739,6 +3739,184 @@ def me_consult(body: MeConsult, background_tasks: BackgroundTasks,
                       {k: v for k, v in result.items()
                        if k not in ("event", "answer", "session_id")})
         yield _sse(result)
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
+
+
+# --- "Ask the Library" — dashboard knowledge-library chat, no client ------------
+# Deliberately simpler than /api/me/consult (UI/UX design consult, 2026-11-25):
+# no client picker, no folder/tag scope UI in the compact view, no deep-
+# research-vs-general-lookup distinction exposed beyond the one toggle
+# consult already has, no pattern-library context (that's about patterns
+# across CLIENT cases, which has no meaning here). History IS persisted
+# (core_store.library_chat_turns), per explicit product decision overriding
+# the initial "ephemeral" UX recommendation — ties to the practitioner only,
+# never a client, since the whole point is answering with no client data.
+
+class LibraryChatIn(BaseModel):
+    question: str
+    retrieval_mode: str = "general_lookup"
+    folder: str = ""
+    topic: str = ""
+
+
+def _neutral_patient_context() -> PatientContext:
+    """A PatientContext with nothing in it — "Ask the Library" runs the
+    exact same retrieval/reasoning pipeline /api/me/consult does, just fed
+    a context that has no client to describe, so every "none recorded"
+    branch already built into that pipeline (REASONER_SYSTEM, the seed-
+    query-forming prompt) does the right thing with zero new code."""
+    return PatientContext(client_id="", name="General inquiry (no client)", dob=None, country=None)
+
+
+@app.get("/api/me/library-chat")
+def me_list_library_chat(session: dict = Depends(auth.require_pro_practitioner)) -> list[dict]:
+    return core_store.list_library_chat_turns(session["id"])
+
+
+@app.post("/api/me/library-chat")
+def me_library_chat(body: LibraryChatIn, session: dict = Depends(auth.require_pro_practitioner)):
+    if not body.question.strip():
+        raise HTTPException(400, "Question cannot be empty.")
+    practitioner_id = session["id"]
+    patient = _neutral_patient_context()
+    weights = vault.get_source_weights(practitioner_id)
+    accessible_private = core_store.get_accessible_document_ids(practitioner_id)
+
+    # Same multi-turn-continuity trick me_consult uses (history folded into
+    # the question text, since the retrieval/reasoning pipeline has no
+    # separate `history` parameter yet) — sourced from the persisted
+    # library_chat_turns instead of a session's own turns, and bounded to
+    # the last few so an old research thread doesn't balloon every prompt.
+    prior_turns = core_store.list_library_chat_turns(practitioner_id, limit=6)
+    history_block = "\n\n".join(
+        f"Practitioner asked: {t['question']}\nYou answered: {t['answer']}" for t in prior_turns
+    )
+    question = f"Earlier in this research thread:\n---\n{history_block}\n---\n\n{body.question}" \
+        if history_block else body.question
+
+    def _sse(event: dict) -> str:
+        return f"data: {json.dumps(event)}\n\n"
+
+    def stream():
+        total_input_tokens = 0
+        total_output_tokens = 0
+
+        def _track(usage: dict) -> None:
+            nonlocal total_input_tokens, total_output_tokens
+            total_input_tokens += usage["input_tokens"]
+            total_output_tokens += usage["output_tokens"]
+
+        step_times: dict[str, float] = {}
+
+        def _timed_done(event: dict, t0: float) -> dict:
+            dt = round(time.monotonic() - t0, 2)
+            step_times[event["agent"]] = step_times.get(event["agent"], 0) + dt
+            return {**event, "duration_s": dt}
+
+        try:
+            if body.retrieval_mode == "general_lookup":
+                yield _sse({"event": "agent_start", "agent": "lookup"})
+                t0 = time.monotonic()
+                traversal = general_lookup.lookup(question, patient, cfg.min_grade,
+                                                  accessible_private_ids=accessible_private,
+                                                  folder=body.folder, topic=body.topic)
+                _track(traversal.usage)
+                yield _sse(_timed_done({"event": "agent_done", "agent": "lookup", **traversal.usage,
+                           "accumulated": len(traversal.accumulated)}, t0))
+            else:
+                yield _sse({"event": "agent_start", "agent": "discover"})
+                t0 = time.monotonic()
+                seed_result = two_stage_discover(question, patient, cfg.min_grade, weights=weights,
+                                                 accessible_private_ids=accessible_private,
+                                                 folder=body.folder, topic=body.topic)
+                _track(seed_result.usage)
+                yield _sse(_timed_done({"event": "agent_done", "agent": "discover", **seed_result.usage}, t0))
+
+                yield _sse({"event": "agent_start", "agent": "traversal"})
+                t0 = time.monotonic()
+                retriever = GraphTraversalRetriever(min_grade=cfg.min_grade,
+                                                    max_depth=cfg.traversal_stage2_max_depth,
+                                                    weights=weights, accessible_private_ids=accessible_private,
+                                                    folder=body.folder, topic=body.topic)
+                traversal = None
+                for hop_event, hop_payload in retriever.retrieve_streaming(question, patient, seed_result):
+                    if hop_event == "hop":
+                        yield _sse({"event": "agent_progress", "agent": "traversal",
+                                   "hop": hop_payload.hop, "max_depth": hop_payload.max_depth,
+                                   "candidates": hop_payload.candidates, "relevant": hop_payload.relevant,
+                                   "accumulated": hop_payload.accumulated,
+                                   "duration_s": round(time.monotonic() - t0, 2)})
+                    else:
+                        traversal = hop_payload
+                traversal.accumulated = _cap_chunks_per_document(
+                    traversal.accumulated, cfg.traversal_max_chunks_per_document_final)
+                _track(traversal.usage)
+                yield _sse(_timed_done({"event": "agent_done", "agent": "traversal", **traversal.usage,
+                           "depth": traversal.depth_reached, "stopped": traversal.stopped_reason,
+                           "accumulated": len(traversal.accumulated)}, t0))
+
+            verdict = None
+            if not traversal.accumulated:
+                reasoned = None
+                answer_text = (
+                    "No source in the library answers this question, so I have nothing to "
+                    "base an answer on and will not guess."
+                )
+            else:
+                yield _sse({"event": "agent_start", "agent": "reasoner"})
+                t0 = time.monotonic()
+                reasoned = None
+                for kind, payload in reasoner.answer_streaming(body.question, patient, traversal):
+                    if kind == "delta":
+                        yield _sse({"event": "answer_delta", "text": payload})
+                    else:
+                        reasoned = payload
+                _track(reasoned.usage)
+                yield _sse(_timed_done({"event": "agent_done", "agent": "reasoner", **reasoned.usage}, t0))
+                answer_text = reasoned.text
+
+                yield _sse({"event": "agent_start", "agent": "checker"})
+                t0 = time.monotonic()
+                verdict = llm_checker.check(body.question, reasoned, patient.as_query_text())
+                _track(verdict["usage"])
+                yield _sse(_timed_done({"event": "agent_done", "agent": "checker", **verdict["usage"]}, t0))
+                if verdict["unsupported"]:
+                    answer_text = _strip_unsupported(answer_text, verdict["unsupported"])
+        except openai.APIError:
+            yield _sse({"event": "error",
+                       "message": "The AI service is temporarily unavailable. Try again shortly."})
+            return
+        except Exception:
+            logging.exception("library chat failed for practitioner %s", practitioner_id)
+            yield _sse({"event": "error",
+                       "message": "Something went wrong while answering. Try again shortly."})
+            return
+
+        cited_k = {
+            int(n)
+            for group in re.findall(r"\[(\d+(?:\s*,\s*\d+)*)\]", answer_text)
+            for n in re.findall(r"\d+", group)
+        }
+        sources = [
+            {
+                "label": f"{i + 1}", "id": node.get("id"), "document_id": node.get("document_id"),
+                "title": node.get("document_title") or node.get("name") or node.get("id"),
+                "grade": node.get("grade"), "snippet": node.get("text") or node.get("name") or "",
+                "kind": "chunk" if node.get("text") is not None else "entity", "locator": _locator(node),
+            }
+            for i, node in enumerate(traversal.accumulated) if (i + 1) in cited_k
+        ]
+        searched = list(_dedupe_searched_documents(traversal.accumulated, cited_k).values())
+        turn = core_store.add_library_chat_turn(
+            practitioner_id, body.question, answer_text, sources, searched, body.retrieval_mode)
+        yield _sse({
+            "event": "result", "id": turn["id"], "question": body.question, "answer": answer_text,
+            "check": verdict, "sources": sources, "searched": searched,
+            "total_input_tokens": total_input_tokens, "total_output_tokens": total_output_tokens,
+            "step_times": step_times, "total_time_s": round(sum(step_times.values()), 2),
+            "retrieval_mode": body.retrieval_mode,
+        })
 
     return StreamingResponse(stream(), media_type="text/event-stream")
 

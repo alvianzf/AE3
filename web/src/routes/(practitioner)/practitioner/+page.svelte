@@ -2,6 +2,7 @@
 	import StatTile from '$lib/components/StatTile.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import Icon from '$lib/components/Icon.svelte';
+	import AskLibraryPanel from '$lib/components/AskLibraryPanel.svelte';
 
 	let { data } = $props();
 	const isPro = $derived(data.profile?.plan === 'pro');
@@ -76,6 +77,8 @@
 		</div>
 
 		{#if isPro}
+			<AskLibraryPanel />
+
 			<div class="cols-2">
 				<section class="block">
 					<div class="block-head">
@@ -124,8 +127,8 @@
 						<a class="tool-card" href="/practitioner/questionnaires">
 							<span class="tool-ico"><Icon name="clipboard" size={18} /></span>
 							<div class="tool-text">
-								<strong>Questionnaires</strong>
-								<span>Customize onboarding intake questionnaires</span>
+								<strong>Intake</strong>
+								<span>Customize onboarding intake forms</span>
 							</div>
 						</a>
 						<a class="tool-card" href="/practitioner/knowledge">
@@ -157,6 +160,7 @@
 	.checklist-item.done { color: var(--muted); text-decoration: line-through; }
 	.mark { font-weight: 700; color: var(--accent); }
 	.tile-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: var(--space-4); margin-bottom: var(--space-5); }
+	:global(.ask-library) { margin-bottom: var(--space-5); }
 	.cols-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(21rem, 1fr)); gap: var(--space-5); align-items: start; }
 	.block {
 		background: var(--panel); border: 1px solid var(--line); border-radius: 16px;

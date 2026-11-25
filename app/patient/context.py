@@ -56,7 +56,7 @@ class PatientContext:
         every one of those call sites should use this, not just the raw
         question, per the clinical-safety requirement this module exists
         for."""
-        lines = [f"Patient: {self.name}"]
+        lines = [f"Client: {self.name}"]
         if self.dob:
             lines.append(f"DOB: {self.dob}")
         lines.append(f"Active conditions: {', '.join(self.conditions) or 'none recorded'}")
