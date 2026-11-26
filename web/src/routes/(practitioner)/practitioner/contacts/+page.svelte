@@ -41,15 +41,27 @@
 	}
 
 	const STATUS_LABELS: Record<string, string> = { new: 'New', contacted: 'Contacted', closed: 'Closed' };
+
+	// New submissions need attention; contacted/closed ones are just a
+	// record. Without this, an old "closed" row sitting above a brand-new
+	// one (both ordered by date alone) reads as "nothing to do here" at a
+	// glance — the opposite of the point of this page.
+	const STATUS_ORDER: Record<string, number> = { new: 0, contacted: 1, closed: 2 };
+	const sortedContacts = $derived(
+		[...(data.contacts ?? [])].sort((a: any, b: any) =>
+			STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || b.created_at.localeCompare(a.created_at)
+		)
+	);
+	const newCount = $derived((data.contacts ?? []).filter((c: any) => c.status === 'new').length);
 </script>
 
 <svelte:head><title>Contacts — Practitioner portal</title></svelte:head>
 
-<div class="pane-row"><div class="detail-pane"><div class="detail-head"><div class="head-title"><span class="head-ico"><Icon name="mail" size={16} /></span><h1>Contact submissions</h1></div></div>
-	<p class="hint">Messages sent through your public profile's contact form. Reply by email, then mark it contacted — or turn them into a client directly.</p>
+<div class="pane-row"><div class="detail-pane"><div class="detail-head"><div class="head-title"><span class="head-ico"><Icon name="mail" size={16} /></span><h1>Contact submissions</h1>{#if newCount}<Chip tone="accent">{newCount} new</Chip>{/if}</div></div>
+	<p class="hint">Messages sent through your public profile's contact form. Reply by email, then mark it contacted or dismiss it — or turn them into a client directly.</p>
 	<DataTable
 		columns={[{ key: 'name', label: 'Name' }, { key: 'email', label: 'Email' }, { key: 'message', label: 'Message' }, { key: 'status', label: 'Status' }, { key: 'actions', label: '' }]}
-		rows={data.contacts}
+		rows={sortedContacts}
 		empty="No contact submissions yet — they'll show up here when someone messages you through your public profile."
 	>
 		{#snippet row(c)}
@@ -62,6 +74,7 @@
 				<Button variant="text" onclick={() => addAsClient(c)}><Icon name="plus" size={15} />Add as client</Button>
 				{#if c.status === 'new'}
 					<Button variant="text" onclick={() => setStatus(c.id as string, 'contacted')}><Icon name="check" size={15} />Mark contacted</Button>
+					<Button variant="text" onclick={() => setStatus(c.id as string, 'closed')}><Icon name="x" size={15} />Dismiss</Button>
 				{/if}
 			</td>
 		{/snippet}
