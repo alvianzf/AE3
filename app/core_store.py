@@ -109,6 +109,15 @@ def ensure_schema() -> None:
             ALTER TABLE practitioners ADD COLUMN IF NOT EXISTS
                 logo_path TEXT;
 
+            -- Turbo mode — a practitioner opts in before "Turbo (risky)"
+            -- even appears as a selectable retrieval mode in Consult
+            -- (app/reasoning/turbo.py: answers from general knowledge
+            -- first, verifies against the library afterward instead of
+            -- before). Defaults to FALSE; enabling it here only unlocks
+            -- the option, it doesn't change default consult behavior.
+            ALTER TABLE practitioners ADD COLUMN IF NOT EXISTS
+                turbo_mode_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+
             -- Routing only: which vault schema a client's login belongs
             -- to. No clinical content — that lives in the vault itself.
             CREATE TABLE IF NOT EXISTS client_directory (
@@ -867,7 +876,7 @@ def set_can_upload_library(practitioner_id: str, allowed: bool) -> dict | None:
 def update_practitioner_profile(practitioner_id: str, **fields) -> dict | None:
     allowed = {"name", "bio", "specialties", "languages", "years_experience",
                "consultation_price_cents", "photo_path", "accepting_new_clients",
-               "logo_path"}
+               "logo_path", "turbo_mode_enabled"}
     unknown = set(fields) - allowed
     if unknown:
         raise ValueError(f"unknown profile field(s): {', '.join(sorted(unknown))}")

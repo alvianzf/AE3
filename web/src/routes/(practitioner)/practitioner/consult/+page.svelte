@@ -395,11 +395,11 @@
 	// else (SSE events, step_times keys, AGENT_LABELS' own dict keys).
 	const AGENT_LABELS: Record<string, string> = {
 		discover: 'Finding sources', traversal: 'Connecting the dots', lookup: 'Lookup',
-		reasoner: 'Answering', checker: 'Checking the facts'
+		reasoner: 'Answering', checker: 'Checking the facts', turbo_draft: 'Answering (turbo)'
 	};
 
 	const MODE_LABELS: Record<string, string> = {
-		deep_research: 'Deep research', general_lookup: 'General lookup'
+		deep_research: 'Deep research', general_lookup: 'General lookup', turbo: 'Turbo (risky)'
 	};
 
 	// The answer is rendered as sanitized Markdown ($lib/markdown.ts); [S1]/
@@ -613,6 +613,12 @@
 <svelte:head><title>Consult — Practitioner portal</title></svelte:head>
 
 {#snippet turnView(t: any)}
+	{#if t.retrieval_mode === 'turbo'}
+		<div class="turbo-banner">
+			<Icon name="bolt" size={14} />
+			Turbo mode — answered from general knowledge, not verified before you see it.
+		</div>
+	{/if}
 	<div class="rh">
 		{#if t.check?.verdict}
 			<Chip tone={t.check.verdict === 'pass' ? 'ok' : 'warn'}>{t.check.verdict}</Chip>
@@ -649,15 +655,29 @@
 	<div class="answer" onclick={onAnswerClick}>{@html answerHtml(t)}</div>
 
 	{#if t.check?.unsupported?.length}
-		<!-- These are no longer in the answer above — app/main.py's
-		     _strip_unsupported() cuts an unverified claim out of the text
-		     rather than shipping it alongside this warning. Collapsed by
-		     default, same treatment as Sources below — transparency about
-		     what was removed shouldn't take up space unasked. -->
-		<details class="unsupported-acc">
-			<summary><Icon name="chevron" size={14} /> Removed — {t.check.unsupported.length} unverified claim{t.check.unsupported.length === 1 ? '' : 's'}</summary>
-			<ul>{#each t.check.unsupported as u}<li>{u}</li>{/each}</ul>
-		</details>
+		{#if t.retrieval_mode === 'turbo'}
+			<!-- Turbo mode keeps unsupported claims IN the answer above —
+			     confirmed with the user: stripping would defeat the point of
+			     a fast, general-knowledge answer. This list is a disclosure,
+			     not a "here's what we removed" note — these sentences are
+			     still sitting in the text the practitioner just read. -->
+			<details class="unsupported-acc">
+				<summary><Icon name="chevron" size={14} /> {t.check.unsupported.length} statement{t.check.unsupported.length === 1 ? '' : 's'} not confirmed in your library</summary>
+				<ul>{#each t.check.unsupported as u}<li>{u}</li>{/each}</ul>
+			</details>
+		{:else}
+			<!-- These are no longer in the answer above — app/main.py's
+			     _strip_unsupported() cuts an unverified claim out of the text
+			     rather than shipping it alongside this warning. Collapsed by
+			     default, same treatment as Sources below — transparency about
+			     what was removed shouldn't take up space unasked. -->
+			<details class="unsupported-acc">
+				<summary><Icon name="chevron" size={14} /> Removed — {t.check.unsupported.length} unverified claim{t.check.unsupported.length === 1 ? '' : 's'}</summary>
+				<ul>{#each t.check.unsupported as u}<li>{u}</li>{/each}</ul>
+			</details>
+		{/if}
+	{:else if t.retrieval_mode === 'turbo' && t.check?.note}
+		<p class="hint turbo-no-match">{t.check.note}</p>
 	{/if}
 
 	{#if t.traversal}
@@ -944,6 +964,16 @@
 						type="button" class:on={retrievalMode === 'general_lookup'} disabled={asking}
 						onclick={() => (retrievalMode = 'general_lookup')} title="One fast similarity lookup — less thorough"
 					><Icon name="bolt" size={14} /> General lookup</button>
+					{#if data.profile?.turbo_mode_enabled}
+						<!-- Unlocked by the Profile page's "Turbo mode (risky)"
+						     toggle — this button only appears once a practitioner
+						     has explicitly opted in there. -->
+						<button
+							type="button" class="turbo-btn" class:on={retrievalMode === 'turbo'} disabled={asking}
+							onclick={() => (retrievalMode = 'turbo')}
+							title="Answers from general knowledge first, checks your library afterward — risky, unverified until after you see it"
+						><Icon name="bolt" size={14} /> Turbo (risky)</button>
+					{/if}
 				</div>
 				<div class="scope-picker" role="group" aria-label="Library scope">
 					<select bind:value={scopeFolder} disabled={asking} title="Restrict every retrieval path to this library folder — a hard filter, same as the grade threshold.">
@@ -1333,6 +1363,14 @@
 	}
 	.mode-toggle button.on { background: var(--accent); color: #fff; }
 	.mode-toggle button:disabled { opacity: .6; cursor: not-allowed; }
+	.mode-toggle button.turbo-btn.on { background: var(--warn); color: #fff; }
+
+	.turbo-banner {
+		display: flex; align-items: center; gap: .4rem; font-size: var(--text-xs); font-weight: 650;
+		color: var(--warn); background: var(--warn-soft); border-radius: var(--r); padding: .4rem .7rem;
+		margin-bottom: .5rem; width: fit-content;
+	}
+	.turbo-no-match { color: var(--warn); margin-top: .4rem; }
 
 	.scope-picker { display: inline-flex; gap: .4rem; }
 	.scope-picker select {

@@ -32,6 +32,7 @@
 	let years_experience = $state('0');
 	let consultation_price_cents = $state('0');
 	let accepting_new_clients = $state(false);
+	let turbo_mode_enabled = $state(false);
 	let specialties = $state<string[]>([]);
 	let languages = $state<string[]>([]);
 	let specialtyInput = $state('');
@@ -48,6 +49,7 @@
 		years_experience = String(p?.years_experience ?? 0);
 		consultation_price_cents = String(p?.consultation_price_cents ?? 0);
 		accepting_new_clients = !!p?.accepting_new_clients;
+		turbo_mode_enabled = !!p?.turbo_mode_enabled;
 		specialties = [...(p?.specialties ?? [])];
 		languages = [...(p?.languages ?? [])];
 	});
@@ -98,6 +100,7 @@
 			form.set('years_experience', String(Number(years_experience) || 0));
 			form.set('consultation_price_cents', String(Number(consultation_price_cents) || 0));
 			form.set('accepting_new_clients', String(accepting_new_clients));
+			form.set('turbo_mode_enabled', String(turbo_mode_enabled));
 			form.set('specialties', JSON.stringify(specialties));
 			form.set('languages', JSON.stringify(languages));
 			if (photoFile) form.set('photo', photoFile);
@@ -193,6 +196,17 @@
 			<Toggle checked={accepting_new_clients} onchange={(next) => (accepting_new_clients = next)} label="Accepting new clients" />
 		</div>
 
+		<div class="field accepting-row turbo-row">
+			<div>
+				<label for="turbo-toggle">Turbo mode (risky)</label>
+				<p class="hint">On: a "Turbo (risky)" option appears in Consult. It answers from general
+					knowledge first — given only your library's document titles, not their content — then
+					checks the answer against your library afterward instead of before. Can surface claims
+					your library doesn't actually support; review before relying on them.</p>
+			</div>
+			<Toggle checked={turbo_mode_enabled} onchange={(next) => (turbo_mode_enabled = next)} label="Turbo mode (risky)" />
+		</div>
+
 		<Button type="submit" loading={saving}>Save</Button>
 	</form>
 </div></div>
@@ -238,5 +252,7 @@
 	.field input[type="text"]:focus { outline: none; border-bottom-color: var(--accent); box-shadow: 0 1px 0 0 var(--accent); }
 	.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); }
 	.accepting-row { flex-direction: row; align-items: flex-start; justify-content: space-between; gap: var(--space-4); }
+	.turbo-row { background: var(--warn-soft); border: 1px solid var(--warn); border-radius: var(--r); padding: var(--space-3); }
+	.turbo-row label { color: var(--warn); }
 	@media (max-width: 480px) { .two-col { grid-template-columns: 1fr; } }
 </style>

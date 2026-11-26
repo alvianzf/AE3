@@ -32,7 +32,7 @@ export type ConsultEvent =
 	  }
 	| { event: 'error'; message: string };
 
-export type RetrievalMode = 'deep_research' | 'general_lookup';
+export type RetrievalMode = 'deep_research' | 'general_lookup' | 'turbo';
 
 export async function* streamConsult(
 	clientId: string,

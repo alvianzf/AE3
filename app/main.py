@@ -51,7 +51,7 @@ from .graph import store
 from .ingestion import pipeline as ingestion_pipeline
 from .ingestion import queue as ingestion_queue
 from .patient.context import PatientContext, get_patient_context, load_relevant_documents
-from .reasoning import clinical_state, document_insights, llm_checker, reasoner
+from .reasoning import clinical_state, document_insights, llm_checker, reasoner, turbo
 from .retrieval import general_lookup, pgvector_store, seed_search
 from .retrieval.traversal import GraphTraversalRetriever, two_stage_discover
 
@@ -2729,7 +2729,7 @@ async def me_update_profile(request: Request,
     practitioner_id = session["id"]
     content_type = request.headers.get("content-type", "")
     allowed = {"name", "bio", "specialties", "languages", "years_experience",
-               "consultation_price_cents", "accepting_new_clients"}
+               "consultation_price_cents", "accepting_new_clients", "turbo_mode_enabled"}
     fields: dict = {}
     if content_type.startswith("multipart/form-data"):
         form = await request.form()
@@ -2742,7 +2742,7 @@ async def me_update_profile(request: Request,
                     fields[key] = json.loads(value or "[]")
                 elif key == "years_experience" or key == "consultation_price_cents":
                     fields[key] = int(value)
-                elif key == "accepting_new_clients":
+                elif key in ("accepting_new_clients", "turbo_mode_enabled"):
                     fields[key] = str(value).lower() in ("true", "1", "on")
                 else:
                     fields[key] = str(value)
@@ -3362,6 +3362,15 @@ def me_consult(body: MeConsult, background_tasks: BackgroundTasks,
     if vault.get_client(practitioner_id, body.client_id) is None:
         raise HTTPException(404, "no such client")
 
+    if body.retrieval_mode == "turbo":
+        # Server-side enforcement, not just hiding the button in the UI —
+        # the settings toggle is the actual gate, checked fresh (not off
+        # the session dict, which doesn't carry this flag) so turning it
+        # off takes effect on a practitioner's very next question.
+        practitioner = core_store.get_practitioner(practitioner_id)
+        if not practitioner or not practitioner.get("turbo_mode_enabled"):
+            raise HTTPException(403, "Turbo mode is not enabled for this account.")
+
     # get_patient_context() does its own independent vault.get_client()
     # lookup rather than reusing the check above (it's a separate module,
     # callable on its own) — a client deleted in the gap between the two
@@ -3478,7 +3487,44 @@ def me_consult(body: MeConsult, background_tasks: BackgroundTasks,
             return {**event, "duration_s": dt}
 
         try:
-            if body.retrieval_mode == "general_lookup":
+            draft_text = None
+            if body.retrieval_mode == "turbo":
+                # Turbo mode (specs/v9) — answers from general knowledge
+                # FIRST, given only the library's document titles, then
+                # runs a real RAG search afterward to check whether the
+                # draft has any basis in the library. Inverts every other
+                # mode's "retrieve, then ground the answer in it" order —
+                # see app/reasoning/turbo.py's module docstring.
+                yield _sse({"event": "agent_start", "agent": "turbo_draft"})
+                t0 = time.monotonic()
+                titles = turbo.list_accessible_titles(
+                    practitioner_id, body.min_grade, accessible_private,
+                    folder=body.folder, topic=body.topic)
+                draft_usage = {"input_tokens": 0, "output_tokens": 0}
+                for kind, payload in turbo.draft_answer_streaming(
+                        question, patient, titles, pattern_context=pattern_context):
+                    if kind == "delta":
+                        yield _sse({"event": "answer_delta", "text": payload})
+                    else:
+                        draft_text, draft_usage = payload
+                _track(draft_usage)
+                yield _sse(_timed_done({"event": "agent_done", "agent": "turbo_draft", **draft_usage}, t0))
+
+                # Verification: a real RAG search, using the draft itself
+                # as the query — general_lookup is the right tool here
+                # (one fast pgvector call, no query-forming LLM round-trip
+                # needed since there's already text to search with). This
+                # is the "does this have basis in the library" check.
+                yield _sse({"event": "agent_start", "agent": "lookup"})
+                t0 = time.monotonic()
+                traversal = general_lookup.lookup(draft_text, patient, body.min_grade,
+                                                  accessible_private_ids=accessible_private,
+                                                  folder=body.folder, topic=body.topic)
+                _track(traversal.usage)
+                yield _sse(_timed_done({"event": "agent_done", "agent": "lookup", **traversal.usage,
+                           "accumulated": len(traversal.accumulated)}, t0))
+                search_query_repr = "(verification search over the drafted answer)"
+            elif body.retrieval_mode == "general_lookup":
                 # One pgvector query, no Neo4j round-trip — see
                 # app/retrieval/general_lookup.py's module docstring for
                 # why this deliberately skips the query-forming LLM call
@@ -3566,7 +3612,36 @@ def me_consult(body: MeConsult, background_tasks: BackgroundTasks,
 
             verdict = None
             revised = False
-            if not traversal.accumulated:
+            if draft_text is not None:
+                # Turbo mode: there is already an answer (the draft) by
+                # this point regardless of what the verification search
+                # found — unlike every other mode, an empty traversal
+                # here does not mean "nothing to answer," it means
+                # "nothing to check the answer against."
+                reasoned = None
+                answer_text = draft_text
+                if traversal.accumulated:
+                    reasoned_for_check = reasoner.ReasonedAnswer(
+                        text=draft_text, usage=draft_usage, citations=traversal.accumulated)
+                    yield _sse({"event": "agent_start", "agent": "checker"})
+                    t0 = time.monotonic()
+                    verdict = llm_checker.check(question, reasoned_for_check, patient.as_query_text())
+                    _track(verdict["usage"])
+                    yield _sse(_timed_done({"event": "agent_done", "agent": "checker",
+                               **verdict["usage"]}, t0))
+                    # Confirmed with the user: kept, not stripped — Turbo
+                    # mode's whole point is a fast answer that may go
+                    # beyond the library; verification exists to disclose
+                    # what is/isn't confirmed, not to cut the answer down
+                    # to only what matches. _strip_unsupported is
+                    # deliberately NOT called here; verdict["unsupported"]
+                    # ships as-is for the frontend to render as a
+                    # disclosure list.
+                else:
+                    verdict = {"verdict": "weak", "unsupported": [],
+                              "note": "No related material found in your library to check this against.",
+                              "usage": {"input_tokens": 0, "output_tokens": 0}}
+            elif not traversal.accumulated:
                 reasoned = None
                 answer_text = (
                     "No source in the library answers this question, so I have nothing to "
@@ -3685,7 +3760,7 @@ def me_consult(body: MeConsult, background_tasks: BackgroundTasks,
                 "search_query": search_query_repr,
                 "seed_count": (
                     len(seed_result.seed_chunk_ids) + len(seed_result.seed_entity_ids)
-                    if body.retrieval_mode != "general_lookup" else len(traversal.accumulated)
+                    if body.retrieval_mode == "deep_research" else len(traversal.accumulated)
                 ),
             },
             "traversal": {"depth_reached": traversal.depth_reached,
