@@ -15,6 +15,15 @@
 	// Split out of one long scroll into tabs (ux-implementation-spec.md#1) —
 	// Overview (the Questionnaire Response) is what a practitioner should
 	// see first on opening a client.
+	// Found live, 2026-11-26: practitioners were confused navigating this
+	// page — "Overview" (intake answers) and "Intake Links" (sending/
+	// managing those links) read as two unrelated destinations despite
+	// both being about the same thing ("this client's intake"), and it
+	// wasn't obvious which tab to open for which task. Folded into one
+	// "Overview" tab — everything intake-related lives together now, down
+	// from 4 tabs to 3, each with a non-overlapping job: Overview (what do
+	// I know about them, how do I get more), Record (their full clinical
+	// picture), Sessions (my consult history with them).
 	let active = $state('overview');
 
 	function fileUrl(fileId: string) {
@@ -56,7 +65,7 @@
 		};
 		return {
 			label: 'No intake sent', detail: 'Send one to get started with this client.',
-			cta: 'Send an intake form', action: () => { active = 'intake'; showSendPicker = true; }
+			cta: 'Send an intake form', action: () => { active = 'overview'; showSendPicker = true; }
 		};
 	});
 
@@ -356,7 +365,6 @@
 	<div class="tabbar">
 		<Tabs bind:active tabs={[
 			{ id: 'overview', label: 'Overview' },
-			{ id: 'intake', label: 'Intake Links' },
 			{ id: 'record', label: 'Record' },
 			{ id: 'sessions', label: 'Sessions' }
 		]} />
@@ -400,9 +408,9 @@
 				{/if}
 			</div>
 		{:else}
-			<p class="hint">No intake response yet.</p>
+			<p class="hint">No intake response yet — send a link below to get started.</p>
 		{/if}
-	{:else if active === 'intake'}
+
 		<div class="rail-section"><h2>Intake Links</h2>
 			<div class="link-actions">
 				<Button variant="outlined" onclick={() => (showSendPicker = !showSendPicker)}>Send an intake form</Button>
@@ -441,6 +449,7 @@
 		</div>
 	{:else if active === 'record'}
 		<div class="rail-section">
+			<h2>Add to record</h2>
 			<form class="entry-form" onsubmit={addEntry}>
 				<Select label="Kind" bind:value={entryKind} disabled={addingEntry}
 					options={Object.entries(KIND_LABELS).filter(([v]) => v !== 'document').map(([value, label]) => ({ value, label }))} />
