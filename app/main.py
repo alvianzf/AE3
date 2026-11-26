@@ -51,7 +51,7 @@ from .graph import store
 from .ingestion import pipeline as ingestion_pipeline
 from .ingestion import queue as ingestion_queue
 from .patient.context import PatientContext, get_patient_context, load_relevant_documents
-from .reasoning import clinical_state, llm_checker, reasoner
+from .reasoning import clinical_state, document_insights, llm_checker, reasoner
 from .retrieval import general_lookup, pgvector_store, seed_search
 from .retrieval.traversal import GraphTraversalRetriever, two_stage_discover
 
@@ -4532,7 +4532,9 @@ def me_save_intake_note(client_id: str, body: IntakeNoteIn,
 # session_summary is written by me_summarize_session() only, not this
 # endpoint — a practitioner shouldn't be able to author a "summary" entry
 # by hand and have it silently treated the same as a real AI-written one.
-_RECORD_ENTRY_KINDS = tuple(k for k in vault.KINDS if k != "session_summary")
+# "document" is written by _save_uploaded_file() only, same reasoning —
+# it's upload-only, never manually chosen in the Record tab's add-entry form.
+_RECORD_ENTRY_KINDS = tuple(k for k in vault.KINDS if k not in ("session_summary", "document"))
 
 
 class RecordEntryIn(BaseModel):
@@ -4579,6 +4581,21 @@ def me_delete_entry(client_id: str, entry_id: str,
     if not vault.delete_entry(practitioner_id, client_id, entry_id):
         raise HTTPException(404, "no such entry")
     return {"deleted": entry_id}
+
+
+@app.get("/api/me/clients/{client_id}/record")
+def me_get_client_record(client_id: str,
+                         session: dict = Depends(auth.require_pro_practitioner)) -> dict:
+    """The unified Record tab's one data source — entries, their AI
+    document insights when upload-backed, and current lab-marker trends,
+    assembled server-side (vault.get_client_record) rather than the
+    frontend merging /entries + /files + clinical_state separately. The
+    older /entries and /files routes above/below stay in place for the
+    uses that still need just one of those (file download links, etc.)."""
+    practitioner_id = session["id"]
+    if vault.get_client(practitioner_id, client_id) is None:
+        raise HTTPException(404, "no such client")
+    return vault.get_client_record(practitioner_id, client_id)
 
 
 def _save_uploaded_file(
@@ -4665,6 +4682,13 @@ def _save_uploaded_file(
         # RAG above, so this entry only needs to be a short pointer, same
         # shape as every other 'lab' entry in recent_labs
         # (app/patient/context.py).
+        # Every successfully-extracted upload gets a record_entries row now,
+        # not just lab-classified ones (specs/v9 Record redesign) — a
+        # non-lab document used to be invisible in Record entirely, only
+        # ever showing up in the old flat file list. Both branches below
+        # also schedule the AI document-understanding pass (doc type,
+        # summary, highlights) in the background; neither branch's entry
+        # creation waits on it.
         if category == "lab":
             try:
                 excerpt = " ".join(extracted_text.split())[:400]
@@ -4672,6 +4696,7 @@ def _save_uploaded_file(
                     practitioner_id, client_id, "lab",
                     f"{filename} (uploaded test result): {excerpt}",
                 )
+                vault.link_uploaded_file_to_entry(practitioner_id, saved_row["id"], lab_entry["id"])
                 # specs/v9/03 — extracted from the FULL text, not the
                 # 400-char excerpt above: a whole panel's worth of markers
                 # would otherwise be cut off before extraction ever saw
@@ -4682,9 +4707,41 @@ def _save_uploaded_file(
                     clinical_state.update_lab_state, practitioner_id, client_id,
                     {"id": lab_entry["id"], "content": extracted_text},
                 )
+                background_tasks.add_task(
+                    document_insights.classify_document, practitioner_id, client_id,
+                    saved_row["id"], extracted_text, filename,
+                )
             except Exception as exc:
                 logging.warning("auto lab-entry creation failed for %r (client %s): %s",
                                 filename, client_id, exc)
+        else:
+            try:
+                excerpt = " ".join(extracted_text.split())[:400]
+                doc_entry = vault.add_entry(
+                    practitioner_id, client_id, "document", f"{filename}: {excerpt}",
+                )
+                vault.link_uploaded_file_to_entry(practitioner_id, saved_row["id"], doc_entry["id"])
+                background_tasks.add_task(
+                    document_insights.classify_document, practitioner_id, client_id,
+                    saved_row["id"], extracted_text, filename,
+                )
+            except Exception as exc:
+                logging.warning("document record-entry creation failed for %r (client %s): %s",
+                                filename, client_id, exc)
+    elif extraction_status == "failed":
+        # Extraction failed outright (unsupported format, corrupt file) —
+        # still create a minimal entry so the upload is at least visible in
+        # Record, just without any AI content (nothing was readable to
+        # classify in the first place).
+        try:
+            doc_entry = vault.add_entry(
+                practitioner_id, client_id, "document",
+                f"{filename} (could not be read automatically)",
+            )
+            vault.link_uploaded_file_to_entry(practitioner_id, saved_row["id"], doc_entry["id"])
+        except Exception as exc:
+            logging.warning("document record-entry creation failed for %r (client %s): %s",
+                            filename, client_id, exc)
 
     return saved_row
 

@@ -21,7 +21,8 @@ from .db import schema_connection, vault_connection, vault_connection_creating_s
 
 cfg = get_config()
 
-KINDS = ("lab", "history", "note", "session_summary", "condition", "medication", "protocol")
+KINDS = ("lab", "history", "note", "session_summary", "condition", "medication",
+         "protocol", "document")
 # "protocol" added: client-specific clinical protocols staged and implemented
 # at the practitioner's sole discretion (what interventions and when).
 # "condition"/"medication" added for app/patient/context.py — structured
@@ -30,6 +31,10 @@ KINDS = ("lab", "history", "note", "session_summary", "condition", "medication",
 # distinguished. Existing entries stay "history"/"note"; get_patient_context()
 # has a documented heuristic fallback for them rather than requiring a
 # backfill migration before it can be used.
+# "document" added for the Record redesign (specs/v9): every uploaded file
+# gets one of these automatically at upload time (app/main.py's
+# _save_uploaded_file), not just lab-classified ones — it's upload-only,
+# never offered in the Record tab's manual "add entry" form.
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -254,6 +259,22 @@ _SCHEMA_DDL = """
             -- instead of only ever sitting in one undifferentiated pile.
             ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS
                 category TEXT NOT NULL DEFAULT 'document';
+            -- AI document understanding (specs/v9 Record redesign): every
+            -- uploaded file is classified in the background after extraction
+            -- (app/reasoning/document_insights.py), independent of the
+            -- synchronous `category` heuristic above, which keeps deciding
+            -- the immediate lab-vs-document split and the lab auto-entry
+            -- behavior unchanged. NULL ai_doc_type means "not yet classified
+            -- (pending or failed)" — the Record tab must render that as a
+            -- processing/unavailable state, never assume it's always set.
+            ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS ai_doc_type TEXT;
+            ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS ai_summary TEXT;
+            ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS ai_highlights_json TEXT;
+            ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS ai_classified_at TEXT;
+            -- The record_entries row this upload is represented by in the
+            -- unified Record timeline (every upload gets one now, not just
+            -- lab-classified ones — see KINDS' "document" entry below).
+            ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS record_entry_id TEXT;
             CREATE TABLE IF NOT EXISTS wearable_connections (
                 id TEXT PRIMARY KEY,
                 client_id TEXT NOT NULL,
@@ -614,11 +635,11 @@ def list_entries(practitioner_id: str, client_id: str) -> list[dict]:
 
 def delete_entry(practitioner_id: str, client_id: str, entry_id: str) -> bool:
     with vault_connection(practitioner_id) as conn:
-        exists = conn.execute(
-            "SELECT 1 FROM record_entries WHERE id = %s AND client_id = %s",
+        entry = conn.execute(
+            "SELECT kind FROM record_entries WHERE id = %s AND client_id = %s",
             (entry_id, client_id),
         ).fetchone()
-        if not exists:
+        if not entry:
             return False
         # Same reasoning as delete_client()'s own fix: client_clinical_
         # state.source_entry_id references this row with no cascade.
@@ -627,6 +648,23 @@ def delete_entry(practitioner_id: str, client_id: str, entry_id: str) -> bool:
         # only source entry was removed shouldn't keep being shown as
         # "current" with nothing left to trace it back to.
         conn.execute("DELETE FROM client_clinical_state WHERE source_entry_id = %s", (entry_id,))
+        # A "document" entry IS the uploaded file, as far as the Record tab
+        # is concerned — deleting it from Record should delete the file
+        # (bytes, chunks, row) too, not leave an orphaned upload that no
+        # longer shows up anywhere but is still downloadable/retrievable.
+        if entry["kind"] == "document":
+            file_row = conn.execute(
+                "SELECT id, storage_path FROM uploaded_files WHERE record_entry_id = %s",
+                (entry_id,),
+            ).fetchone()
+            if file_row:
+                try:
+                    Path(file_row["storage_path"]).unlink(missing_ok=True)
+                except OSError as exc:
+                    logging.warning("could not remove uploaded file %s: %s",
+                                    file_row["storage_path"], exc)
+                conn.execute("DELETE FROM client_document_chunks WHERE file_id = %s", (file_row["id"],))
+                conn.execute("DELETE FROM uploaded_files WHERE id = %s", (file_row["id"],))
         conn.execute("DELETE FROM record_entries WHERE id = %s", (entry_id,))
     return True
 
@@ -1121,6 +1159,68 @@ def get_uploaded_file(practitioner_id: str, file_id: str, client_id: str | None 
             row = conn.execute(
                 "SELECT * FROM uploaded_files WHERE id = %s", (file_id,)).fetchone()
     return dict(row) if row else None
+
+
+def link_uploaded_file_to_entry(practitioner_id: str, file_id: str, entry_id: str) -> None:
+    """Records which record_entries row (kind='document' or 'lab') this
+    upload is represented by in the unified Record timeline — the reverse
+    direction of client_clinical_state.source_entry_id, deliberately plain
+    TEXT with no FK: delete_client()/delete_entry() delete record_entries
+    before uploaded_files, so a FK here would break that ordering."""
+    with vault_connection(practitioner_id) as conn:
+        conn.execute(
+            "UPDATE uploaded_files SET record_entry_id = %s WHERE id = %s",
+            (entry_id, file_id),
+        )
+
+
+def save_document_insights(practitioner_id: str, file_id: str, *, doc_type: str,
+                           summary: str, highlights: list[dict]) -> None:
+    """Written by app/reasoning/document_insights.py's classify_document, in
+    the background, well after the file itself was already saved — see
+    that module's docstring for the full best-effort contract."""
+    with vault_connection(practitioner_id) as conn:
+        conn.execute(
+            "UPDATE uploaded_files SET ai_doc_type = %s, ai_summary = %s, "
+            "ai_highlights_json = %s, ai_classified_at = %s WHERE id = %s",
+            (doc_type, summary, json.dumps(highlights), _now(), file_id),
+        )
+
+
+def get_client_record(practitioner_id: str, client_id: str) -> dict:
+    """Everything the Record tab renders, assembled server-side in one call
+    — same "several sources into one dict" shape as
+    get_patient_history_up_to(), scoped to right now rather than a
+    historical consult point. Each entry carries a "file" sub-dict (AI
+    doc_type/summary/highlights, plus enough to link to the file) when
+    it's backed by an upload."""
+    with vault_connection(practitioner_id) as conn:
+        entries = conn.execute(
+            "SELECT * FROM record_entries WHERE client_id = %s AND kind != 'session_summary' "
+            "ORDER BY created_at DESC",
+            (client_id,),
+        ).fetchall()
+        files = conn.execute(
+            "SELECT id, record_entry_id, original_name, media_type, category, "
+            "ai_doc_type, ai_summary, ai_highlights_json, ai_classified_at "
+            "FROM uploaded_files WHERE client_id = %s AND record_entry_id IS NOT NULL",
+            (client_id,),
+        ).fetchall()
+        clinical_state = conn.execute(
+            f"SELECT {_CLINICAL_STATE_COLUMNS} FROM client_clinical_state "
+            "WHERE client_id = %s AND valid_to IS NULL ORDER BY display_label",
+            (client_id,),
+        ).fetchall()
+    files_by_entry_id = {f["record_entry_id"]: dict(f) for f in files}
+    out_entries = []
+    for e in entries:
+        row = dict(e)
+        file_meta = files_by_entry_id.get(e["id"])
+        if file_meta:
+            file_meta["ai_highlights"] = json.loads(file_meta.pop("ai_highlights_json") or "[]")
+            row["file"] = file_meta
+        out_entries.append(row)
+    return {"entries": out_entries, "clinical_state": [dict(r) for r in clinical_state]}
 
 
 def _vec_literal(embedding: list[float]) -> str:

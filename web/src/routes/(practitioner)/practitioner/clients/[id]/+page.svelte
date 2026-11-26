@@ -17,8 +17,8 @@
 	// see first on opening a client.
 	let active = $state('overview');
 
-	function fileUrl(f: any) {
-		return `${PUBLIC_API_BASE}/api/me/clients/${data.client.id}/files/${f.id}`;
+	function fileUrl(fileId: string) {
+		return `${PUBLIC_API_BASE}/api/me/clients/${data.client.id}/files/${fileId}`;
 	}
 
 	// --- Journey redesign: the client page is the hub, not one of several
@@ -114,8 +114,10 @@
 	// something themselves (a prior clinic's labs, a scanned referral)
 	// on day one, before any link is ever sent. Direct practitioner-side
 	// upload, mirroring the intake page's own direct-vs-chunked split.
+	// Lives in the Record tab now (not a separate Files list) — every
+	// upload becomes a Record entry itself (app/main.py's
+	// _save_uploaded_file), so that's where the result actually lands.
 	const DIRECT_UPLOAD_LIMIT = 20 * 1024 * 1024;
-	let files = $state<any[]>(data.files ?? []);
 	let uploadingFile = $state(false);
 	let fileInput: HTMLInputElement | undefined = $state();
 	let dragOver = $state(false);
@@ -125,13 +127,20 @@
 		if (picked?.length) handleFiles(Array.from(picked));
 	}
 
+	async function reloadRecord() {
+		const r = await get(fetch, `/me/clients/${data.client.id}/record`).catch(() => null);
+		if (r) {
+			entries = r.entries ?? [];
+			clinicalState = r.clinical_state ?? [];
+		}
+	}
+
 	async function handleFiles(picked: File[]) {
 		uploadingFile = true;
 		try {
 			for (const file of picked) {
-				let saved;
 				if (file.size > DIRECT_UPLOAD_LIMIT) {
-					saved = await chunkedUpload(`/me/clients/${data.client.id}/files`, file);
+					await chunkedUpload(`/me/clients/${data.client.id}/files`, file);
 				} else {
 					const form = new FormData();
 					form.set('file', file);
@@ -141,15 +150,15 @@
 						body: form
 					});
 					if (!res.ok) throw new Error('Could not upload ' + file.name + '.');
-					saved = await res.json();
 				}
-				files = [saved, ...files];
 			}
 			toast('File uploaded.');
-			// A file recognized as a test result auto-creates a Record entry
-			// (app/main.py's _looks_like_lab_result) — reload Record so it
-			// shows up without a manual page refresh.
-			entries = await get(fetch, `/me/clients/${data.client.id}/entries`).catch(() => entries);
+			// Every upload now creates its own Record entry server-side —
+			// reload Record so it shows up without a manual page refresh.
+			// Its AI doc_type/summary/highlights classify in the background
+			// (a few seconds, not instant) and show "Processing…" until the
+			// next load picks them up.
+			await reloadRecord();
 		} catch (err: any) {
 			toast(err.message || 'Could not upload the file.', 'alert');
 		} finally {
@@ -191,8 +200,44 @@
 		condition: 'Condition',
 		medication: 'Medication',
 		note: 'Note',
-		history: 'History'
+		history: 'History',
+		document: 'Document'
 	};
+
+	// Groups the unified Record timeline by what a practitioner actually
+	// wants to scan together — "everything about this client's labs" in
+	// one place, whether it came from a manual entry or an uploaded PDF —
+	// rather than one flat chronological list of every kind mixed in.
+	// "document" is upload-only (see vault.KINDS); "note"/"history" are the
+	// older, pre-condition/medication kinds and group alongside it since
+	// none of the three carry structured clinical meaning on their own.
+	const KIND_TO_CATEGORY: Record<string, string> = {
+		lab: 'lab', condition: 'condition', medication: 'medication', protocol: 'protocol',
+		document: 'documents', note: 'documents', history: 'documents'
+	};
+	const CATEGORY_LABELS: Record<string, string> = {
+		lab: 'Labs & Trends', condition: 'Conditions', medication: 'Medications',
+		protocol: 'Protocols', documents: 'Documents & Notes'
+	};
+	const CATEGORY_ORDER = ['lab', 'condition', 'medication', 'protocol', 'documents'];
+
+	// specs/v9 — what app/reasoning/document_insights.py classifies an
+	// uploaded file as. Shown as a chip on any Record entry backed by a
+	// file; a document with no ai_doc_type yet (background job pending or
+	// failed) falls back to "Processing…" rather than a blank chip.
+	const DOC_TYPE_LABELS: Record<string, string> = {
+		lab_result: 'Lab result', imaging_report: 'Imaging report', clinical_note: 'Clinical note',
+		prescription: 'Prescription', intake_form: 'Intake form', insurance: 'Insurance',
+		referral: 'Referral', other: 'Document'
+	};
+	function trendArrow(trend: string | null) {
+		return trend === 'rising' ? '↑' : trend === 'falling' ? '↓' : trend === 'stable' ? '→' : '';
+	}
+	function markerTone(flag: string | null) {
+		if (flag === 'high' || flag === 'low') return 'warn';
+		if (flag === 'in_range') return 'ok';
+		return 'neutral';
+	}
 	// Legacy marker only — clients could once self-add record entries via
 	// POST /api/me/entries, but that route no longer exists (clients have
 	// no account to call it from). This only ever matches pre-removal rows;
@@ -206,11 +251,21 @@
 	function isClientReported(content: string) {
 		return content.startsWith(PATIENT_REPORTED_PREFIX);
 	}
-	let entries = $state<any[]>(data.entries ?? []);
+	let entries = $state<any[]>(data.record?.entries ?? []);
+	let clinicalState = $state<any[]>(data.record?.clinical_state ?? []);
 	let entryKind = $state('lab');
 	let entryContent = $state('');
 	let addingEntry = $state(false);
 	let deletingEntry = $state<string | null>(null);
+
+	const groupedEntries = $derived.by(() => {
+		const map: Record<string, any[]> = {};
+		for (const e of entries) {
+			const cat = KIND_TO_CATEGORY[e.kind] ?? 'documents';
+			(map[cat] ??= []).push(e);
+		}
+		return map;
+	});
 
 	async function addEntry(e: Event) {
 		e.preventDefault();
@@ -301,7 +356,7 @@
 	<div class="tabbar">
 		<Tabs bind:active tabs={[
 			{ id: 'overview', label: 'Overview' },
-			{ id: 'intake', label: 'Intake & Files' },
+			{ id: 'intake', label: 'Intake Links' },
 			{ id: 'record', label: 'Record' },
 			{ id: 'sessions', label: 'Sessions' }
 		]} />
@@ -384,57 +439,81 @@
 				</ul>
 			{/if}
 		</div>
-
-		<div class="rail-section"><h2>Files</h2>
-			<label class="dropzone" class:drag-over={dragOver} use:fileDrop={handleFiles}
-				ondragenter={() => (dragOver = true)} ondragleave={() => (dragOver = false)} ondrop={() => (dragOver = false)}>
-				<Icon name="upload" size={18} />
-				<span>{uploadingFile ? 'Uploading…' : 'Drag files here, or click to choose'}</span>
-				<span class="hint">Labs, intake forms, anything for this client — drop one or several at once. Sorted automatically (a test result also lands in Record).</span>
-				<input bind:this={fileInput} type="file" multiple onchange={onFilesPicked} disabled={uploadingFile} hidden />
-			</label>
-			{#if !files.length}
-				<p class="hint">No files uploaded yet.</p>
-			{:else}
-				<ul class="list">
-					{#each files as f (f.id)}
-						<li>
-							<a href={fileUrl(f)} target="_blank" rel="noopener">{f.original_name}</a>
-							{#if f.category === 'lab'}<Chip tone="accent">Record</Chip>{/if}
-							<span class="hint">{f.uploaded_at ?? ''}</span>
-						</li>
-					{/each}
-				</ul>
-			{/if}
-		</div>
 	{:else if active === 'record'}
-		<div class="rail-section"><h2>Record</h2>
+		<div class="rail-section">
 			<form class="entry-form" onsubmit={addEntry}>
 				<Select label="Kind" bind:value={entryKind} disabled={addingEntry}
-					options={Object.entries(KIND_LABELS).map(([value, label]) => ({ value, label }))} />
+					options={Object.entries(KIND_LABELS).filter(([v]) => v !== 'document').map(([value, label]) => ({ value, label }))} />
 				<TextField label="Details" type="textarea" bind:value={entryContent} required disabled={addingEntry}
 					placeholder="e.g. Fasting glucose 92 mg/dL, 2026-09-14" />
 				<Button type="submit" loading={addingEntry}>Add to record</Button>
 			</form>
 
-			{#if entries.length}
-				<ul class="list entries">
-					{#each entries as e (e.id)}
-						<li class="entry">
-							<div class="er">
-								<Chip tone="neutral">{KIND_LABELS[e.kind] ?? e.kind}</Chip>
-								{#if isClientReported(e.content)}<Chip tone="accent">Client-reported</Chip>{/if}
-								<span class="hint">{e.created_at?.slice(0, 10)}</span>
-								<button type="button" class="remove" onclick={() => removeEntry(e.id)} disabled={deletingEntry === e.id} title="Remove">×</button>
-							</div>
-							<p class="content">{entryText(e.content)}</p>
-						</li>
-					{/each}
-				</ul>
-			{:else}
-				<p class="hint" style="margin-top: var(--space-3)">Nothing recorded yet — conditions, medications, and labs added here shape what the consult pipeline considers when answering.</p>
-			{/if}
+			<label class="dropzone" class:drag-over={dragOver} use:fileDrop={handleFiles}
+				ondragenter={() => (dragOver = true)} ondragleave={() => (dragOver = false)} ondrop={() => (dragOver = false)}>
+				<Icon name="upload" size={18} />
+				<span>{uploadingFile ? 'Uploading…' : 'Drag files here, or click to choose'}</span>
+				<span class="hint">Labs, imaging, referrals, anything for this client — AI reads it, sorts it in below.</span>
+				<input bind:this={fileInput} type="file" multiple onchange={onFilesPicked} disabled={uploadingFile} hidden />
+			</label>
 		</div>
+
+		{#if !entries.length}
+			<p class="hint">Nothing recorded yet — conditions, medications, labs, and documents added here shape what the consult pipeline considers when answering.</p>
+		{:else}
+			{#each CATEGORY_ORDER as cat}
+				{#if groupedEntries[cat]?.length}
+					<div class="rail-section category-section">
+						<h2>{CATEGORY_LABELS[cat]}</h2>
+						{#if cat === 'lab' && clinicalState.length}
+							<ul class="list markers">
+								{#each clinicalState as m (m.id)}
+									<li class="marker">
+										<span class="marker-name">{m.display_label}</span>
+										<span class="marker-value">{m.value ?? '—'} {m.unit ?? ''}</span>
+										<Chip tone={markerTone(m.flag)}>{m.flag === 'in_range' ? 'In range' : m.flag === 'unknown' ? 'Unflagged' : m.flag}</Chip>
+										{#if m.trend}<span class="trend trend-{m.trend}">{trendArrow(m.trend)} {m.trend}</span>{/if}
+									</li>
+								{/each}
+							</ul>
+						{/if}
+						<ul class="list entries">
+							{#each groupedEntries[cat] as e (e.id)}
+								<li class="entry">
+									<div class="er">
+										{#if e.file}
+											<a href={fileUrl(e.file.id)} target="_blank" rel="noopener" class="entry-file-link">{e.file.original_name}</a>
+											{#if e.file.ai_doc_type}
+												<Chip tone="accent">{DOC_TYPE_LABELS[e.file.ai_doc_type] ?? e.file.ai_doc_type}</Chip>
+											{:else}
+												<Chip tone="neutral">Processing…</Chip>
+											{/if}
+										{:else}
+											<Chip tone="neutral">{KIND_LABELS[e.kind] ?? e.kind}</Chip>
+										{/if}
+										{#if isClientReported(e.content)}<Chip tone="accent">Client-reported</Chip>{/if}
+										<span class="hint">{e.created_at?.slice(0, 10)}</span>
+										<button type="button" class="remove" onclick={() => removeEntry(e.id)} disabled={deletingEntry === e.id} title="Remove">×</button>
+									</div>
+									{#if e.file?.ai_summary}
+										<p class="ai-summary">{e.file.ai_summary}</p>
+									{:else}
+										<p class="content">{entryText(e.content)}</p>
+									{/if}
+									{#if e.file?.ai_highlights?.length}
+										<ul class="highlights">
+											{#each e.file.ai_highlights as h}
+												<li class="highlight highlight-{h.severity}">{h.text}</li>
+											{/each}
+										</ul>
+									{/if}
+								</li>
+							{/each}
+						</ul>
+					</div>
+				{/if}
+			{/each}
+		{/if}
 	{:else}
 		<div class="rail-section"><h2>Sessions</h2>
 			{#if !data.sessions?.length}
@@ -537,4 +616,26 @@
 	.remove:hover:not(:disabled) { background: var(--danger-soft); color: var(--danger); }
 	.remove:disabled { opacity: .5; cursor: not-allowed; }
 	.content { margin: 0; font-size: var(--text-sm); white-space: pre-wrap; }
+
+	.category-section { padding-top: var(--space-3); border-top: 1px solid var(--line); }
+	.entry-file-link { font-weight: 650; }
+	.ai-summary { margin: 0; font-size: var(--text-sm); color: var(--ink-2); }
+	.highlights { list-style: none; margin: .4rem 0 0; padding: 0; display: grid; gap: .3rem; }
+	.highlight {
+		font-size: var(--text-xs); padding: .3rem .6rem; border-radius: var(--r);
+		background: var(--panel-2); color: var(--ink-2);
+	}
+	.highlight-flag { background: var(--danger-soft); color: var(--danger); font-weight: 600; }
+	.highlight-info { background: var(--panel-2); color: var(--ink-2); }
+
+	.markers { margin-bottom: var(--space-3); }
+	.marker {
+		display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; padding: var(--space-2) var(--space-3);
+		background: var(--panel-2); border-radius: var(--r); font-size: var(--text-sm);
+	}
+	.marker-name { font-weight: 650; }
+	.marker-value { font-variant-numeric: tabular-nums; color: var(--ink-2); }
+	.trend { font-size: var(--text-xs); font-weight: 650; color: var(--muted); }
+	.trend-rising { color: var(--warn); }
+	.trend-falling { color: var(--accent-ink); }
 </style>
