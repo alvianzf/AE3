@@ -35,7 +35,10 @@
 		{ href: '/practitioner', label: 'Home', icon: 'home', primary: true },
 		{ href: '/practitioner/consult', label: 'Consult', icon: 'message', primary: true },
 		{ href: '/practitioner/clients', label: 'Clients', icon: 'users', primary: true },
-		{ href: '/practitioner/contacts', label: 'Contacts', icon: 'mail' },
+		// Hidden from nav for now (2026-11-26) — there's no email client
+		// wired up to actually act on a contact submission yet, so surfacing
+		// the page felt like a dead end. Route and page are untouched,
+		// reachable directly at /practitioner/contacts; just not linked.
 		{ href: '/practitioner/knowledge', label: 'Library weights', icon: 'book' },
 		{ href: '/practitioner/questionnaires', label: 'Intake', icon: 'clipboard' },
 		{ href: '/practitioner/profile', label: 'Profile', icon: 'settings' },

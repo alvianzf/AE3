@@ -15,12 +15,12 @@
 
 	const tiles = $derived.by(() => {
 		const intake = data.notifications?.unviewed_intake ?? 0;
-		const newContacts = data.notifications?.new_contacts ?? 0;
 		return [
 			{ label: 'Consults logged', value: data.recentSessions?.length ?? 0, icon: 'message', href: '/practitioner/consult' },
 			{ label: 'Active clients', value: data.clients?.length ?? 0, icon: 'users', href: '/practitioner/clients' },
-			{ label: 'Unviewed intake', value: intake, icon: 'clipboard', href: '/practitioner/clients', warn: intake > 0 },
-			{ label: 'New contacts', value: newContacts, icon: 'mail', href: '/practitioner/contacts', warn: newContacts > 0 }
+			{ label: 'Unviewed intake', value: intake, icon: 'clipboard', href: '/practitioner/clients', warn: intake > 0 }
+			// "New contacts" tile removed alongside the Contacts nav item
+			// (2026-11-26) — no email client wired up yet to act on one.
 		];
 	});
 
