@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
+	import { PUBLIC_SITE_URL } from '$env/static/public';
 	import { api } from '$lib/api';
 	import { toast } from '$lib/stores/toast';
 	import TextField from '$lib/components/TextField.svelte';
@@ -10,6 +11,16 @@
 
 	let { data } = $props();
 	const p = $derived(data.profile);
+	// The "Contacts" nav item (web/src/routes/(practitioner)/practitioner/
+	// contacts) only ever fills from a submission on THIS page — found
+	// live, 2026-11-26: a practitioner had no way to find or share it from
+	// anywhere in their own portal, so Contacts looked like a dead end with
+	// no actual path to it.
+	const publicProfileUrl = $derived(p?.id ? `${PUBLIC_SITE_URL}/coach/${p.id}` : '');
+	async function copyPublicProfileLink() {
+		await navigator.clipboard.writeText(publicProfileUrl);
+		toast('Link copied.');
+	}
 
 	// specs/v8 §8.3 — the profile-builder form the landing page's own
 	// "available practitioners" highlight (§8.1) and the public directory
@@ -107,6 +118,18 @@
 <svelte:head><title>Profile — Practitioner portal</title></svelte:head>
 
 <div class="pane-row"><div class="detail-pane"><div class="detail-head"><div class="head-title"><span class="head-ico"><Icon name="settings" size={16} /></span><h1>Your profile</h1></div></div>
+	{#if publicProfileUrl}
+		<div class="public-link-row">
+			<div>
+				<span class="public-link-label">Your public profile</span>
+				<p class="hint">Where prospective clients find and message you — share it anywhere. Messages sent here land in Contacts.</p>
+			</div>
+			<div class="public-link-actions">
+				<a href={publicProfileUrl} target="_blank" rel="noopener">{publicProfileUrl}</a>
+				<Button type="button" variant="outlined" onclick={copyPublicProfileLink}>Copy link</Button>
+			</div>
+		</div>
+	{/if}
 	<form onsubmit={save}>
 		<div class="photo-row">
 			<div class="photo" style={(photoPreview || p?.photo_path) ? `background-image:url(${photoPreview || p?.photo_path})` : ''}>
@@ -176,6 +199,14 @@
 
 <style>
 	form { display: grid; gap: var(--space-4); margin-top: var(--space-2); max-width: 32rem; }
+	.public-link-row {
+		display: flex; align-items: center; justify-content: space-between; gap: var(--space-4);
+		flex-wrap: wrap; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r-lg);
+		padding: var(--space-4); margin: var(--space-3) 0 var(--space-5); max-width: 32rem;
+	}
+	.public-link-label { font-size: var(--text-sm); font-weight: 650; color: var(--ink); }
+	.public-link-actions { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+	.public-link-actions a { font-size: var(--text-xs); color: var(--accent-ink); word-break: break-all; }
 	.photo-row { display: flex; align-items: center; gap: var(--space-4); }
 	.photo {
 		width: 4.5rem; height: 4.5rem; border-radius: 50%; flex: 0 0 auto;
