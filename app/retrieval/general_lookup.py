@@ -12,6 +12,7 @@ from ..clients.llm_client import Role, get_client
 from ..config import get_config
 from ..patient.context import PatientContext
 from .pgvector_store import search
+from .seed_search import form_search_query
 from .traversal import TraversalResult
 
 cfg = get_config()
@@ -21,15 +22,22 @@ def lookup(question: str, patient: PatientContext, min_grade: int,
           top_k: int | None = None,
           accessible_private_ids: set[str] | None = None,
           folder: str = "", topic: str = "") -> TraversalResult:
-    """Embeds the question directly — no query-forming LLM call first.
+    """One Postgres vector query, no graph traversal/hop-judging at all —
+    that part of the speed tradeoff against deep_research stays.
 
-    That's a deliberate speed/thoroughness tradeoff, not an oversight:
-    specs/v6.2/01 found real seed-quality cost to skipping that step for
-    the *deep-research* path's own seed search (44-53% result overlap
-    against the LLM-formed query). General lookup is explicitly the
-    fast, less-thorough option a practitioner opts into instead of deep
-    research, so paying for that call here would defeat the point of
-    offering this mode at all.
+    Found live, 2026-11-27: a short/vague question ("data for athletes")
+    embedded directly returned ten chunks from completely unrelated
+    documents (a pathophysiology textbook, a women's health title) — not
+    merely "less thorough" than deep research, but actively useless,
+    because a 3-4 word query has little to lock onto in embedding space
+    on its own. Deep research's seed stage already pays for exactly one
+    cheap Role.ANSWER_ENGINE call (seed_search.form_search_query()) to
+    turn a vague question into a real search phrase before embedding it
+    — general_lookup now pays that same single cheap call too, rather
+    than skipping query formation entirely. Still meaningfully faster
+    than deep_research (no multi-hop traversal, no per-hop judging calls,
+    which is where deep_research actually spends most of its time), just
+    no longer embeds a bare 3-word question and calls that "search."
 
     Returns a TraversalResult (depth_reached=0, stopped_reason=
     "general_lookup", empty path_log) so every downstream consumer —
@@ -41,7 +49,8 @@ def lookup(question: str, patient: PatientContext, min_grade: int,
     `page_start`/`page_end`), so `store.is_chunk()` and `_locator()` see
     a normal chunk — they're duck-typed on the dict shape, not the source.
     """
-    query_text = f"{patient.as_query_text()}\n\nQuestion: {question}"
+    search_query, query_usage = form_search_query(question, patient)
+    query_text = f"{patient.as_query_text()}\n\nQuestion: {search_query}"
     embedding = get_client(Role.EMBEDDER).embed([query_text])[0]
     rows = search(embedding, top_k=top_k or cfg.traversal_seed_top_k, min_grade=min_grade,
                  accessible_private_ids=accessible_private_ids, folder=folder, topic=topic)
@@ -60,5 +69,5 @@ def lookup(question: str, patient: PatientContext, min_grade: int,
     accumulated.sort(key=lambda c: c["grade"], reverse=True)
     return TraversalResult(
         accumulated=accumulated, path_log=[], depth_reached=0,
-        stopped_reason="general_lookup", usage={"input_tokens": 0, "output_tokens": 0},
+        stopped_reason="general_lookup", usage=query_usage,
     )
