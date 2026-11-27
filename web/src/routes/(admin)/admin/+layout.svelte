@@ -84,19 +84,26 @@
 
 <svelte:window onkeydown={onWindowKeydown} />
 
-<CommandPalette items={paletteItems} bind:open={paletteOpen} />
-<Tour steps={tourSteps} bind:active={tourActive} />
+<!-- `.portal.portal-admin` wraps everything, not just the app-shell —
+     same fix as the practitioner layout: CommandPalette/Tour used to sit
+     outside the one element carrying `.portal` (app.css's solid-panel
+     override), so they fell back to :root's translucent --panel instead
+     of rendering solid. -->
+<div class="portal portal-admin">
+	<CommandPalette items={paletteItems} bind:open={paletteOpen} />
+	<Tour steps={tourSteps} bind:active={tourActive} />
 
-<div class="app-shell portal portal-admin">
-	<Rail
-		{items}
-		onCommandPalette={openPalette}
-		userLabel={data.session?.name ?? data.session?.admin_role}
-		showSwitcher={!!data.session?.has_practitioner_view}
-		switcherTo="practitioner"
-	/>
-	<main class="portal-main">
-		{@render children()}
-	</main>
+	<div class="app-shell">
+		<Rail
+			{items}
+			onCommandPalette={openPalette}
+			userLabel={data.session?.name ?? data.session?.admin_role}
+			showSwitcher={!!data.session?.has_practitioner_view}
+			switcherTo="practitioner"
+		/>
+		<main class="portal-main">
+			{@render children()}
+		</main>
+	</div>
 </div>
 

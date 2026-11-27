@@ -78,22 +78,33 @@
 
 <svelte:window onkeydown={onWindowKeydown} />
 
-<CommandPalette items={paletteItems} bind:open={paletteOpen} />
-<Tour steps={tourSteps} bind:active={tourActive} />
+<!-- `.portal.portal-practitioner` has to wrap EVERYTHING below, not just
+     the app-shell — found live, 2026-11-27: CommandPalette, Tour, and
+     AskLibraryModal were all mounted as siblings after the app-shell's
+     closing tag, outside the one element carrying the `.portal` class
+     that overrides --panel to a solid white (app.css's `.portal` rule).
+     Without it they fell back to :root's own --panel, the PUBLIC site's
+     glassmorphism token (rgba(255,255,255,.72)) — so every one of these
+     surfaces rendered semi-transparent instead of solid, not just the
+     one the complaint named. -->
+<div class="portal portal-practitioner">
+	<CommandPalette items={paletteItems} bind:open={paletteOpen} />
+	<Tour steps={tourSteps} bind:active={tourActive} />
 
-<div class="app-shell portal portal-practitioner">
-	<Rail {items} onCommandPalette={openPalette} onAskLibrary={isPro ? () => askLibrary.open() : undefined}
-		userLabel={data.profile?.name} showSwitcher={data.session?.role === 'admin'} switcherTo="admin" />
-	<main class="portal-main">
-		{@render children()}
-	</main>
+	<div class="app-shell">
+		<Rail {items} onCommandPalette={openPalette} onAskLibrary={isPro ? () => askLibrary.open() : undefined}
+			userLabel={data.profile?.name} showSwitcher={data.session?.role === 'admin'} switcherTo="admin" />
+		<main class="portal-main">
+			{@render children()}
+		</main>
+	</div>
+	{#if showDisclaimer}<DisclaimerBar />{/if}
+	<!-- Mounted once here, not per-page — reachable from the Rail's global
+	     button on every practitioner page, and from the dashboard's own
+	     compact preview card; both drive the same shared askLibrary store
+	     (web/src/lib/stores/askLibrary.svelte.ts), so the conversation is
+	     identical regardless of where it was opened from. Pro-gated same as
+	     the backend route (auth.require_pro_practitioner). -->
+	{#if isPro}<AskLibraryModal />{/if}
 </div>
-{#if showDisclaimer}<DisclaimerBar />{/if}
-<!-- Mounted once here, not per-page — reachable from the Rail's global
-     button on every practitioner page, and from the dashboard's own
-     compact preview card; both drive the same shared askLibrary store
-     (web/src/lib/stores/askLibrary.svelte.ts), so the conversation is
-     identical regardless of where it was opened from. Pro-gated same as
-     the backend route (auth.require_pro_practitioner). -->
-{#if isPro}<AskLibraryModal />{/if}
 
